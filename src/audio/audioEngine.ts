@@ -21,6 +21,9 @@ export class SatbAudioEngine {
   private context?: AudioContext
   private synth?: WorkletSynthesizer
   private soundBankId?: string
+  private output?: GainNode
+  private analyser?: AnalyserNode
+  private analyserSamples?: Float32Array<ArrayBuffer>
   private fallbackVoices = new Set<FallbackVoice>()
   private animationFrame?: number
   private stopTimer?: number
@@ -38,12 +41,19 @@ export class SatbAudioEngine {
     if (this.context) return
     this.setState('loading', '正在初始化音频引擎')
     this.context = new AudioContext({ latencyHint: 'interactive' })
+    this.output = this.context.createGain()
+    this.analyser = this.context.createAnalyser()
+    this.analyser.fftSize = 256
+    this.analyserSamples = new Float32Array(new ArrayBuffer(this.analyser.fftSize * Float32Array.BYTES_PER_ELEMENT))
+    this.output.connect(this.analyser).connect(this.context.destination)
 
     try {
       const processorUrl = new URL('spessasynth_processor.min.js', window.location.href).toString()
       await this.context.audioWorklet.addModule(processorUrl)
       this.synth = new WorkletSynthesizer(this.context)
       await this.synth.isReady
+      // WorkletSynthesizer 不会自动连接系统输出；悬空时 API 状态正常但 SF2 完全静音。
+      this.synth.connect(this.output)
       this.synth.setLogLevel(false, true, false)
       this.setState('ready-fallback', 'SF2 尚未加载，使用回退音色')
     } catch (error) {
@@ -85,6 +95,14 @@ export class SatbAudioEngine {
   async resume() {
     await this.initialize()
     if (this.context?.state === 'suspended') await this.context.resume()
+  }
+
+  getOutputLevel() {
+    if (!this.analyser || !this.analyserSamples) return 0
+    this.analyser.getFloatTimeDomainData(this.analyserSamples)
+    let peak = 0
+    for (const sample of this.analyserSamples) peak = Math.max(peak, Math.abs(sample))
+    return Math.min(1, peak)
   }
 
   async previewNote(midiNote: number, voiceId: VoiceId, duration = 0.35) {
@@ -205,7 +223,7 @@ export class SatbAudioEngine {
     gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), start + 0.015)
     gain.gain.setValueAtTime(Math.max(0.0002, volume), Math.max(start + 0.015, start + duration - 0.06))
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
-    oscillator.connect(gain).connect(panner).connect(this.context.destination)
+    oscillator.connect(gain).connect(panner).connect(this.output ?? this.context.destination)
     const voice = { oscillator, gain }
     this.fallbackVoices.add(voice)
     oscillator.onended = () => this.fallbackVoices.delete(voice)
@@ -221,7 +239,7 @@ export class SatbAudioEngine {
     oscillator.frequency.value = accent ? 1320 : 880
     gain.gain.setValueAtTime(accent ? 0.075 : 0.045, start)
     gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.035)
-    oscillator.connect(gain).connect(this.context.destination)
+    oscillator.connect(gain).connect(this.output ?? this.context.destination)
     const voice = { oscillator, gain }
     this.fallbackVoices.add(voice)
     oscillator.onended = () => this.fallbackVoices.delete(voice)

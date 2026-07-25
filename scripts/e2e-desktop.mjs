@@ -184,6 +184,7 @@ try {
   await clickButton('播放')
   await waitFor(`document.querySelector('.engine-status')?.classList.contains('playing') === true`, '播放状态')
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '默认 SF2 加载')
+  await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) > 0.001`, '默认 SF2 实际音频输出')
   await clickButton('停止')
 
   const userSoundFontPath = path.join(path.dirname(executable), 'resources', 'soundfonts', 'default.sf2')
@@ -210,7 +211,9 @@ try {
   await waitFor(`document.body.innerText.includes('平行纯五度')`, '重新打开工程')
   await clickButton('播放')
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '重开工程后恢复用户 SF2')
-  await clickButton('停止')
+  await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) > 0.001`, '用户 SF2 实际音频输出')
+  await clickButton('暂停')
+  await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) <= 0.001`, '暂停后输出归零')
 
   const project = JSON.parse(await readFile(path.join(e2eDirectory, 'project.satb'), 'utf8'))
   const midi = parseMidi(new Uint8Array(await readFile(path.join(e2eDirectory, 'export.mid'))))
@@ -222,6 +225,7 @@ try {
   }
 
   await addNote(0, 960, 76)
+  await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) > 0.001`, '暂停后绘制音符预听')
   await waitFor(`window.desktop.project.recovery().then((result) => (
     result.available && result.project.tracks.reduce((count, track) => count + track.notes.length, 0) === 9
   ))`, '自动恢复写入', 8_000)
@@ -232,6 +236,7 @@ try {
     executable,
     defaultSoundFont: 'ready',
     userSoundFontReload: 'path-hash-ready',
+    audibleOutput: 'play-pause-preview-ready',
     projectNotes: noteCount,
     midiFormat: midi.header.format,
     midiTracks: midi.tracks.length,

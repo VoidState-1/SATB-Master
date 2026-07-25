@@ -93,6 +93,7 @@ function App() {
   const [loopEndTick, setLoopEndTick] = useState(initialProject.ppq * 4)
   const [audioState, setAudioState] = useState<AudioEngineState>('idle')
   const [audioMessage, setAudioMessage] = useState('尚未启动音频')
+  const [audioLevel, setAudioLevel] = useState(0)
   const [notice, setNotice] = useState<string>()
   const clipboardRef = useRef<ClipboardNote[]>([])
   const recoveryCheckedRef = useRef(false)
@@ -121,6 +122,11 @@ function App() {
       if (message) setAudioMessage(message)
     })
     return () => audioEngine.stop(false)
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setAudioLevel(audioEngine.getOutputLevel()), 50)
+    return () => window.clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -674,6 +680,15 @@ function App() {
           <button type="button" className="loop-boundary" title="将循环起点设为播放头" onClick={() => setLoopBoundary('start')}>起 {formatPosition(project, loopStartTick)}</button>
           <button type="button" className="loop-boundary" title="将循环终点设为播放头" onClick={() => setLoopBoundary('end')}>止 {formatPosition(project, loopEndTick)}</button>
           <IconButton label="节拍器" icon={<BellRing />} active={metronomeEnabled} onClick={() => setMetronomeEnabled((value) => !value)} />
+          <span
+            className={`output-meter ${audioLevel >= 0.98 ? 'is-clipping' : ''}`}
+            role="meter"
+            aria-label="主输出电平"
+            aria-valuemin={0}
+            aria-valuemax={1}
+            aria-valuenow={Number(audioLevel.toFixed(4))}
+            title="主输出电平"
+          ><i style={{ width: `${Math.max(2, audioLevel * 100)}%` }} /></span>
           <span className="position-readout">{formatPosition(project, playheadTick)}</span>
           <span className="transport-meta">{measureCount} 小节</span>
         </div>

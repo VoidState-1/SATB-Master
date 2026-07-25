@@ -203,6 +203,27 @@ button {
   text-align: center;
 }
 
+.output-meter {
+  width: 34px;
+  height: 7px;
+  flex: 0 0 34px;
+  overflow: hidden;
+  border: 1px solid #afb1aa;
+  border-radius: 3px;
+  background: #d9dad4;
+}
+
+.output-meter i {
+  display: block;
+  height: 100%;
+  background: #31825f;
+  transition: width 50ms linear;
+}
+
+.output-meter.is-clipping i {
+  background: #bd4336;
+}
+
 .transport-meta,
 .zoom-value {
   color: #71736b;
