@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('desktop', {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     toggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
     isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+    isFocused: () => ipcRenderer.invoke('window:is-focused'),
     close: () => ipcRenderer.invoke('window:close'),
     onMaximizedChange: (callback: (isMaximized: boolean) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, isMaximized: boolean) => callback(isMaximized)

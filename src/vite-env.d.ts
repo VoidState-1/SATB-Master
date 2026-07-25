@@ -11,6 +11,7 @@ interface Window {
       minimize(): Promise<void>
       toggleMaximize(): Promise<boolean>
       isMaximized(): Promise<boolean>
+      isFocused(): Promise<boolean>
       close(): Promise<void>
       onMaximizedChange(callback: (isMaximized: boolean) => void): () => void
     }

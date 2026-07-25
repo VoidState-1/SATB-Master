@@ -29,7 +29,12 @@ function createWindow() {
     },
   })
 
-  window.once('ready-to-show', () => window.show())
+  window.once('ready-to-show', () => {
+    window.show()
+    // Windows 延迟显示无边框窗口时，原生窗口与网页焦点可能不同步，原生下拉框会吞掉首次点击。
+    window.focus()
+    window.webContents.focus()
+  })
   window.on('maximize', () => window.webContents.send('window:maximized-changed', true))
   window.on('unmaximize', () => window.webContents.send('window:maximized-changed', false))
 
@@ -60,6 +65,7 @@ function registerWindowIpc() {
     return window.isMaximized()
   })
   ipcMain.handle('window:is-maximized', (event) => senderWindow(event)?.isMaximized() ?? false)
+  ipcMain.handle('window:is-focused', (event) => senderWindow(event)?.isFocused() ?? false)
   ipcMain.handle('window:close', (event) => senderWindow(event)?.close())
 }
 

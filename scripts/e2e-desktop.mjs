@@ -321,6 +321,7 @@ try {
   await client.open()
   await client.send('Runtime.enable')
   await waitFor(`document.readyState === 'complete' && document.body.innerText.includes('未命名练习')`, '应用首屏')
+  await waitFor(`window.desktop.windowControls.isFocused().then((focused) => focused && document.hasFocus())`, '应用首屏原生窗口与网页焦点')
   await verifyInitialGridSelection()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
   await clickButton('最大化')
@@ -431,6 +432,7 @@ try {
     audibleOutput: 'play-pause-preview-ready',
     snapMode: 'floor-start-ceil-end',
     initialGridSelection: 'ready',
+    initialWindowFocus: 'native-and-web-ready',
     middlePan: 'ready',
     customWindowFrame: 'ready',
     projectNotes: noteCount,
