@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { parseMidi } from 'midi-file'
@@ -186,6 +186,21 @@ try {
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '默认 SF2 加载')
   await clickButton('停止')
 
+  const userSoundFontPath = path.join(path.dirname(executable), 'resources', 'soundfonts', 'default.sf2')
+  const userSoundFont = await evaluate(`window.desktop.soundFont.loadPath(${JSON.stringify(userSoundFontPath)}).then((result) => ({
+    name: result.name,
+    hash: result.hash,
+    byteLength: result.bytes.byteLength,
+  }))`)
+  if (!userSoundFont.hash || userSoundFont.byteLength < 1) throw new Error('按工程路径读取用户 SoundFont 失败')
+  draftProject.audio.soundFont = {
+    kind: 'user',
+    name: 'E2E User SoundFont',
+    path: userSoundFontPath,
+    hash: userSoundFont.hash,
+  }
+  await writeFile(projectPath, JSON.stringify(draftProject, null, 2), 'utf8')
+
   await waitFor(`document.body.innerText.includes(${JSON.stringify(path.join(e2eDirectory, 'project.satb'))})`, '工程保存')
   await clickButton('导出 MIDI')
   await delay(200)
@@ -193,6 +208,9 @@ try {
   await waitFor(`document.body.innerText.includes('0 个错误')`, '新建空工程')
   await clickButton('打开工程')
   await waitFor(`document.body.innerText.includes('平行纯五度')`, '重新打开工程')
+  await clickButton('播放')
+  await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '重开工程后恢复用户 SF2')
+  await clickButton('停止')
 
   const project = JSON.parse(await readFile(path.join(e2eDirectory, 'project.satb'), 'utf8'))
   const midi = parseMidi(new Uint8Array(await readFile(path.join(e2eDirectory, 'export.mid'))))
@@ -213,6 +231,7 @@ try {
   console.log(JSON.stringify({
     executable,
     defaultSoundFont: 'ready',
+    userSoundFontReload: 'path-hash-ready',
     projectNotes: noteCount,
     midiFormat: midi.header.format,
     midiTracks: midi.tracks.length,

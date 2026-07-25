@@ -35,6 +35,10 @@ interface RecoveryRequest {
   sourcePath?: string
 }
 
+interface LoadSoundFontRequest {
+  filePath: string
+}
+
 interface RecoveryEnvelope {
   format: 'satb-master-recovery-v1'
   savedAt: string
@@ -71,6 +75,12 @@ async function writeJsonAtomic(filePath: string, value: unknown) {
 async function writeProjectAtomic(filePath: string, project: unknown) {
   assertProjectEnvelope(project)
   await writeJsonAtomic(filePath, project)
+}
+
+function assertSoundFontPath(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error('SoundFont 路径无效')
+  const extension = path.extname(value).toLowerCase()
+  if (extension !== '.sf2' && extension !== '.sf3') throw new Error('只支持 SF2 或 SF3 文件')
 }
 
 export function registerProjectIpc() {
@@ -184,6 +194,17 @@ export function registerProjectIpc() {
       canceled: false,
       filePath,
       name: path.basename(filePath),
+      ...soundFont,
+    }
+  })
+
+  ipcMain.handle('soundfont:load-path', async (_event, request: LoadSoundFontRequest) => {
+    // 工程只保存用户主动选取的绝对路径；重开时仍限制扩展名、大小并重新计算摘要。
+    assertSoundFontPath(request?.filePath)
+    const soundFont = await readSoundFont(request.filePath)
+    return {
+      filePath: request.filePath,
+      name: path.basename(request.filePath),
       ...soundFont,
     }
   })

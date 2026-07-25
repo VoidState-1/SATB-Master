@@ -52,6 +52,7 @@ import {
   exportMidi,
   findRecovery,
   loadDefaultSoundFont,
+  loadUserSoundFont,
   openProject,
   saveProject,
 } from './services/desktop'
@@ -68,6 +69,10 @@ const GRID_OPTIONS = [
   { label: '1/16', ticks: 240 },
   { label: '1/32', ticks: 120 },
 ]
+
+function soundFontId(soundFont: ProjectDocument['audio']['soundFont']) {
+  return soundFont.kind === 'default' ? 'default' : `user:${soundFont.hash ?? soundFont.path ?? soundFont.name}`
+}
 
 function App() {
   const initialProject = useMemo(() => createEmptyProject(), [])
@@ -440,14 +445,23 @@ function App() {
       }
 
       const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-      await audioEngine.loadSoundFont(buffer, `user-${Date.now()}`)
+      const selection = { kind: 'user' as const, name, path, hash }
+      await audioEngine.loadSoundFont(buffer, soundFontId(selection))
       history.commit(replaceProject(project, (draft) => {
-        draft.audio.soundFont = { kind: 'user', name, path, hash }
+        draft.audio.soundFont = selection
       }))
       showNotice('SoundFont 已加载')
     } catch (error) {
       showNotice(error instanceof Error ? error.message : 'SoundFont 加载失败')
     }
+  }, [history, project, showNotice])
+
+  const handleUseDefaultSoundFont = useCallback(async () => {
+    await audioEngine.unloadSoundFont()
+    history.commit(replaceProject(project, (draft) => {
+      draft.audio.soundFont = { kind: 'default', name: 'SATB Master 默认音色' }
+    }))
+    showNotice('已恢复默认音色，将在播放时加载')
   }, [history, project, showNotice])
 
   const handleStop = useCallback((returnToStart = false) => {
@@ -464,19 +478,28 @@ function App() {
     }
     try {
       await audioEngine.resume()
-      if (project.audio.soundFont.kind === 'default' && !audioEngine.isSoundFontLoaded('default')) {
+      const soundFontConfig = project.audio.soundFont
+      const targetSoundFontId = soundFontId(soundFontConfig)
+      if (!audioEngine.isSoundFontLoaded(targetSoundFontId)) {
         try {
-          const soundFont = await loadDefaultSoundFont()
+          const soundFont = soundFontConfig.kind === 'default'
+            ? await loadDefaultSoundFont()
+            : await loadUserSoundFont(soundFontConfig.path ?? '')
+          if (soundFontConfig.kind === 'user' && soundFontConfig.hash && soundFont.hash !== soundFontConfig.hash) {
+            throw new Error('工程引用的 SoundFont 文件已被替换')
+          }
           const buffer = soundFont.bytes.buffer.slice(
             soundFont.bytes.byteOffset,
             soundFont.bytes.byteOffset + soundFont.bytes.byteLength,
           ) as ArrayBuffer
-          await audioEngine.loadSoundFont(buffer, 'default')
+          await audioEngine.loadSoundFont(buffer, targetSoundFontId)
         } catch (error) {
-          // 默认资源损坏或安装路径异常时必须清掉旧音色，确保工程仍可用回退合成器播放。
+          // 音源缺失、摘要变化或安装路径异常时清掉旧音色，防止误用上一个工程的音色。
           await audioEngine.unloadSoundFont()
-          console.warn('默认 SoundFont 加载失败，继续使用回退音色。', error)
-          showNotice('默认音色不可用，已切换到回退音色')
+          console.warn('工程 SoundFont 加载失败，继续使用回退音色。', error)
+          showNotice(soundFontConfig.kind === 'default'
+            ? '默认音色不可用，已切换到回退音色'
+            : '工程引用的音色不可用，已切换到回退音色')
         }
       }
       const session = playSessionRef.current + 1
@@ -708,6 +731,7 @@ function App() {
           onUpdateAudio={(masterVolume) => history.commit(replaceProject(project, (draft) => { draft.audio.masterVolume = masterVolume }))}
           onUpdateTrack={handleUpdateTrack}
           onChooseSoundFont={() => void handleChooseSoundFont()}
+          onUseDefaultSoundFont={() => void handleUseDefaultSoundFont()}
         />
       </div>
 

@@ -94,3 +94,8 @@ export async function loadDefaultSoundFont() {
     bytes: new Uint8Array(await response.arrayBuffer()),
   }
 }
+
+export async function loadUserSoundFont(filePath: string) {
+  if (!window.desktop) throw new Error('浏览器预览无法重新读取本地 SoundFont')
+  return window.desktop.soundFont.loadPath(filePath)
+}

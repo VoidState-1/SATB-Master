@@ -38,6 +38,12 @@ interface Window {
         hash?: string
         bytes?: Uint8Array
       }>
+      loadPath(filePath: string): Promise<{
+        filePath: string
+        name: string
+        hash: string
+        bytes: Uint8Array
+      }>
       loadDefault(): Promise<{
         name: string
         hash: string

@@ -62,6 +62,7 @@ interface InspectorProps {
   onUpdateAudio(masterVolume: number): void
   onUpdateTrack(voiceId: VoiceId, patch: Partial<ProjectDocument['tracks'][number]>): void
   onChooseSoundFont(): void
+  onUseDefaultSoundFont(): void
 }
 
 const qualityOptions: Array<{ value: ChordQuality; label: string }> = [
@@ -97,6 +98,7 @@ export function Inspector({
   onUpdateAudio,
   onUpdateTrack,
   onChooseSoundFont,
+  onUseDefaultSoundFont,
 }: InspectorProps) {
   const [tab, setTab] = useState<InspectorTab>('selection')
   const activeTrack = project.tracks.find((track) => track.id === activeVoice)!
@@ -254,6 +256,9 @@ export function Inspector({
               <strong>{project.audio.soundFont.name}</strong>
               <small>{audioStatus}</small>
               <button type="button" className="command-button primary" onClick={onChooseSoundFont}><FolderOpen />选择本地 SF2</button>
+              {project.audio.soundFont.kind === 'user' ? (
+                <button type="button" className="command-button" onClick={onUseDefaultSoundFont}>恢复默认音色</button>
+              ) : null}
             </section>
             <section className="property-section">
               <header>主输出</header>

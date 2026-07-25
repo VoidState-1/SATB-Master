@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   soundFont: {
     open: () => ipcRenderer.invoke('soundfont:open'),
+    loadPath: (filePath: string) => ipcRenderer.invoke('soundfont:load-path', { filePath }),
     loadDefault: () => ipcRenderer.invoke('soundfont:default'),
   },
 })
