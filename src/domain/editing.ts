@@ -9,6 +9,13 @@ function overlaps(a: NoteEvent, b: NoteEvent) {
   return a.startTick < b.startTick + b.durationTicks && b.startTick < a.startTick + a.durationTicks
 }
 
+function hasValidNoteValues(note: NoteEvent) {
+  return Number.isInteger(note.startTick) && note.startTick >= 0
+    && Number.isInteger(note.durationTicks) && note.durationTicks > 0
+    && Number.isInteger(note.midiNote) && note.midiNote >= 0 && note.midiNote <= 127
+    && Number.isInteger(note.velocity) && note.velocity >= 1 && note.velocity <= 127
+}
+
 function isRangeLocked(project: ProjectDocument, voiceId: VoiceId, note: NoteEvent) {
   return project.exercise.editableRanges.some((range) => (
     range.editable === false
@@ -28,6 +35,7 @@ function canEditNote(project: ProjectDocument, voiceId: VoiceId, note?: NoteEven
 export function addNote(project: ProjectDocument, voiceId: VoiceId, note: NoteEvent): EditResult {
   const track = getTrack(project, voiceId)
   if (!canEditNote(project, voiceId, note)) return { project, error: '该声部或时间范围已锁定' }
+  if (!hasValidNoteValues(note)) return { project, error: '音符参数无效' }
   if (note.startTick < 0 || note.startTick + note.durationTicks > project.lengthTicks) {
     return { project, error: '音符超出工程时间范围' }
   }
@@ -57,6 +65,7 @@ export function updateNote(
   if (isRangeLocked(project, voiceId, current)) return { project, error: '该音符位于锁定区间' }
 
   const updated = { ...current, ...patch }
+  if (!hasValidNoteValues(updated)) return { project, error: '音符参数无效' }
   if (updated.startTick < 0 || updated.durationTicks <= 0 || updated.startTick + updated.durationTicks > project.lengthTicks) {
     return { project, error: '音符超出工程时间范围' }
   }
@@ -92,10 +101,11 @@ export function transformNotes(
       }
       transformed += 1
       const updated = transform(note, track.id)
+      if (!hasValidNoteValues(updated)) hasLockedNote = true
       if (isRangeLocked(project, track.id, updated)) hasLockedNote = true
       return updated
     })
-    if (hasLockedNote) return { project, error: '选区包含已锁定音符' }
+    if (hasLockedNote) return { project, error: '选区包含锁定音符或会产生无效参数' }
     const ordered = [...track.notes].sort((a, b) => a.startTick - b.startTick)
     for (let index = 0; index < ordered.length; index += 1) {
       const note = ordered[index]

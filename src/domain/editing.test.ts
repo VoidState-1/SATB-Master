@@ -38,3 +38,19 @@ describe('练习锁定约束', () => {
     expect(project.tracks.find((track) => track.id === 'bass')!.notes).toHaveLength(2)
   })
 })
+
+describe('音符数值边界', () => {
+  it('拒绝越界音高和非有限时值', () => {
+    const project = createEmptyProject()
+
+    expect(addNote(project, 'soprano', { ...note('high', 0), midiNote: 128 }).error).toContain('参数无效')
+    expect(addNote(project, 'soprano', { ...note('nan', 0), durationTicks: Number.NaN }).error).toContain('参数无效')
+  })
+
+  it('拒绝属性编辑产生非法力度', () => {
+    const project = createEmptyProject()
+    project.tracks[0].notes = [note('existing', 0)]
+
+    expect(updateNote(project, 'soprano', 'existing', { velocity: 0 }).error).toContain('参数无效')
+  })
+})
