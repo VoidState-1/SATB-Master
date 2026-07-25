@@ -36,7 +36,13 @@ interface Slice {
   notes: Partial<Record<VoiceId, NoteEvent>>
 }
 
-const CHORD_RULE_IDS = ['chord-membership', 'chord-completeness', 'chord-inversion', 'leading-tone-doubling']
+const CHORD_RULE_IDS = [
+  'chord-membership',
+  'chord-completeness',
+  'chord-inversion',
+  'leading-tone-doubling',
+  'chord-seventh-resolution',
+]
 const DEGREE_MAJOR = [0, 2, 4, 5, 7, 9, 11]
 const DEGREE_MINOR = [0, 2, 3, 5, 7, 8, 10]
 
@@ -137,6 +143,16 @@ function checkMelodicMotion(project: ProjectDocument) {
     for (let index = 1; index < notes.length; index += 1) {
       const previous = notes[index - 1]
       const current = notes[index]
+
+      // 同一声部按单旋律处理；重叠后无法可靠判定前后进行，因此只报告结构错误。
+      if (current.startTick < previous.startTick + previous.durationTicks) {
+        diagnostics.push(diagnostic(
+          'voice-note-overlap', 'error', current.startTick, current.startTick + current.durationTicks,
+          [track.id], [previous, current], '同声部音符重叠', `${track.name}中存在时间上互相重叠的音符。`,
+        ))
+        continue
+      }
+
       const interval = Math.abs(current.midiNote - previous.midiNote)
       if (interval > 12) {
         diagnostics.push(diagnostic(
@@ -155,19 +171,57 @@ function checkMelodicMotion(project: ProjectDocument) {
         ))
       }
 
-      const key = keyAtTick(project.keyEvents, previous.startTick)
-      const previousDegree = pitchClass(previous.midiNote - key.tonic)
-      if (previousDegree === 11 && current.startTick === previous.startTick + previous.durationTicks) {
-        if (pitchClass(current.midiNote) !== pitchClass(key.tonic) || current.midiNote <= previous.midiNote) {
+      const previousKey = keyAtTick(project.keyEvents, previous.startTick)
+      const currentKey = keyAtTick(project.keyEvents, current.startTick)
+      const sameKeyContext = previousKey.tonic === currentKey.tonic && previousKey.mode === currentKey.mode
+      const previousDegree = pitchClass(previous.midiNote - previousKey.tonic)
+      const contiguous = current.startTick === previous.startTick + previous.durationTicks
+
+      // 只在连续两音处检查，并避开换调边界；小调的导音指升高的第七级（主音下方半音）。
+      if (sameKeyContext && previousDegree === 11 && contiguous) {
+        if (pitchClass(current.midiNote) !== pitchClass(previousKey.tonic) || current.midiNote <= previous.midiNote) {
           diagnostics.push(diagnostic(
             'leading-tone-resolution', 'warning', current.startTick, current.startTick + current.durationTicks,
             [track.id], [previous, current], '导音未上行解决',
-            `${KEY_NAMES[key.tonic]} ${key.mode === 'major' ? '大调' : '小调'}中的导音通常应上行解决到主音。`,
+            `${KEY_NAMES[previousKey.tonic]} ${previousKey.mode === 'major' ? '大调' : '小调'}中的导音通常应上行解决到主音。`,
           ))
         }
       }
     }
   })
+  return diagnostics
+}
+
+function checkChordToneResolution(project: ProjectDocument) {
+  const diagnostics: HarmonyDiagnostic[] = []
+
+  project.tracks.forEach((track) => {
+    const notes = [...track.notes].sort((a, b) => a.startTick - b.startTick)
+    for (let index = 1; index < notes.length; index += 1) {
+      const previous = notes[index - 1]
+      const current = notes[index]
+      if (current.startTick !== previous.startTick + previous.durationTicks) continue
+
+      const chord = chordAtTick(project.chords, previous.startTick)
+      if (!chord) continue
+      const intervals = QUALITY_INTERVALS[chord.quality]
+      if (intervals.length !== 4) continue
+
+      const seventh = pitchClass(chordRoot(project, chord) + intervals[3])
+      if (pitchClass(previous.midiNote) !== seventh) continue
+
+      // 标注七和弦的七音以半音或全音下行解决；跨休止与无和弦标注处不作推断。
+      const resolution = current.midiNote - previous.midiNote
+      if (resolution !== -1 && resolution !== -2) {
+        diagnostics.push(diagnostic(
+          'chord-seventh-resolution', 'warning', current.startTick, current.startTick + current.durationTicks,
+          [track.id], [previous, current], '七音未级进下行解决',
+          `${chord.label} 的七音通常应以半音或全音级进下行解决。`,
+        ))
+      }
+    }
+  })
+
   return diagnostics
 }
 
@@ -345,7 +399,10 @@ export function checkHarmony(project: ProjectDocument): HarmonyCheckResult {
     ...checkVoiceLeading(slices),
   ]
   const skippedRuleIds = project.chords.length === 0 ? CHORD_RULE_IDS : []
-  if (project.chords.length > 0) diagnostics.push(...checkChordRules(project, slices))
+  if (project.chords.length > 0) {
+    diagnostics.push(...checkChordRules(project, slices))
+    diagnostics.push(...checkChordToneResolution(project))
+  }
 
   const unique = new Map(diagnostics.map((item) => [item.id, item]))
   return {
