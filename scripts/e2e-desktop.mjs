@@ -8,8 +8,41 @@ const appDirectory = process.argv[3] ? path.resolve(process.argv[3]) : undefined
 const e2eRoot = path.resolve('node_modules/.satb-master-e2e')
 await mkdir(e2eRoot, { recursive: true })
 const e2eDirectory = await mkdtemp(path.join(e2eRoot, 'run-'))
+const recoveryChoice = process.env.SATB_MASTER_E2E_RECOVERY_CHOICE === 'discard' ? 'discard' : 'recover'
 // Chromium 子进程必须能写入 userData；项目内的临时目录也便于受限环境稳定执行。
 await mkdir(path.join(e2eDirectory, 'user-data'), { recursive: true })
+const recoveryTimestamp = new Date().toISOString()
+const recoveryProject = {
+  schemaVersion: 2,
+  id: 'project-e2e-recovery',
+  title: 'E2E 恢复焦点测试',
+  author: '',
+  notes: '',
+  createdAt: recoveryTimestamp,
+  updatedAt: recoveryTimestamp,
+  ppq: 960,
+  lengthTicks: 61_440,
+  tempoEvents: [{ id: 'tempo-e2e', tick: 0, bpm: 80 }],
+  meterEvents: [{ id: 'meter-e2e', tick: 0, numerator: 4, denominator: 4 }],
+  keyEvents: [{ id: 'key-e2e', tick: 0, tonic: 0, mode: 'major' }],
+  tracks: [
+    ['soprano', '女高音', 'S', 0.2, 52],
+    ['alto', '女低音', 'A', 0.08, 52],
+    ['tenor', '男高音', 'T', -0.08, 52],
+    ['bass', '男低音', 'B', -0.2, 53],
+  ].map(([id, name, shortName, pan, program]) => ({
+    id, name, shortName, notes: [], visible: true, muted: false, solo: false, locked: false,
+    volume: 0.82, pan, program,
+  })),
+  chordTrack: { visible: true, locked: false, displayMode: 'roman', regions: [] },
+  exercise: { instructions: '', editableRanges: [] },
+  audio: { masterVolume: 0.78, soundFont: { kind: 'default', name: 'SATB Master 默认音色' } },
+}
+await writeFile(path.join(e2eDirectory, 'user-data', 'recovery.json'), JSON.stringify({
+  format: 'satb-master-recovery-v1',
+  savedAt: recoveryTimestamp,
+  project: recoveryProject,
+}, null, 2), 'utf8')
 const debugPort = 9_337
 const launchArguments = [`--remote-debugging-port=${debugPort}`, '--remote-allow-origins=*', '--disable-gpu']
 if (appDirectory) launchArguments.push(appDirectory)
@@ -560,6 +593,13 @@ try {
   await client.send('Runtime.enable')
   await waitFor(`document.readyState === 'complete' && document.body.innerText.includes('未命名练习')`, '应用首屏')
   await waitFor(`window.desktop.windowControls.isFocused().then((focused) => focused && document.hasFocus())`, '应用首屏原生窗口与网页焦点')
+  await waitFor(`document.body.innerText.includes('恢复未保存内容')`, '启动恢复提示')
+  await clickButton(recoveryChoice === 'recover' ? '恢复内容' : '不恢复')
+  if (recoveryChoice === 'recover') {
+    await waitFor(`document.body.innerText.includes('E2E 恢复焦点测试')`, '确认恢复内容')
+  } else {
+    await waitFor(`window.desktop.project.recovery().then((result) => result.available === false)`, '确认放弃恢复内容')
+  }
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '应用启动时默认 SF2 预载', 20_000)
   await verifyInitialGridSelection()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
@@ -699,6 +739,7 @@ try {
     midiFormat: midi.header.format,
     midiTracks: midi.tracks.length,
     midiNoteOns,
+    recoveryPrompt: `${recoveryChoice}-dropdown-ready`,
     recoveryLifecycle: 'write-read-clear',
   }, null, 2))
 } finally {

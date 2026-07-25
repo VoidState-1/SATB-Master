@@ -29,6 +29,7 @@ import {
   Scissors,
 } from 'lucide-react'
 import { audioEngine, type AudioEngineState } from './audio/audioEngine'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { IconButton } from './components/IconButton'
 import { Inspector } from './components/Inspector'
@@ -92,6 +93,13 @@ type ClipboardPayload =
   | { kind: 'notes'; items: ClipboardNote[] }
   | { kind: 'chords'; items: ClipboardChord[] }
 
+interface ConfirmationState {
+  title: string
+  message: string
+  confirmLabel: string
+  cancelLabel: string
+}
+
 const GRID_OPTIONS = [
   { label: '1/4', ticks: 960 },
   { label: '1/8', ticks: 480 },
@@ -142,7 +150,9 @@ function App() {
   const [audioLevel, setAudioLevel] = useState(0)
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
   const [notice, setNotice] = useState<string>()
+  const [confirmation, setConfirmation] = useState<ConfirmationState>()
   const clipboardRef = useRef<ClipboardPayload | undefined>(undefined)
+  const confirmationResolverRef = useRef<((confirmed: boolean) => void) | undefined>(undefined)
   const recoveryCheckedRef = useRef(false)
   const defaultSoundFontRequestedRef = useRef(false)
   const playSessionRef = useRef(0)
@@ -164,6 +174,23 @@ function App() {
   const showNotice = useCallback((message: string) => {
     setNotice(message)
     window.setTimeout(() => setNotice((current) => current === message ? undefined : current), 2800)
+  }, [])
+
+  const requestConfirmation = useCallback((options: ConfirmationState) => new Promise<boolean>((resolve) => {
+    confirmationResolverRef.current?.(false)
+    confirmationResolverRef.current = resolve
+    setConfirmation(options)
+  }), [])
+
+  const answerConfirmation = useCallback((confirmed: boolean) => {
+    const resolve = confirmationResolverRef.current
+    confirmationResolverRef.current = undefined
+    setConfirmation(undefined)
+    resolve?.(confirmed)
+  }, [])
+
+  useEffect(() => () => {
+    confirmationResolverRef.current?.(false)
   }, [])
 
   useEffect(() => {
@@ -202,7 +229,13 @@ function App() {
       if (!recovery) return
       const savedAt = new Date(recovery.savedAt).toLocaleString('zh-CN')
       const source = recovery.sourcePath ? `\n原工程：${recovery.sourcePath}` : ''
-      if (window.confirm(`发现 ${savedAt} 的自动恢复内容。${source}\n\n是否恢复？`)) {
+      const shouldRecover = await requestConfirmation({
+        title: '恢复未保存内容',
+        message: `发现 ${savedAt} 的自动恢复内容。${source}\n\n是否恢复？`,
+        confirmLabel: '恢复内容',
+        cancelLabel: '不恢复',
+      })
+      if (shouldRecover) {
         history.recover(recovery.project)
         setFilePath(recovery.sourcePath)
         showNotice('已恢复未保存内容')
@@ -210,7 +243,7 @@ function App() {
         await discardRecovery()
       }
     }).catch((error) => console.warn('读取自动恢复文件失败', error))
-  }, [history, showNotice])
+  }, [history, requestConfirmation, showNotice])
 
   useEffect(() => {
     if (!history.isDirty) return
@@ -457,8 +490,13 @@ function App() {
     }))
   }, [history, project, showNotice])
 
-  const handleNew = useCallback(() => {
-    if (history.isDirty && !window.confirm('当前工程尚未保存，仍要新建吗？')) return
+  const handleNew = useCallback(async () => {
+    if (history.isDirty && !await requestConfirmation({
+      title: '新建工程',
+      message: '当前工程尚未保存，仍要新建吗？',
+      confirmLabel: '继续新建',
+      cancelLabel: '取消',
+    })) return
     audioEngine.stop()
     history.load(createEmptyProject())
     setFilePath(undefined)
@@ -468,10 +506,15 @@ function App() {
     setPlayheadTick(0)
     setLoopStartTick(0)
     setLoopEndTick(initialProject.ppq * 4)
-  }, [history])
+  }, [history, initialProject, requestConfirmation])
 
   const handleOpen = useCallback(async () => {
-    if (history.isDirty && !window.confirm('当前工程尚未保存，仍要打开其他工程吗？')) return
+    if (history.isDirty && !await requestConfirmation({
+      title: '打开工程',
+      message: '当前工程尚未保存，仍要打开其他工程吗？',
+      confirmLabel: '继续打开',
+      cancelLabel: '取消',
+    })) return
     try {
       const result = await openProject()
       if (!result) return
@@ -488,7 +531,7 @@ function App() {
     } catch (error) {
       showNotice(error instanceof Error ? error.message : '打开工程失败')
     }
-  }, [history, showNotice])
+  }, [history, requestConfirmation, showNotice])
 
   const handleSave = useCallback(async (forceDialog = false) => {
     try {
@@ -727,6 +770,7 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (confirmation) return
       const target = event.target as HTMLElement
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
       const control = event.ctrlKey || event.metaKey
@@ -772,7 +816,7 @@ function App() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [copySelection, gridTicks, handleDeleteChords, handleDeleteNotes, handleOpen, handlePlay, handleSave, history, pasteSelection, selectedChordIds, selectedNoteIds, transformSelection])
+  }, [confirmation, copySelection, gridTicks, handleDeleteChords, handleDeleteNotes, handleOpen, handlePlay, handleSave, history, pasteSelection, selectedChordIds, selectedNoteIds, transformSelection])
 
   const handleDiagnostic = (diagnostic: HarmonyDiagnostic) => {
     setPlayheadTick(diagnostic.tick)
@@ -785,8 +829,13 @@ function App() {
     const maximized = await window.desktop?.windowControls.toggleMaximize()
     if (typeof maximized === 'boolean') setIsWindowMaximized(maximized)
   }
-  const closeWindow = () => {
-    if (history.isDirty && !window.confirm('当前工程尚未保存，仍要关闭吗？')) return
+  const closeWindow = async () => {
+    if (history.isDirty && !await requestConfirmation({
+      title: '关闭工程',
+      message: '当前工程尚未保存，仍要关闭吗？',
+      confirmLabel: '仍要关闭',
+      cancelLabel: '取消',
+    })) return
     void window.desktop?.windowControls.close()
   }
 
@@ -813,14 +862,14 @@ function App() {
               icon={isWindowMaximized ? <Minimize2 /> : <Maximize2 />}
               onClick={() => void toggleWindowMaximize()}
             />
-            <IconButton className="window-control close" label="关闭" icon={<X />} onClick={closeWindow} />
+            <IconButton className="window-control close" label="关闭" icon={<X />} onClick={() => void closeWindow()} />
           </div>
         ) : null}
       </header>
 
       <div className="main-toolbar">
         <div className="toolbar-group">
-          <IconButton label="新建工程" icon={<FilePlus2 />} onClick={handleNew} />
+          <IconButton label="新建工程" icon={<FilePlus2 />} onClick={() => void handleNew()} />
           <IconButton label="打开工程" icon={<FolderOpen />} onClick={() => void handleOpen()} />
           <IconButton label="保存" icon={<Save />} onClick={() => void handleSave(false)} />
           <IconButton label="另存为" icon={<SaveAll />} onClick={() => void handleSave(true)} />
@@ -937,6 +986,16 @@ function App() {
         />
       </div>
 
+      {confirmation ? (
+        <ConfirmDialog
+          title={confirmation.title}
+          message={confirmation.message}
+          confirmLabel={confirmation.confirmLabel}
+          cancelLabel={confirmation.cancelLabel}
+          onConfirm={() => answerConfirmation(true)}
+          onCancel={() => answerConfirmation(false)}
+        />
+      ) : null}
       {notice ? <div className="notice" role="status">{notice}</div> : null}
     </main>
   )
