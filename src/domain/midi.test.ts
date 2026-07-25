@@ -21,20 +21,17 @@ describe('MIDI Type 1 导出', () => {
 
   it('仅在和弦轨非空时创建 Chords 标记轨', () => {
     const project = createEmptyProject()
-    project.chords.push({
+    project.chordTrack.regions.push({
       id: 'chord-1',
       startTick: 0,
       durationTicks: PPQ,
-      degree: 1,
-      accidental: 0,
-      quality: 'major',
-      inversion: 0,
-      label: 'I',
+      analysis: { degree: 1, accidental: 0, quality: 'major', inversion: 0 },
       locked: false,
     })
 
     const parsed = parseMidi(Array.from(buildMidi(project)))
     expect(parsed.tracks).toHaveLength(6)
     expect(parsed.tracks[5].some((event) => event.type === 'marker' && event.text === 'I')).toBe(true)
+    expect(parsed.tracks[5].some((event) => event.type === 'marker' && event.text === 'N.C.')).toBe(true)
   })
 })

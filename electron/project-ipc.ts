@@ -49,7 +49,7 @@ interface RecoveryEnvelope {
 function assertProjectEnvelope(value: unknown) {
   if (!value || typeof value !== 'object') throw new Error('工程内容不是有效对象')
   const project = value as { schemaVersion?: unknown; tracks?: unknown }
-  if (project.schemaVersion !== 1 || !Array.isArray(project.tracks) || project.tracks.length !== 4) {
+  if (![1, 2].includes(project.schemaVersion as number) || !Array.isArray(project.tracks) || project.tracks.length !== 4) {
     throw new Error('工程结构或版本无效')
   }
 }

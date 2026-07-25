@@ -279,6 +279,152 @@ async function resizeNote(startTick, durationTicks, midiNote, requestedEndTick) 
   await delay(100)
 }
 
+async function verifyChordTrackEditing(projectPath) {
+  await clickButton('铅笔工具（2）')
+  const draw = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const lane = document.querySelector('.chord-lane');
+    if (!roll || !lane) return null;
+    roll.scrollLeft = 0;
+    lane.setPointerCapture = () => {};
+    lane.releasePointerCapture = () => {};
+    lane.hasPointerCapture = () => true;
+    const rect = lane.getBoundingClientRect();
+    const startX = rect.left + 58 + (1920 / 960) * 72 + 3;
+    const endX = rect.left + 58 + (2880 / 960) * 72 - 3;
+    const clientY = rect.top + 20;
+    lane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 30, clientX: startX, clientY, button: 0 }));
+    return { startX, endX, clientY };
+  })()`)
+  if (!draw) throw new Error('无法开始绘制和弦区域')
+  await evaluate(`document.querySelector('.chord-lane').dispatchEvent(new PointerEvent('pointermove', {
+    bubbles: true, pointerId: 30, clientX: ${draw.endX}, clientY: ${draw.clientY}, button: 0, buttons: 1,
+  }))`)
+  await evaluate(`document.querySelector('.chord-lane').dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, pointerId: 30, clientX: ${draw.endX}, clientY: ${draw.clientY}, button: 0,
+  }))`)
+  await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 1`, '绘制和弦范围')
+  const firstLabel = await evaluate(`document.querySelector('.chord-label')?.textContent`)
+  if (firstLabel !== 'I') throw new Error(`和弦名称未由系统计算：${firstLabel}`)
+
+  await clickButton('选择工具（1）')
+  const move = await evaluate(`(() => {
+    const lane = document.querySelector('.chord-lane');
+    const block = document.querySelector('.chord-block:not(.chord-preview)');
+    if (!lane || !block) return null;
+    const rect = block.getBoundingClientRect();
+    const startX = rect.left + rect.width / 2;
+    const endX = startX + 36;
+    const clientY = rect.top + rect.height / 2;
+    lane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 31, clientX: startX, clientY, button: 0 }));
+    return { startX, endX, clientY };
+  })()`)
+  if (!move) throw new Error('无法选择和弦区域')
+  await evaluate(`document.querySelector('.chord-lane').dispatchEvent(new PointerEvent('pointermove', {
+    bubbles: true, pointerId: 31, clientX: ${move.endX}, clientY: ${move.clientY}, button: 0, buttons: 1,
+  }))`)
+  await evaluate(`document.querySelector('.chord-lane').dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, pointerId: 31, clientX: ${move.endX}, clientY: ${move.clientY}, button: 0,
+  }))`)
+  await delay(100)
+
+  const resize = await evaluate(`(() => {
+    const lane = document.querySelector('.chord-lane');
+    const block = document.querySelector('.chord-block:not(.chord-preview)');
+    if (!lane || !block) return null;
+    const rect = block.getBoundingClientRect();
+    const startX = rect.right - 2;
+    const endX = startX + 36;
+    const clientY = rect.top + rect.height / 2;
+    lane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 32, clientX: startX, clientY, button: 0 }));
+    return { startX, endX, clientY };
+  })()`)
+  if (!resize) throw new Error('无法缩放和弦区域')
+  await evaluate(`document.querySelector('.chord-lane').dispatchEvent(new PointerEvent('pointermove', {
+    bubbles: true, pointerId: 32, clientX: ${resize.endX}, clientY: ${resize.clientY}, button: 0, buttons: 1,
+  }))`)
+  await evaluate(`document.querySelector('.chord-lane').dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, pointerId: 32, clientX: ${resize.endX}, clientY: ${resize.clientY}, button: 0,
+  }))`)
+  await delay(100)
+  await clickButton('保存')
+  const saved = JSON.parse(await readFile(projectPath, 'utf8'))
+  const region = saved.chordTrack?.regions?.[0]
+  if (saved.schemaVersion !== 2 || region?.startTick !== 2400 || region?.durationTicks !== 1440 || 'label' in region) {
+    throw new Error(`和弦范围保存结果错误：${JSON.stringify({ schemaVersion: saved.schemaVersion, region })}`)
+  }
+
+  await clickButton('切分工具（4）')
+  const split = await evaluate(`(() => {
+    const lane = document.querySelector('.chord-lane');
+    const block = document.querySelector('.chord-block:not(.chord-preview)');
+    if (!lane || !block) return false;
+    const rect = block.getBoundingClientRect();
+    lane.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, pointerId: 33, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0,
+    }));
+    return true;
+  })()`)
+  if (!split) throw new Error('无法切分和弦区域')
+  await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 2`, '切分和弦区域')
+
+  await clickButton('擦除工具（3）')
+  const erasedDuringPointer = await evaluate(`(() => {
+    const lane = document.querySelector('.chord-lane');
+    const block = document.querySelector('.chord-block:not(.chord-preview)');
+    if (!lane || !block) return null;
+    const rect = block.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
+    lane.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 34, clientX, clientY, button: 0 }));
+    return { clientX, clientY };
+  })()`)
+  if (!erasedDuringPointer) throw new Error('无法擦除和弦区域')
+  await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 1`, '和弦擦除实时预览')
+  await evaluate(`document.querySelector('.chord-lane').dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, pointerId: 34, clientX: ${erasedDuringPointer.clientX}, clientY: ${erasedDuringPointer.clientY}, button: 0,
+  }))`)
+  await clickButton('撤销')
+  await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 2`, '撤销和弦擦除')
+
+  await clickButton('选择工具（1）')
+  const selectedFirst = await evaluate(`(() => {
+    const lane = document.querySelector('.chord-lane');
+    const block = document.querySelectorAll('.chord-block:not(.chord-preview)')[0];
+    if (!lane || !block) return false;
+    const rect = block.getBoundingClientRect();
+    const options = { bubbles: true, pointerId: 35, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0 };
+    lane.dispatchEvent(new PointerEvent('pointerdown', options));
+    lane.dispatchEvent(new PointerEvent('pointerup', options));
+    return true;
+  })()`)
+  if (!selectedFirst) throw new Error('无法选择第一个和弦区域')
+  await delay(80)
+  await evaluate(`(() => {
+    const lane = document.querySelector('.chord-lane');
+    const block = document.querySelectorAll('.chord-block:not(.chord-preview)')[1];
+    const rect = block.getBoundingClientRect();
+    const options = { bubbles: true, pointerId: 36, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0, shiftKey: true };
+    lane.dispatchEvent(new PointerEvent('pointerdown', options));
+    lane.dispatchEvent(new PointerEvent('pointerup', options));
+  })()`)
+  await waitFor(`document.body.innerText.includes('已选择 2 个和弦区域')`, '和弦追加多选')
+  await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', ctrlKey: true, bubbles: true }))`)
+  await evaluate(`(() => {
+    const ruler = document.querySelector('.ruler-lane');
+    const rect = ruler.getBoundingClientRect();
+    ruler.dispatchEvent(new MouseEvent('dblclick', {
+      bubbles: true, clientX: rect.left + 58 + (4800 / 960) * 72, clientY: rect.top + 12, button: 0,
+    }));
+  })()`)
+  await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true }))`)
+  await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 4`, '批量粘贴和弦区域')
+  await clickButton('撤销')
+  await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 2`, '撤销批量粘贴')
+  await clickButton('铅笔工具（2）')
+  await clickButton('保存')
+}
+
 async function verifySelectionAndMovePreview() {
   await clickButton('停止')
   await assertSilence(100, '单选前')
@@ -468,6 +614,7 @@ try {
 
   await clickButton('保存')
   await waitForFile(projectPath, '工程保存')
+  await verifyChordTrackEditing(projectPath)
   const draftProject = JSON.parse(await readFile(projectPath, 'utf8'))
   const draftNotes = draftProject.tracks.map((track) => track.notes.map((note) => [note.startTick, note.midiNote]))
   const expectedNotes = [[[0, 72], [480, 74]], [[0, 65], [480, 67]], [[0, 60], [480, 62]], [[0, 48], [480, 50]]]
@@ -476,6 +623,7 @@ try {
   await clickButton('撤销')
   await clickButton('重做')
 
+  await clickButton('回到开头')
   await clickButton('播放')
   await waitFor(`document.querySelector('.engine-status')?.classList.contains('playing') === true`, '播放状态')
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '默认 SF2 加载')
@@ -518,7 +666,7 @@ try {
   const noteCount = project.tracks.reduce((count, track) => count + track.notes.length, 0)
   const midiNoteOns = midi.tracks.flat().filter((event) => event.type === 'noteOn').length
   if (noteCount !== 8) throw new Error(`工程往返音符数错误：${noteCount}`)
-  if (midi.header.format !== 1 || midi.tracks.length !== 5 || midiNoteOns !== 8) {
+  if (midi.header.format !== 1 || midi.tracks.length !== 6 || midiNoteOns !== 8) {
     throw new Error(`MIDI 往返结构错误：format=${midi.header.format} tracks=${midi.tracks.length} noteOns=${midiNoteOns}`)
   }
 

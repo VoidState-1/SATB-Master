@@ -1,8 +1,9 @@
-export const PROJECT_SCHEMA_VERSION = 1
+export const PROJECT_SCHEMA_VERSION = 2
 export const PPQ = 960
 
 export type VoiceId = 'soprano' | 'alto' | 'tenor' | 'bass'
 export type KeyMode = 'major' | 'minor'
+export type NonChordToneRole = 'passing' | 'neighbor' | 'suspension' | 'appoggiatura' | 'anticipation' | 'escape' | 'pedal' | 'other'
 export type ChordQuality =
   | 'major'
   | 'minor'
@@ -21,6 +22,7 @@ export interface NoteEvent {
   midiNote: number
   velocity: number
   locked: boolean
+  nonChordToneRole?: NonChordToneRole
 }
 
 export interface VoiceTrack {
@@ -57,16 +59,27 @@ export interface KeyEvent {
   mode: KeyMode
 }
 
-export interface ChordEvent {
-  id: string
-  startTick: number
-  durationTicks: number
+export interface ChordAnalysis {
   degree: 1 | 2 | 3 | 4 | 5 | 6 | 7
   accidental: -2 | -1 | 0 | 1 | 2
   quality: ChordQuality
   inversion: 0 | 1 | 2 | 3
-  label: string
+  appliedToDegree?: 1 | 2 | 3 | 4 | 5 | 6 | 7
+}
+
+export interface ChordRegion {
+  id: string
+  startTick: number
+  durationTicks: number
+  analysis: ChordAnalysis
   locked: boolean
+}
+
+export interface ChordTrack {
+  visible: boolean
+  locked: boolean
+  displayMode: 'roman' | 'absolute' | 'both'
+  regions: ChordRegion[]
 }
 
 export interface EditableRange {
@@ -91,7 +104,7 @@ export interface ProjectDocument {
   meterEvents: MeterEvent[]
   keyEvents: KeyEvent[]
   tracks: VoiceTrack[]
-  chords: ChordEvent[]
+  chordTrack: ChordTrack
   exercise: {
     instructions: string
     editableRanges: EditableRange[]
@@ -167,7 +180,12 @@ export function createEmptyProject(title = '未命名练习'): ProjectDocument {
       createTrack('tenor', 52),
       createTrack('bass', 53),
     ],
-    chords: [],
+    chordTrack: {
+      visible: true,
+      locked: false,
+      displayMode: 'roman',
+      regions: [],
+    },
     exercise: { instructions: '', editableRanges: [] },
     audio: {
       masterVolume: 0.78,
@@ -191,7 +209,7 @@ export function normalizeProject(project: ProjectDocument): ProjectDocument {
   normalized.tempoEvents.sort((a, b) => a.tick - b.tick)
   normalized.meterEvents.sort((a, b) => a.tick - b.tick)
   normalized.keyEvents.sort((a, b) => a.tick - b.tick)
-  normalized.chords.sort((a, b) => a.startTick - b.startTick)
+  normalized.chordTrack.regions.sort((a, b) => a.startTick - b.startTick)
   normalized.tracks.forEach((track) => track.notes.sort((a, b) => a.startTick - b.startTick || a.midiNote - b.midiNote))
   return normalized
 }
@@ -220,11 +238,16 @@ function validateNote(value: unknown) {
     && isInteger(value.midiNote, 0, 127)
     && isInteger(value.velocity, 1, 127)
     && typeof value.locked === 'boolean'
+    && (value.nonChordToneRole === undefined || nonChordToneRoles.has(value.nonChordToneRole as NonChordToneRole))
 }
 
 const chordQualities = new Set<ChordQuality>([
   'major', 'minor', 'diminished', 'augmented', 'dominant7',
   'major7', 'minor7', 'halfDiminished7', 'diminished7',
+])
+
+const nonChordToneRoles = new Set<NonChordToneRole>([
+  'passing', 'neighbor', 'suspension', 'appoggiatura', 'anticipation', 'escape', 'pedal', 'other',
 ])
 
 function validateTrack(value: unknown) {
@@ -238,16 +261,23 @@ function validateTrack(value: unknown) {
     && isInteger(value.program, 0, 127)
 }
 
-function validateChord(value: unknown) {
+function validateChordAnalysis(value: unknown) {
   if (!isRecord(value)) return false
-  return hasString(value, 'id')
-    && hasString(value, 'label')
-    && isInteger(value.startTick, 0)
-    && isInteger(value.durationTicks, 1)
-    && isInteger(value.degree, 1, 7)
+  const inversionLimit = ['dominant7', 'major7', 'minor7', 'halfDiminished7', 'diminished7'].includes(value.quality as string) ? 3 : 2
+  return isInteger(value.degree, 1, 7)
     && isInteger(value.accidental, -2, 2)
     && chordQualities.has(value.quality as ChordQuality)
-    && isInteger(value.inversion, 0, 3)
+    && isInteger(value.inversion, 0, inversionLimit)
+    && (value.appliedToDegree === undefined || isInteger(value.appliedToDegree, 1, 7))
+}
+
+function validateChordRegion(value: unknown, projectLength: number) {
+  if (!isRecord(value)) return false
+  return hasString(value, 'id')
+    && isInteger(value.startTick, 0)
+    && isInteger(value.durationTicks, 1)
+    && (value.startTick as number) + (value.durationTicks as number) <= projectLength
+    && validateChordAnalysis(value.analysis)
     && typeof value.locked === 'boolean'
 }
 
@@ -278,7 +308,17 @@ export function validateProject(value: unknown): value is ProjectDocument {
       && isInteger(event.tonic, 0, 11) && (event.mode === 'major' || event.mode === 'minor')
   ))) return false
   if (!project.keyEvents.some((event) => isRecord(event) && event.tick === 0)) return false
-  if (!Array.isArray(project.chords) || !project.chords.every(validateChord)) return false
+  if (!isRecord(project.chordTrack)
+    || typeof project.chordTrack.visible !== 'boolean'
+    || typeof project.chordTrack.locked !== 'boolean'
+    || !['roman', 'absolute', 'both'].includes(project.chordTrack.displayMode as string)
+    || !Array.isArray(project.chordTrack.regions)
+    || !project.chordTrack.regions.every((region) => validateChordRegion(region, project.lengthTicks as number))) return false
+  const orderedChords = [...project.chordTrack.regions].sort((a, b) => (
+    (a as ChordRegion).startTick - (b as ChordRegion).startTick
+  )) as ChordRegion[]
+  if (orderedChords.some((region, index) => index > 0
+    && orderedChords[index - 1].startTick + orderedChords[index - 1].durationTicks > region.startTick)) return false
 
   if (!isRecord(project.exercise) || typeof project.exercise.instructions !== 'string' || !Array.isArray(project.exercise.editableRanges)) return false
   if (!project.exercise.editableRanges.every((range) => isRecord(range)
@@ -296,4 +336,33 @@ export function validateProject(value: unknown): value is ProjectDocument {
   if (soundFont.path !== undefined && typeof soundFont.path !== 'string') return false
   if (soundFont.hash !== undefined && typeof soundFont.hash !== 'string') return false
   return true
+}
+
+export function migrateProject(value: unknown): ProjectDocument | undefined {
+  if (validateProject(value)) return normalizeProject(value)
+  if (!isRecord(value) || value.schemaVersion !== 1 || !Array.isArray(value.chords)) return undefined
+
+  const migrated = structuredClone(value) as Record<string, unknown>
+  const regions = value.chords.map((candidate) => {
+    if (!isRecord(candidate)) return candidate
+    return {
+      id: candidate.id,
+      startTick: candidate.startTick,
+      durationTicks: candidate.durationTicks,
+      analysis: {
+        degree: candidate.degree,
+        accidental: candidate.accidental,
+        quality: candidate.quality,
+        inversion: candidate.inversion,
+      },
+      locked: candidate.locked,
+    }
+  })
+
+  // v1 的 label 是可自由编辑的重复信息；迁移后名称统一由结构和调性重新计算。
+  migrated.schemaVersion = PROJECT_SCHEMA_VERSION
+  migrated.chordTrack = { visible: true, locked: false, displayMode: 'roman', regions }
+  delete migrated.chords
+  if (!validateProject(migrated)) return undefined
+  return normalizeProject(migrated)
 }

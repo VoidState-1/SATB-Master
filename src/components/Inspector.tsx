@@ -1,9 +1,11 @@
 import { useEffect, useState, type InputHTMLAttributes } from 'react'
 import { FolderOpen, Lock, LockOpen, Plus, Trash2 } from 'lucide-react'
+import { formatChord, formatChordRegion, isSeventhChord } from '../domain/chords'
 import {
   KEY_NAMES,
   VOICE_CONFIG,
-  type ChordEvent,
+  type ChordAnalysis,
+  type ChordRegion,
   type ChordQuality,
   type EditableRange,
   type KeyMode,
@@ -11,7 +13,8 @@ import {
   type ProjectDocument,
   type VoiceId,
 } from '../domain/model'
-import { formatPosition } from '../domain/time'
+import type { ChordRegionPatch } from '../domain/editing'
+import { formatPosition, keyAtTick } from '../domain/time'
 import { IconButton } from './IconButton'
 
 type InspectorTab = 'selection' | 'project' | 'sound'
@@ -45,7 +48,10 @@ interface InspectorProps {
   project: ProjectDocument
   activeVoice: VoiceId
   selectedNote?: { voiceId: VoiceId; note: NoteEvent }
-  selectedChord?: ChordEvent
+  selectedChord?: ChordRegion
+  selectedChordIds: Set<string>
+  selectedChordCount: number
+  chordBrush: ChordAnalysis
   playheadTick: number
   audioStatus: string
   onUpdateProject(patch: Partial<Pick<ProjectDocument, 'title' | 'author' | 'notes' | 'lengthTicks'>>): void
@@ -54,8 +60,10 @@ interface InspectorProps {
   onUpdateEditableRange(rangeId: string, patch: Partial<EditableRange>): void
   onDeleteEditableRange(rangeId: string): void
   onUpdateNote(voiceId: VoiceId, noteId: string, patch: Partial<NoteEvent>): void
-  onUpdateChord(chordId: string, patch: Partial<ChordEvent>): void
-  onDeleteChord(chordId: string): void
+  onUpdateChord(chordId: string, patch: ChordRegionPatch): void
+  onDeleteChords(chordIds: Set<string>): void
+  onUpdateChordBrush(patch: Partial<ChordAnalysis>): void
+  onUpdateChordTrack(patch: Partial<Pick<ProjectDocument['chordTrack'], 'visible' | 'locked' | 'displayMode'>>): void
   onAddTimingEvent(type: 'tempo' | 'meter' | 'key'): void
   onUpdateTimingEvent(type: 'tempo' | 'meter' | 'key', id: string, patch: Record<string, string | number>): void
   onDeleteTimingEvent(type: 'tempo' | 'meter' | 'key', id: string): void
@@ -77,11 +85,62 @@ const qualityOptions: Array<{ value: ChordQuality; label: string }> = [
   { value: 'diminished7', label: '减七和弦' },
 ]
 
+const nonChordToneOptions = [
+  ['passing', '经过音'], ['neighbor', '辅助音'], ['suspension', '延留音'], ['appoggiatura', '倚音'],
+  ['anticipation', '先现音'], ['escape', '逃逸音'], ['pedal', '持续音'], ['other', '其他'],
+] as const
+
+function ChordAnalysisEditor({ analysis, onChange }: {
+  analysis: ChordAnalysis
+  onChange(patch: Partial<ChordAnalysis>): void
+}) {
+  const maximumInversion = isSeventhChord(analysis.quality) ? 3 : 2
+  return (
+    <>
+      <label><span>级数</span>
+        <select value={analysis.degree} onChange={(event) => onChange({ degree: Number(event.target.value) as ChordAnalysis['degree'] })}>
+          {[1, 2, 3, 4, 5, 6, 7].map((degree) => <option key={degree} value={degree}>{degree}</option>)}
+        </select>
+      </label>
+      <label><span>变化音</span>
+        <select value={analysis.accidental} onChange={(event) => onChange({ accidental: Number(event.target.value) as ChordAnalysis['accidental'] })}>
+          <option value="-2">重降</option><option value="-1">降</option><option value="0">无</option><option value="1">升</option><option value="2">重升</option>
+        </select>
+      </label>
+      <label><span>性质</span>
+        <select value={analysis.quality} onChange={(event) => {
+          const quality = event.target.value as ChordQuality
+          onChange({ quality, inversion: Math.min(analysis.inversion, isSeventhChord(quality) ? 3 : 2) as ChordAnalysis['inversion'] })
+        }}>
+          {qualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </label>
+      <label><span>转位</span>
+        <select value={analysis.inversion} onChange={(event) => onChange({ inversion: Number(event.target.value) as ChordAnalysis['inversion'] })}>
+          <option value="0">原位</option><option value="1">第一转位</option><option value="2">第二转位</option>
+          {maximumInversion === 3 ? <option value="3">第三转位</option> : null}
+        </select>
+      </label>
+      <label><span>副属目标</span>
+        <select value={analysis.appliedToDegree ?? ''} onChange={(event) => onChange({
+          appliedToDegree: event.target.value ? Number(event.target.value) as ChordAnalysis['appliedToDegree'] : undefined,
+        })}>
+          <option value="">无</option>
+          {[1, 2, 3, 4, 5, 6, 7].map((degree) => <option key={degree} value={degree}>{degree} 级</option>)}
+        </select>
+      </label>
+    </>
+  )
+}
+
 export function Inspector({
   project,
   activeVoice,
   selectedNote,
   selectedChord,
+  selectedChordIds,
+  selectedChordCount,
+  chordBrush,
   playheadTick,
   audioStatus,
   onUpdateProject,
@@ -91,7 +150,9 @@ export function Inspector({
   onDeleteEditableRange,
   onUpdateNote,
   onUpdateChord,
-  onDeleteChord,
+  onDeleteChords,
+  onUpdateChordBrush,
+  onUpdateChordTrack,
   onAddTimingEvent,
   onUpdateTimingEvent,
   onDeleteTimingEvent,
@@ -119,6 +180,17 @@ export function Inspector({
             <label><span>起点（tick）</span><CommitField type="number" min="0" value={selectedNote.note.startTick} onCommit={(value) => onUpdateNote(selectedNote.voiceId, selectedNote.note.id, { startTick: Number(value) })} /></label>
             <label><span>时值（tick）</span><CommitField type="number" min="1" value={selectedNote.note.durationTicks} onCommit={(value) => onUpdateNote(selectedNote.voiceId, selectedNote.note.id, { durationTicks: Number(value) })} /></label>
             <label><span>力度</span><CommitField type="number" min="1" max="127" value={selectedNote.note.velocity} onCommit={(value) => onUpdateNote(selectedNote.voiceId, selectedNote.note.id, { velocity: Number(value) })} /></label>
+            <label><span>非和弦音角色</span>
+              <select
+                value={selectedNote.note.nonChordToneRole ?? ''}
+                onChange={(event) => onUpdateNote(selectedNote.voiceId, selectedNote.note.id, {
+                  nonChordToneRole: event.target.value ? event.target.value as NoteEvent['nonChordToneRole'] : undefined,
+                })}
+              >
+                <option value="">未标注</option>
+                {nonChordToneOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
             <button type="button" className="command-button" onClick={() => onUpdateNote(selectedNote.voiceId, selectedNote.note.id, { locked: !selectedNote.note.locked })}>
               {selectedNote.note.locked ? <LockOpen /> : <Lock />}{selectedNote.note.locked ? '解锁音符' : '锁定音符'}
             </button>
@@ -127,39 +199,41 @@ export function Inspector({
 
         {tab === 'selection' && selectedChord ? (
           <section className="property-section">
-            <header>和弦 · {selectedChord.label}</header>
-            <label><span>显示名称</span><CommitField value={selectedChord.label} onCommit={(value) => onUpdateChord(selectedChord.id, { label: value || 'I' })} /></label>
-            <label><span>级数</span>
-              <select value={selectedChord.degree} onChange={(event) => onUpdateChord(selectedChord.id, { degree: Number(event.target.value) as ChordEvent['degree'] })}>
-                {[1, 2, 3, 4, 5, 6, 7].map((degree) => <option key={degree} value={degree}>{degree}</option>)}
-              </select>
-            </label>
-            <label><span>性质</span>
-              <select value={selectedChord.quality} onChange={(event) => onUpdateChord(selectedChord.id, { quality: event.target.value as ChordQuality })}>
-                {qualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </label>
-            <label><span>转位</span>
-              <select value={selectedChord.inversion} onChange={(event) => onUpdateChord(selectedChord.id, { inversion: Number(event.target.value) as ChordEvent['inversion'] })}>
-                <option value="0">原位</option><option value="1">第一转位</option><option value="2">第二转位</option><option value="3">第三转位</option>
-              </select>
-            </label>
+            <header>和弦 · {formatChordRegion(project, selectedChord).roman}</header>
+            <div className="computed-chord-name">
+              <strong>{formatChordRegion(project, selectedChord).roman}</strong>
+              <span>{formatChordRegion(project, selectedChord).absolute}</span>
+              <small>{formatChordRegion(project, selectedChord).functionLabel}</small>
+            </div>
+            <ChordAnalysisEditor analysis={selectedChord.analysis} onChange={(patch) => onUpdateChord(selectedChord.id, { analysis: patch })} />
             <label><span>起点</span><CommitField type="number" min="0" value={selectedChord.startTick} onCommit={(value) => onUpdateChord(selectedChord.id, { startTick: Number(value) })} /></label>
             <label><span>时值</span><CommitField type="number" min="1" value={selectedChord.durationTicks} onCommit={(value) => onUpdateChord(selectedChord.id, { durationTicks: Number(value) })} /></label>
             <div className="inline-commands">
               <button type="button" className="command-button" onClick={() => onUpdateChord(selectedChord.id, { locked: !selectedChord.locked })}>
                 {selectedChord.locked ? <LockOpen /> : <Lock />}{selectedChord.locked ? '解锁' : '锁定'}
               </button>
-              <button type="button" className="command-button danger" disabled={selectedChord.locked} onClick={() => onDeleteChord(selectedChord.id)}><Trash2 />删除</button>
+              <button type="button" className="command-button danger" disabled={selectedChord.locked} onClick={() => onDeleteChords(new Set([selectedChord.id]))}><Trash2 />删除</button>
             </div>
           </section>
         ) : null}
 
-        {tab === 'selection' && !selectedNote && !selectedChord ? (
-          <section className="empty-inspector">
-            <span>{formatPosition(project, playheadTick)}</span>
-            <strong>未选择事件</strong>
-            <p>在卷帘中选择音符，或选择和弦轨事件。</p>
+        {tab === 'selection' && !selectedNote && !selectedChord && selectedChordCount > 1 ? (
+          <section className="property-section">
+            <header>已选择 {selectedChordCount} 个和弦区域</header>
+            <p className="property-hint">移动、复制、粘贴和删除会作为一次操作处理。</p>
+            <button type="button" className="command-button danger" onClick={() => onDeleteChords(selectedChordIds)}><Trash2 />删除选中区域</button>
+          </section>
+        ) : null}
+
+        {tab === 'selection' && !selectedNote && !selectedChord && selectedChordCount === 0 ? (
+          <section className="property-section">
+            <header>当前和弦画笔</header>
+            <div className="computed-chord-name">
+              <strong>{formatChord(chordBrush, keyAtTick(project.keyEvents, playheadTick)).roman}</strong>
+              <span>{formatChord(chordBrush, keyAtTick(project.keyEvents, playheadTick)).absolute}</span>
+            </div>
+            <ChordAnalysisEditor analysis={chordBrush} onChange={onUpdateChordBrush} />
+            <p className="property-hint">铅笔工具将在和弦轨中使用这组结构。</p>
           </section>
         ) : null}
 
@@ -171,6 +245,26 @@ export function Inspector({
               <label><span>作者</span><CommitField value={project.author} onCommit={(value) => onUpdateProject({ author: value })} /></label>
               <label><span>总长度（tick）</span><CommitField type="number" min={project.ppq * 4} value={project.lengthTicks} onCommit={(value) => onUpdateProject({ lengthTicks: Number(value) })} /></label>
               <label className="stacked"><span>练习说明</span><textarea value={project.exercise.instructions} onChange={(event) => onUpdateInstructions(event.target.value)} placeholder="例如：给定低音，完成其余三个声部" /></label>
+            </section>
+
+            <section className="property-section">
+              <header>和弦轨</header>
+              <label><span>显示方式</span>
+                <select value={project.chordTrack.displayMode} onChange={(event) => onUpdateChordTrack({
+                  displayMode: event.target.value as ProjectDocument['chordTrack']['displayMode'],
+                })}>
+                  <option value="roman">罗马数字</option>
+                  <option value="absolute">绝对和弦</option>
+                  <option value="both">两者</option>
+                </select>
+              </label>
+              <label className="toggle-row">
+                <span>显示和弦区域</span>
+                <input type="checkbox" checked={project.chordTrack.visible} onChange={(event) => onUpdateChordTrack({ visible: event.target.checked })} />
+              </label>
+              <button type="button" className="command-button" onClick={() => onUpdateChordTrack({ locked: !project.chordTrack.locked })}>
+                {project.chordTrack.locked ? <LockOpen /> : <Lock />}{project.chordTrack.locked ? '解锁和弦轨' : '锁定和弦轨'}
+              </button>
             </section>
 
             <section className="property-section range-section">

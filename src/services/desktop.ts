@@ -1,4 +1,4 @@
-import { normalizeProject, validateProject, type ProjectDocument } from '../domain/model'
+import { migrateProject, type ProjectDocument } from '../domain/model'
 
 const BROWSER_PROJECT_KEY = 'satb-master-browser-project'
 
@@ -6,15 +6,16 @@ export async function openProject(): Promise<{ project: ProjectDocument; filePat
   if (window.desktop) {
     const result = await window.desktop.project.open()
     if (result.canceled) return undefined
-    if (!validateProject(result.project)) throw new Error('所选文件不是受支持的 SATB 工程')
-    return { project: normalizeProject(result.project), filePath: result.filePath }
+    const project = migrateProject(result.project)
+    if (!project) throw new Error('所选文件不是受支持的 SATB 工程')
+    return { project, filePath: result.filePath }
   }
 
   const raw = localStorage.getItem(BROWSER_PROJECT_KEY)
   if (!raw) throw new Error('浏览器预览中还没有保存的工程')
-  const project = JSON.parse(raw) as unknown
-  if (!validateProject(project)) throw new Error('浏览器中的工程数据无效')
-  return { project: normalizeProject(project) }
+  const project = migrateProject(JSON.parse(raw) as unknown)
+  if (!project) throw new Error('浏览器中的工程数据无效')
+  return { project }
 }
 
 export async function saveProject(project: ProjectDocument, currentPath?: string, forceDialog = false) {
@@ -57,11 +58,12 @@ export async function findRecovery(): Promise<{
         return raw ? { available: true, ...JSON.parse(raw) as Record<string, unknown> } : { available: false }
       })()
   if (!result.available) return undefined
-  if (typeof result.savedAt !== 'string' || !validateProject(result.project)) throw new Error('自动恢复文件无效')
+  const project = migrateProject(result.project)
+  if (typeof result.savedAt !== 'string' || !project) throw new Error('自动恢复文件无效')
   return {
     savedAt: result.savedAt,
     sourcePath: typeof result.sourcePath === 'string' ? result.sourcePath : undefined,
-    project: normalizeProject(result.project),
+    project,
   }
 }
 

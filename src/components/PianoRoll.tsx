@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buildMeasures, snapTickBackward, snapTickForward } from '../domain/time'
+import { formatChord, formatChordRegion } from '../domain/chords'
+import type { ChordRegionPatch } from '../domain/editing'
+import { buildMeasures, keyAtTick, snapTickBackward, snapTickForward } from '../domain/time'
 import {
   KEY_NAMES,
   VOICE_CONFIG,
-  type ChordEvent,
+  type ChordRegion,
+  type ChordAnalysis,
   type NoteEvent,
   type ProjectDocument,
   type VoiceId,
@@ -19,19 +22,24 @@ interface PianoRollProps {
   gridTicks: number
   pixelsPerBeat: number
   selectedNoteIds: Set<string>
-  selectedChordId?: string
+  selectedChordIds: Set<string>
+  chordBrush: ChordAnalysis
   diagnostics: HarmonyDiagnostic[]
   playheadTick: number
   onSetPlayhead(tick: number): void
   onSelectNotes(noteIds: Set<string>): void
   onPreviewNote(voiceId: VoiceId, midiNote: number): void
-  onSelectChord(chordId?: string): void
+  onSelectChords(chordIds: Set<string>): void
   onAddNote(voiceId: VoiceId, tick: number, midiNote: number, durationTicks?: number): void
   onUpdateNote(voiceId: VoiceId, noteId: string, patch: Partial<NoteEvent>): void
   onMoveNotes(noteIds: Set<string>, tickDelta: number, pitchDelta: number): void
   onDeleteNotes(noteIds: Set<string>): void
   onSplitNote(voiceId: VoiceId, noteId: string, splitTick: number): void
-  onAddChord(tick: number): void
+  onAddChord(tick: number, durationTicks: number): void
+  onUpdateChord(chordId: string, patch: ChordRegionPatch): void
+  onMoveChords(chordIds: Set<string>, tickDelta: number): void
+  onDeleteChords(chordIds: Set<string>): void
+  onSplitChord(chordId: string, splitTick: number): void
 }
 
 const MIN_MIDI = 36
@@ -90,6 +98,48 @@ interface PanInteraction {
 
 type PointerInteraction = NoteInteraction | MarqueeInteraction | DrawInteraction | EraseInteraction | PanInteraction
 
+interface ChordDrawInteraction {
+  kind: 'draw'
+  originRawTick: number
+  nextStartTick: number
+  nextDurationTicks: number
+}
+
+interface ChordMoveInteraction {
+  kind: 'move'
+  chordId: string
+  selectedIds: string[]
+  originX: number
+  tickDelta: number
+}
+
+interface ChordResizeInteraction {
+  kind: 'resize-left' | 'resize-right'
+  chordId: string
+  originStartTick: number
+  originDurationTicks: number
+  nextStartTick: number
+  nextDurationTicks: number
+}
+
+interface ChordEraseInteraction {
+  kind: 'erase'
+  chordIds: Set<string>
+}
+
+interface ChordMarqueeInteraction {
+  kind: 'marquee'
+  originX: number
+  currentX: number
+  append: boolean
+}
+
+interface ChordPanInteraction extends Omit<PanInteraction, 'kind'> {
+  kind: 'pan'
+}
+
+type ChordInteraction = ChordDrawInteraction | ChordMoveInteraction | ChordResizeInteraction | ChordEraseInteraction | ChordMarqueeInteraction | ChordPanInteraction
+
 function isBlackKey(midiNote: number) {
   return [1, 3, 6, 8, 10].includes(((midiNote % 12) + 12) % 12)
 }
@@ -106,23 +156,29 @@ export function PianoRoll({
   gridTicks,
   pixelsPerBeat,
   selectedNoteIds,
-  selectedChordId,
+  selectedChordIds,
+  chordBrush,
   diagnostics,
   playheadTick,
   onSetPlayhead,
   onSelectNotes,
   onPreviewNote,
-  onSelectChord,
+  onSelectChords,
   onAddNote,
   onUpdateNote,
   onMoveNotes,
   onDeleteNotes,
   onSplitNote,
   onAddChord,
+  onUpdateChord,
+  onMoveChords,
+  onDeleteChords,
+  onSplitChord,
 }: PianoRollProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [interaction, setInteraction] = useState<PointerInteraction>()
+  const [chordInteraction, setChordInteraction] = useState<ChordInteraction>()
   const measures = useMemo(() => buildMeasures(project), [project])
   const rollHeight = (MAX_MIDI - MIN_MIDI + 1) * ROW_HEIGHT
   const timelineWidth = Math.max(920, (project.lengthTicks / project.ppq) * pixelsPerBeat)
@@ -323,6 +379,81 @@ export function PianoRoll({
 
   const snapStartTick = (x: number) => snapTickBackward(rawTickAtX(x), gridTicks, project.lengthTicks - gridTicks)
 
+  const chordAtX = (x: number) => {
+    if (!project.chordTrack.visible) return undefined
+    const tick = rawTickAtX(x)
+    return [...project.chordTrack.regions].reverse().find((region) => (
+      region.startTick <= tick && region.startTick + region.durationTicks > tick
+    ))
+  }
+
+  const keyBoundsAtTick = (tick: number) => {
+    let startTick = 0
+    let endTick = project.lengthTicks
+    for (const event of project.keyEvents) {
+      if (event.tick <= tick) startTick = event.tick
+      else {
+        endTick = event.tick
+        break
+      }
+    }
+    return { startTick, endTick }
+  }
+
+  const chordSlotAtTick = (tick: number) => {
+    const keyBounds = keyBoundsAtTick(tick)
+    let startTick = keyBounds.startTick
+    let endTick = keyBounds.endTick
+    project.chordTrack.regions.forEach((region) => {
+      const regionEnd = region.startTick + region.durationTicks
+      if (regionEnd <= tick) startTick = Math.max(startTick, regionEnd)
+      if (region.startTick > tick) endTick = Math.min(endTick, region.startTick)
+    })
+    return { startTick, endTick }
+  }
+
+  const chordMoveBounds = (ids: Set<string>) => {
+    let minimum = Number.NEGATIVE_INFINITY
+    let maximum = Number.POSITIVE_INFINITY
+    const fixed = project.chordTrack.regions.filter((region) => !ids.has(region.id))
+    project.chordTrack.regions.filter((region) => ids.has(region.id)).forEach((region) => {
+      const endTick = region.startTick + region.durationTicks
+      const keyBounds = keyBoundsAtTick(region.startTick)
+      let leftBoundary = keyBounds.startTick
+      let rightBoundary = keyBounds.endTick
+      fixed.forEach((candidate) => {
+        const candidateEnd = candidate.startTick + candidate.durationTicks
+        if (candidateEnd <= region.startTick) leftBoundary = Math.max(leftBoundary, candidateEnd)
+        if (candidate.startTick >= endTick) rightBoundary = Math.min(rightBoundary, candidate.startTick)
+      })
+      minimum = Math.max(minimum, leftBoundary - region.startTick)
+      maximum = Math.min(maximum, rightBoundary - endTick)
+    })
+    return {
+      minimum: Number.isFinite(minimum) ? minimum : 0,
+      maximum: Number.isFinite(maximum) ? maximum : 0,
+    }
+  }
+
+  const chordRects = (project.chordTrack.visible ? project.chordTrack.regions : [])
+    .filter((region) => chordInteraction?.kind !== 'erase' || !chordInteraction.chordIds.has(region.id))
+    .map((region) => {
+      const moving = chordInteraction?.kind === 'move' && chordInteraction.selectedIds.includes(region.id)
+      const resizing = (chordInteraction?.kind === 'resize-left' || chordInteraction?.kind === 'resize-right')
+        && chordInteraction.chordId === region.id
+      const startTick = moving
+        ? region.startTick + chordInteraction.tickDelta
+        : resizing ? chordInteraction.nextStartTick : region.startTick
+      const durationTicks = resizing ? chordInteraction.nextDurationTicks : region.durationTicks
+      return {
+        region,
+        startTick,
+        durationTicks,
+        x: PIANO_WIDTH + (startTick / project.ppq) * pixelsPerBeat,
+        width: Math.max(5, (durationTicks / project.ppq) * pixelsPerBeat - 2),
+      }
+    })
+
   const midiAtY = (y: number) => Math.max(MIN_MIDI, Math.min(MAX_MIDI, MAX_MIDI - Math.floor((y - HEADER_HEIGHT) / ROW_HEIGHT)))
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -370,7 +501,7 @@ export function PianoRoll({
     }
 
     if (!hit) {
-      onSelectChord(undefined)
+      onSelectChords(new Set())
       event.currentTarget.setPointerCapture(event.pointerId)
       setInteraction({
         kind: 'marquee',
@@ -387,7 +518,7 @@ export function PianoRoll({
     if (event.shiftKey && nextSelection.has(hit.note.id)) nextSelection.delete(hit.note.id)
     else nextSelection.add(hit.note.id)
     onSelectNotes(nextSelection)
-    onSelectChord(undefined)
+    onSelectChords(new Set())
     if (!nextSelection.has(hit.note.id)) return
     event.currentTarget.setPointerCapture(event.pointerId)
     const resize = point.x >= hit.x + hit.width - 7
@@ -510,6 +641,179 @@ export function PianoRoll({
     setInteraction(undefined)
   }
 
+  const chordPointX = (event: React.PointerEvent<HTMLDivElement>) => (
+    event.clientX - event.currentTarget.getBoundingClientRect().left
+  )
+
+  const handleChordPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button === 1) {
+      const scroll = scrollRef.current
+      if (!scroll) return
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      setChordInteraction({
+        kind: 'pan',
+        originClientX: event.clientX,
+        originClientY: event.clientY,
+        originScrollLeft: scroll.scrollLeft,
+        originScrollTop: scroll.scrollTop,
+      })
+      return
+    }
+    if (event.button !== 0) return
+    const x = chordPointX(event)
+    const hit = chordAtX(x)
+
+    if (tool === 'eraser') {
+      event.currentTarget.setPointerCapture(event.pointerId)
+      setChordInteraction({ kind: 'erase', chordIds: new Set(hit && !hit.locked && !project.chordTrack.locked ? [hit.id] : []) })
+      return
+    }
+    if (tool === 'pencil') {
+      if (hit || project.chordTrack.locked) return
+      const originRawTick = rawTickAtX(x)
+      const slot = chordSlotAtTick(originRawTick)
+      const startTick = Math.max(slot.startTick, snapTickBackward(originRawTick, gridTicks, project.lengthTicks - gridTicks))
+      const endTick = Math.min(slot.endTick, startTick + gridTicks)
+      if (endTick <= startTick) return
+      event.currentTarget.setPointerCapture(event.pointerId)
+      setChordInteraction({ kind: 'draw', originRawTick, nextStartTick: startTick, nextDurationTicks: endTick - startTick })
+      return
+    }
+    if (tool === 'split') {
+      if (hit) onSplitChord(hit.id, snapStartTick(x))
+      return
+    }
+
+    if (!hit) {
+      event.currentTarget.setPointerCapture(event.pointerId)
+      setChordInteraction({ kind: 'marquee', originX: x, currentX: x, append: event.shiftKey })
+      return
+    }
+
+    const nextSelection = selectedChordIds.has(hit.id)
+      ? new Set(selectedChordIds)
+      : event.shiftKey ? new Set(selectedChordIds) : new Set<string>()
+    if (event.shiftKey && nextSelection.has(hit.id)) nextSelection.delete(hit.id)
+    else nextSelection.add(hit.id)
+    onSelectChords(nextSelection)
+    onSetPlayhead(hit.startTick)
+    if (!nextSelection.has(hit.id) || hit.locked || project.chordTrack.locked) return
+
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const rect = chordRects.find((candidate) => candidate.region.id === hit.id)
+    const nearLeft = nextSelection.size === 1 && rect && x <= rect.x + 7
+    const nearRight = nextSelection.size === 1 && rect && x >= rect.x + rect.width - 7
+    if (nearLeft || nearRight) {
+      setChordInteraction({
+        kind: nearLeft ? 'resize-left' : 'resize-right',
+        chordId: hit.id,
+        originStartTick: hit.startTick,
+        originDurationTicks: hit.durationTicks,
+        nextStartTick: hit.startTick,
+        nextDurationTicks: hit.durationTicks,
+      })
+    } else {
+      setChordInteraction({ kind: 'move', chordId: hit.id, selectedIds: [...nextSelection], originX: x, tickDelta: 0 })
+    }
+  }
+
+  const handleChordPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!chordInteraction) return
+    if (chordInteraction.kind === 'pan') {
+      const scroll = scrollRef.current
+      if (scroll) {
+        scroll.scrollLeft = chordInteraction.originScrollLeft - (event.clientX - chordInteraction.originClientX)
+        scroll.scrollTop = chordInteraction.originScrollTop - (event.clientY - chordInteraction.originClientY)
+      }
+      return
+    }
+    const x = chordPointX(event)
+    if (chordInteraction.kind === 'erase') {
+      const hit = chordAtX(x)
+      if (hit && !hit.locked && !project.chordTrack.locked && !chordInteraction.chordIds.has(hit.id)) {
+        const chordIds = new Set(chordInteraction.chordIds)
+        chordIds.add(hit.id)
+        setChordInteraction({ ...chordInteraction, chordIds })
+      }
+      return
+    }
+    if (chordInteraction.kind === 'marquee') {
+      setChordInteraction({ ...chordInteraction, currentX: x })
+      return
+    }
+    if (chordInteraction.kind === 'draw') {
+      const currentRawTick = rawTickAtX(x)
+      const slot = chordSlotAtTick(chordInteraction.originRawTick)
+      const startTick = Math.max(slot.startTick, snapTickBackward(
+        Math.min(chordInteraction.originRawTick, currentRawTick), gridTicks, project.lengthTicks - gridTicks,
+      ))
+      const endTick = Math.min(slot.endTick, Math.max(
+        startTick + gridTicks,
+        snapTickForward(Math.max(chordInteraction.originRawTick, currentRawTick), gridTicks, project.lengthTicks),
+      ))
+      setChordInteraction({ ...chordInteraction, nextStartTick: startTick, nextDurationTicks: Math.max(0, endTick - startTick) })
+      return
+    }
+    if (chordInteraction.kind === 'move') {
+      const requested = Math.round((((x - chordInteraction.originX) / pixelsPerBeat) * project.ppq) / gridTicks) * gridTicks
+      const bounds = chordMoveBounds(new Set(chordInteraction.selectedIds))
+      setChordInteraction({ ...chordInteraction, tickDelta: Math.max(bounds.minimum, Math.min(bounds.maximum, requested)) })
+      return
+    }
+
+    const region = project.chordTrack.regions.find((candidate) => candidate.id === chordInteraction.chordId)
+    if (!region) return
+    const keyBounds = keyBoundsAtTick(region.startTick)
+    const previous = [...project.chordTrack.regions]
+      .filter((candidate) => candidate.id !== region.id && candidate.startTick + candidate.durationTicks <= region.startTick)
+      .at(-1)
+    const next = project.chordTrack.regions.find((candidate) => candidate.id !== region.id && candidate.startTick >= region.startTick + region.durationTicks)
+    const originalEnd = region.startTick + region.durationTicks
+    if (chordInteraction.kind === 'resize-left') {
+      const minimum = Math.max(keyBounds.startTick, previous ? previous.startTick + previous.durationTicks : 0)
+      const maximum = originalEnd - gridTicks
+      const startTick = Math.max(minimum, Math.min(maximum, snapTickBackward(rawTickAtX(x), gridTicks, maximum)))
+      setChordInteraction({ ...chordInteraction, nextStartTick: startTick, nextDurationTicks: originalEnd - startTick })
+    } else {
+      const maximum = Math.min(keyBounds.endTick, next?.startTick ?? project.lengthTicks)
+      const endTick = Math.max(region.startTick + gridTicks, Math.min(maximum, snapTickForward(rawTickAtX(x), gridTicks, maximum)))
+      setChordInteraction({ ...chordInteraction, nextStartTick: region.startTick, nextDurationTicks: endTick - region.startTick })
+    }
+  }
+
+  const finishChordInteraction = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!chordInteraction) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (chordInteraction.kind === 'draw' && chordInteraction.nextDurationTicks > 0) {
+      onAddChord(chordInteraction.nextStartTick, chordInteraction.nextDurationTicks)
+    } else if (chordInteraction.kind === 'erase' && chordInteraction.chordIds.size > 0) {
+      onDeleteChords(chordInteraction.chordIds)
+    } else if (chordInteraction.kind === 'move' && chordInteraction.tickDelta !== 0) {
+      onMoveChords(new Set(chordInteraction.selectedIds), chordInteraction.tickDelta)
+    } else if ((chordInteraction.kind === 'resize-left' || chordInteraction.kind === 'resize-right')
+      && (chordInteraction.nextStartTick !== chordInteraction.originStartTick
+        || chordInteraction.nextDurationTicks !== chordInteraction.originDurationTicks)) {
+      onUpdateChord(chordInteraction.chordId, {
+        startTick: chordInteraction.nextStartTick,
+        durationTicks: chordInteraction.nextDurationTicks,
+      })
+    } else if (chordInteraction.kind === 'marquee') {
+      const left = Math.min(chordInteraction.originX, chordInteraction.currentX)
+      const right = Math.max(chordInteraction.originX, chordInteraction.currentX)
+      const selected = chordInteraction.append ? new Set(selectedChordIds) : new Set<string>()
+      if (right - left < 4) {
+        onSetPlayhead(snapStartTick(chordInteraction.originX))
+      } else {
+        chordRects.forEach((rect) => {
+          if (rect.x < right && rect.x + rect.width > left) selected.add(rect.region.id)
+        })
+      }
+      onSelectChords(selected)
+    }
+    setChordInteraction(undefined)
+  }
+
   const tempoLabels = project.tempoEvents.filter((event) => event.tick > 0)
   const meterLabels = project.meterEvents.filter((event) => event.tick > 0)
   const keyLabels = project.keyEvents.filter((event) => event.tick > 0)
@@ -539,28 +843,58 @@ export function PianoRoll({
           ))}
         </div>
 
-        <div className="chord-lane" style={{ width: totalWidth }} onDoubleClick={(event) => onAddChord(snapStartTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}>
+        <div
+          className={`chord-lane tool-${tool} ${chordInteraction?.kind === 'pan' ? 'is-panning' : ''}`}
+          style={{ width: totalWidth }}
+          onPointerDown={handleChordPointerDown}
+          onPointerMove={handleChordPointerMove}
+          onPointerUp={finishChordInteraction}
+          onPointerCancel={() => setChordInteraction(undefined)}
+          onAuxClick={(event) => event.preventDefault()}
+        >
           <span className="lane-sticky-label">和弦</span>
-          {project.chords.map((chord: ChordEvent) => (
+          {chordRects.map(({ region: chord, startTick, durationTicks, x, width }) => {
+            const formatted = formatChordRegion(project, { ...chord, startTick, durationTicks })
+            const issue = diagnostics.find((item) => item.chordIds.includes(chord.id))
+            const display = project.chordTrack.displayMode === 'roman'
+              ? formatted.roman
+              : project.chordTrack.displayMode === 'absolute' ? formatted.absolute : `${formatted.roman}  ${formatted.absolute}`
+            return (
             <button
               type="button"
               key={chord.id}
-              className={`chord-block ${selectedChordId === chord.id ? 'is-selected' : ''}`}
+              tabIndex={-1}
+              className={`chord-block ${selectedChordIds.has(chord.id) ? 'is-selected' : ''} ${chord.locked ? 'is-locked' : ''} ${issue ? `has-${issue.severity}` : ''}`}
               style={{
-                left: PIANO_WIDTH + (chord.startTick / project.ppq) * pixelsPerBeat,
-                width: Math.max(34, (chord.durationTicks / project.ppq) * pixelsPerBeat - 2),
+                left: x,
+                width,
               }}
-              onClick={(event) => {
-                event.stopPropagation()
-                onSelectChord(chord.id)
-                onSelectNotes(new Set())
-                onSetPlayhead(chord.startTick)
-              }}
-              title={`${chord.label}${chord.locked ? '（已锁定）' : ''}`}
+              title={`${formatted.roman} · ${formatted.absolute}${chord.locked ? '（已锁定）' : ''}`}
             >
-              {chord.label}
+              <span className="chord-resize-handle left" />
+              <span className="chord-label">{display}</span>
+              <span className="chord-resize-handle right" />
             </button>
-          ))}
+            )
+          })}
+          {chordInteraction?.kind === 'draw' ? (
+            <div
+              className="chord-block chord-preview"
+              style={{
+                left: PIANO_WIDTH + (chordInteraction.nextStartTick / project.ppq) * pixelsPerBeat,
+                width: Math.max(5, (chordInteraction.nextDurationTicks / project.ppq) * pixelsPerBeat - 2),
+              }}
+            >{formatChord(chordBrush, keyAtTick(project.keyEvents, chordInteraction.nextStartTick)).roman}</div>
+          ) : null}
+          {chordInteraction?.kind === 'marquee' ? (
+            <div
+              className="chord-marquee"
+              style={{
+                left: Math.min(chordInteraction.originX, chordInteraction.currentX),
+                width: Math.abs(chordInteraction.currentX - chordInteraction.originX),
+              }}
+            />
+          ) : null}
         </div>
 
         <canvas

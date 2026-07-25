@@ -99,9 +99,9 @@ describe('斯波索宾基础规则检查', () => {
   it('七和弦七音级进下行解决时通过', () => {
     const project = createEmptyProject()
     project.lengthTicks = PPQ * 2
-    project.chords.push({
-      id: 'g7', startTick: 0, durationTicks: PPQ, degree: 5, accidental: 0,
-      quality: 'dominant7', inversion: 0, label: 'V7', locked: false,
+    project.chordTrack.regions.push({
+      id: 'g7', startTick: 0, durationTicks: PPQ,
+      analysis: { degree: 5, accidental: 0, quality: 'dominant7', inversion: 0 }, locked: false,
     })
     addPair(project, 'alto', [65, 64])
 
@@ -111,12 +111,76 @@ describe('斯波索宾基础规则检查', () => {
   it('七和弦七音未级进下行时给出提示', () => {
     const project = createEmptyProject()
     project.lengthTicks = PPQ * 2
-    project.chords.push({
-      id: 'g7', startTick: 0, durationTicks: PPQ, degree: 5, accidental: 0,
-      quality: 'dominant7', inversion: 0, label: 'V7', locked: false,
+    project.chordTrack.regions.push({
+      id: 'g7', startTick: 0, durationTicks: PPQ,
+      analysis: { degree: 5, accidental: 0, quality: 'dominant7', inversion: 0 }, locked: false,
     })
     addPair(project, 'alto', [65, 67])
 
     expect(ruleIds(project)).toContain('chord-seventh-resolution')
+  })
+
+  it('检查和弦区域后半段的和弦外音并关联区域', () => {
+    const project = createEmptyProject()
+    project.lengthTicks = PPQ * 2
+    project.chordTrack.regions.push({
+      id: 'c-major', startTick: 0, durationTicks: PPQ * 2,
+      analysis: { degree: 1, accidental: 0, quality: 'major', inversion: 0 }, locked: false,
+    })
+    project.tracks[0].notes = [
+      note('inside', 0, PPQ, 72),
+      note('outside', PPQ, PPQ, 74),
+    ]
+
+    const diagnostic = checkHarmony(project).diagnostics.find((item) => item.ruleId === 'chord-membership')
+    expect(diagnostic).toMatchObject({ tick: PPQ, endTick: PPQ * 2, chordIds: ['c-major'], noteIds: ['outside'] })
+  })
+
+  it('人工标注非和弦音角色后不再重复报警', () => {
+    const project = createEmptyProject()
+    project.lengthTicks = PPQ
+    project.chordTrack.regions.push({
+      id: 'c-major', startTick: 0, durationTicks: PPQ,
+      analysis: { degree: 1, accidental: 0, quality: 'major', inversion: 0 }, locked: false,
+    })
+    project.tracks[0].notes = [{ ...note('passing', 0, PPQ, 74), nonChordToneRole: 'passing' }]
+
+    expect(ruleIds(project)).not.toContain('chord-membership')
+  })
+
+  it('按斯波索宾基础功能序进提示属到下属的逆功能进行', () => {
+    const project = createEmptyProject()
+    project.lengthTicks = PPQ * 2
+    project.chordTrack.regions.push(
+      {
+        id: 'dominant', startTick: 0, durationTicks: PPQ,
+        analysis: { degree: 5, accidental: 0, quality: 'major', inversion: 0 }, locked: false,
+      },
+      {
+        id: 'subdominant', startTick: PPQ, durationTicks: PPQ,
+        analysis: { degree: 4, accidental: 0, quality: 'major', inversion: 0 }, locked: false,
+      },
+    )
+
+    const diagnostic = checkHarmony(project).diagnostics.find((item) => item.ruleId === 'functional-retrogression')
+    expect(diagnostic?.chordIds).toEqual(['dominant', 'subdominant'])
+    expect(diagnostic?.severity).toBe('warning')
+  })
+
+  it('空白区间会中断功能进行判断', () => {
+    const project = createEmptyProject()
+    project.lengthTicks = PPQ * 3
+    project.chordTrack.regions.push(
+      {
+        id: 'dominant', startTick: 0, durationTicks: PPQ,
+        analysis: { degree: 5, accidental: 0, quality: 'major', inversion: 0 }, locked: false,
+      },
+      {
+        id: 'subdominant', startTick: PPQ * 2, durationTicks: PPQ,
+        analysis: { degree: 4, accidental: 0, quality: 'major', inversion: 0 }, locked: false,
+      },
+    )
+
+    expect(ruleIds(project)).not.toContain('functional-retrogression')
   })
 })

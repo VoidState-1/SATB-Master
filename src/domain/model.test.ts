@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createEmptyProject, validateProject } from './model'
+import { createEmptyProject, migrateProject, validateProject } from './model'
 
 describe('工程文件校验', () => {
   it('接受当前版本创建的完整工程', () => {
@@ -36,12 +36,33 @@ describe('工程文件校验', () => {
     project.exercise.editableRanges.push({
       id: 'bad-range', voiceIds: ['soprano'], fromTick: 960, toTick: 0, editable: false,
     })
-    project.chords.push({
-      id: 'bad-chord', startTick: 0, durationTicks: 960, degree: 1, accidental: 0,
-      quality: 'major', inversion: 0, label: 'I', locked: false,
+    project.chordTrack.regions.push({
+      id: 'bad-chord', startTick: 0, durationTicks: 960,
+      analysis: { degree: 1, accidental: 0, quality: 'major', inversion: 0 }, locked: false,
     })
-    ;(project.chords[0] as { quality: string }).quality = 'unknown'
+    ;(project.chordTrack.regions[0].analysis as { quality: string }).quality = 'unknown'
 
     expect(validateProject(project)).toBe(false)
+  })
+
+  it('把 v1 点式和弦数据迁移为 v2 范围轨并丢弃手写名称', () => {
+    const current = createEmptyProject()
+    const legacy = structuredClone(current) as unknown as Record<string, unknown>
+    legacy.schemaVersion = 1
+    legacy.chords = [{
+      id: 'legacy-chord', startTick: 480, durationTicks: 960,
+      degree: 5, accidental: 0, quality: 'dominant7', inversion: 1,
+      label: '用户随意填写的名称', locked: false,
+    }]
+    delete legacy.chordTrack
+
+    const migrated = migrateProject(legacy)
+    expect(migrated?.schemaVersion).toBe(2)
+    expect(migrated?.chordTrack.displayMode).toBe('roman')
+    expect(migrated?.chordTrack.regions[0]).toMatchObject({
+      id: 'legacy-chord', startTick: 480, durationTicks: 960,
+      analysis: { degree: 5, accidental: 0, quality: 'dominant7', inversion: 1 },
+    })
+    expect(migrated?.chordTrack.regions[0]).not.toHaveProperty('label')
   })
 })

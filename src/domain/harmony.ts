@@ -3,12 +3,18 @@ import {
   VOICE_CONFIG,
   VOICE_ORDER,
   getTrack,
-  type ChordEvent,
-  type ChordQuality,
   type NoteEvent,
   type ProjectDocument,
   type VoiceId,
 } from './model'
+import {
+  QUALITY_INTERVALS,
+  chordAtTick,
+  chordFunction,
+  chordPitchClasses,
+  chordRootPitchClass,
+  formatChordRegion,
+} from './chords'
 import { keyAtTick } from './time'
 
 export type DiagnosticSeverity = 'error' | 'warning' | 'suggestion'
@@ -21,6 +27,7 @@ export interface HarmonyDiagnostic {
   endTick: number
   voiceIds: VoiceId[]
   noteIds: string[]
+  chordIds: string[]
   title: string
   message: string
 }
@@ -42,21 +49,9 @@ const CHORD_RULE_IDS = [
   'chord-inversion',
   'leading-tone-doubling',
   'chord-seventh-resolution',
+  'functional-retrogression',
+  'secondary-dominant-resolution',
 ]
-const DEGREE_MAJOR = [0, 2, 4, 5, 7, 9, 11]
-const DEGREE_MINOR = [0, 2, 3, 5, 7, 8, 10]
-
-const QUALITY_INTERVALS: Record<ChordQuality, number[]> = {
-  major: [0, 4, 7],
-  minor: [0, 3, 7],
-  diminished: [0, 3, 6],
-  augmented: [0, 4, 8],
-  dominant7: [0, 4, 7, 10],
-  major7: [0, 4, 7, 11],
-  minor7: [0, 3, 7, 10],
-  halfDiminished7: [0, 3, 6, 10],
-  diminished7: [0, 3, 6, 9],
-}
 
 function pitchClass(note: number) {
   return ((note % 12) + 12) % 12
@@ -75,16 +70,18 @@ function diagnostic(
   notes: NoteEvent[],
   title: string,
   message: string,
+  chordIds: string[] = [],
 ): HarmonyDiagnostic {
   const noteIds = notes.map((note) => note.id)
   return {
-    id: `${ruleId}:${tick}:${[...noteIds].sort().join(',')}`,
+    id: `${ruleId}:${tick}:${[...noteIds].sort().join(',')}:${[...chordIds].sort().join(',')}`,
     ruleId,
     severity,
     tick,
     endTick,
     voiceIds,
     noteIds,
+    chordIds,
     title,
     message,
   }
@@ -96,10 +93,11 @@ function buildSlices(project: ProjectDocument): Slice[] {
     boundaries.add(note.startTick)
     boundaries.add(note.startTick + note.durationTicks)
   }))
-  project.chords.forEach((chord) => {
+  project.chordTrack.regions.forEach((chord) => {
     boundaries.add(chord.startTick)
     boundaries.add(chord.startTick + chord.durationTicks)
   })
+  project.keyEvents.forEach((event) => boundaries.add(event.tick))
 
   const ordered = [...boundaries].filter((tick) => tick >= 0 && tick <= project.lengthTicks).sort((a, b) => a - b)
   return ordered.slice(0, -1).map((tick, index) => {
@@ -109,16 +107,6 @@ function buildSlices(project: ProjectDocument): Slice[] {
     })
     return { tick, endTick: ordered[index + 1], notes }
   })
-}
-
-function chordAtTick(chords: ChordEvent[], tick: number) {
-  return chords.find((chord) => chord.startTick <= tick && chord.startTick + chord.durationTicks > tick)
-}
-
-function chordRoot(project: ProjectDocument, chord: ChordEvent) {
-  const key = keyAtTick(project.keyEvents, chord.startTick)
-  const degrees = key.mode === 'major' ? DEGREE_MAJOR : DEGREE_MINOR
-  return pitchClass(key.tonic + degrees[chord.degree - 1] + chord.accidental)
 }
 
 function checkRanges(project: ProjectDocument) {
@@ -202,12 +190,13 @@ function checkChordToneResolution(project: ProjectDocument) {
       const current = notes[index]
       if (current.startTick !== previous.startTick + previous.durationTicks) continue
 
-      const chord = chordAtTick(project.chords, previous.startTick)
+      const chord = chordAtTick(project, previous.startTick)
       if (!chord) continue
-      const intervals = QUALITY_INTERVALS[chord.quality]
+      const intervals = QUALITY_INTERVALS[chord.analysis.quality]
       if (intervals.length !== 4) continue
 
-      const seventh = pitchClass(chordRoot(project, chord) + intervals[3])
+      const key = keyAtTick(project.keyEvents, chord.startTick)
+      const seventh = pitchClass(chordRootPitchClass(chord.analysis, key) + intervals[3])
       if (pitchClass(previous.midiNote) !== seventh) continue
 
       // 标注七和弦的七音以半音或全音下行解决；跨休止与无和弦标注处不作推断。
@@ -216,7 +205,8 @@ function checkChordToneResolution(project: ProjectDocument) {
         diagnostics.push(diagnostic(
           'chord-seventh-resolution', 'warning', current.startTick, current.startTick + current.durationTicks,
           [track.id], [previous, current], '七音未级进下行解决',
-          `${chord.label} 的七音通常应以半音或全音级进下行解决。`,
+          `${formatChordRegion(project, chord).roman} 的七音通常应以半音或全音级进下行解决。`,
+          [chord.id],
         ))
       }
     }
@@ -333,60 +323,109 @@ function checkVoiceLeading(slices: Slice[]) {
 
 function checkChordRules(project: ProjectDocument, slices: Slice[]) {
   const diagnostics: HarmonyDiagnostic[] = []
-  const checked = new Set<string>()
+
+  const appendMerged = (item: HarmonyDiagnostic) => {
+    const previous = [...diagnostics].reverse().find((candidate) => (
+      candidate.ruleId === item.ruleId
+      && candidate.endTick === item.tick
+      && candidate.noteIds.join(',') === item.noteIds.join(',')
+      && candidate.chordIds.join(',') === item.chordIds.join(',')
+    ))
+    if (previous) {
+      previous.endTick = item.endTick
+      return
+    }
+    diagnostics.push(item)
+  }
 
   slices.forEach((slice) => {
-    const chord = chordAtTick(project.chords, slice.tick)
-    if (!chord || checked.has(chord.id)) return
-    checked.add(chord.id)
+    const chord = chordAtTick(project, slice.tick)
+    if (!chord) return
     const active = VOICE_ORDER.map((voiceId) => ({ voiceId, note: slice.notes[voiceId] })).filter(
       (item): item is { voiceId: VoiceId; note: NoteEvent } => Boolean(item.note),
     )
-    if (active.length < 4) return
-
-    const root = chordRoot(project, chord)
-    const intervals = QUALITY_INTERVALS[chord.quality]
-    const chordTones = intervals.map((interval) => pitchClass(root + interval))
-    const outside = active.filter(({ note }) => !chordTones.includes(pitchClass(note.midiNote)))
+    const key = keyAtTick(project.keyEvents, slice.tick)
+    const chordTones = chordPitchClasses(chord.analysis, key)
+    const chordName = formatChordRegion(project, chord).roman
+    const outside = active.filter(({ note }) => (
+      !note.nonChordToneRole && !chordTones.includes(pitchClass(note.midiNote))
+    ))
     if (outside.length > 0) {
-      diagnostics.push(diagnostic(
-        'chord-membership', 'warning', chord.startTick, chord.startTick + chord.durationTicks,
+      appendMerged(diagnostic(
+        'chord-membership', 'warning', slice.tick, slice.endTick,
         outside.map((item) => item.voiceId), outside.map((item) => item.note), '和弦外音需要确认',
-        `标注和弦 ${chord.label} 中存在未识别为和弦构成音的音符；经过音或辅助音可忽略此提示。`,
+        `标注和弦 ${chordName} 中存在未识别为和弦构成音的音符；可在音符属性中人工标注其非和弦音角色。`,
+        [chord.id],
       ))
     }
+
+    if (active.length < 4) return
 
     const present = new Set(active.map(({ note }) => pitchClass(note.midiNote)))
     const missing = chordTones.filter((tone) => !present.has(tone))
     if (missing.length > 0) {
-      diagnostics.push(diagnostic(
-        'chord-completeness', 'warning', chord.startTick, chord.startTick + chord.durationTicks,
+      appendMerged(diagnostic(
+        'chord-completeness', 'warning', slice.tick, slice.endTick,
         active.map((item) => item.voiceId), active.map((item) => item.note), '和弦构成音不完整',
-        `${chord.label} 缺少 ${missing.length} 个标注和弦的构成音。`,
+        `${chordName} 缺少 ${missing.length} 个标注和弦的构成音。`,
+        [chord.id],
       ))
     }
 
     const bass = active.find((item) => item.voiceId === 'bass')
-    const expectedBass = chordTones[Math.min(chord.inversion, chordTones.length - 1)]
+    const expectedBass = chordTones[Math.min(chord.analysis.inversion, chordTones.length - 1)]
     if (bass && pitchClass(bass.note.midiNote) !== expectedBass) {
-      diagnostics.push(diagnostic(
-        'chord-inversion', 'error', chord.startTick, chord.startTick + chord.durationTicks,
-        ['bass'], [bass.note], '低音与转位不一致', `${chord.label} 的低音不符合当前转位标记。`,
+      appendMerged(diagnostic(
+        'chord-inversion', 'error', slice.tick, slice.endTick,
+        ['bass'], [bass.note], '低音与转位不一致', `${chordName} 的低音不符合当前转位标记。`,
+        [chord.id],
       ))
     }
 
-    const key = keyAtTick(project.keyEvents, chord.startTick)
     const leadingTone = pitchClass(key.tonic + 11)
     const leadingNotes = active.filter(({ note }) => pitchClass(note.midiNote) === leadingTone)
     if (leadingNotes.length > 1) {
-      diagnostics.push(diagnostic(
-        'leading-tone-doubling', 'error', chord.startTick, chord.startTick + chord.durationTicks,
+      appendMerged(diagnostic(
+        'leading-tone-doubling', 'error', slice.tick, slice.endTick,
         leadingNotes.map((item) => item.voiceId), leadingNotes.map((item) => item.note), '重复导音',
         '四部和声中通常不应重复调内导音。',
+        [chord.id],
       ))
     }
   })
 
+  return diagnostics
+}
+
+function checkChordProgressions(project: ProjectDocument) {
+  const diagnostics: HarmonyDiagnostic[] = []
+  const regions = project.chordTrack.regions
+  for (let index = 1; index < regions.length; index += 1) {
+    const previous = regions[index - 1]
+    const current = regions[index]
+    if (previous.startTick + previous.durationTicks !== current.startTick) continue
+    const previousKey = keyAtTick(project.keyEvents, previous.startTick)
+    const currentKey = keyAtTick(project.keyEvents, current.startTick)
+    if (previousKey.tonic !== currentKey.tonic || previousKey.mode !== currentKey.mode) continue
+
+    // 斯波索宾基础功能序进中，属功能回到下属功能属于典型逆功能进行；先作为教学警告。
+    if (chordFunction(previous.analysis) === 'dominant' && chordFunction(current.analysis) === 'subdominant') {
+      diagnostics.push(diagnostic(
+        'functional-retrogression', 'warning', current.startTick, current.startTick,
+        [], [], '逆功能进行',
+        `${formatChordRegion(project, previous).roman} 到 ${formatChordRegion(project, current).roman} 形成属功能到下属功能的逆向进行。`,
+        [previous.id, current.id],
+      ))
+    }
+    if (previous.analysis.appliedToDegree && current.analysis.degree !== previous.analysis.appliedToDegree) {
+      diagnostics.push(diagnostic(
+        'secondary-dominant-resolution', 'warning', current.startTick, current.startTick,
+        [], [], '副属和弦未进入目标',
+        `${formatChordRegion(project, previous).roman} 通常应进入其指向的 ${previous.analysis.appliedToDegree} 级和弦。`,
+        [previous.id, current.id],
+      ))
+    }
+  }
   return diagnostics
 }
 
@@ -398,10 +437,11 @@ export function checkHarmony(project: ProjectDocument): HarmonyCheckResult {
     ...checkVerticalSlices(slices),
     ...checkVoiceLeading(slices),
   ]
-  const skippedRuleIds = project.chords.length === 0 ? CHORD_RULE_IDS : []
-  if (project.chords.length > 0) {
+  const skippedRuleIds = project.chordTrack.regions.length === 0 ? CHORD_RULE_IDS : []
+  if (project.chordTrack.regions.length > 0) {
     diagnostics.push(...checkChordRules(project, slices))
     diagnostics.push(...checkChordToneResolution(project))
+    diagnostics.push(...checkChordProgressions(project))
   }
 
   const unique = new Map(diagnostics.map((item) => [item.id, item]))

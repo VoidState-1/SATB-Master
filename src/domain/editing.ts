@@ -1,4 +1,15 @@
-import { cloneProject, createId, getTrack, type NoteEvent, type ProjectDocument, type VoiceId } from './model'
+import { isSeventhChord } from './chords'
+import {
+  cloneProject,
+  createId,
+  getTrack,
+  type ChordAnalysis,
+  type ChordRegion,
+  type ChordTrack,
+  type NoteEvent,
+  type ProjectDocument,
+  type VoiceId,
+} from './model'
 
 export interface EditResult {
   project: ProjectDocument
@@ -55,7 +66,7 @@ export function updateNote(
   project: ProjectDocument,
   voiceId: VoiceId,
   noteId: string,
-  patch: Partial<Pick<NoteEvent, 'startTick' | 'durationTicks' | 'midiNote' | 'velocity' | 'locked'>>,
+  patch: Partial<Pick<NoteEvent, 'startTick' | 'durationTicks' | 'midiNote' | 'velocity' | 'locked' | 'nonChordToneRole'>>,
 ): EditResult {
   const track = getTrack(project, voiceId)
   const current = track.notes.find((note) => note.id === noteId)
@@ -154,6 +165,132 @@ export function splitNote(project: ProjectDocument, voiceId: VoiceId, noteId: st
     { ...note, durationTicks: splitTick - note.startTick },
     { ...note, id: createId('note'), startTick: splitTick, durationTicks: endTick - splitTick },
   ] : note).sort((a, b) => a.startTick - b.startTick)
+  next.updatedAt = new Date().toISOString()
+  return { project: next }
+}
+
+function chordRegionsOverlap(a: ChordRegion, b: ChordRegion) {
+  return a.startTick < b.startTick + b.durationTicks && b.startTick < a.startTick + a.durationTicks
+}
+
+function hasValidChordAnalysis(analysis: ChordAnalysis) {
+  const maximumInversion = isSeventhChord(analysis.quality) ? 3 : 2
+  return Number.isInteger(analysis.degree) && analysis.degree >= 1 && analysis.degree <= 7
+    && Number.isInteger(analysis.accidental) && analysis.accidental >= -2 && analysis.accidental <= 2
+    && Number.isInteger(analysis.inversion) && analysis.inversion >= 0 && analysis.inversion <= maximumInversion
+    && (analysis.appliedToDegree === undefined
+      || (Number.isInteger(analysis.appliedToDegree) && analysis.appliedToDegree >= 1 && analysis.appliedToDegree <= 7))
+}
+
+function chordRegionError(project: ProjectDocument, region: ChordRegion, excludedIds = new Set<string>()) {
+  if (!Number.isInteger(region.startTick) || !Number.isInteger(region.durationTicks) || region.durationTicks <= 0) return '和弦时间参数无效'
+  if (region.startTick < 0 || region.startTick + region.durationTicks > project.lengthTicks) return '和弦超出工程时间范围'
+  if (!hasValidChordAnalysis(region.analysis)) return '和弦分析参数无效'
+  if (project.keyEvents.some((event) => event.tick > region.startTick && event.tick < region.startTick + region.durationTicks)) {
+    return '和弦区域不能跨越调性变化'
+  }
+  if (project.chordTrack.regions.some((candidate) => !excludedIds.has(candidate.id) && chordRegionsOverlap(candidate, region))) {
+    return '和弦区域不能重叠'
+  }
+  return undefined
+}
+
+export function addChordRegion(project: ProjectDocument, region: ChordRegion): EditResult {
+  if (project.chordTrack.locked) return { project, error: '和弦轨已锁定' }
+  const error = chordRegionError(project, region)
+  if (error) return { project, error }
+  const next = cloneProject(project)
+  next.chordTrack.regions.push(region)
+  next.chordTrack.regions.sort((a, b) => a.startTick - b.startTick)
+  next.updatedAt = new Date().toISOString()
+  return { project: next }
+}
+
+export type ChordRegionPatch = Partial<Pick<ChordRegion, 'startTick' | 'durationTicks' | 'locked'>> & {
+  analysis?: Partial<ChordAnalysis>
+}
+
+export function updateChordRegion(project: ProjectDocument, chordId: string, patch: ChordRegionPatch): EditResult {
+  const current = project.chordTrack.regions.find((region) => region.id === chordId)
+  if (!current) return { project, error: '找不到要编辑的和弦' }
+  if (project.chordTrack.locked) return { project, error: '和弦轨已锁定' }
+  if (current.locked && patch.locked !== false) return { project, error: '该和弦已锁定' }
+  const updated: ChordRegion = {
+    ...current,
+    ...patch,
+    analysis: { ...current.analysis, ...patch.analysis },
+  }
+  const error = chordRegionError(project, updated, new Set([chordId]))
+  if (error) return { project, error }
+  const next = cloneProject(project)
+  next.chordTrack.regions = next.chordTrack.regions
+    .map((region) => region.id === chordId ? updated : region)
+    .sort((a, b) => a.startTick - b.startTick)
+  next.updatedAt = new Date().toISOString()
+  return { project: next }
+}
+
+export function transformChordRegions(
+  project: ProjectDocument,
+  chordIds: Set<string>,
+  transform: (region: ChordRegion) => ChordRegion,
+): EditResult {
+  if (project.chordTrack.locked) return { project, error: '和弦轨已锁定' }
+  const selected = project.chordTrack.regions.filter((region) => chordIds.has(region.id))
+  if (selected.length === 0) return { project, error: '没有可编辑的和弦' }
+  if (selected.some((region) => region.locked)) return { project, error: '选区包含锁定和弦' }
+
+  const transformed = selected.map(transform)
+  for (const region of transformed) {
+    const error = chordRegionError(project, region, chordIds)
+    if (error) return { project, error }
+  }
+  const ordered = [...transformed].sort((a, b) => a.startTick - b.startTick)
+  if (ordered.some((region, index) => index > 0 && chordRegionsOverlap(ordered[index - 1], region))) {
+    return { project, error: '批量操作会造成和弦重叠' }
+  }
+
+  const replacements = new Map(transformed.map((region) => [region.id, region]))
+  const next = cloneProject(project)
+  next.chordTrack.regions = next.chordTrack.regions
+    .map((region) => replacements.get(region.id) ?? region)
+    .sort((a, b) => a.startTick - b.startTick)
+  next.updatedAt = new Date().toISOString()
+  return { project: next }
+}
+
+export function deleteChordRegions(project: ProjectDocument, chordIds: Set<string>): EditResult {
+  if (project.chordTrack.locked) return { project, error: '和弦轨已锁定' }
+  const deletable = project.chordTrack.regions.filter((region) => chordIds.has(region.id) && !region.locked)
+  if (deletable.length === 0) return { project, error: '没有可删除的和弦' }
+  const deletableIds = new Set(deletable.map((region) => region.id))
+  const next = cloneProject(project)
+  next.chordTrack.regions = next.chordTrack.regions.filter((region) => !deletableIds.has(region.id))
+  next.updatedAt = new Date().toISOString()
+  return { project: next }
+}
+
+export function splitChordRegion(project: ProjectDocument, chordId: string, splitTick: number): EditResult {
+  const current = project.chordTrack.regions.find((region) => region.id === chordId)
+  if (!current) return { project, error: '找不到要切分的和弦' }
+  if (project.chordTrack.locked || current.locked) return { project, error: '该和弦或和弦轨已锁定' }
+  const endTick = current.startTick + current.durationTicks
+  if (!Number.isInteger(splitTick) || splitTick <= current.startTick || splitTick >= endTick) {
+    return { project, error: '切分点必须位于和弦区域内部' }
+  }
+  const next = cloneProject(project)
+  next.chordTrack.regions = next.chordTrack.regions.flatMap((region) => region.id === chordId ? [
+    { ...region, durationTicks: splitTick - region.startTick },
+    { ...region, id: createId('chord'), startTick: splitTick, durationTicks: endTick - splitTick },
+  ] : region).sort((a, b) => a.startTick - b.startTick)
+  next.updatedAt = new Date().toISOString()
+  return { project: next }
+}
+
+export function setChordTrackState(project: ProjectDocument, patch: Partial<Pick<ChordTrack, 'visible' | 'locked' | 'displayMode'>>): EditResult {
+  if (project.chordTrack.locked && patch.locked !== false) return { project, error: '和弦轨已锁定' }
+  const next = cloneProject(project)
+  Object.assign(next.chordTrack, patch)
   next.updatedAt = new Date().toISOString()
   return { project: next }
 }

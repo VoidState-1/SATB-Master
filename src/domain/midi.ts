@@ -1,4 +1,5 @@
 import { writeMidi, type MidiData, type MidiEvent } from 'midi-file'
+import { formatChordRegion } from './chords'
 import { KEY_NAMES, VOICE_ORDER, type ProjectDocument } from './model'
 
 type WithoutDelta<T> = T extends unknown ? Omit<T, 'deltaTime'> : never
@@ -89,17 +90,24 @@ function chordTrack(project: ProjectDocument) {
   const events: AbsoluteEvent[] = [
     { tick: 0, priority: 0, event: { type: 'trackName', text: 'Chords', meta: true } },
   ]
-  project.chords.forEach((chord) => events.push({
+  project.chordTrack.regions.forEach((chord, index) => {
+    events.push({
     tick: chord.startTick,
     priority: 1,
-    event: { type: 'marker', text: chord.label, meta: true },
-  }))
+    event: { type: 'marker', text: formatChordRegion(project, chord).roman, meta: true },
+    })
+    const endTick = chord.startTick + chord.durationTicks
+    const nextChord = project.chordTrack.regions[index + 1]
+    if (endTick < project.lengthTicks && (!nextChord || nextChord.startTick > endTick)) {
+      events.push({ tick: endTick, priority: 1, event: { type: 'marker', text: 'N.C.', meta: true } })
+    }
+  })
   return toDeltaEvents(events, project.lengthTicks)
 }
 
 export function buildMidi(project: ProjectDocument, includeChords = true) {
   const tracks = [globalTrack(project), ...VOICE_ORDER.map((_, index) => voiceTrack(project, index))]
-  if (includeChords && project.chords.length > 0) tracks.push(chordTrack(project))
+  if (includeChords && project.chordTrack.regions.length > 0) tracks.push(chordTrack(project))
 
   const data: MidiData = {
     header: { format: 1, numTracks: tracks.length, ticksPerBeat: project.ppq },
