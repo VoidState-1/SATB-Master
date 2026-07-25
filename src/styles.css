@@ -49,6 +49,31 @@ button {
   background: #f8f8f5;
   font-size: 13px;
   user-select: none;
+  -webkit-app-region: drag;
+}
+
+.titlebar-controls {
+  display: flex;
+  align-self: stretch;
+  margin-right: -14px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-controls .window-control {
+  width: 44px;
+  height: 41px;
+  border: 0;
+  border-radius: 0;
+}
+
+.titlebar-controls .window-control:hover {
+  border: 0;
+  background: #e4e5df;
+}
+
+.titlebar-controls .window-control.close:hover {
+  background: #c73b32;
+  color: #fff;
 }
 
 .brand-mark {
@@ -468,6 +493,10 @@ button {
 
 .roll-canvas.tool-split {
   cursor: col-resize;
+}
+
+.roll-canvas.is-panning {
+  cursor: grabbing;
 }
 
 .ruler-lane,

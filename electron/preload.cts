@@ -6,6 +6,17 @@ contextBridge.exposeInMainWorld('desktop', {
     chrome: process.versions.chrome,
     node: process.versions.node,
   },
+  windowControls: {
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    toggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
+    isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+    close: () => ipcRenderer.invoke('window:close'),
+    onMaximizedChange: (callback: (isMaximized: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, isMaximized: boolean) => callback(isMaximized)
+      ipcRenderer.on('window:maximized-changed', listener)
+      return () => ipcRenderer.removeListener('window:maximized-changed', listener)
+    },
+  },
   project: {
     open: () => ipcRenderer.invoke('project:open'),
     save: (request: unknown) => ipcRenderer.invoke('project:save', request),

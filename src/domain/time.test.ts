@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createEmptyProject, PPQ } from './model'
-import { buildMeasures, secondsToTick, tickToPosition, tickToSeconds } from './time'
+import { buildMeasures, secondsToTick, snapTickBackward, tickToPosition, tickToSeconds } from './time'
 
 describe('音乐时间轴', () => {
   it('在变拍号后按新的小节长度计算位置', () => {
@@ -26,5 +26,13 @@ describe('音乐时间轴', () => {
 
     expect(tickToSeconds(project, PPQ * 4)).toBeCloseTo(3)
     expect(secondsToTick(project, 3)).toBe(PPQ * 4)
+  })
+
+  it('点击网格后半段仍向前吸附到当前格起点', () => {
+    expect(snapTickBackward(0, 480, 1_920)).toBe(0)
+    expect(snapTickBackward(400, 480, 1_920)).toBe(0)
+    expect(snapTickBackward(479, 480, 1_920)).toBe(0)
+    expect(snapTickBackward(480, 480, 1_920)).toBe(480)
+    expect(snapTickBackward(959, 480, 1_920)).toBe(480)
   })
 })

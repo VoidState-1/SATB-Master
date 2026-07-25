@@ -8,6 +8,9 @@ import {
   FilePlus2,
   FolderOpen,
   Magnet,
+  Maximize2,
+  Minimize2,
+  Minus,
   MousePointer2,
   Pause,
   Pencil,
@@ -22,6 +25,7 @@ import {
   Undo2,
   ZoomIn,
   ZoomOut,
+  X,
   Scissors,
 } from 'lucide-react'
 import { audioEngine, type AudioEngineState } from './audio/audioEngine'
@@ -94,6 +98,7 @@ function App() {
   const [audioState, setAudioState] = useState<AudioEngineState>('idle')
   const [audioMessage, setAudioMessage] = useState('尚未启动音频')
   const [audioLevel, setAudioLevel] = useState(0)
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false)
   const [notice, setNotice] = useState<string>()
   const clipboardRef = useRef<ClipboardNote[]>([])
   const recoveryCheckedRef = useRef(false)
@@ -122,6 +127,13 @@ function App() {
       if (message) setAudioMessage(message)
     })
     return () => audioEngine.stop(false)
+  }, [])
+
+  useEffect(() => {
+    const controls = window.desktop?.windowControls
+    if (!controls) return
+    void controls.isMaximized().then(setIsWindowMaximized)
+    return controls.onMaximizedChange(setIsWindowMaximized)
   }, [])
 
   useEffect(() => {
@@ -640,15 +652,41 @@ function App() {
   }
 
   const measureCount = buildMeasures(project).length
+  const toggleWindowMaximize = async () => {
+    const maximized = await window.desktop?.windowControls.toggleMaximize()
+    if (typeof maximized === 'boolean') setIsWindowMaximized(maximized)
+  }
+  const closeWindow = () => {
+    if (history.isDirty && !window.confirm('当前工程尚未保存，仍要关闭吗？')) return
+    void window.desktop?.windowControls.close()
+  }
 
   return (
     <main className="app-shell">
-      <header className="app-titlebar">
+      <header
+        className="app-titlebar"
+        onDoubleClick={(event) => {
+          if (event.target instanceof Element && event.target.closest('.titlebar-controls')) return
+          void toggleWindowMaximize()
+        }}
+      >
         <div className="brand-mark">SM</div>
         <strong>SATB Master</strong>
         <span className="project-title">{project.title}{history.isDirty ? ' *' : ''}</span>
         <span className="file-path">{filePath ?? '未保存工程'}</span>
         <span className={`engine-status ${audioState}`}><i />{audioMessage}</span>
+        {window.desktop?.windowControls ? (
+          <div className="titlebar-controls">
+            <IconButton className="window-control" label="最小化" icon={<Minus />} onClick={() => void window.desktop?.windowControls.minimize()} />
+            <IconButton
+              className="window-control"
+              label={isWindowMaximized ? '还原' : '最大化'}
+              icon={isWindowMaximized ? <Minimize2 /> : <Maximize2 />}
+              onClick={() => void toggleWindowMaximize()}
+            />
+            <IconButton className="window-control close" label="关闭" icon={<X />} onClick={closeWindow} />
+          </div>
+        ) : null}
       </header>
 
       <div className="main-toolbar">

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerProjectIpc } from './project-ipc.js'
@@ -19,6 +19,8 @@ function createWindow() {
     minHeight: 520,
     backgroundColor: '#f4f3ef',
     show: false,
+    frame: false,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(currentDirectory, 'preload.cjs'),
       contextIsolation: true,
@@ -28,6 +30,8 @@ function createWindow() {
   })
 
   window.once('ready-to-show', () => window.show())
+  window.on('maximize', () => window.webContents.send('window:maximized-changed', true))
+  window.on('unmaximize', () => window.webContents.send('window:maximized-changed', false))
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     const protocol = new URL(url).protocol
@@ -45,8 +49,23 @@ function createWindow() {
   }
 }
 
+function registerWindowIpc() {
+  const senderWindow = (event: Electron.IpcMainInvokeEvent) => BrowserWindow.fromWebContents(event.sender)
+  ipcMain.handle('window:minimize', (event) => senderWindow(event)?.minimize())
+  ipcMain.handle('window:toggle-maximize', (event) => {
+    const window = senderWindow(event)
+    if (!window) return false
+    if (window.isMaximized()) window.unmaximize()
+    else window.maximize()
+    return window.isMaximized()
+  })
+  ipcMain.handle('window:is-maximized', (event) => senderWindow(event)?.isMaximized() ?? false)
+  ipcMain.handle('window:close', (event) => senderWindow(event)?.close())
+}
+
 app.whenReady().then(() => {
   registerProjectIpc()
+  registerWindowIpc()
   createWindow()
 
   app.on('activate', () => {

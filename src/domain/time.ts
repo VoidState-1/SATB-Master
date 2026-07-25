@@ -23,6 +23,16 @@ export function ticksPerBeat(ppq: number, denominator: number) {
   return ppq * (4 / denominator)
 }
 
+export function snapTickBackward(tick: number, gridTicks: number, maximumTick: number) {
+  if (!Number.isFinite(tick) || !Number.isFinite(maximumTick) || !Number.isFinite(gridTicks) || gridTicks <= 0) {
+    throw new Error('吸附时间参数无效')
+  }
+  // 编辑落点始终归入光标所在格的起点，不能因越过半格而跳到下一格。
+  const snappedMaximum = Math.floor(Math.max(0, maximumTick) / gridTicks) * gridTicks
+  const snappedTick = Math.floor(Math.max(0, tick) / gridTicks) * gridTicks
+  return Math.min(snappedMaximum, snappedTick)
+}
+
 export function buildMeasures(project: Pick<ProjectDocument, 'ppq' | 'meterEvents' | 'lengthTicks'>): MeasureInfo[] {
   const meters = [...project.meterEvents].sort((a, b) => a.tick - b.tick)
   const measures: MeasureInfo[] = []

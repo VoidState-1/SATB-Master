@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buildMeasures } from '../domain/time'
+import { buildMeasures, snapTickBackward } from '../domain/time'
 import {
   KEY_NAMES,
   VOICE_CONFIG,
@@ -79,7 +79,15 @@ interface EraseInteraction {
   noteIds: Set<string>
 }
 
-type PointerInteraction = NoteInteraction | MarqueeInteraction | DrawInteraction | EraseInteraction
+interface PanInteraction {
+  kind: 'pan'
+  originClientX: number
+  originClientY: number
+  originScrollLeft: number
+  originScrollTop: number
+}
+
+type PointerInteraction = NoteInteraction | MarqueeInteraction | DrawInteraction | EraseInteraction | PanInteraction
 
 function isBlackKey(midiNote: number) {
   return [1, 3, 6, 8, 10].includes(((midiNote % 12) + 12) % 12)
@@ -300,12 +308,27 @@ export function PianoRoll({
 
   const snapTick = (x: number) => {
     const raw = ((x - PIANO_WIDTH) / pixelsPerBeat) * project.ppq
-    return Math.max(0, Math.min(project.lengthTicks - gridTicks, Math.round(raw / gridTicks) * gridTicks))
+    return snapTickBackward(raw, gridTicks, project.lengthTicks - gridTicks)
   }
 
   const midiAtY = (y: number) => Math.max(MIN_MIDI, Math.min(MAX_MIDI, MAX_MIDI - Math.floor((y - HEADER_HEIGHT) / ROW_HEIGHT)))
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.button === 1) {
+      const scroll = scrollRef.current
+      if (!scroll) return
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      setInteraction({
+        kind: 'pan',
+        originClientX: event.clientX,
+        originClientY: event.clientY,
+        originScrollLeft: scroll.scrollLeft,
+        originScrollTop: scroll.scrollTop,
+      })
+      return
+    }
+    if (event.button !== 0) return
     const point = localPoint(event)
     if (point.y < HEADER_HEIGHT || point.x < PIANO_WIDTH) return
     const hit = hitTest(point.x, point.y)
@@ -375,6 +398,14 @@ export function PianoRoll({
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!interaction) return
+    if (interaction.kind === 'pan') {
+      const scroll = scrollRef.current
+      if (scroll) {
+        scroll.scrollLeft = interaction.originScrollLeft - (event.clientX - interaction.originClientX)
+        scroll.scrollTop = interaction.originScrollTop - (event.clientY - interaction.originClientY)
+      }
+      return
+    }
     const point = localPoint(event)
     if (interaction.kind === 'marquee') {
       setInteraction({ ...interaction, currentX: point.x, currentY: point.y })
@@ -424,7 +455,10 @@ export function PianoRoll({
   const finishInteraction = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!interaction) return
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    if (interaction.kind === 'resize' && interaction.nextDurationTicks !== interaction.durationTicks) {
+    if (interaction.kind === 'pan') {
+      setInteraction(undefined)
+      return
+    } else if (interaction.kind === 'resize' && interaction.nextDurationTicks !== interaction.durationTicks) {
       onUpdateNote(interaction.voiceId, interaction.noteId, { durationTicks: interaction.nextDurationTicks })
     } else if (interaction.kind === 'move' && (interaction.tickDelta !== 0 || interaction.pitchDelta !== 0)) {
       onMoveNotes(new Set(interaction.selectedIds), interaction.tickDelta, interaction.pitchDelta)
@@ -505,11 +539,12 @@ export function PianoRoll({
 
         <canvas
           ref={canvasRef}
-          className={`roll-canvas tool-${tool}`}
+          className={`roll-canvas tool-${tool} ${interaction?.kind === 'pan' ? 'is-panning' : ''}`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={finishInteraction}
           onPointerCancel={() => setInteraction(undefined)}
+          onAuxClick={(event) => event.preventDefault()}
         />
 
         <div className="piano-keys" style={{ height: rollHeight }}>

@@ -123,7 +123,7 @@ async function clickButton(label) {
   await delay(120)
 }
 
-async function addNote(voiceIndex, tick, midiNote) {
+async function addNote(voiceIndex, tick, midiNote, pointerTick = tick) {
   const selected = await evaluate(`(() => {
     const track = document.querySelectorAll('.voice-track')[${voiceIndex}];
     if (!track) return false;
@@ -144,7 +144,7 @@ async function addNote(voiceIndex, tick, midiNote) {
     canvas.setPointerCapture = () => {};
     canvas.releasePointerCapture = () => {};
     canvas.hasPointerCapture = () => true;
-    const clientX = rect.left + 58 + (${tick} / 960) * 72 + 6;
+    const clientX = rect.left + 58 + (${pointerTick} / 960) * 72 + 6;
     const clientY = rect.top + localY;
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX, clientY, button: 0 }));
     return { clientX, clientY };
@@ -164,12 +164,53 @@ async function addNote(voiceIndex, tick, midiNote) {
   await delay(100)
 }
 
+async function middleDragCanvas() {
+  const start = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const canvas = document.querySelector('.roll-canvas');
+    if (!roll || !canvas) return null;
+    roll.scrollLeft = 360;
+    roll.scrollTop = 320;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = Math.max(rect.left + 420, 480);
+    const clientY = Math.max(rect.top + 360, 420);
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 7, clientX, clientY, button: 1, buttons: 4 }));
+    return { clientX, clientY, left: roll.scrollLeft, top: roll.scrollTop };
+  })()`)
+  if (!start) throw new Error('无法开始中键画布拖拽')
+  await delay(80)
+  await evaluate(`document.querySelector('.roll-canvas').dispatchEvent(new PointerEvent('pointermove', {
+    bubbles: true, pointerId: 7, clientX: ${start.clientX + 90}, clientY: ${start.clientY + 60}, button: 1, buttons: 4,
+  }))`)
+  await delay(80)
+  const result = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const canvas = document.querySelector('.roll-canvas');
+    canvas.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true, pointerId: 7, clientX: ${start.clientX + 90}, clientY: ${start.clientY + 60}, button: 1,
+    }));
+    return {
+      left: roll.scrollLeft,
+      top: roll.scrollTop,
+      pencilActive: document.querySelector('button[aria-label^="铅笔工具"]')?.classList.contains('is-active') === true,
+    };
+  })()`)
+  if (result.left >= start.left || result.top >= start.top || !result.pencilActive) {
+    throw new Error(`中键拖拽结果无效：${JSON.stringify({ start, result })}`)
+  }
+}
+
 try {
   const debuggerUrl = await waitForTarget()
   client = new CdpClient(debuggerUrl)
   await client.open()
   await client.send('Runtime.enable')
   await waitFor(`document.readyState === 'complete' && document.body.innerText.includes('未命名练习')`, '应用首屏')
+  await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
+  await clickButton('最大化')
+  await waitFor(`window.desktop.windowControls.isMaximized()`, '窗口最大化')
+  await clickButton('还原')
+  await waitFor(`window.desktop.windowControls.isMaximized().then((value) => !value)`, '窗口还原')
 
   const voices = [
     [72, 74],
@@ -178,9 +219,10 @@ try {
     [48, 50],
   ]
   for (let voice = 0; voice < voices.length; voice += 1) {
-    await addNote(voice, 0, voices[voice][0])
+    await addNote(voice, 0, voices[voice][0], voice === 0 ? 300 : 0)
     await addNote(voice, 480, voices[voice][1])
   }
+  await middleDragCanvas()
 
   await clickButton('保存')
   const projectPath = path.join(e2eDirectory, 'project.satb')
@@ -252,6 +294,9 @@ try {
     defaultSoundFont: 'ready',
     userSoundFontReload: 'path-hash-ready',
     audibleOutput: 'play-pause-preview-ready',
+    snapMode: 'floor-to-grid-start',
+    middlePan: 'ready',
+    customWindowFrame: 'ready',
     projectNotes: noteCount,
     midiFormat: midi.header.format,
     midiTracks: midi.tracks.length,
