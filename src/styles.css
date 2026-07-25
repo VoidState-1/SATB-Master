@@ -147,6 +147,7 @@ button {
   border-bottom: 1px solid #c5c6c0;
   background: #f1f1ed;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+  -webkit-app-region: no-drag;
 }
 
 .toolbar-group,
@@ -280,18 +281,31 @@ button {
   height: 34px;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 6px;
+  position: relative;
+  padding: 0;
   border: 1px solid #cbccc5;
   border-radius: 5px;
   background: #fafaf7;
+  -webkit-app-region: no-drag;
+}
+
+.grid-control svg {
+  position: absolute;
+  left: 6px;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .grid-control select {
+  height: 100%;
+  padding: 0 5px 0 27px;
   border: 0;
+  border-radius: inherit;
   outline: 0;
   background: transparent;
   font-size: 12px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .workspace {

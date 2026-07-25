@@ -33,6 +33,16 @@ export function snapTickBackward(tick: number, gridTicks: number, maximumTick: n
   return Math.min(snappedMaximum, snappedTick)
 }
 
+export function snapTickForward(tick: number, gridTicks: number, maximumTick: number) {
+  if (!Number.isFinite(tick) || !Number.isFinite(maximumTick) || !Number.isFinite(gridTicks) || gridTicks <= 0) {
+    throw new Error('吸附时间参数无效')
+  }
+  // 时值右边界归入光标之后的网格线；恰好位于网格线上时保持原位。
+  const safeMaximum = Math.max(0, maximumTick)
+  const snappedTick = Math.ceil(Math.max(0, tick) / gridTicks) * gridTicks
+  return Math.min(safeMaximum, snappedTick)
+}
+
 export function buildMeasures(project: Pick<ProjectDocument, 'ppq' | 'meterEvents' | 'lengthTicks'>): MeasureInfo[] {
   const meters = [...project.meterEvents].sort((a, b) => a.tick - b.tick)
   const measures: MeasureInfo[] = []

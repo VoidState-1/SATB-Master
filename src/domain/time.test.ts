@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createEmptyProject, PPQ } from './model'
-import { buildMeasures, secondsToTick, snapTickBackward, tickToPosition, tickToSeconds } from './time'
+import { buildMeasures, secondsToTick, snapTickBackward, snapTickForward, tickToPosition, tickToSeconds } from './time'
 
 describe('音乐时间轴', () => {
   it('在变拍号后按新的小节长度计算位置', () => {
@@ -34,5 +34,14 @@ describe('音乐时间轴', () => {
     expect(snapTickBackward(479, 480, 1_920)).toBe(0)
     expect(snapTickBackward(480, 480, 1_920)).toBe(480)
     expect(snapTickBackward(959, 480, 1_920)).toBe(480)
+  })
+
+  it('音符结束位置向后吸附到下一条网格线', () => {
+    expect(snapTickForward(0, 480, 1_920)).toBe(0)
+    expect(snapTickForward(1, 480, 1_920)).toBe(480)
+    expect(snapTickForward(400, 480, 1_920)).toBe(480)
+    expect(snapTickForward(480, 480, 1_920)).toBe(480)
+    expect(snapTickForward(481, 480, 1_920)).toBe(960)
+    expect(snapTickForward(2_100, 480, 1_920)).toBe(1_920)
   })
 })

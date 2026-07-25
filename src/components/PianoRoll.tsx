@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buildMeasures, snapTickBackward } from '../domain/time'
+import { buildMeasures, snapTickBackward, snapTickForward } from '../domain/time'
 import {
   KEY_NAMES,
   VOICE_CONFIG,
@@ -69,7 +69,7 @@ interface DrawInteraction {
   kind: 'draw'
   voiceId: VoiceId
   midiNote: number
-  originTick: number
+  originRawTick: number
   nextStartTick: number
   nextDurationTicks: number
 }
@@ -306,10 +306,12 @@ export function PianoRoll({
     x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height
   ))
 
-  const snapTick = (x: number) => {
+  const rawTickAtX = (x: number) => {
     const raw = ((x - PIANO_WIDTH) / pixelsPerBeat) * project.ppq
-    return snapTickBackward(raw, gridTicks, project.lengthTicks - gridTicks)
+    return Math.max(0, Math.min(project.lengthTicks, raw))
   }
+
+  const snapStartTick = (x: number) => snapTickBackward(rawTickAtX(x), gridTicks, project.lengthTicks - gridTicks)
 
   const midiAtY = (y: number) => Math.max(MIN_MIDI, Math.min(MAX_MIDI, MAX_MIDI - Math.floor((y - HEADER_HEIGHT) / ROW_HEIGHT)))
 
@@ -339,20 +341,21 @@ export function PianoRoll({
       return
     }
     if (tool === 'pencil') {
-      const originTick = snapTick(point.x)
+      const originRawTick = rawTickAtX(point.x)
+      const originTick = snapTickBackward(originRawTick, gridTicks, project.lengthTicks - gridTicks)
       event.currentTarget.setPointerCapture(event.pointerId)
       setInteraction({
         kind: 'draw',
         voiceId: activeVoice,
         midiNote: midiAtY(point.y),
-        originTick,
+        originRawTick,
         nextStartTick: originTick,
         nextDurationTicks: gridTicks,
       })
       return
     }
     if (tool === 'split') {
-      if (hit) onSplitNote(hit.track.id, hit.note.id, snapTick(point.x))
+      if (hit) onSplitNote(hit.track.id, hit.note.id, snapStartTick(point.x))
       return
     }
 
@@ -412,9 +415,17 @@ export function PianoRoll({
       return
     }
     if (interaction.kind === 'draw') {
-      const boundaryTick = snapTick(point.x)
-      const nextStartTick = Math.min(interaction.originTick, boundaryTick)
-      const nextEndTick = Math.min(project.lengthTicks, Math.max(interaction.originTick + gridTicks, boundaryTick + (boundaryTick <= interaction.originTick ? gridTicks : 0)))
+      const currentRawTick = rawTickAtX(point.x)
+      // 拖绘跨过的原始区间两端分别向外吸附，避免右边界也向前取整而多拖一格。
+      const nextStartTick = snapTickBackward(
+        Math.min(interaction.originRawTick, currentRawTick),
+        gridTicks,
+        project.lengthTicks - gridTicks,
+      )
+      const nextEndTick = Math.max(
+        nextStartTick + gridTicks,
+        snapTickForward(Math.max(interaction.originRawTick, currentRawTick), gridTicks, project.lengthTicks),
+      )
       setInteraction({ ...interaction, nextStartTick, nextDurationTicks: Math.max(gridTicks, nextEndTick - nextStartTick) })
       return
     }
@@ -431,8 +442,10 @@ export function PianoRoll({
     const requestedTickDelta = Math.round((((point.x - interaction.originX) / pixelsPerBeat) * project.ppq) / gridTicks) * gridTicks
     const requestedPitchDelta = -Math.round((point.y - interaction.originY) / ROW_HEIGHT)
     if (interaction.kind === 'resize') {
+      // 缩放使用绝对结束位置向后吸附；鼠标一旦进入下一格，时值立即延长到该格末端。
+      const requestedEndTick = snapTickForward(rawTickAtX(point.x), gridTicks, project.lengthTicks)
       const maxDuration = project.lengthTicks - interaction.startTick
-      const duration = Math.max(gridTicks, Math.min(maxDuration, interaction.durationTicks + requestedTickDelta))
+      const duration = Math.max(Math.min(gridTicks, maxDuration), Math.min(maxDuration, requestedEndTick - interaction.startTick))
       setInteraction({ ...interaction, tickDelta: duration - interaction.durationTicks, nextDurationTicks: duration })
     } else {
       const selectedRects = noteRects.filter((rect) => interaction.selectedIds.includes(rect.note.id))
@@ -473,7 +486,7 @@ export function PianoRoll({
       const bottom = Math.max(interaction.originY, interaction.currentY)
       const selected = interaction.append ? new Set(selectedNoteIds) : new Set<string>()
       if (right - left < 4 && bottom - top < 4) {
-        onSetPlayhead(snapTick(interaction.originX))
+        onSetPlayhead(snapStartTick(interaction.originX))
       } else {
         noteRects.forEach((rect) => {
           if (rect.x < right && rect.x + rect.width > left && rect.y < bottom && rect.y + rect.height > top) selected.add(rect.note.id)
@@ -491,7 +504,7 @@ export function PianoRoll({
   return (
     <div className="piano-roll" ref={scrollRef}>
       <div className="piano-roll-inner" style={{ width: totalWidth, height: totalHeight }}>
-        <div className="ruler-lane" style={{ width: totalWidth }} onDoubleClick={(event) => onSetPlayhead(snapTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}>
+        <div className="ruler-lane" style={{ width: totalWidth }} onDoubleClick={(event) => onSetPlayhead(snapStartTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}>
           <span className="lane-sticky-label">小节</span>
           {measures.map((measure) => (
             <span
@@ -513,7 +526,7 @@ export function PianoRoll({
           ))}
         </div>
 
-        <div className="chord-lane" style={{ width: totalWidth }} onDoubleClick={(event) => onAddChord(snapTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}>
+        <div className="chord-lane" style={{ width: totalWidth }} onDoubleClick={(event) => onAddChord(snapStartTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}>
           <span className="lane-sticky-label">和弦</span>
           {project.chords.map((chord: ChordEvent) => (
             <button

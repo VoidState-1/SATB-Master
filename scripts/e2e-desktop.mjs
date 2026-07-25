@@ -1,19 +1,28 @@
 import { spawn } from 'node:child_process'
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseMidi } from 'midi-file'
 
 const executable = path.resolve(process.argv[2] ?? 'release-installer/win-unpacked/SATB Master.exe')
 const appDirectory = process.argv[3] ? path.resolve(process.argv[3]) : undefined
-const e2eDirectory = await mkdtemp(path.join(os.tmpdir(), 'satb-master-e2e-'))
+const e2eRoot = path.resolve('node_modules/.satb-master-e2e')
+await mkdir(e2eRoot, { recursive: true })
+const e2eDirectory = await mkdtemp(path.join(e2eRoot, 'run-'))
+// Chromium 子进程必须能写入 userData；项目内的临时目录也便于受限环境稳定执行。
+await mkdir(path.join(e2eDirectory, 'user-data'), { recursive: true })
 const debugPort = 9_337
-const launchArguments = [`--remote-debugging-port=${debugPort}`, '--remote-allow-origins=*']
+const launchArguments = [`--remote-debugging-port=${debugPort}`, '--remote-allow-origins=*', '--disable-gpu']
 if (appDirectory) launchArguments.push(appDirectory)
+let childLog = ''
 const child = spawn(executable, launchArguments, {
   env: { ...process.env, SATB_MASTER_E2E_DIRECTORY: e2eDirectory },
-  stdio: 'ignore',
+  stdio: ['ignore', 'pipe', 'pipe'],
 })
+for (const stream of [child.stdout, child.stderr]) {
+  stream.on('data', (chunk) => {
+    childLog = `${childLog}${String(chunk)}`.slice(-8_000)
+  })
+}
 
 let client
 
@@ -23,9 +32,11 @@ function delay(milliseconds) {
 
 async function waitForTarget() {
   const deadline = Date.now() + 20_000
+  let targetSummary = '调试端口无响应'
   while (Date.now() < deadline) {
     try {
       const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((response) => response.json())
+      targetSummary = JSON.stringify(targets.map((target) => ({ type: target.type, title: target.title, url: target.url })))
       const page = targets.find((target) => target.type === 'page' && target.title === 'SATB Master')
       if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl
     } catch {
@@ -33,7 +44,7 @@ async function waitForTarget() {
     }
     await delay(150)
   }
-  throw new Error('桌面应用未在 20 秒内提供调试页面')
+  throw new Error(`桌面应用未在 20 秒内提供调试页面（exit=${child.exitCode}）\n目标：${targetSummary}\n${childLog}`)
 }
 
 class CdpClient {
@@ -123,6 +134,40 @@ async function clickButton(label) {
   await delay(120)
 }
 
+async function verifyInitialGridSelection() {
+  const target = await evaluate(`(() => {
+    const select = document.querySelector('select[aria-label="时值对齐"]');
+    if (!select) return null;
+    const rect = select.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    return { x, y, topTag: document.elementFromPoint(x, y)?.tagName, value: select.value };
+  })()`)
+  if (!target || target.topTag !== 'SELECT' || target.value !== '480') {
+    throw new Error(`时值对齐控件首次命中异常：${JSON.stringify(target)}`)
+  }
+
+  await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y })
+  await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', buttons: 1, clickCount: 1 })
+  await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', buttons: 0, clickCount: 1 })
+  await delay(100)
+  const focused = await evaluate(`document.activeElement === document.querySelector('select[aria-label="时值对齐"]')`)
+  if (!focused) throw new Error('时值对齐控件在应用首次点击时未获得焦点')
+
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 })
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 })
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '240'`, '首次选择 1/16 网格')
+
+  await evaluate(`(() => {
+    const select = document.querySelector('select[aria-label="时值对齐"]');
+    select.value = '480';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`)
+  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '480'`, '恢复 1/8 网格')
+}
+
 async function addNote(voiceIndex, tick, midiNote, pointerTick = tick) {
   const selected = await evaluate(`(() => {
     const track = document.querySelectorAll('.voice-track')[${voiceIndex}];
@@ -161,6 +206,76 @@ async function addNote(voiceIndex, tick, midiNote, pointerTick = tick) {
       button: 0,
     }));
   })()`)
+  await delay(100)
+}
+
+async function dragDrawNote(voiceIndex, startRawTick, endRawTick, midiNote) {
+  const selected = await evaluate(`(() => {
+    const track = document.querySelectorAll('.voice-track')[${voiceIndex}];
+    if (!track) return false;
+    track.click();
+    return true;
+  })()`)
+  if (!selected) throw new Error(`无法选择声部索引：${voiceIndex}`)
+  await delay(60)
+
+  const pointer = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const canvas = document.querySelector('.roll-canvas');
+    if (!roll || !canvas) return null;
+    const localY = 72 + (84 - ${midiNote}) * 22 + 10;
+    roll.scrollTop = Math.max(0, localY - 180);
+    roll.scrollLeft = 0;
+    const rect = canvas.getBoundingClientRect();
+    canvas.setPointerCapture = () => {};
+    canvas.releasePointerCapture = () => {};
+    canvas.hasPointerCapture = () => true;
+    const startX = rect.left + 58 + (${startRawTick} / 960) * 72;
+    const endX = rect.left + 58 + (${endRawTick} / 960) * 72;
+    const clientY = rect.top + localY;
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 9, clientX: startX, clientY, button: 0 }));
+    return { startX, endX, clientY };
+  })()`)
+  if (!pointer) throw new Error('无法开始拖绘音符')
+  await delay(60)
+  await evaluate(`(() => {
+    const canvas = document.querySelector('.roll-canvas');
+    canvas.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true, pointerId: 9, clientX: ${pointer.endX}, clientY: ${pointer.clientY}, button: 0, buttons: 1,
+    }));
+  })()`)
+  await delay(60)
+  await evaluate(`(() => {
+    const canvas = document.querySelector('.roll-canvas');
+    canvas.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true, pointerId: 9, clientX: ${pointer.endX}, clientY: ${pointer.clientY}, button: 0,
+    }));
+  })()`)
+  await delay(100)
+}
+
+async function resizeNote(startTick, durationTicks, midiNote, requestedEndTick) {
+  const pointer = await evaluate(`(() => {
+    const canvas = document.querySelector('.roll-canvas');
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const noteX = 58 + (${startTick} / 960) * 72;
+    const noteWidth = Math.max(10, (${durationTicks} / 960) * 72 - 2);
+    const startX = rect.left + noteX + noteWidth - 3;
+    const endX = rect.left + 58 + (${requestedEndTick} / 960) * 72;
+    const clientY = rect.top + 72 + (84 - ${midiNote}) * 22 + 10;
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 10, clientX: startX, clientY, button: 0 }));
+    return { startX, endX, clientY };
+  })()`)
+  if (!pointer) throw new Error('无法开始缩放音符')
+  await delay(60)
+  await evaluate(`document.querySelector('.roll-canvas').dispatchEvent(new PointerEvent('pointermove', {
+    bubbles: true, pointerId: 10, clientX: ${pointer.endX}, clientY: ${pointer.clientY}, button: 0, buttons: 1,
+  }))`)
+  await delay(60)
+  await evaluate(`document.querySelector('.roll-canvas').dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, pointerId: 10, clientX: ${pointer.endX}, clientY: ${pointer.clientY}, button: 0,
+  }))`)
   await delay(100)
 }
 
@@ -206,6 +321,7 @@ try {
   await client.open()
   await client.send('Runtime.enable')
   await waitFor(`document.readyState === 'complete' && document.body.innerText.includes('未命名练习')`, '应用首屏')
+  await verifyInitialGridSelection()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
   await clickButton('最大化')
   await waitFor(`window.desktop.windowControls.isMaximized()`, '窗口最大化')
@@ -224,8 +340,27 @@ try {
   }
   await middleDragCanvas()
 
+  await dragDrawNote(0, 1_040, 1_520, 76)
   await clickButton('保存')
   const projectPath = path.join(e2eDirectory, 'project.satb')
+  await waitForFile(projectPath, '拖绘工程保存')
+  const drawProject = JSON.parse(await readFile(projectPath, 'utf8'))
+  const drawnNote = drawProject.tracks[0].notes.find((note) => note.startTick === 960 && note.midiNote === 76)
+  if (drawnNote?.durationTicks !== 960) throw new Error(`拖绘时值吸附错误：${drawnNote?.durationTicks}`)
+  await clickButton('撤销')
+
+  await addNote(0, 960, 76)
+  await clickButton('选择工具（1）')
+  await resizeNote(960, 480, 76, 1_500)
+  await clickButton('保存')
+  const resizeProject = JSON.parse(await readFile(projectPath, 'utf8'))
+  const resizedNote = resizeProject.tracks[0].notes.find((note) => note.startTick === 960 && note.midiNote === 76)
+  if (resizedNote?.durationTicks !== 960) throw new Error(`缩放时值吸附错误：${resizedNote?.durationTicks}`)
+  await clickButton('撤销')
+  await clickButton('撤销')
+  await clickButton('铅笔工具（2）')
+
+  await clickButton('保存')
   await waitForFile(projectPath, '工程保存')
   const draftProject = JSON.parse(await readFile(projectPath, 'utf8'))
   const draftNotes = draftProject.tracks.map((track) => track.notes.map((note) => [note.startTick, note.midiNote]))
@@ -294,7 +429,8 @@ try {
     defaultSoundFont: 'ready',
     userSoundFontReload: 'path-hash-ready',
     audibleOutput: 'play-pause-preview-ready',
-    snapMode: 'floor-to-grid-start',
+    snapMode: 'floor-start-ceil-end',
+    initialGridSelection: 'ready',
     middlePan: 'ready',
     customWindowFrame: 'ready',
     projectNotes: noteCount,

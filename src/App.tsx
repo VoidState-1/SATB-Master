@@ -731,7 +731,12 @@ function App() {
           <span className="transport-meta">{measureCount} 小节</span>
         </div>
         <div className="toolbar-group toolbar-right">
-          <label className="grid-control" title="编辑吸附网格"><Magnet /><select value={gridTicks} onChange={(event) => setGridTicks(Number(event.target.value))}>{GRID_OPTIONS.map((option) => <option key={option.ticks} value={option.ticks}>{option.label}</option>)}</select></label>
+          <div className="grid-control" title="编辑吸附网格">
+            <Magnet aria-hidden="true" />
+            <select aria-label="时值对齐" value={gridTicks} onChange={(event) => setGridTicks(Number(event.target.value))}>
+              {GRID_OPTIONS.map((option) => <option key={option.ticks} value={option.ticks}>{option.label}</option>)}
+            </select>
+          </div>
           <IconButton label="缩小时间轴" icon={<ZoomOut />} onClick={() => setPixelsPerBeat((value) => Math.max(42, value - 10))} />
           <span className="zoom-value">{pixelsPerBeat}</span>
           <IconButton label="放大时间轴" icon={<ZoomIn />} onClick={() => setPixelsPerBeat((value) => Math.min(140, value + 10))} />
