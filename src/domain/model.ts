@@ -196,14 +196,104 @@ export function normalizeProject(project: ProjectDocument): ProjectDocument {
   return normalized
 }
 
-export function validateProject(value: unknown): value is ProjectDocument {
-  if (!value || typeof value !== 'object') return false
-  const project = value as Partial<ProjectDocument>
-  if (project.schemaVersion !== PROJECT_SCHEMA_VERSION || project.ppq !== PPQ) return false
-  if (typeof project.id !== 'string' || typeof project.title !== 'string') return false
-  if (!Array.isArray(project.tracks) || project.tracks.length !== 4) return false
-  if (!Array.isArray(project.tempoEvents) || !Array.isArray(project.meterEvents) || !Array.isArray(project.keyEvents)) return false
-  if (!Array.isArray(project.chords) || typeof project.lengthTicks !== 'number') return false
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
 
-  return VOICE_ORDER.every((voiceId) => project.tracks?.some((track) => track.id === voiceId && Array.isArray(track.notes)))
+function isInteger(value: unknown, minimum: number, maximum = Number.MAX_SAFE_INTEGER) {
+  return Number.isInteger(value) && (value as number) >= minimum && (value as number) <= maximum
+}
+
+function isNumber(value: unknown, minimum: number, maximum: number) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum
+}
+
+function hasString(value: Record<string, unknown>, key: string) {
+  return typeof value[key] === 'string'
+}
+
+function validateNote(value: unknown) {
+  if (!isRecord(value)) return false
+  return hasString(value, 'id')
+    && isInteger(value.startTick, 0)
+    && isInteger(value.durationTicks, 1)
+    && isInteger(value.midiNote, 0, 127)
+    && isInteger(value.velocity, 1, 127)
+    && typeof value.locked === 'boolean'
+}
+
+const chordQualities = new Set<ChordQuality>([
+  'major', 'minor', 'diminished', 'augmented', 'dominant7',
+  'major7', 'minor7', 'halfDiminished7', 'diminished7',
+])
+
+function validateTrack(value: unknown) {
+  if (!isRecord(value) || !VOICE_ORDER.includes(value.id as VoiceId) || !Array.isArray(value.notes)) return false
+  return hasString(value, 'name')
+    && ['S', 'A', 'T', 'B'].includes(value.shortName as string)
+    && value.notes.every(validateNote)
+    && ['visible', 'muted', 'solo', 'locked'].every((key) => typeof value[key] === 'boolean')
+    && isNumber(value.volume, 0, 1)
+    && isNumber(value.pan, -1, 1)
+    && isInteger(value.program, 0, 127)
+}
+
+function validateChord(value: unknown) {
+  if (!isRecord(value)) return false
+  return hasString(value, 'id')
+    && hasString(value, 'label')
+    && isInteger(value.startTick, 0)
+    && isInteger(value.durationTicks, 1)
+    && isInteger(value.degree, 1, 7)
+    && isInteger(value.accidental, -2, 2)
+    && chordQualities.has(value.quality as ChordQuality)
+    && isInteger(value.inversion, 0, 3)
+    && typeof value.locked === 'boolean'
+}
+
+export function validateProject(value: unknown): value is ProjectDocument {
+  if (!isRecord(value)) return false
+  const project = value
+  if (project.schemaVersion !== PROJECT_SCHEMA_VERSION || project.ppq !== PPQ) return false
+  if (!['id', 'title', 'author', 'notes', 'createdAt', 'updatedAt'].every((key) => hasString(project, key))) return false
+  if (!isInteger(project.lengthTicks, 1)) return false
+
+  if (!Array.isArray(project.tracks) || project.tracks.length !== VOICE_ORDER.length || !project.tracks.every(validateTrack)) return false
+  const trackIds = new Set(project.tracks.map((track) => (track as Record<string, unknown>).id))
+  if (!VOICE_ORDER.every((voiceId) => trackIds.has(voiceId))) return false
+
+  if (!Array.isArray(project.tempoEvents) || project.tempoEvents.length === 0 || !project.tempoEvents.every((event) => (
+    isRecord(event) && hasString(event, 'id') && isInteger(event.tick, 0) && isNumber(event.bpm, 1, 1000)
+  ))) return false
+  if (!project.tempoEvents.some((event) => isRecord(event) && event.tick === 0)) return false
+
+  if (!Array.isArray(project.meterEvents) || project.meterEvents.length === 0 || !project.meterEvents.every((event) => (
+    isRecord(event) && hasString(event, 'id') && isInteger(event.tick, 0)
+      && isInteger(event.numerator, 1, 32) && [2, 4, 8, 16].includes(event.denominator as number)
+  ))) return false
+  if (!project.meterEvents.some((event) => isRecord(event) && event.tick === 0)) return false
+
+  if (!Array.isArray(project.keyEvents) || project.keyEvents.length === 0 || !project.keyEvents.every((event) => (
+    isRecord(event) && hasString(event, 'id') && isInteger(event.tick, 0)
+      && isInteger(event.tonic, 0, 11) && (event.mode === 'major' || event.mode === 'minor')
+  ))) return false
+  if (!project.keyEvents.some((event) => isRecord(event) && event.tick === 0)) return false
+  if (!Array.isArray(project.chords) || !project.chords.every(validateChord)) return false
+
+  if (!isRecord(project.exercise) || typeof project.exercise.instructions !== 'string' || !Array.isArray(project.exercise.editableRanges)) return false
+  if (!project.exercise.editableRanges.every((range) => isRecord(range)
+    && hasString(range, 'id')
+    && Array.isArray(range.voiceIds)
+    && range.voiceIds.every((voiceId) => VOICE_ORDER.includes(voiceId as VoiceId))
+    && isInteger(range.fromTick, 0)
+    && isInteger(range.toTick, 1)
+    && (range.toTick as number) > (range.fromTick as number)
+    && typeof range.editable === 'boolean')) return false
+
+  if (!isRecord(project.audio) || !isNumber(project.audio.masterVolume, 0, 1) || !isRecord(project.audio.soundFont)) return false
+  const soundFont = project.audio.soundFont
+  if ((soundFont.kind !== 'default' && soundFont.kind !== 'user') || typeof soundFont.name !== 'string') return false
+  if (soundFont.path !== undefined && typeof soundFont.path !== 'string') return false
+  if (soundFont.hash !== undefined && typeof soundFont.hash !== 'string') return false
+  return true
 }
