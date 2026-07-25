@@ -9,6 +9,7 @@ npm install
 npm run generate:assets
 npm test
 npm run build
+npm run e2e:desktop:local
 npm run dev
 ```
 

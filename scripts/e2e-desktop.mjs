@@ -5,9 +5,12 @@ import path from 'node:path'
 import { parseMidi } from 'midi-file'
 
 const executable = path.resolve(process.argv[2] ?? 'release-installer/win-unpacked/SATB Master.exe')
+const appDirectory = process.argv[3] ? path.resolve(process.argv[3]) : undefined
 const e2eDirectory = await mkdtemp(path.join(os.tmpdir(), 'satb-master-e2e-'))
 const debugPort = 9_337
-const child = spawn(executable, [`--remote-debugging-port=${debugPort}`, '--remote-allow-origins=*'], {
+const launchArguments = [`--remote-debugging-port=${debugPort}`, '--remote-allow-origins=*']
+if (appDirectory) launchArguments.push(appDirectory)
+const child = spawn(executable, launchArguments, {
   env: { ...process.env, SATB_MASTER_E2E_DIRECTORY: e2eDirectory },
   stdio: 'ignore',
 })
@@ -100,6 +103,15 @@ async function waitForFile(filePath, label, timeout = 8_000) {
   throw new Error(`等待文件超时：${label}`)
 }
 
+async function assertSilence(duration, label) {
+  const deadline = Date.now() + duration
+  while (Date.now() < deadline) {
+    const level = await evaluate(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow'))`)
+    if (level > 0.001) throw new Error(`${label}检测到残留音频电平：${level}`)
+    await delay(25)
+  }
+}
+
 async function clickButton(label) {
   const clicked = await evaluate(`(() => {
     const button = [...document.querySelectorAll('button')].find((item) => item.getAttribute('aria-label') === ${JSON.stringify(label)});
@@ -187,7 +199,9 @@ try {
   await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) > 0.001`, '默认 SF2 实际音频输出')
   await clickButton('停止')
 
-  const userSoundFontPath = path.join(path.dirname(executable), 'resources', 'soundfonts', 'default.sf2')
+  const userSoundFontPath = appDirectory
+    ? path.join(appDirectory, 'public', 'soundfonts', 'default.sf2')
+    : path.join(path.dirname(executable), 'resources', 'soundfonts', 'default.sf2')
   const userSoundFont = await evaluate(`window.desktop.soundFont.loadPath(${JSON.stringify(userSoundFontPath)}).then((result) => ({
     name: result.name,
     hash: result.hash,
@@ -214,6 +228,7 @@ try {
   await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) > 0.001`, '用户 SF2 实际音频输出')
   await clickButton('暂停')
   await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) <= 0.001`, '暂停后输出归零')
+  await assertSilence(800, '暂停后的未来调度')
 
   const project = JSON.parse(await readFile(path.join(e2eDirectory, 'project.satb'), 'utf8'))
   const midi = parseMidi(new Uint8Array(await readFile(path.join(e2eDirectory, 'export.mid'))))

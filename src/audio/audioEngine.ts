@@ -17,6 +17,11 @@ interface FallbackVoice {
   gain: GainNode
 }
 
+interface ScheduledSynthEvent {
+  time: number
+  action(): void
+}
+
 export class SatbAudioEngine {
   private context?: AudioContext
   private synth?: WorkletSynthesizer
@@ -25,6 +30,11 @@ export class SatbAudioEngine {
   private analyser?: AnalyserNode
   private analyserSamples?: Float32Array<ArrayBuffer>
   private fallbackVoices = new Set<FallbackVoice>()
+  private scheduledSynthEvents: ScheduledSynthEvent[] = []
+  private scheduledSynthEventIndex = 0
+  private synthSchedulerTimer?: number
+  private previewTimers = new Set<number>()
+  private synthScheduleGeneration = 0
   private animationFrame?: number
   private stopTimer?: number
   private stateListener?: (state: AudioEngineState, message?: string) => void
@@ -95,6 +105,7 @@ export class SatbAudioEngine {
   async resume() {
     await this.initialize()
     if (this.context?.state === 'suspended') await this.context.resume()
+    this.setOutputEnabled(true)
   }
 
   getOutputLevel() {
@@ -111,7 +122,11 @@ export class SatbAudioEngine {
     const channel = VOICE_ORDER.indexOf(voiceId)
     if (this.synth && this.soundBankId) {
       this.synth.noteOn(channel, midiNote, 92)
-      window.setTimeout(() => this.synth?.noteOff(channel, midiNote), duration * 1000)
+      const timer = window.setTimeout(() => {
+        this.previewTimers.delete(timer)
+        this.synth?.noteOff(channel, midiNote)
+      }, duration * 1000)
+      this.previewTimers.add(timer)
       return
     }
 
@@ -122,6 +137,7 @@ export class SatbAudioEngine {
     await this.resume()
     if (!this.context) return
     this.stop(false)
+    this.setOutputEnabled(true)
     const context = this.context
     const startDelay = 0.06
     const contextStart = context.currentTime + startDelay
@@ -148,8 +164,9 @@ export class SatbAudioEngine {
         const eventEnd = contextStart + Math.max(0.02, endSeconds)
 
         if (this.synth && this.soundBankId) {
-          this.synth.noteOn(voiceIndex, note.midiNote, note.velocity, { time: eventStart })
-          this.synth.noteOff(voiceIndex, note.midiNote, { time: eventEnd })
+          // Worklet 的未来事件队列没有取消 API；改用可清理定时任务，暂停时不会遗留后续音符。
+          this.scheduleSynthEvent(eventStart, () => this.synth?.noteOn(voiceIndex, note.midiNote, note.velocity))
+          this.scheduleSynthEvent(eventEnd, () => this.synth?.noteOff(voiceIndex, note.midiNote))
         } else {
           this.scheduleFallback(
             note.midiNote,
@@ -161,6 +178,7 @@ export class SatbAudioEngine {
         }
       })
     })
+    this.startSynthScheduler()
 
     if (options.metronome) {
       const measureStarts = new Set(buildMeasures(project).map((measure) => measure.startTick))
@@ -193,6 +211,15 @@ export class SatbAudioEngine {
   }
 
   stop(notify = true) {
+    this.synthScheduleGeneration += 1
+    if (this.synthSchedulerTimer) window.clearTimeout(this.synthSchedulerTimer)
+    this.synthSchedulerTimer = undefined
+    this.scheduledSynthEvents = []
+    this.scheduledSynthEventIndex = 0
+    this.previewTimers.forEach((timer) => window.clearTimeout(timer))
+    this.previewTimers.clear()
+    // 暂停既要取消未来 MIDI，也要立即截断效果器残响；下次播放或预听由 resume 重新开启。
+    this.setOutputEnabled(false)
     if (this.animationFrame) cancelAnimationFrame(this.animationFrame)
     if (this.stopTimer) window.clearTimeout(this.stopTimer)
     this.animationFrame = undefined
@@ -209,6 +236,46 @@ export class SatbAudioEngine {
     })
     this.fallbackVoices.clear()
     if (notify) this.setState(this.soundBankId ? 'ready-sf2' : 'ready-fallback')
+  }
+
+  private setOutputEnabled(enabled: boolean) {
+    if (!this.context || !this.output) return
+    this.output.gain.cancelScheduledValues(this.context.currentTime)
+    this.output.gain.setValueAtTime(enabled ? 1 : 0, this.context.currentTime)
+  }
+
+  private scheduleSynthEvent(audioTime: number, action: () => void) {
+    this.scheduledSynthEvents.push({ time: audioTime, action })
+  }
+
+  private startSynthScheduler() {
+    if (!this.context || this.scheduledSynthEvents.length === 0) return
+    const generation = this.synthScheduleGeneration
+    this.scheduledSynthEvents.sort((left, right) => left.time - right.time)
+    this.scheduledSynthEventIndex = 0
+
+    const dispatch = () => {
+      this.synthSchedulerTimer = undefined
+      if (!this.context || generation !== this.synthScheduleGeneration) return
+      const dueTime = this.context.currentTime + 0.001
+      while (
+        this.scheduledSynthEventIndex < this.scheduledSynthEvents.length
+        && this.scheduledSynthEvents[this.scheduledSynthEventIndex].time <= dueTime
+      ) {
+        this.scheduledSynthEvents[this.scheduledSynthEventIndex].action()
+        this.scheduledSynthEventIndex += 1
+      }
+      const next = this.scheduledSynthEvents[this.scheduledSynthEventIndex]
+      if (!next) {
+        this.scheduledSynthEvents = []
+        this.scheduledSynthEventIndex = 0
+        return
+      }
+      const delay = Math.max(0, (next.time - this.context.currentTime) * 1000)
+      this.synthSchedulerTimer = window.setTimeout(dispatch, delay)
+    }
+
+    dispatch()
   }
 
   private scheduleFallback(midiNote: number, start: number, duration: number, volume: number, pan: number) {

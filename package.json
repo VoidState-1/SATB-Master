@@ -11,6 +11,7 @@
     "generate:icon": "node scripts/generate-app-icon.mjs",
     "generate:assets": "npm run generate:soundfont && npm run generate:icon",
     "e2e:desktop": "node scripts/e2e-desktop.mjs",
+    "e2e:desktop:local": "npm run build && node scripts/e2e-desktop.mjs node_modules/electron/dist/electron.exe .",
     "dev": "concurrently --kill-others-on-fail \"vite\" \"wait-on tcp:5173 && electron . --dev\"",
     "build": "npm run typecheck && vite build && node scripts/clean-electron-output.mjs && tsc -p tsconfig.electron.json",
     "pack:win": "npm run generate:assets && npm run build && electron-builder --win dir --x64",
