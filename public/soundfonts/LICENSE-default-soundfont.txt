@@ -1,0 +1,33 @@
+SATB Master Basic Choir SoundFont License
+
+Copyright (c) 2026 SATB Master contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this SoundFont and associated generation files (the "SoundFont"), to deal
+in the SoundFont without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the SoundFont, and to permit persons to whom the SoundFont is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the SoundFont.
+
+THE SOUNDFONT IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOUNDFONT OR THE USE OR OTHER DEALINGS IN THE
+SOUNDFONT.
+
+Asset provenance
+----------------
+
+Name: SATB Master Basic Choir
+Version: 1.0.0
+Format: SoundFont 2.04 (SF2)
+Source: scripts/generate-default-soundfont.mjs
+Generation library: spessasynth_core 4.3.15 (Apache-2.0)
+
+All PCM sample data is generated deterministically from additive sine-wave
+synthesis. The SoundFont contains no third-party audio recordings or samples.

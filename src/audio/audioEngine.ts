@@ -1,0 +1,233 @@
+import { WorkletSynthesizer } from 'spessasynth_lib'
+import { VOICE_ORDER, type ProjectDocument, type VoiceId } from '../domain/model'
+import { buildMeasures, eventAtTick, secondsToTick, ticksPerBeat, tickToSeconds } from '../domain/time'
+
+export type AudioEngineState = 'idle' | 'loading' | 'ready-sf2' | 'ready-fallback' | 'playing' | 'error'
+
+interface PlayOptions {
+  startTick: number
+  endTick?: number
+  metronome?: boolean
+  onPosition(tick: number): void
+  onStop(): void
+}
+
+interface FallbackVoice {
+  oscillator: OscillatorNode
+  gain: GainNode
+}
+
+export class SatbAudioEngine {
+  private context?: AudioContext
+  private synth?: WorkletSynthesizer
+  private soundBankId?: string
+  private fallbackVoices = new Set<FallbackVoice>()
+  private animationFrame?: number
+  private stopTimer?: number
+  private stateListener?: (state: AudioEngineState, message?: string) => void
+
+  onState(listener: (state: AudioEngineState, message?: string) => void) {
+    this.stateListener = listener
+  }
+
+  private setState(state: AudioEngineState, message?: string) {
+    this.stateListener?.(state, message)
+  }
+
+  async initialize() {
+    if (this.context) return
+    this.setState('loading', '正在初始化音频引擎')
+    this.context = new AudioContext({ latencyHint: 'interactive' })
+
+    try {
+      const processorUrl = new URL('spessasynth_processor.min.js', window.location.href).toString()
+      await this.context.audioWorklet.addModule(processorUrl)
+      this.synth = new WorkletSynthesizer(this.context)
+      await this.synth.isReady
+      this.synth.setLogLevel(false, true, false)
+      this.setState('ready-fallback', 'SF2 尚未加载，使用回退音色')
+    } catch (error) {
+      console.warn('SF2 AudioWorklet 初始化失败，将使用 Web Audio 回退音色。', error)
+      this.synth = undefined
+      this.setState('ready-fallback', 'SF2 引擎不可用，使用回退音色')
+    }
+  }
+
+  async loadSoundFont(buffer: ArrayBuffer, id: string) {
+    await this.initialize()
+    if (!this.synth) throw new Error('当前环境无法初始化 SF2 AudioWorklet')
+    this.setState('loading', '正在解析 SoundFont')
+
+    try {
+      if (this.soundBankId) {
+        await this.synth.soundBankManager.deleteSoundBank(this.soundBankId)
+        this.soundBankId = undefined
+      }
+      await this.synth.soundBankManager.addSoundBank(buffer, id)
+      this.soundBankId = id
+      this.setState('ready-sf2', 'SoundFont 已就绪')
+    } catch (error) {
+      this.setState('ready-fallback', 'SoundFont 加载失败，使用回退音色')
+      throw error
+    }
+  }
+
+  isSoundFontLoaded(id: string) {
+    return this.soundBankId === id
+  }
+
+  async unloadSoundFont() {
+    if (this.synth && this.soundBankId) await this.synth.soundBankManager.deleteSoundBank(this.soundBankId)
+    this.soundBankId = undefined
+    this.setState('ready-fallback', '使用内置回退音色')
+  }
+
+  async resume() {
+    await this.initialize()
+    if (this.context?.state === 'suspended') await this.context.resume()
+  }
+
+  async previewNote(midiNote: number, voiceId: VoiceId, duration = 0.35) {
+    await this.resume()
+    if (!this.context) return
+    const channel = VOICE_ORDER.indexOf(voiceId)
+    if (this.synth && this.soundBankId) {
+      this.synth.noteOn(channel, midiNote, 92)
+      window.setTimeout(() => this.synth?.noteOff(channel, midiNote), duration * 1000)
+      return
+    }
+
+    this.scheduleFallback(midiNote, this.context.currentTime, duration, 0.08, 0)
+  }
+
+  async playProject(project: ProjectDocument, options: PlayOptions) {
+    await this.resume()
+    if (!this.context) return
+    this.stop(false)
+    const context = this.context
+    const startDelay = 0.06
+    const contextStart = context.currentTime + startDelay
+    const projectStartSeconds = tickToSeconds(project, options.startTick)
+    const projectEndTick = Math.max(options.startTick, Math.min(project.lengthTicks, options.endTick ?? project.lengthTicks))
+    const soloed = project.tracks.some((track) => track.solo)
+
+    project.tracks.forEach((track, voiceIndex) => {
+      if (track.muted || (soloed && !track.solo)) return
+      if (this.synth && this.soundBankId) {
+        this.synth.programChange(voiceIndex, track.program)
+        this.synth.sendMessage([0xb0 | voiceIndex, 7, Math.round(project.audio.masterVolume * track.volume * 127)])
+        this.synth.sendMessage([0xb0 | voiceIndex, 10, Math.round((track.pan + 1) * 63.5)])
+      }
+
+      track.notes.forEach((note) => {
+        const noteEnd = note.startTick + note.durationTicks
+        if (noteEnd <= options.startTick || note.startTick >= projectEndTick) return
+        const startTick = Math.max(note.startTick, options.startTick)
+        const endTick = Math.min(noteEnd, projectEndTick)
+        const startSeconds = tickToSeconds(project, startTick) - projectStartSeconds
+        const endSeconds = tickToSeconds(project, endTick) - projectStartSeconds
+        const eventStart = contextStart + Math.max(0, startSeconds)
+        const eventEnd = contextStart + Math.max(0.02, endSeconds)
+
+        if (this.synth && this.soundBankId) {
+          this.synth.noteOn(voiceIndex, note.midiNote, note.velocity, { time: eventStart })
+          this.synth.noteOff(voiceIndex, note.midiNote, { time: eventEnd })
+        } else {
+          this.scheduleFallback(
+            note.midiNote,
+            eventStart,
+            Math.max(0.02, eventEnd - eventStart),
+            project.audio.masterVolume * track.volume * 0.085,
+            track.pan,
+          )
+        }
+      })
+    })
+
+    if (options.metronome) {
+      const measureStarts = new Set(buildMeasures(project).map((measure) => measure.startTick))
+      let clickTick = options.startTick
+      const initialMeter = eventAtTick(project.meterEvents, clickTick)
+      const initialBeatTicks = ticksPerBeat(project.ppq, initialMeter.denominator)
+      clickTick = Math.ceil(clickTick / initialBeatTicks) * initialBeatTicks
+      while (clickTick < projectEndTick) {
+        const clickTime = contextStart + tickToSeconds(project, clickTick) - projectStartSeconds
+        this.scheduleMetronomeClick(clickTime, measureStarts.has(clickTick))
+        const currentMeter = eventAtTick(project.meterEvents, clickTick)
+        clickTick += ticksPerBeat(project.ppq, currentMeter.denominator)
+      }
+    }
+
+    this.setState('playing')
+    const totalSeconds = tickToSeconds(project, projectEndTick) - projectStartSeconds
+    const updatePosition = () => {
+      const elapsed = Math.max(0, context.currentTime - contextStart)
+      const tick = Math.min(projectEndTick, secondsToTick(project, projectStartSeconds + elapsed))
+      options.onPosition(tick)
+      if (elapsed < totalSeconds) this.animationFrame = requestAnimationFrame(updatePosition)
+    }
+    this.animationFrame = requestAnimationFrame(updatePosition)
+    this.stopTimer = window.setTimeout(() => {
+      this.stop(false)
+      options.onPosition(projectEndTick)
+      options.onStop()
+    }, Math.max(0, totalSeconds + startDelay) * 1000)
+  }
+
+  stop(notify = true) {
+    if (this.animationFrame) cancelAnimationFrame(this.animationFrame)
+    if (this.stopTimer) window.clearTimeout(this.stopTimer)
+    this.animationFrame = undefined
+    this.stopTimer = undefined
+    this.synth?.stopAll(true)
+    this.fallbackVoices.forEach(({ oscillator, gain }) => {
+      try {
+        gain.gain.cancelScheduledValues(0)
+        gain.gain.setValueAtTime(0, this.context?.currentTime ?? 0)
+        oscillator.stop()
+      } catch {
+        // 已结束的 Oscillator 再次 stop 会抛错，停止流程无需传播该异常。
+      }
+    })
+    this.fallbackVoices.clear()
+    if (notify) this.setState(this.soundBankId ? 'ready-sf2' : 'ready-fallback')
+  }
+
+  private scheduleFallback(midiNote: number, start: number, duration: number, volume: number, pan: number) {
+    if (!this.context) return
+    const oscillator = this.context.createOscillator()
+    const gain = this.context.createGain()
+    const panner = this.context.createStereoPanner()
+    oscillator.type = 'triangle'
+    oscillator.frequency.value = 440 * 2 ** ((midiNote - 69) / 12)
+    panner.pan.value = pan
+    gain.gain.setValueAtTime(0.0001, start)
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), start + 0.015)
+    gain.gain.setValueAtTime(Math.max(0.0002, volume), Math.max(start + 0.015, start + duration - 0.06))
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+    oscillator.connect(gain).connect(panner).connect(this.context.destination)
+    const voice = { oscillator, gain }
+    this.fallbackVoices.add(voice)
+    oscillator.onended = () => this.fallbackVoices.delete(voice)
+    oscillator.start(start)
+    oscillator.stop(start + duration + 0.02)
+  }
+
+  private scheduleMetronomeClick(start: number, accent: boolean) {
+    if (!this.context) return
+    const oscillator = this.context.createOscillator()
+    const gain = this.context.createGain()
+    oscillator.type = 'square'
+    oscillator.frequency.value = accent ? 1320 : 880
+    gain.gain.setValueAtTime(accent ? 0.075 : 0.045, start)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.035)
+    oscillator.connect(gain).connect(this.context.destination)
+    const voice = { oscillator, gain }
+    this.fallbackVoices.add(voice)
+    oscillator.onended = () => this.fallbackVoices.delete(voice)
+    oscillator.start(start)
+    oscillator.stop(start + 0.04)
+  }
+}
+
+export const audioEngine = new SatbAudioEngine()
