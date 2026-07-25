@@ -279,6 +279,95 @@ async function resizeNote(startTick, durationTicks, midiNote, requestedEndTick) 
   await delay(100)
 }
 
+async function verifySelectionAndMovePreview() {
+  await clickButton('停止')
+  await assertSilence(100, '单选前')
+  await clickButton('选择工具（1）')
+  const pointer = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const canvas = document.querySelector('.roll-canvas');
+    if (!roll || !canvas) return null;
+    const localY = 72 + (84 - 72) * 22 + 10;
+    roll.scrollTop = Math.max(0, localY - 180);
+    roll.scrollLeft = 0;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = rect.left + 58 + 17;
+    const clientY = rect.top + localY;
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 20, clientX, clientY, button: 0 }));
+    canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 20, clientX, clientY, button: 0 }));
+    return { clientX, clientY };
+  })()`)
+  if (!pointer) throw new Error('无法定位单选预听音符')
+  await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) > 0.001`, '单选音符预听')
+
+  await delay(450)
+  await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) <= 0.001`, '单选预听结束')
+  await evaluate(`document.querySelector('.roll-canvas').dispatchEvent(new PointerEvent('pointerdown', {
+    bubbles: true, pointerId: 21, clientX: ${pointer.clientX}, clientY: ${pointer.clientY}, button: 0,
+  }))`)
+  await delay(450)
+  await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) <= 0.001`, '移动前预听结束')
+  await evaluate(`document.querySelector('.roll-canvas').dispatchEvent(new PointerEvent('pointermove', {
+    bubbles: true, pointerId: 21, clientX: ${pointer.clientX}, clientY: ${pointer.clientY - 22}, button: 0, buttons: 1,
+  }))`)
+  await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) > 0.001`, '单音移动预听')
+  await evaluate(`document.querySelector('.roll-canvas').dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, pointerId: 21, clientX: ${pointer.clientX}, clientY: ${pointer.clientY - 22}, button: 0,
+  }))`)
+  await delay(100)
+  await clickButton('停止')
+  await clickButton('撤销')
+
+  const multiSelected = await evaluate(`(() => {
+    const canvas = document.querySelector('.roll-canvas');
+    if (!canvas) return false;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = rect.left + 58 + (480 / 960) * 72 + 17;
+    const clientY = rect.top + 72 + (84 - 74) * 22 + 10;
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 22, clientX, clientY, button: 0, shiftKey: true }));
+    canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 22, clientX, clientY, button: 0, shiftKey: true }));
+    return true;
+  })()`)
+  if (!multiSelected) throw new Error('无法建立多音符选择')
+  await assertSilence(300, '多选音符')
+  await clickButton('铅笔工具（2）')
+}
+
+async function verifyLiveErase() {
+  await clickButton('擦除工具（3）')
+  const pointer = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const canvas = document.querySelector('.roll-canvas');
+    if (!roll || !canvas) return null;
+    const localX = 58 + 17;
+    const localY = 72 + (84 - 72) * 22 + 10;
+    roll.scrollTop = Math.max(0, localY - 180);
+    roll.scrollLeft = 0;
+    const rect = canvas.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    const before = [...canvas.getContext('2d').getImageData(Math.round(localX * ratio), Math.round(localY * ratio), 1, 1).data];
+    const clientX = rect.left + localX;
+    const clientY = rect.top + localY;
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 23, clientX, clientY, button: 0 }));
+    return { clientX, clientY, localX, localY, ratio, before };
+  })()`)
+  if (!pointer) throw new Error('无法开始实时擦除验证')
+  await delay(100)
+  const during = await evaluate(`(() => {
+    const canvas = document.querySelector('.roll-canvas');
+    return [...canvas.getContext('2d').getImageData(
+      Math.round(${pointer.localX} * ${pointer.ratio}), Math.round(${pointer.localY} * ${pointer.ratio}), 1, 1,
+    ).data];
+  })()`)
+  if (JSON.stringify(pointer.before) === JSON.stringify(during)) throw new Error('擦除按下后音符画面未实时更新')
+  await evaluate(`document.querySelector('.roll-canvas').dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, pointerId: 23, clientX: ${pointer.clientX}, clientY: ${pointer.clientY}, button: 0,
+  }))`)
+  await delay(100)
+  await clickButton('撤销')
+  await clickButton('铅笔工具（2）')
+}
+
 async function middleDragCanvas() {
   const start = await evaluate(`(() => {
     const roll = document.querySelector('.piano-roll');
@@ -322,12 +411,22 @@ try {
   await client.send('Runtime.enable')
   await waitFor(`document.readyState === 'complete' && document.body.innerText.includes('未命名练习')`, '应用首屏')
   await waitFor(`window.desktop.windowControls.isFocused().then((focused) => focused && document.hasFocus())`, '应用首屏原生窗口与网页焦点')
+  await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '应用启动时默认 SF2 预载', 20_000)
   await verifyInitialGridSelection()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
   await clickButton('最大化')
   await waitFor(`window.desktop.windowControls.isMaximized()`, '窗口最大化')
   await clickButton('还原')
   await waitFor(`window.desktop.windowControls.isMaximized().then((value) => !value)`, '窗口还原')
+
+  await evaluate(`(() => {
+    window.__satbE2eCanvasTexts = [];
+    const original = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
+      window.__satbE2eCanvasTexts.push(String(text));
+      return original.call(this, text, ...args);
+    };
+  })()`)
 
   const voices = [
     [72, 74],
@@ -339,6 +438,12 @@ try {
     await addNote(voice, 0, voices[voice][0], voice === 0 ? 300 : 0)
     await addNote(voice, 480, voices[voice][1])
   }
+  const canvasTexts = await evaluate('[...new Set(window.__satbE2eCanvasTexts)]')
+  if (!canvasTexts.includes('C5') || !canvasTexts.includes('D5') || canvasTexts.includes('S')) {
+    throw new Error(`音符块音高文字错误：${JSON.stringify(canvasTexts)}`)
+  }
+  await verifySelectionAndMovePreview()
+  await verifyLiveErase()
   await middleDragCanvas()
 
   await dragDrawNote(0, 1_040, 1_520, 76)
@@ -428,8 +533,12 @@ try {
   console.log(JSON.stringify({
     executable,
     defaultSoundFont: 'ready',
+    startupDefaultSoundFont: 'preloaded',
     userSoundFontReload: 'path-hash-ready',
     audibleOutput: 'play-pause-preview-ready',
+    selectionPreview: 'single-only-ready',
+    liveErase: 'visual-before-commit-ready',
+    noteLabels: 'pitch-ready',
     snapMode: 'floor-start-ceil-end',
     initialGridSelection: 'ready',
     initialWindowFocus: 'native-and-web-ready',

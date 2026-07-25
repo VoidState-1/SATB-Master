@@ -24,6 +24,7 @@ interface PianoRollProps {
   playheadTick: number
   onSetPlayhead(tick: number): void
   onSelectNotes(noteIds: Set<string>): void
+  onPreviewNote(voiceId: VoiceId, midiNote: number): void
   onSelectChord(chordId?: string): void
   onAddNote(voiceId: VoiceId, tick: number, midiNote: number, durationTicks?: number): void
   onUpdateNote(voiceId: VoiceId, noteId: string, patch: Partial<NoteEvent>): void
@@ -110,6 +111,7 @@ export function PianoRoll({
   playheadTick,
   onSetPlayhead,
   onSelectNotes,
+  onPreviewNote,
   onSelectChord,
   onAddNote,
   onUpdateNote,
@@ -128,9 +130,10 @@ export function PianoRoll({
   const totalHeight = rollHeight + HEADER_HEIGHT
 
   const noteRects = useMemo(() => {
+    const erasedNoteIds = interaction?.kind === 'erase' ? interaction.noteIds : undefined
     return project.tracks.flatMap((track) => {
       if (!track.visible) return []
-      return track.notes.map((note) => {
+      return track.notes.filter((note) => !erasedNoteIds?.has(note.id)).map((note) => {
         const noteDrag = interaction?.kind === 'move' || interaction?.kind === 'resize' ? interaction : undefined
         const isAnchor = noteDrag?.noteId === note.id
         const isGroupMove = noteDrag?.kind === 'move' && noteDrag.selectedIds.includes(note.id)
@@ -140,6 +143,7 @@ export function PianoRoll({
         return {
           track,
           note,
+          midiNote,
           x: PIANO_WIDTH + (startTick / project.ppq) * pixelsPerBeat,
           y: HEADER_HEIGHT + (MAX_MIDI - midiNote) * ROW_HEIGHT + 2,
           width: Math.max(5, (durationTicks / project.ppq) * pixelsPerBeat - 1),
@@ -223,7 +227,7 @@ export function PianoRoll({
       if (!existing || item.severity === 'error') diagnosticsByNote.set(noteId, item)
     }))
 
-    noteRects.forEach(({ track, note, x, y, width, height }) => {
+    noteRects.forEach(({ track, note, midiNote, x, y, width, height }) => {
       const config = VOICE_CONFIG[track.id]
       context.fillStyle = track.id === activeVoice ? config.color : `${config.color}b8`
       context.beginPath()
@@ -240,14 +244,15 @@ export function PianoRoll({
         context.fillStyle = issue.severity === 'error' ? '#c93f34' : '#d49324'
         context.fillRect(x, y + height - 3, width, 3)
       }
-      if (note.locked || track.locked) {
-        context.fillStyle = 'rgba(255,255,255,.72)'
-        context.font = '10px Segoe UI'
-        context.fillText('锁', x + 4, y + 12)
-      } else if (width > 28) {
+      if (width > 25) {
         context.fillStyle = '#fff'
         context.font = '600 10px Segoe UI'
-        context.fillText(track.shortName, x + 5, y + 12)
+        context.fillText(noteName(midiNote), x + 5, y + 12)
+      }
+      if ((note.locked || track.locked) && width > 48) {
+        context.fillStyle = 'rgba(255,255,255,.72)'
+        context.font = '10px Segoe UI'
+        context.fillText('锁', x + width - 15, y + 12)
       }
     })
 
@@ -259,6 +264,11 @@ export function PianoRoll({
       context.fillRect(x, y, width, ROW_HEIGHT - 4)
       context.strokeStyle = VOICE_CONFIG[interaction.voiceId].darkColor
       context.strokeRect(x + 0.5, y + 0.5, width - 1, ROW_HEIGHT - 5)
+      if (width > 25) {
+        context.fillStyle = '#fff'
+        context.font = '600 10px Segoe UI'
+        context.fillText(noteName(interaction.midiNote), x + 5, y + 12)
+      }
     }
 
     if (interaction?.kind === 'marquee') {
@@ -455,6 +465,9 @@ export function PianoRoll({
       const maxPitch = Math.max(...selectedRects.map((rect) => rect.note.midiNote))
       const tickDelta = Math.max(-minStart, Math.min(project.lengthTicks - maxEnd, requestedTickDelta))
       const pitchDelta = Math.max(MIN_MIDI - minPitch, Math.min(MAX_MIDI - maxPitch, requestedPitchDelta))
+      if (interaction.selectedIds.length === 1 && pitchDelta !== interaction.pitchDelta) {
+        onPreviewNote(interaction.voiceId, interaction.midiNote + pitchDelta)
+      }
       setInteraction({
         ...interaction,
         tickDelta,

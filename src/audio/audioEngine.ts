@@ -24,8 +24,10 @@ interface ScheduledSynthEvent {
 
 export class SatbAudioEngine {
   private context?: AudioContext
+  private initializePromise?: Promise<void>
   private synth?: WorkletSynthesizer
   private soundBankId?: string
+  private soundFontLoadQueue: Promise<void> = Promise.resolve()
   private output?: GainNode
   private analyser?: AnalyserNode
   private analyserSamples?: Float32Array<ArrayBuffer>
@@ -48,7 +50,12 @@ export class SatbAudioEngine {
   }
 
   async initialize() {
-    if (this.context) return
+    if (this.initializePromise) return this.initializePromise
+    this.initializePromise = this.initializeAudio()
+    return this.initializePromise
+  }
+
+  private async initializeAudio() {
     this.setState('loading', '正在初始化音频引擎')
     this.context = new AudioContext({ latencyHint: 'interactive' })
     this.output = this.context.createGain()
@@ -76,20 +83,26 @@ export class SatbAudioEngine {
   async loadSoundFont(buffer: ArrayBuffer, id: string) {
     await this.initialize()
     if (!this.synth) throw new Error('当前环境无法初始化 SF2 AudioWorklet')
-    this.setState('loading', '正在解析 SoundFont')
-
-    try {
-      if (this.soundBankId) {
-        await this.synth.soundBankManager.deleteSoundBank(this.soundBankId)
-        this.soundBankId = undefined
+    const synth = this.synth
+    // 启动预载、播放和手动换音色可能并发到达；串行替换音色库，避免删除正在加载的音色。
+    const operation = this.soundFontLoadQueue.catch(() => undefined).then(async () => {
+      if (this.soundBankId === id) return
+      this.setState('loading', '正在解析 SoundFont')
+      try {
+        if (this.soundBankId) {
+          await synth.soundBankManager.deleteSoundBank(this.soundBankId)
+          this.soundBankId = undefined
+        }
+        await synth.soundBankManager.addSoundBank(buffer, id)
+        this.soundBankId = id
+        this.setState('ready-sf2', 'SoundFont 已就绪')
+      } catch (error) {
+        this.setState('ready-fallback', 'SoundFont 加载失败，使用回退音色')
+        throw error
       }
-      await this.synth.soundBankManager.addSoundBank(buffer, id)
-      this.soundBankId = id
-      this.setState('ready-sf2', 'SoundFont 已就绪')
-    } catch (error) {
-      this.setState('ready-fallback', 'SoundFont 加载失败，使用回退音色')
-      throw error
-    }
+    })
+    this.soundFontLoadQueue = operation
+    await operation
   }
 
   isSoundFontLoaded(id: string) {
@@ -97,6 +110,7 @@ export class SatbAudioEngine {
   }
 
   async unloadSoundFont() {
+    await this.soundFontLoadQueue.catch(() => undefined)
     if (this.synth && this.soundBankId) await this.synth.soundBankManager.deleteSoundBank(this.soundBankId)
     this.soundBankId = undefined
     this.setState('ready-fallback', '使用内置回退音色')

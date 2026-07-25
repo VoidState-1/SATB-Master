@@ -78,6 +78,22 @@ function soundFontId(soundFont: ProjectDocument['audio']['soundFont']) {
   return soundFont.kind === 'default' ? 'default' : `user:${soundFont.hash ?? soundFont.path ?? soundFont.name}`
 }
 
+async function ensureSoundFontLoaded(soundFontConfig: ProjectDocument['audio']['soundFont']) {
+  const targetSoundFontId = soundFontId(soundFontConfig)
+  if (audioEngine.isSoundFontLoaded(targetSoundFontId)) return
+  const soundFont = soundFontConfig.kind === 'default'
+    ? await loadDefaultSoundFont()
+    : await loadUserSoundFont(soundFontConfig.path ?? '')
+  if (soundFontConfig.kind === 'user' && soundFontConfig.hash && soundFont.hash !== soundFontConfig.hash) {
+    throw new Error('工程引用的 SoundFont 文件已被替换')
+  }
+  const buffer = soundFont.bytes.buffer.slice(
+    soundFont.bytes.byteOffset,
+    soundFont.bytes.byteOffset + soundFont.bytes.byteLength,
+  ) as ArrayBuffer
+  await audioEngine.loadSoundFont(buffer, targetSoundFontId)
+}
+
 function App() {
   const initialProject = useMemo(() => createEmptyProject(), [])
   const history = useProjectHistory(initialProject)
@@ -102,6 +118,7 @@ function App() {
   const [notice, setNotice] = useState<string>()
   const clipboardRef = useRef<ClipboardNote[]>([])
   const recoveryCheckedRef = useRef(false)
+  const defaultSoundFontRequestedRef = useRef(false)
   const playSessionRef = useRef(0)
 
   const harmonyResult = useMemo(() => checkHarmony(project), [project])
@@ -128,6 +145,15 @@ function App() {
     })
     return () => audioEngine.stop(false)
   }, [])
+
+  useEffect(() => {
+    if (defaultSoundFontRequestedRef.current) return
+    defaultSoundFontRequestedRef.current = true
+    void ensureSoundFontLoaded(initialProject.audio.soundFont).catch(async (error) => {
+      await audioEngine.unloadSoundFont()
+      console.warn('启动时加载默认 SoundFont 失败，将使用回退音色。', error)
+    })
+  }, [initialProject.audio.soundFont])
 
   useEffect(() => {
     const controls = window.desktop?.windowControls
@@ -199,14 +225,33 @@ function App() {
     })))
   }, [commitResult, project])
 
+  const handleSelectNotes = useCallback((noteIds: Set<string>) => {
+    setSelectedNoteIds(noteIds)
+    if (noteIds.size !== 1) return
+    const noteId = noteIds.values().next().value
+    for (const track of project.tracks) {
+      const note = track.notes.find((candidate) => candidate.id === noteId)
+      if (note) {
+        void audioEngine.previewNote(note.midiNote, track.id)
+        return
+      }
+    }
+  }, [project])
+
+  const handlePreviewNote = useCallback((voiceId: VoiceId, midiNote: number) => {
+    void audioEngine.previewNote(midiNote, voiceId)
+  }, [])
+
   const handleSplitNote = useCallback((voiceId: VoiceId, noteId: string, splitTick: number) => {
     commitResult(splitNote(project, voiceId, noteId, splitTick))
   }, [commitResult, project])
 
   const handleUpdateNote = useCallback((voiceId: VoiceId, noteId: string, patch: Partial<NoteEvent>) => {
     const result = updateNote(project, voiceId, noteId, patch)
-    if (commitResult(result) && typeof patch.midiNote === 'number') void audioEngine.previewNote(patch.midiNote, voiceId)
-  }, [commitResult, project])
+    if (commitResult(result) && typeof patch.midiNote === 'number' && selectedNoteIds.size === 1) {
+      void audioEngine.previewNote(patch.midiNote, voiceId)
+    }
+  }, [commitResult, project, selectedNoteIds.size])
 
   const handleDeleteNotes = useCallback((noteIds: Set<string>) => {
     if (commitResult(deleteNotes(project, noteIds))) setSelectedNoteIds(new Set())
@@ -476,10 +521,16 @@ function App() {
 
   const handleUseDefaultSoundFont = useCallback(async () => {
     await audioEngine.unloadSoundFont()
+    const defaultSoundFont = { kind: 'default' as const, name: 'SATB Master 默认音色' }
     history.commit(replaceProject(project, (draft) => {
-      draft.audio.soundFont = { kind: 'default', name: 'SATB Master 默认音色' }
+      draft.audio.soundFont = defaultSoundFont
     }))
-    showNotice('已恢复默认音色，将在播放时加载')
+    try {
+      await ensureSoundFontLoaded(defaultSoundFont)
+      showNotice('默认音色已加载')
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : '默认音色加载失败')
+    }
   }, [history, project, showNotice])
 
   const handleStop = useCallback((returnToStart = false) => {
@@ -497,20 +548,9 @@ function App() {
     try {
       await audioEngine.resume()
       const soundFontConfig = project.audio.soundFont
-      const targetSoundFontId = soundFontId(soundFontConfig)
-      if (!audioEngine.isSoundFontLoaded(targetSoundFontId)) {
+      if (!audioEngine.isSoundFontLoaded(soundFontId(soundFontConfig))) {
         try {
-          const soundFont = soundFontConfig.kind === 'default'
-            ? await loadDefaultSoundFont()
-            : await loadUserSoundFont(soundFontConfig.path ?? '')
-          if (soundFontConfig.kind === 'user' && soundFontConfig.hash && soundFont.hash !== soundFontConfig.hash) {
-            throw new Error('工程引用的 SoundFont 文件已被替换')
-          }
-          const buffer = soundFont.bytes.buffer.slice(
-            soundFont.bytes.byteOffset,
-            soundFont.bytes.byteOffset + soundFont.bytes.byteLength,
-          ) as ArrayBuffer
-          await audioEngine.loadSoundFont(buffer, targetSoundFontId)
+          await ensureSoundFontLoaded(soundFontConfig)
         } catch (error) {
           // 音源缺失、摘要变化或安装路径异常时清掉旧音色，防止误用上一个工程的音色。
           await audioEngine.unloadSoundFont()
@@ -600,7 +640,15 @@ function App() {
       startTick: quantize ? Math.round(note.startTick / gridTicks) * gridTicks : note.startTick + tickDelta,
       midiNote: Math.max(0, Math.min(127, note.midiNote + pitchDelta)),
     }))
-    commitResult(result)
+    if (!commitResult(result) || selectedNoteIds.size !== 1) return
+    const selectedId = selectedNoteIds.values().next().value
+    for (const track of result.project.tracks) {
+      const note = track.notes.find((candidate) => candidate.id === selectedId)
+      if (note) {
+        void audioEngine.previewNote(note.midiNote, track.id)
+        return
+      }
+    }
   }, [commitResult, gridTicks, project, selectedNoteIds])
 
   useEffect(() => {
@@ -757,7 +805,8 @@ function App() {
             diagnostics={harmonyResult.diagnostics}
             playheadTick={playheadTick}
             onSetPlayhead={setPlayheadTick}
-            onSelectNotes={setSelectedNoteIds}
+            onSelectNotes={handleSelectNotes}
+            onPreviewNote={handlePreviewNote}
             onSelectChord={setSelectedChordId}
             onAddNote={handleAddNote}
             onUpdateNote={handleUpdateNote}
