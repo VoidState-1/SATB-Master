@@ -13,6 +13,7 @@
     "e2e:desktop": "node scripts/e2e-desktop.mjs",
     "e2e:desktop:local": "npm run build && node scripts/e2e-desktop.mjs node_modules/electron/dist/electron.exe .",
     "dev": "concurrently --kill-others-on-fail \"vite\" \"wait-on tcp:5173 && electron . --dev\"",
+    "dev:tools": "concurrently --kill-others-on-fail \"vite\" \"wait-on tcp:5173 && electron . --dev --devtools\"",
     "build": "npm run typecheck && vite build && node scripts/clean-electron-output.mjs && tsc -p tsconfig.electron.json",
     "pack:win": "npm run generate:assets && npm run build && electron-builder --win dir --x64",
     "dist:win": "npm run generate:assets && npm run build && electron-builder --win nsis --x64 --config.directories.output=release-installer",

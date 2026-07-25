@@ -150,7 +150,10 @@ async function verifyInitialGridSelection() {
   await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y })
   await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', buttons: 1, clickCount: 1 })
   await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', buttons: 0, clickCount: 1 })
-  await delay(100)
+  await waitFor(
+    `document.querySelector('select[aria-label="时值对齐"]')?.matches(':open') === true`,
+    '时值对齐原生菜单首次展开',
+  )
   const focused = await evaluate(`document.activeElement === document.querySelector('select[aria-label="时值对齐"]')`)
   if (!focused) throw new Error('时值对齐控件在应用首次点击时未获得焦点')
 

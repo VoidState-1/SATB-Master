@@ -7,6 +7,7 @@ const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 const developmentServerUrl = process.argv.includes('--dev')
   ? 'http://localhost:5173'
   : undefined
+const shouldOpenDevTools = process.argv.includes('--devtools')
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
 
 if (e2eDirectory) app.setPath('userData', path.join(e2eDirectory, 'user-data'))
@@ -30,10 +31,14 @@ function createWindow() {
   })
 
   window.once('ready-to-show', () => {
+    // Windows 必须先完成无边框窗口的原生激活，再把输入焦点交给网页。
+    // 若在 show() 的同一调用栈里强制聚焦，Chromium 的原生下拉菜单会吞掉首次点击。
+    window.once('focus', () => {
+      setImmediate(() => {
+        if (!window.isDestroyed() && window.isFocused()) window.webContents.focus()
+      })
+    })
     window.show()
-    // Windows 延迟显示无边框窗口时，原生窗口与网页焦点可能不同步，原生下拉框会吞掉首次点击。
-    window.focus()
-    window.webContents.focus()
   })
   window.on('maximize', () => window.webContents.send('window:maximized-changed', true))
   window.on('unmaximize', () => window.webContents.send('window:maximized-changed', false))
@@ -48,7 +53,9 @@ function createWindow() {
 
   if (developmentServerUrl) {
     void window.loadURL(developmentServerUrl)
-    window.webContents.openDevTools({ mode: 'detach' })
+    if (shouldOpenDevTools) {
+      window.webContents.openDevTools({ mode: 'detach', activate: false })
+    }
   } else {
     void window.loadFile(path.join(currentDirectory, '../dist/index.html'))
   }
