@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quiet Workbench UI"
+  short_description: "设计克制、紧凑、连续且适合长时间专业工作的现代桌面工具界面"
+  default_prompt: "Use $design-quiet-workbench-ui to design a quiet, dense desktop workbench interface."
