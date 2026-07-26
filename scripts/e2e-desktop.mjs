@@ -871,20 +871,39 @@ async function verifyEditorShortcutGestures() {
     const rect = roll.getBoundingClientRect();
     const viewportX = Math.min(520, rect.width - 80);
     const beforeTick = ((roll.scrollLeft + viewportX - 58) / 72) * 960;
-    roll.dispatchEvent(new WheelEvent('wheel', {
-      bubbles: true, cancelable: true, ctrlKey: true, deltaY: -100,
-      clientX: rect.left + viewportX, clientY: rect.top + 160,
-    }));
-    return { beforeTick, viewportX };
+    return {
+      beforeTick,
+      viewportX,
+      x: rect.left + viewportX,
+      y: rect.top + Math.min(160, rect.height / 2),
+      devicePixelRatio: window.devicePixelRatio,
+      innerWidth: window.innerWidth,
+    };
   })()`)
   if (!zoom) throw new Error('无法定位时间轴缩放锚点')
+  await client.send('Input.dispatchMouseEvent', {
+    type: 'mouseWheel',
+    x: zoom.x,
+    y: zoom.y,
+    deltaX: 0,
+    deltaY: -100,
+    modifiers: 2,
+  })
   await delay(120)
   const zoomed = await evaluate(`(() => {
     const roll = document.querySelector('.piano-roll');
     const pixels = Number(document.querySelector('.zoom-value')?.textContent);
-    return { pixels, afterTick: ((roll.scrollLeft + ${zoom.viewportX} - 58) / pixels) * 960 };
+    return {
+      pixels,
+      afterTick: ((roll.scrollLeft + ${zoom.viewportX} - 58) / pixels) * 960,
+      devicePixelRatio: window.devicePixelRatio,
+      innerWidth: window.innerWidth,
+    };
   })()`)
-  if (zoomed.pixels !== 82 || Math.abs(zoomed.afterTick - zoom.beforeTick) > 2) {
+  if (zoomed.pixels !== 82
+    || Math.abs(zoomed.afterTick - zoom.beforeTick) > 2
+    || zoomed.devicePixelRatio !== zoom.devicePixelRatio
+    || zoomed.innerWidth !== zoom.innerWidth) {
     throw new Error(`Ctrl+滚轮锚点缩放错误：${JSON.stringify({ zoom, zoomed })}`)
   }
   await dispatchShortcut('Minus', { ctrlKey: true })
@@ -894,17 +913,42 @@ async function verifyEditorShortcutGestures() {
   await dispatchShortcut('Minus', { ctrlKey: true })
   await waitFor(`document.querySelector('.zoom-value')?.textContent?.trim() === '72'`, '键盘恢复时间轴缩放')
 
-  const horizontal = await evaluate(`(() => {
+  const horizontalWheelTarget = await evaluate(`(() => {
     const roll = document.querySelector('.piano-roll');
     roll.scrollLeft = 300;
     const rect = roll.getBoundingClientRect();
-    roll.dispatchEvent(new WheelEvent('wheel', {
-      bubbles: true, cancelable: true, shiftKey: true, deltaY: 120,
-      clientX: rect.left + 300, clientY: rect.top + 160,
-    }));
-    return roll.scrollLeft;
+    return { x: rect.left + Math.min(300, rect.width / 2), y: rect.top + Math.min(160, rect.height / 2) };
   })()`)
-  if (horizontal < 415) throw new Error(`Shift+滚轮横向滚动错误：${horizontal}`)
+  await client.send('Input.dispatchMouseEvent', {
+    type: 'mouseWheel',
+    x: horizontalWheelTarget.x,
+    y: horizontalWheelTarget.y,
+    deltaX: 0,
+    deltaY: 120,
+    modifiers: 8,
+  })
+  await delay(100)
+  const horizontal = await evaluate(`document.querySelector('.piano-roll').scrollLeft`)
+  if (horizontal < 415 || horizontal > 425) throw new Error(`Shift+滚轮横向滚动量错误：${horizontal}`)
+
+  const trackpadWheelTarget = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    roll.scrollLeft = 300;
+    const rect = roll.getBoundingClientRect();
+    return { x: rect.left + Math.min(300, rect.width / 2), y: rect.top + Math.min(160, rect.height / 2) };
+  })()`)
+  await client.send('Input.dispatchMouseEvent', {
+    type: 'mouseWheel',
+    x: trackpadWheelTarget.x,
+    y: trackpadWheelTarget.y,
+    deltaX: 72,
+    deltaY: 0,
+  })
+  await delay(100)
+  const trackpadHorizontal = await evaluate(`document.querySelector('.piano-roll').scrollLeft`)
+  if (trackpadHorizontal < 367 || trackpadHorizontal > 377) {
+    throw new Error(`原生触控板横向滚动量错误：${trackpadHorizontal}`)
+  }
 
   await evaluate(`document.querySelector('.piano-roll')?.focus()`)
   await dispatchShortcut('BracketRight')

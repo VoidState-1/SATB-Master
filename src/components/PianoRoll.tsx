@@ -902,10 +902,6 @@ export function PianoRoll({
       onSetPixelsPerBeat(nextPixelsPerBeat)
       return
     }
-    if (event.shiftKey) {
-      event.preventDefault()
-      scroll.scrollLeft += event.deltaY !== 0 ? event.deltaY : event.deltaX
-    }
   }
 
   const paletteChord = chordPalette
