@@ -63,6 +63,7 @@ export function PanelResizeHandle({
     }
     if (nextValue === undefined) return
     event.preventDefault()
+    event.stopPropagation()
     onResize(clamp(nextValue, min, max))
   }
 

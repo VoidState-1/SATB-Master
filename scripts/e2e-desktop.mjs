@@ -744,6 +744,271 @@ async function middleDragCanvas() {
   }
 }
 
+async function dispatchShortcut(code, options = {}) {
+  const keyByCode = {
+    ArrowDown: 'ArrowDown', ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp',
+    Backspace: 'Backspace', BracketLeft: '[', BracketRight: ']', Delete: 'Delete', End: 'End',
+    Equal: '=', Escape: 'Escape', Home: 'Home', Minus: '-', PageDown: 'PageDown', PageUp: 'PageUp',
+    Space: ' ', Tab: 'Tab',
+  }
+  const key = options.key ?? keyByCode[code] ?? (code.startsWith('Key') ? code.slice(3).toLowerCase() : code.startsWith('Digit') ? code.slice(5) : code)
+  await evaluate(`(() => {
+    const target = document.activeElement ?? window;
+    target.dispatchEvent(new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      code: ${JSON.stringify(code)},
+      key: ${JSON.stringify(key)},
+      ctrlKey: ${Boolean(options.ctrlKey)},
+      altKey: ${Boolean(options.altKey)},
+      shiftKey: ${Boolean(options.shiftKey)},
+    }));
+  })()`)
+  await delay(options.delay ?? 80)
+}
+
+async function releaseModifier(code, key) {
+  await evaluate(`(document.activeElement ?? window).dispatchEvent(new KeyboardEvent('keyup', {
+    bubbles: true, cancelable: true, code: ${JSON.stringify(code)}, key: ${JSON.stringify(key)},
+  }))`)
+  await delay(60)
+}
+
+async function verifyShortcutSettings() {
+  await clickButton('设置')
+  await waitFor(`Boolean(document.querySelector('.settings-dialog'))`, '快捷键设置页打开')
+  const tabCount = await evaluate(`document.querySelectorAll('.settings-tabs button').length`)
+  if (tabCount !== 1) throw new Error(`设置页选项卡数量错误：${tabCount}`)
+  const dialogLayout = await evaluate(`(() => {
+    const dialog = document.querySelector('.settings-dialog');
+    const content = document.querySelector('.shortcut-settings-content');
+    const row = document.querySelector('.shortcut-row');
+    if (!dialog || !content || !row) return null;
+    const dialogRect = dialog.getBoundingClientRect();
+    return {
+      dialog: { left: dialogRect.left, top: dialogRect.top, right: dialogRect.right, bottom: dialogRect.bottom },
+      contentOverflow: content.scrollWidth - content.clientWidth,
+      rowOverflow: row.scrollWidth - row.clientWidth,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    };
+  })()`)
+  if (!dialogLayout
+    || dialogLayout.dialog.left < 0
+    || dialogLayout.dialog.top < 0
+    || dialogLayout.dialog.right > dialogLayout.viewport.width
+    || dialogLayout.dialog.bottom > dialogLayout.viewport.height
+    || dialogLayout.contentOverflow > 1
+    || dialogLayout.rowOverflow > 1) {
+    throw new Error(`快捷键设置页布局溢出：${JSON.stringify(dialogLayout)}`)
+  }
+
+  await evaluate(`document.querySelector('[aria-label="修改“选择工具”快捷键"]')?.click()`)
+  await delay(60)
+  await dispatchShortcut('Digit5')
+  await waitFor(`document.querySelector('button[aria-label^="选择工具（5）"]') !== null`, '快捷键重映射更新工具提示')
+  const persistedBinding = await evaluate(`JSON.parse(localStorage.getItem('satb-master-shortcuts-v1')).selectTool`)
+  if (JSON.stringify(persistedBinding) !== JSON.stringify(['Digit5'])) {
+    throw new Error(`快捷键重映射未持久化：${JSON.stringify(persistedBinding)}`)
+  }
+  await clickButton('关闭设置')
+  await dispatchShortcut('Digit5')
+  const remapped = await evaluate(`document.querySelector('button[aria-label^="选择工具"]')?.classList.contains('is-active') === true`)
+  if (!remapped) throw new Error('重映射后的选择工具快捷键未生效')
+
+  await clickButton('设置')
+  await evaluate(`document.querySelector('[aria-label="修改“铅笔工具”快捷键"]')?.click()`)
+  await delay(60)
+  await dispatchShortcut('Digit5')
+  await waitFor(`document.querySelector('.shortcut-capture-error')?.textContent?.includes('选择工具') === true`, '快捷键冲突提示')
+  await dispatchShortcut('Escape')
+  const resetAll = await evaluate(`(() => {
+    const button = [...document.querySelectorAll('.shortcut-settings-toolbar button')].find((item) => item.textContent?.includes('恢复默认'));
+    button?.click();
+    return Boolean(button);
+  })()`)
+  if (!resetAll) throw new Error('无法恢复默认快捷键')
+  await delay(100)
+  await clickButton('关闭设置')
+  await waitFor(`document.querySelector('button[aria-label^="选择工具（1）"]') !== null`, '工具快捷键恢复默认')
+}
+
+async function verifyEditorShortcutGestures() {
+  await clickButton('选择工具（1）')
+  await evaluate(`document.querySelector('.piano-roll')?.focus()`)
+  await dispatchShortcut('ControlLeft', { key: 'Control', ctrlKey: true })
+  const controlTool = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-pencil') === true`)
+  if (!controlTool) throw new Error('按住 Ctrl 未临时切换到铅笔工具')
+  await releaseModifier('ControlLeft', 'Control')
+  const restoredSelect = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-select') === true`)
+  if (!restoredSelect) throw new Error('松开 Ctrl 后未恢复选择工具')
+
+  await dispatchShortcut('AltLeft', { key: 'Alt', altKey: true })
+  const altTool = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-eraser') === true`)
+  if (!altTool) throw new Error('按住 Alt 未临时切换到擦除工具')
+  await releaseModifier('AltLeft', 'Alt')
+
+  await dispatchShortcut('ControlLeft', { key: 'Control', ctrlKey: true })
+  await dispatchShortcut('AltLeft', { key: 'Alt', ctrlKey: true, altKey: true })
+  const modifierPriority = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-eraser') === true`)
+  if (!modifierPriority) throw new Error('Ctrl+Alt 未按 Alt 优先使用擦除工具')
+  await evaluate(`window.dispatchEvent(new Event('blur'))`)
+  await delay(80)
+  const blurRestored = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-select') === true`)
+  if (!blurRestored) throw new Error('窗口失焦后临时工具未复原')
+
+  await evaluate(`document.querySelector('.piano-roll')?.focus()`)
+  await dispatchShortcut('Tab')
+  const nextVoice = await evaluate(`document.querySelectorAll('.voice-track')[1]?.classList.contains('is-active') === true`)
+  if (!nextVoice) throw new Error('Tab 未切换到下一声部')
+  await dispatchShortcut('Tab', { shiftKey: true })
+  const previousVoice = await evaluate(`document.querySelectorAll('.voice-track')[0]?.classList.contains('is-active') === true`)
+  if (!previousVoice) throw new Error('Shift+Tab 未反向切换声部')
+
+  const zoom = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    if (!roll) return null;
+    roll.scrollLeft = 240;
+    const rect = roll.getBoundingClientRect();
+    const viewportX = Math.min(520, rect.width - 80);
+    const beforeTick = ((roll.scrollLeft + viewportX - 58) / 72) * 960;
+    roll.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, ctrlKey: true, deltaY: -100,
+      clientX: rect.left + viewportX, clientY: rect.top + 160,
+    }));
+    return { beforeTick, viewportX };
+  })()`)
+  if (!zoom) throw new Error('无法定位时间轴缩放锚点')
+  await delay(120)
+  const zoomed = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const pixels = Number(document.querySelector('.zoom-value')?.textContent);
+    return { pixels, afterTick: ((roll.scrollLeft + ${zoom.viewportX} - 58) / pixels) * 960 };
+  })()`)
+  if (zoomed.pixels !== 82 || Math.abs(zoomed.afterTick - zoom.beforeTick) > 2) {
+    throw new Error(`Ctrl+滚轮锚点缩放错误：${JSON.stringify({ zoom, zoomed })}`)
+  }
+  await dispatchShortcut('Minus', { ctrlKey: true })
+  await waitFor(`document.querySelector('.zoom-value')?.textContent?.trim() === '72'`, '键盘缩小时间轴')
+  await dispatchShortcut('Equal', { ctrlKey: true })
+  await waitFor(`document.querySelector('.zoom-value')?.textContent?.trim() === '82'`, '键盘放大时间轴')
+  await dispatchShortcut('Minus', { ctrlKey: true })
+  await waitFor(`document.querySelector('.zoom-value')?.textContent?.trim() === '72'`, '键盘恢复时间轴缩放')
+
+  const horizontal = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    roll.scrollLeft = 300;
+    const rect = roll.getBoundingClientRect();
+    roll.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, shiftKey: true, deltaY: 120,
+      clientX: rect.left + 300, clientY: rect.top + 160,
+    }));
+    return roll.scrollLeft;
+  })()`)
+  if (horizontal < 415) throw new Error(`Shift+滚轮横向滚动错误：${horizontal}`)
+
+  await evaluate(`document.querySelector('.piano-roll')?.focus()`)
+  await dispatchShortcut('BracketRight')
+  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '240'`, '快捷键细化吸附网格')
+  await dispatchShortcut('BracketLeft')
+  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '480'`, '快捷键加粗吸附网格')
+
+  await dispatchShortcut('Home')
+  await waitFor(`document.querySelector('.timeline-playhead-segment')?.style.left === '58px'`, 'Home 回到开头')
+  await dispatchShortcut('PageDown')
+  await waitFor(`document.querySelector('.timeline-playhead-segment')?.style.left === '346px'`, 'PageDown 下一小节')
+  await dispatchShortcut('PageUp')
+  await waitFor(`document.querySelector('.timeline-playhead-segment')?.style.left === '58px'`, 'PageUp 上一小节')
+  await dispatchShortcut('End')
+  const endLeft = await evaluate(`Number.parseFloat(document.querySelector('.timeline-playhead-segment')?.style.left)`)
+  if (Math.abs(endLeft - 4_666) > 0.1) throw new Error(`End 工程末尾定位错误：${endLeft}`)
+  await dispatchShortcut('PageUp')
+  await waitFor(`document.querySelector('.timeline-playhead-segment')?.style.left === '4378px'`, '工程末尾 PageUp 回到最后小节')
+  await dispatchShortcut('Home')
+
+  await dispatchShortcut('Digit2')
+  const pendingDraw = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const canvas = document.querySelector('.roll-canvas');
+    const localY = 72 + (84 - 72) * 22 + 10;
+    roll.scrollLeft = 0;
+    roll.scrollTop = Math.max(0, localY - 180);
+    const rect = canvas.getBoundingClientRect();
+    canvas.setPointerCapture = () => {};
+    canvas.releasePointerCapture = () => {};
+    canvas.hasPointerCapture = () => true;
+    const clientX = rect.left + 58 + 6;
+    const clientY = rect.top + localY;
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 41, clientX, clientY, button: 0 }));
+    return { clientX, clientY };
+  })()`)
+  await delay(100)
+  await dispatchShortcut('Escape')
+  await evaluate(`document.querySelector('.roll-canvas').dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, pointerId: 41, clientX: ${pendingDraw.clientX}, clientY: ${pendingDraw.clientY}, button: 0,
+  }))`)
+  await delay(80)
+}
+
+async function verifySelectionShortcuts(projectPath) {
+  await evaluate(`document.querySelector('.piano-roll')?.focus()`)
+  await dispatchShortcut('KeyA', { ctrlKey: true })
+  await dispatchShortcut('KeyA', { ctrlKey: true, shiftKey: true })
+  await dispatchShortcut('KeyX', { ctrlKey: true })
+  await clickButton('保存')
+  const cleared = JSON.parse(await readFile(projectPath, 'utf8'))
+  const clearedCount = cleared.tracks.reduce((count, track) => count + track.notes.length, 0)
+  if (clearedCount !== 8) throw new Error(`Ctrl+Shift+A 未清除选择：${clearedCount}`)
+
+  await dispatchShortcut('KeyA', { ctrlKey: true })
+  await dispatchShortcut('Escape')
+  await dispatchShortcut('KeyX', { ctrlKey: true })
+  await clickButton('保存')
+  const escaped = JSON.parse(await readFile(projectPath, 'utf8'))
+  const escapedCount = escaped.tracks.reduce((count, track) => count + track.notes.length, 0)
+  if (escapedCount !== 8) throw new Error(`Esc 未清除选择：${escapedCount}`)
+
+  await dispatchShortcut('KeyA', { ctrlKey: true })
+  await dispatchShortcut('KeyD', { ctrlKey: true })
+  await clickButton('保存')
+  const duplicated = JSON.parse(await readFile(projectPath, 'utf8'))
+  const duplicateCount = duplicated.tracks.reduce((count, track) => count + track.notes.length, 0)
+  if (duplicateCount !== 16) throw new Error(`Ctrl+A / Ctrl+D 批量重复错误：${duplicateCount}`)
+  await clickButton('撤销')
+
+  await dispatchShortcut('KeyA', { ctrlKey: true })
+  await dispatchShortcut('KeyX', { ctrlKey: true })
+  await clickButton('保存')
+  const cut = JSON.parse(await readFile(projectPath, 'utf8'))
+  const cutCount = cut.tracks.reduce((count, track) => count + track.notes.length, 0)
+  if (cutCount !== 0) throw new Error(`Ctrl+X 未剪切全部音符：${cutCount}`)
+  await dispatchShortcut('Home')
+  await dispatchShortcut('KeyV', { ctrlKey: true })
+  await clickButton('保存')
+  const pasted = JSON.parse(await readFile(projectPath, 'utf8'))
+  const pastedCount = pasted.tracks.reduce((count, track) => count + track.notes.length, 0)
+  if (pastedCount !== 8) throw new Error(`剪切后 Ctrl+V 恢复音符错误：${pastedCount}`)
+}
+
+async function verifyDoubleClickVoiceActivation() {
+  await clickButton('选择工具（1）')
+  const activated = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const canvas = document.querySelector('.roll-canvas');
+    const localY = 72 + (84 - 72) * 22 + 10;
+    roll.scrollLeft = 0;
+    roll.scrollTop = Math.max(0, localY - 180);
+    const rect = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new MouseEvent('dblclick', {
+      bubbles: true, clientX: rect.left + 58 + 12, clientY: rect.top + localY, button: 0,
+    }));
+    return true;
+  })()`)
+  if (!activated) throw new Error('无法双击非当前声部音符')
+  await delay(100)
+  const sopranoActive = await evaluate(`document.querySelectorAll('.voice-track')[0]?.classList.contains('is-active') === true`)
+  if (!sopranoActive) throw new Error('双击非当前声部音符未切换当前声部')
+}
+
 try {
   const debuggerUrl = await waitForTarget()
   client = new CdpClient(debuggerUrl)
@@ -762,6 +1027,8 @@ try {
   await verifyTimelineGuides()
   await verifyPanelResizing()
   await verifyInitialGridSelection()
+  await verifyShortcutSettings()
+  await verifyEditorShortcutGestures()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
   await clickButton('最大化')
   await waitFor(`window.desktop.windowControls.isMaximized()`, '窗口最大化')
@@ -791,6 +1058,7 @@ try {
   if (!canvasTexts.includes('C5') || !canvasTexts.includes('D5') || canvasTexts.includes('S')) {
     throw new Error(`音符块音高文字错误：${JSON.stringify(canvasTexts)}`)
   }
+  await verifyDoubleClickVoiceActivation()
   await verifySelectionAndMovePreview()
   await verifyLiveErase()
   await middleDragCanvas()
@@ -817,6 +1085,7 @@ try {
 
   await clickButton('保存')
   await waitForFile(projectPath, '工程保存')
+  await verifySelectionShortcuts(projectPath)
   await verifyChordTrackEditing(projectPath)
   const draftProject = JSON.parse(await readFile(projectPath, 'utf8'))
   const draftNotes = draftProject.tracks.map((track) => track.notes.map((note) => [note.startTick, note.midiNote]))
@@ -853,7 +1122,8 @@ try {
   await waitFor(`document.body.innerText.includes(${JSON.stringify(path.join(e2eDirectory, 'project.satb'))})`, '工程保存')
   await clickButton('导出 MIDI')
   await delay(200)
-  await clickButton('新建工程')
+  await evaluate(`document.querySelector('.piano-roll')?.focus()`)
+  await dispatchShortcut('KeyN', { ctrlKey: true })
   await waitFor(`document.body.innerText.includes('0 个错误')`, '新建空工程')
   await clickButton('打开工程')
   await waitFor(`document.body.innerText.includes('平行纯五度')`, '重新打开工程')
@@ -898,6 +1168,10 @@ try {
     chordPalette: 'draw-edit-double-click-ready',
     timelineGuides: 'measure-lines-and-full-playhead-ready',
     panelResizing: 'left-right-bottom-drag-and-reset-ready',
+    shortcutSettings: 'remap-conflict-persist-reset-ready',
+    shortcutGestures: 'modifiers-voice-zoom-navigation-ready',
+    selectionShortcuts: 'select-clear-duplicate-cut-paste-ready',
+    doubleClickVoice: 'ready',
     projectNotes: noteCount,
     midiFormat: midi.header.format,
     midiTracks: midi.tracks.length,

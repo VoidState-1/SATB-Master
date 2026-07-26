@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { formatChord, formatChordRegion } from '../domain/chords'
 import type { ChordRegionPatch } from '../domain/editing'
 import { buildMeasures, keyAtTick, snapTickBackward, snapTickForward } from '../domain/time'
@@ -15,6 +15,7 @@ import type { HarmonyDiagnostic } from '../domain/harmony'
 import { ChordPalette } from './ChordPalette'
 
 export type EditorTool = 'select' | 'pencil' | 'eraser' | 'split'
+export type EditorDomain = 'notes' | 'chords'
 
 interface PianoRollProps {
   project: ProjectDocument
@@ -27,7 +28,12 @@ interface PianoRollProps {
   chordBrush: ChordAnalysis
   diagnostics: HarmonyDiagnostic[]
   playheadTick: number
+  cancelRequest: number
   onSetPlayhead(tick: number): void
+  onSetPixelsPerBeat(value: number): void
+  onSetActiveVoice(voiceId: VoiceId): void
+  onSetEditorDomain(domain: EditorDomain): void
+  onInteractionActiveChange(active: boolean): void
   onSelectNotes(noteIds: Set<string>): void
   onPreviewNote(voiceId: VoiceId, midiNote: number): void
   onSelectChords(chordIds: Set<string>): void
@@ -166,7 +172,12 @@ export function PianoRoll({
   chordBrush,
   diagnostics,
   playheadTick,
+  cancelRequest,
   onSetPlayhead,
+  onSetPixelsPerBeat,
+  onSetActiveVoice,
+  onSetEditorDomain,
+  onInteractionActiveChange,
   onSelectNotes,
   onPreviewNote,
   onSelectChords,
@@ -183,6 +194,8 @@ export function PianoRoll({
 }: PianoRollProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const previousPixelsPerBeatRef = useRef(pixelsPerBeat)
+  const pendingZoomViewportXRef = useRef<number | undefined>(undefined)
   const [interaction, setInteraction] = useState<PointerInteraction>()
   const [chordInteraction, setChordInteraction] = useState<ChordInteraction>()
   const [chordPalette, setChordPalette] = useState<ChordPaletteState>()
@@ -197,6 +210,26 @@ export function PianoRoll({
     x: PIANO_WIDTH + (measure.startTick / project.ppq) * pixelsPerBeat,
   })), [measures, pixelsPerBeat, project.ppq])
   const playheadX = PIANO_WIDTH + (playheadTick / project.ppq) * pixelsPerBeat
+
+  useLayoutEffect(() => {
+    const previousPixelsPerBeat = previousPixelsPerBeatRef.current
+    const scroll = scrollRef.current
+    if (!scroll || previousPixelsPerBeat === pixelsPerBeat) return
+    const viewportX = pendingZoomViewportXRef.current ?? scroll.clientWidth / 2
+    const tickAtAnchor = Math.max(0, ((scroll.scrollLeft + viewportX - PIANO_WIDTH) / previousPixelsPerBeat) * project.ppq)
+    scroll.scrollLeft = PIANO_WIDTH + (tickAtAnchor / project.ppq) * pixelsPerBeat - viewportX
+    previousPixelsPerBeatRef.current = pixelsPerBeat
+    pendingZoomViewportXRef.current = undefined
+  }, [pixelsPerBeat, project.ppq])
+
+  useEffect(() => {
+    onInteractionActiveChange(Boolean(interaction || chordInteraction))
+  }, [chordInteraction, interaction, onInteractionActiveChange])
+
+  useEffect(() => {
+    setInteraction(undefined)
+    setChordInteraction(undefined)
+  }, [cancelRequest])
 
   const noteRects = useMemo(() => {
     const erasedNoteIds = interaction?.kind === 'erase' ? interaction.noteIds : undefined
@@ -462,7 +495,13 @@ export function PianoRoll({
 
   const midiAtY = (y: number) => Math.max(MIN_MIDI, Math.min(MAX_MIDI, MAX_MIDI - Math.floor((y - HEADER_HEIGHT) / ROW_HEIGHT)))
 
+  const focusEditor = (domain?: EditorDomain) => {
+    if (domain) onSetEditorDomain(domain)
+    scrollRef.current?.focus({ preventScroll: true })
+  }
+
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    focusEditor('notes')
     if (event.button === 1) {
       const scroll = scrollRef.current
       if (!scroll) return
@@ -652,6 +691,7 @@ export function PianoRoll({
   )
 
   const handleChordPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    focusEditor('chords')
     if (event.button === 1) {
       const scroll = scrollRef.current
       if (!scroll) return
@@ -837,6 +877,37 @@ export function PianoRoll({
     setChordPalette({ chordId: chord.id, anchor: { x: event.clientX - 18, y: laneRect.bottom } })
   }
 
+  const handleNoteDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (tool !== 'select') return
+    focusEditor('notes')
+    const rect = event.currentTarget.getBoundingClientRect()
+    const hit = hitTest(event.clientX - rect.left, event.clientY - rect.top)
+    if (hit && hit.track.id !== activeVoice) onSetActiveVoice(hit.track.id)
+  }
+
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    if (event.ctrlKey) {
+      event.preventDefault()
+      const delta = event.deltaY !== 0 ? event.deltaY : event.deltaX
+      if (delta === 0) return
+      const nextPixelsPerBeat = Math.max(42, Math.min(140, pixelsPerBeat + (delta < 0 ? 10 : -10)))
+      if (nextPixelsPerBeat === pixelsPerBeat) {
+        pendingZoomViewportXRef.current = undefined
+        return
+      }
+      const rect = scroll.getBoundingClientRect()
+      pendingZoomViewportXRef.current = event.clientX - rect.left
+      onSetPixelsPerBeat(nextPixelsPerBeat)
+      return
+    }
+    if (event.shiftKey) {
+      event.preventDefault()
+      scroll.scrollLeft += event.deltaY !== 0 ? event.deltaY : event.deltaX
+    }
+  }
+
   const paletteChord = chordPalette
     ? project.chordTrack.regions.find((region) => region.id === chordPalette.chordId)
     : undefined
@@ -846,9 +917,14 @@ export function PianoRoll({
   const keyLabels = project.keyEvents.filter((event) => event.tick > 0)
 
   return (
-    <div className="piano-roll" ref={scrollRef}>
+    <div className="piano-roll" ref={scrollRef} tabIndex={0} onWheel={handleWheel}>
       <div className="piano-roll-inner" style={{ width: totalWidth, height: totalHeight }}>
-        <div className="ruler-lane" style={{ width: totalWidth }} onDoubleClick={(event) => onSetPlayhead(snapStartTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}>
+        <div
+          className="ruler-lane"
+          style={{ width: totalWidth }}
+          onPointerDown={() => focusEditor()}
+          onDoubleClick={(event) => onSetPlayhead(snapStartTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}
+        >
           <span className="lane-sticky-label">小节</span>
           {measureGuidePositions.map((guide) => (
             <span
@@ -960,6 +1036,7 @@ export function PianoRoll({
           onPointerMove={handlePointerMove}
           onPointerUp={finishInteraction}
           onPointerCancel={() => setInteraction(undefined)}
+          onDoubleClick={handleNoteDoubleClick}
           onAuxClick={(event) => event.preventDefault()}
         />
 

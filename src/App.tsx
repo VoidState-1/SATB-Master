@@ -19,6 +19,7 @@ import {
   Redo2,
   Save,
   SaveAll,
+  Settings2,
   SkipBack,
   Square,
   Trash2,
@@ -35,6 +36,7 @@ import { IconButton } from './components/IconButton'
 import { Inspector } from './components/Inspector'
 import { PanelResizeHandle } from './components/PanelResizeHandle'
 import { PianoRoll, type EditorTool } from './components/PianoRoll'
+import { ShortcutSettings } from './components/ShortcutSettings'
 import { TrackSidebar } from './components/TrackSidebar'
 import { defaultChordAnalysisAtTick } from './domain/chords'
 import {
@@ -69,6 +71,8 @@ import {
 import { buildMeasures, eventAtTick, formatPosition, ticksPerBeat } from './domain/time'
 import { DEFAULT_PANEL_SIZES, PANEL_RESIZER_SIZE, usePanelLayout } from './hooks/usePanelLayout'
 import { useProjectHistory } from './hooks/useProjectHistory'
+import { useShortcutBindings } from './hooks/useShortcutBindings'
+import { commandForKeyboardEvent, formatShortcutBinding } from './shortcuts/shortcutRegistry'
 import {
   autosaveProject,
   discardRecovery,
@@ -94,6 +98,8 @@ interface ClipboardChord {
 type ClipboardPayload =
   | { kind: 'notes'; items: ClipboardNote[] }
   | { kind: 'chords'; items: ClipboardChord[] }
+
+type EditorDomain = 'notes' | 'chords'
 
 interface ConfirmationState {
   title: string
@@ -136,6 +142,10 @@ function App() {
   const [filePath, setFilePath] = useState<string>()
   const [activeVoice, setActiveVoice] = useState<VoiceId>('soprano')
   const [tool, setTool] = useState<EditorTool>('pencil')
+  const [editorDomain, setEditorDomain] = useState<EditorDomain>('notes')
+  const [toolModifiers, setToolModifiers] = useState({ control: false, alt: false })
+  const [editorInteractionActive, setEditorInteractionActive] = useState(false)
+  const [cancelEditorRequest, setCancelEditorRequest] = useState(0)
   const [gridTicks, setGridTicks] = useState(480)
   const [pixelsPerBeat, setPixelsPerBeat] = useState(72)
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
@@ -153,12 +163,17 @@ function App() {
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
   const [notice, setNotice] = useState<string>()
   const [confirmation, setConfirmation] = useState<ConfirmationState>()
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const clipboardRef = useRef<ClipboardPayload | undefined>(undefined)
   const confirmationResolverRef = useRef<((confirmed: boolean) => void) | undefined>(undefined)
   const recoveryCheckedRef = useRef(false)
   const defaultSoundFontRequestedRef = useRef(false)
   const playSessionRef = useRef(0)
   const panelLayout = usePanelLayout()
+  const shortcutSettings = useShortcutBindings()
+  const effectiveTool: EditorTool = tool === 'select'
+    ? toolModifiers.alt ? 'eraser' : toolModifiers.control ? 'pencil' : 'select'
+    : tool
 
   const harmonyResult = useMemo(() => checkHarmony(project), [project])
   const selectedNote = useMemo(() => {
@@ -292,7 +307,10 @@ function App() {
 
   const handleSelectNotes = useCallback((noteIds: Set<string>) => {
     setSelectedNoteIds(noteIds)
-    if (noteIds.size > 0) setSelectedChordIds(new Set())
+    if (noteIds.size > 0) {
+      setEditorDomain('notes')
+      setSelectedChordIds(new Set())
+    }
     if (noteIds.size !== 1) return
     const noteId = noteIds.values().next().value
     for (const track of project.tracks) {
@@ -306,7 +324,10 @@ function App() {
 
   const handleSelectChords = useCallback((chordIds: Set<string>) => {
     setSelectedChordIds(chordIds)
-    if (chordIds.size > 0) setSelectedNoteIds(new Set())
+    if (chordIds.size > 0) {
+      setEditorDomain('chords')
+      setSelectedNoteIds(new Set())
+    }
     if (chordIds.size !== 1) return
     const chord = project.chordTrack.regions.find((candidate) => candidate.id === chordIds.values().next().value)
     if (chord) setChordBrush(chord.analysis)
@@ -679,7 +700,7 @@ function App() {
   }, [gridTicks, loopEndTick, loopStartTick, playheadTick, project.lengthTicks, showNotice])
 
   const copySelection = useCallback(() => {
-    if (selectedChordIds.size > 0) {
+    if (editorDomain === 'chords') {
       const selected = project.chordTrack.regions.filter((region) => selectedChordIds.has(region.id))
       if (selected.length === 0) return showNotice('没有选中的和弦')
       const earliest = Math.min(...selected.map((region) => region.startTick))
@@ -704,7 +725,7 @@ function App() {
       items: selected.map((item) => ({ ...item, offset: item.note.startTick - earliest })),
     }
     showNotice(`已复制 ${selected.length} 个音符`)
-  }, [project, selectedChordIds, selectedNoteIds, showNotice])
+  }, [editorDomain, project, selectedChordIds, selectedNoteIds, showNotice])
 
   const pasteSelection = useCallback(() => {
     const payload = clipboardRef.current
@@ -725,6 +746,7 @@ function App() {
         newIds.add(id)
       }
       history.commit(nextProject)
+      setEditorDomain('chords')
       setSelectedChordIds(newIds)
       setSelectedNoteIds(new Set())
       return
@@ -744,12 +766,151 @@ function App() {
       newIds.add(id)
     }
     history.commit(nextProject)
+    setEditorDomain('notes')
     setSelectedNoteIds(newIds)
     setSelectedChordIds(new Set())
   }, [history, playheadTick, project, showNotice])
 
+  const clearSelection = useCallback(() => {
+    setSelectedNoteIds(new Set())
+    setSelectedChordIds(new Set())
+  }, [])
+
+  const selectAllInEditorDomain = useCallback(() => {
+    if (editorDomain === 'chords') {
+      setSelectedChordIds(new Set(project.chordTrack.regions.map((region) => region.id)))
+      setSelectedNoteIds(new Set())
+      return
+    }
+    setSelectedNoteIds(new Set(project.tracks.filter((track) => track.visible).flatMap((track) => track.notes.map((note) => note.id))))
+    setSelectedChordIds(new Set())
+  }, [editorDomain, project])
+
+  const cutSelection = useCallback(() => {
+    if (editorDomain === 'chords') {
+      const selected = project.chordTrack.regions.filter((region) => selectedChordIds.has(region.id))
+      if (selected.length === 0) return showNotice('没有选中的和弦')
+      const result = deleteChordRegions(project, selectedChordIds)
+      const remaining = result.project.chordTrack.regions.filter((region) => selectedChordIds.has(region.id)).length
+      if (result.error || remaining > 0) return showNotice(result.error ?? '选区包含锁定和弦，无法整体剪切')
+      const earliest = Math.min(...selected.map((region) => region.startTick))
+      clipboardRef.current = {
+        kind: 'chords',
+        items: selected.map((region) => ({ region, offset: region.startTick - earliest })),
+      }
+      history.commit(result.project)
+      clearSelection()
+      showNotice(`已剪切 ${selected.length} 个和弦区域`)
+      return
+    }
+
+    const selected: ClipboardNote[] = []
+    let earliest = Number.POSITIVE_INFINITY
+    project.tracks.forEach((track) => track.notes.forEach((note) => {
+      if (!selectedNoteIds.has(note.id)) return
+      earliest = Math.min(earliest, note.startTick)
+      selected.push({ voiceId: track.id, note, offset: 0 })
+    }))
+    if (selected.length === 0) return showNotice('没有选中的音符')
+    const result = deleteNotes(project, selectedNoteIds)
+    const remaining = result.project.tracks.reduce((count, track) => (
+      count + track.notes.filter((note) => selectedNoteIds.has(note.id)).length
+    ), 0)
+    if (result.error || remaining > 0) return showNotice(result.error ?? '选区包含锁定音符，无法整体剪切')
+    clipboardRef.current = {
+      kind: 'notes',
+      items: selected.map((item) => ({ ...item, offset: item.note.startTick - earliest })),
+    }
+    history.commit(result.project)
+    clearSelection()
+    showNotice(`已剪切 ${selected.length} 个音符`)
+  }, [clearSelection, editorDomain, history, project, selectedChordIds, selectedNoteIds, showNotice])
+
+  const duplicateSelection = useCallback(() => {
+    if (editorDomain === 'chords') {
+      const selected = project.chordTrack.regions.filter((region) => selectedChordIds.has(region.id))
+      if (selected.length === 0) return showNotice('没有选中的和弦')
+      const earliest = Math.min(...selected.map((region) => region.startTick))
+      const latestEnd = Math.max(...selected.map((region) => region.startTick + region.durationTicks))
+      const offset = latestEnd - earliest
+      let nextProject = project
+      const newIds = new Set<string>()
+      for (const region of selected) {
+        const id = createId('chord')
+        const result = addChordRegion(nextProject, { ...region, id, startTick: region.startTick + offset, locked: false })
+        if (result.error) return showNotice(`重复失败：${result.error}`)
+        nextProject = result.project
+        newIds.add(id)
+      }
+      history.commit(nextProject)
+      setEditorDomain('chords')
+      setSelectedChordIds(newIds)
+      setSelectedNoteIds(new Set())
+      return
+    }
+
+    const selected = project.tracks.flatMap((track) => track.notes
+      .filter((note) => selectedNoteIds.has(note.id))
+      .map((note) => ({ voiceId: track.id, note })))
+    if (selected.length === 0) return showNotice('没有选中的音符')
+    const earliest = Math.min(...selected.map((item) => item.note.startTick))
+    const latestEnd = Math.max(...selected.map((item) => item.note.startTick + item.note.durationTicks))
+    const offset = latestEnd - earliest
+    let nextProject = project
+    const newIds = new Set<string>()
+    for (const item of selected) {
+      const id = createId('note')
+      const result = addNote(nextProject, item.voiceId, {
+        ...item.note,
+        id,
+        startTick: item.note.startTick + offset,
+        locked: false,
+      })
+      if (result.error) return showNotice(`重复失败：${result.error}`)
+      nextProject = result.project
+      newIds.add(id)
+    }
+    history.commit(nextProject)
+    setEditorDomain('notes')
+    setSelectedNoteIds(newIds)
+    setSelectedChordIds(new Set())
+  }, [editorDomain, history, project, selectedChordIds, selectedNoteIds, showNotice])
+
+  const cycleActiveVoice = useCallback((direction: 1 | -1) => {
+    const visibleVoices = project.tracks.filter((track) => track.visible).map((track) => track.id)
+    if (visibleVoices.length <= 1) return
+    const currentIndex = visibleVoices.indexOf(activeVoice)
+    const nextIndex = currentIndex < 0
+      ? direction > 0 ? 0 : visibleVoices.length - 1
+      : (currentIndex + direction + visibleVoices.length) % visibleVoices.length
+    setActiveVoice(visibleVoices[nextIndex])
+  }, [activeVoice, project.tracks])
+
+  const movePlayheadByMeasure = useCallback((direction: 1 | -1) => {
+    const measures = buildMeasures(project)
+    if (measures.length === 0) return
+    const containingIndex = measures.findIndex((measure) => playheadTick < measure.endTick)
+    // 工程末尾位于最后小节的右边界，不属于任何小节；导航时仍应将它归入最后小节。
+    const nextIndex = containingIndex < 0
+      ? measures.length - 1
+      : Math.max(0, Math.min(measures.length - 1, containingIndex + direction))
+    setPlayheadTick(measures[nextIndex]?.startTick ?? 0)
+  }, [playheadTick, project])
+
+  const changeGridResolution = useCallback((direction: 1 | -1) => {
+    setGridTicks((current) => {
+      const currentIndex = GRID_OPTIONS.findIndex((option) => option.ticks === current)
+      const nextIndex = Math.max(0, Math.min(GRID_OPTIONS.length - 1, currentIndex + direction))
+      return GRID_OPTIONS[nextIndex]?.ticks ?? current
+    })
+  }, [])
+
+  const changeTimelineZoom = useCallback((direction: 1 | -1) => {
+    setPixelsPerBeat((current) => Math.max(42, Math.min(140, current + direction * 10)))
+  }, [])
+
   const transformSelection = useCallback((tickDelta: number, pitchDelta: number, quantize = false) => {
-    if (selectedChordIds.size > 0) {
+    if (editorDomain === 'chords') {
       commitResult(transformChordRegions(project, selectedChordIds, (region) => ({
         ...region,
         startTick: quantize ? Math.floor(region.startTick / gridTicks) * gridTicks : region.startTick + tickDelta,
@@ -770,57 +931,88 @@ function App() {
         return
       }
     }
-  }, [commitResult, gridTicks, project, selectedChordIds, selectedNoteIds])
+  }, [commitResult, editorDomain, gridTicks, project, selectedChordIds, selectedNoteIds])
+
+  useEffect(() => {
+    const updateModifier = (key: string, pressed: boolean) => {
+      if (key === 'Control') setToolModifiers((current) => current.control === pressed ? current : { ...current, control: pressed })
+      if (key === 'Alt') setToolModifiers((current) => current.alt === pressed ? current : { ...current, alt: pressed })
+    }
+    const handleKeyDown = (event: KeyboardEvent) => updateModifier(event.key, true)
+    const handleKeyUp = (event: KeyboardEvent) => updateModifier(event.key, false)
+    const clearModifiers = () => {
+      setToolModifiers({ control: false, alt: false })
+      if (editorInteractionActive) setCancelEditorRequest((current) => current + 1)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', clearModifiers)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', clearModifiers)
+    }
+  }, [editorInteractionActive])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (confirmation) return
-      const target = event.target as HTMLElement
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
-      const control = event.ctrlKey || event.metaKey
-      if (control && event.key.toLowerCase() === 's') {
-        event.preventDefault()
-        void handleSave(event.shiftKey)
-      } else if (control && event.key.toLowerCase() === 'o') {
-        event.preventDefault()
-        void handleOpen()
-      } else if (control && event.key.toLowerCase() === 'z') {
-        event.preventDefault()
-        if (event.shiftKey) history.redo(); else history.undo()
-      } else if (control && event.key.toLowerCase() === 'y') {
-        event.preventDefault(); history.redo()
-      } else if (control && event.key.toLowerCase() === 'c') {
-        event.preventDefault(); copySelection()
-      } else if (control && event.key.toLowerCase() === 'v') {
-        event.preventDefault(); pasteSelection()
-      } else if (event.key === 'Delete' || event.key === 'Backspace') {
-        event.preventDefault()
-        if (selectedChordIds.size > 0) handleDeleteChords(selectedChordIds)
-        else handleDeleteNotes(selectedNoteIds)
-      } else if (event.key === 'ArrowUp') {
-        if (selectedChordIds.size === 0) {
-          event.preventDefault(); transformSelection(0, event.shiftKey ? 12 : 1)
-        }
-      } else if (event.key === 'ArrowDown') {
-        if (selectedChordIds.size === 0) {
-          event.preventDefault(); transformSelection(0, event.shiftKey ? -12 : -1)
-        }
-      } else if (event.key === 'ArrowLeft') {
-        event.preventDefault(); transformSelection(-gridTicks, 0)
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault(); transformSelection(gridTicks, 0)
-      } else if (event.key.toLowerCase() === 'q') {
-        event.preventDefault(); transformSelection(0, 0, true)
-      } else if (event.code === 'Space') {
-        event.preventDefault(); void handlePlay()
-      } else if (event.key === '1') setTool('select')
-      else if (event.key === '2') setTool('pencil')
-      else if (event.key === '3') setTool('eraser')
-      else if (event.key === '4') setTool('split')
+      if (confirmation || settingsOpen || event.isComposing) return
+      const target = event.target instanceof HTMLElement ? event.target : document.body
+      if (target.matches('input, textarea, select, [contenteditable="true"]') || target.closest('[role="dialog"]')) return
+      const command = commandForKeyboardEvent(event, shortcutSettings.bindings)
+      if (!command || (event.repeat && !command.allowRepeat)) return
+      if ((command.id === 'nextVoice' || command.id === 'previousVoice')
+        && target !== document.body && !target.closest('.piano-roll')) return
+      event.preventDefault()
+
+      switch (command.id) {
+        case 'newProject': void handleNew(); break
+        case 'openProject': void handleOpen(); break
+        case 'saveProject': void handleSave(false); break
+        case 'saveProjectAs': void handleSave(true); break
+        case 'undo': history.undo(); break
+        case 'redo': history.redo(); break
+        case 'selectAll': selectAllInEditorDomain(); break
+        case 'clearSelection': clearSelection(); break
+        case 'copySelection': copySelection(); break
+        case 'cutSelection': cutSelection(); break
+        case 'pasteSelection': pasteSelection(); break
+        case 'duplicateSelection': duplicateSelection(); break
+        case 'deleteSelection':
+          if (editorDomain === 'chords') handleDeleteChords(selectedChordIds)
+          else handleDeleteNotes(selectedNoteIds)
+          break
+        case 'cancelOrClear':
+          if (editorInteractionActive) setCancelEditorRequest((current) => current + 1)
+          else clearSelection()
+          break
+        case 'quantizeSelection': transformSelection(0, 0, true); break
+        case 'moveSelectionLeft': transformSelection(-gridTicks, 0); break
+        case 'moveSelectionRight': transformSelection(gridTicks, 0); break
+        case 'pitchUp': if (selectedChordIds.size === 0) transformSelection(0, 1); break
+        case 'pitchDown': if (selectedChordIds.size === 0) transformSelection(0, -1); break
+        case 'octaveUp': if (selectedChordIds.size === 0) transformSelection(0, 12); break
+        case 'octaveDown': if (selectedChordIds.size === 0) transformSelection(0, -12); break
+        case 'selectTool': setTool('select'); break
+        case 'pencilTool': setTool('pencil'); break
+        case 'eraserTool': setTool('eraser'); break
+        case 'splitTool': setTool('split'); break
+        case 'nextVoice': cycleActiveVoice(1); break
+        case 'previousVoice': cycleActiveVoice(-1); break
+        case 'playPause': void handlePlay(); break
+        case 'goToStart': setPlayheadTick(0); break
+        case 'goToEnd': setPlayheadTick(project.lengthTicks); break
+        case 'previousMeasure': movePlayheadByMeasure(-1); break
+        case 'nextMeasure': movePlayheadByMeasure(1); break
+        case 'gridCoarser': changeGridResolution(-1); break
+        case 'gridFiner': changeGridResolution(1); break
+        case 'zoomOut': changeTimelineZoom(-1); break
+        case 'zoomIn': changeTimelineZoom(1); break
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [confirmation, copySelection, gridTicks, handleDeleteChords, handleDeleteNotes, handleOpen, handlePlay, handleSave, history, pasteSelection, selectedChordIds, selectedNoteIds, transformSelection])
+  }, [changeGridResolution, changeTimelineZoom, clearSelection, confirmation, copySelection, cutSelection, cycleActiveVoice, duplicateSelection, editorDomain, editorInteractionActive, gridTicks, handleDeleteChords, handleDeleteNotes, handleNew, handleOpen, handlePlay, handleSave, history, movePlayheadByMeasure, pasteSelection, project.lengthTicks, selectAllInEditorDomain, selectedChordIds, selectedNoteIds, settingsOpen, shortcutSettings.bindings, transformSelection])
 
   const handleDiagnostic = (diagnostic: HarmonyDiagnostic) => {
     setPlayheadTick(diagnostic.tick)
@@ -887,14 +1079,14 @@ function App() {
           <IconButton
             label="删除选中事件"
             icon={<Trash2 />}
-            onClick={() => selectedChordIds.size > 0 ? handleDeleteChords(selectedChordIds) : handleDeleteNotes(selectedNoteIds)}
+            onClick={() => editorDomain === 'chords' ? handleDeleteChords(selectedChordIds) : handleDeleteNotes(selectedNoteIds)}
           />
         </div>
         <div className="toolbar-group tool-selector">
-          <IconButton label="选择工具（1）" icon={<MousePointer2 />} active={tool === 'select'} onClick={() => setTool('select')} />
-          <IconButton label="铅笔工具（2）" icon={<Pencil />} active={tool === 'pencil'} onClick={() => setTool('pencil')} />
-          <IconButton label="擦除工具（3）" icon={<Eraser />} active={tool === 'eraser'} onClick={() => setTool('eraser')} />
-          <IconButton label="切分工具（4）" icon={<Scissors />} active={tool === 'split'} onClick={() => setTool('split')} />
+          <IconButton label={`选择工具（${shortcutSettings.bindings.selectTool[0] ? formatShortcutBinding(shortcutSettings.bindings.selectTool[0]) : '未设置'}）`} icon={<MousePointer2 />} active={effectiveTool === 'select'} onClick={() => setTool('select')} />
+          <IconButton label={`铅笔工具（${shortcutSettings.bindings.pencilTool[0] ? formatShortcutBinding(shortcutSettings.bindings.pencilTool[0]) : '未设置'}）`} icon={<Pencil />} active={effectiveTool === 'pencil'} onClick={() => setTool('pencil')} />
+          <IconButton label={`擦除工具（${shortcutSettings.bindings.eraserTool[0] ? formatShortcutBinding(shortcutSettings.bindings.eraserTool[0]) : '未设置'}）`} icon={<Eraser />} active={effectiveTool === 'eraser'} onClick={() => setTool('eraser')} />
+          <IconButton label={`切分工具（${shortcutSettings.bindings.splitTool[0] ? formatShortcutBinding(shortcutSettings.bindings.splitTool[0]) : '未设置'}）`} icon={<Scissors />} active={effectiveTool === 'split'} onClick={() => setTool('split')} />
         </div>
         <div className="transport-group">
           <IconButton label="回到开头" icon={<SkipBack />} onClick={() => handleStop(true)} />
@@ -917,6 +1109,7 @@ function App() {
           <span className="transport-meta">{measureCount} 小节</span>
         </div>
         <div className="toolbar-group toolbar-right">
+          <IconButton label="设置" icon={<Settings2 />} onClick={() => setSettingsOpen(true)} />
           <div className="grid-control" title="编辑吸附网格">
             <Magnet aria-hidden="true" />
             <select aria-label="时值对齐" value={gridTicks} onChange={(event) => setGridTicks(Number(event.target.value))}>
@@ -954,7 +1147,7 @@ function App() {
           <PianoRoll
             project={project}
             activeVoice={activeVoice}
-            tool={tool}
+            tool={effectiveTool}
             gridTicks={gridTicks}
             pixelsPerBeat={pixelsPerBeat}
             selectedNoteIds={selectedNoteIds}
@@ -962,7 +1155,12 @@ function App() {
             chordBrush={chordBrush}
             diagnostics={harmonyResult.diagnostics}
             playheadTick={playheadTick}
+            cancelRequest={cancelEditorRequest}
             onSetPlayhead={setPlayheadTick}
+            onSetPixelsPerBeat={setPixelsPerBeat}
+            onSetActiveVoice={setActiveVoice}
+            onSetEditorDomain={setEditorDomain}
+            onInteractionActiveChange={setEditorInteractionActive}
             onSelectNotes={handleSelectNotes}
             onPreviewNote={handlePreviewNote}
             onSelectChords={handleSelectChords}
@@ -1037,6 +1235,16 @@ function App() {
           cancelLabel={confirmation.cancelLabel}
           onConfirm={() => answerConfirmation(true)}
           onCancel={() => answerConfirmation(false)}
+        />
+      ) : null}
+      {settingsOpen ? (
+        <ShortcutSettings
+          bindings={shortcutSettings.bindings}
+          onSetBinding={shortcutSettings.setBinding}
+          onClearBinding={shortcutSettings.clearBinding}
+          onResetBinding={shortcutSettings.resetBinding}
+          onResetAll={shortcutSettings.resetAllBindings}
+          onClose={() => setSettingsOpen(false)}
         />
       ) : null}
       {notice ? <div className="notice" role="status">{notice}</div> : null}
