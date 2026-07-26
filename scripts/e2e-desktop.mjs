@@ -180,6 +180,47 @@ async function clickPaletteOption(group, label) {
   await delay(80)
 }
 
+async function verifyTimelineGuides() {
+  const result = await evaluate(`(async () => {
+    const roll = document.querySelector('.piano-roll');
+    const ruler = document.querySelector('.ruler-lane');
+    const chord = document.querySelector('.chord-lane');
+    const rulerPlayhead = ruler?.querySelector('.timeline-playhead-segment');
+    const chordPlayhead = chord?.querySelector('.timeline-playhead-segment');
+    if (!roll || !ruler || !chord || !rulerPlayhead || !chordPlayhead) return null;
+    const rulerRect = ruler.getBoundingClientRect();
+    const chordRect = chord.getBoundingClientRect();
+    const rulerPlayheadRect = rulerPlayhead.getBoundingClientRect();
+    const chordPlayheadRect = chordPlayhead.getBoundingClientRect();
+    const rulerGuides = [...ruler.querySelectorAll('.timeline-measure-line')].map((line) => line.getBoundingClientRect().left);
+    const chordGuides = [...chord.querySelectorAll('.timeline-measure-line')].map((line) => line.getBoundingClientRect().left);
+    roll.scrollLeft = 144;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const scrolledGuideLeft = ruler.querySelector('.timeline-measure-line')?.getBoundingClientRect().left;
+    roll.scrollLeft = 0;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return {
+      rulerGuides,
+      chordGuides,
+      measureNumbers: ruler.querySelectorAll('.measure-number').length,
+      playheadXDelta: Math.abs(rulerPlayheadRect.left - chordPlayheadRect.left),
+      rulerTopDelta: Math.abs(rulerRect.top - rulerPlayheadRect.top),
+      laneJoinOverlap: rulerPlayheadRect.bottom - chordPlayheadRect.top,
+      chordBottomOverlap: chordPlayheadRect.bottom - chordRect.bottom,
+      triangleWidth: getComputedStyle(rulerPlayhead, '::before').borderTopWidth,
+      horizontalScrollDelta: rulerGuides[0] - scrolledGuideLeft,
+    };
+  })()`)
+  if (!result || result.rulerGuides.length !== result.measureNumbers || result.chordGuides.length !== result.measureNumbers) {
+    throw new Error(`Timeline measure guide count mismatch: ${JSON.stringify(result)}`)
+  }
+  const guidesAligned = result.rulerGuides.every((left, index) => Math.abs(left - result.chordGuides[index]) < 0.1)
+  const triangleWidth = Number.parseFloat(result.triangleWidth)
+  if (!guidesAligned || result.playheadXDelta >= 0.1 || result.rulerTopDelta >= 0.1 || result.laneJoinOverlap < 0 || result.laneJoinOverlap > 2 || result.chordBottomOverlap < 0 || result.chordBottomOverlap > 2 || triangleWidth < 6 || triangleWidth > 7.1 || Math.abs(result.horizontalScrollDelta - 144) > 0.1) {
+    throw new Error(`Timeline guide alignment mismatch: ${JSON.stringify(result)}`)
+  }
+}
+
 async function verifyInitialGridSelection() {
   const target = await evaluate(`(() => {
     const select = document.querySelector('select[aria-label="时值对齐"]');
@@ -648,6 +689,7 @@ try {
     await waitFor(`window.desktop.project.recovery().then((result) => result.available === false)`, '确认放弃恢复内容')
   }
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '应用启动时默认 SF2 预载', 20_000)
+  await verifyTimelineGuides()
   await verifyInitialGridSelection()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
   await clickButton('最大化')
@@ -783,6 +825,7 @@ try {
     middlePan: 'ready',
     customWindowFrame: 'ready',
     chordPalette: 'draw-edit-double-click-ready',
+    timelineGuides: 'measure-lines-and-full-playhead-ready',
     projectNotes: noteCount,
     midiFormat: midi.header.format,
     midiTracks: midi.tracks.length,

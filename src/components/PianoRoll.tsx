@@ -191,6 +191,12 @@ export function PianoRoll({
   const timelineWidth = Math.max(920, (project.lengthTicks / project.ppq) * pixelsPerBeat)
   const totalWidth = timelineWidth + PIANO_WIDTH
   const totalHeight = rollHeight + HEADER_HEIGHT
+  // 顶部轨道与 Canvas 共用 tick 到像素的换算，保证缩放和横向滚动后仍严格对齐。
+  const measureGuidePositions = useMemo(() => measures.map((measure) => ({
+    startTick: measure.startTick,
+    x: PIANO_WIDTH + (measure.startTick / project.ppq) * pixelsPerBeat,
+  })), [measures, pixelsPerBeat, project.ppq])
+  const playheadX = PIANO_WIDTH + (playheadTick / project.ppq) * pixelsPerBeat
 
   const noteRects = useMemo(() => {
     const erasedNoteIds = interaction?.kind === 'erase' ? interaction.noteIds : undefined
@@ -348,20 +354,13 @@ export function PianoRoll({
       context.restore()
     }
 
-    const playheadX = PIANO_WIDTH + (playheadTick / project.ppq) * pixelsPerBeat
     context.strokeStyle = '#c84132'
     context.lineWidth = 1.5
     context.beginPath()
     context.moveTo(playheadX, HEADER_HEIGHT)
     context.lineTo(playheadX, totalHeight)
     context.stroke()
-    context.fillStyle = '#c84132'
-    context.beginPath()
-    context.moveTo(playheadX - 5, HEADER_HEIGHT)
-    context.lineTo(playheadX + 5, HEADER_HEIGHT)
-    context.lineTo(playheadX, HEADER_HEIGHT + 7)
-    context.fill()
-  }, [activeVoice, diagnostics, interaction, measures, noteRects, pixelsPerBeat, playheadTick, project.exercise.editableRanges, project.ppq, rollHeight, selectedNoteIds, timelineWidth, totalHeight, totalWidth])
+  }, [activeVoice, diagnostics, interaction, measures, noteRects, pixelsPerBeat, playheadX, project.exercise.editableRanges, project.ppq, rollHeight, selectedNoteIds, timelineWidth, totalHeight, totalWidth])
 
   useEffect(() => {
     const scroll = scrollRef.current
@@ -851,6 +850,14 @@ export function PianoRoll({
       <div className="piano-roll-inner" style={{ width: totalWidth, height: totalHeight }}>
         <div className="ruler-lane" style={{ width: totalWidth }} onDoubleClick={(event) => onSetPlayhead(snapStartTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}>
           <span className="lane-sticky-label">小节</span>
+          {measureGuidePositions.map((guide) => (
+            <span
+              key={guide.startTick}
+              className="timeline-measure-line"
+              style={{ left: guide.x }}
+              aria-hidden="true"
+            />
+          ))}
           {measures.map((measure) => (
             <span
               key={measure.startTick}
@@ -869,6 +876,7 @@ export function PianoRoll({
           {keyLabels.map((event) => (
             <span key={event.id} className="timeline-marker key" style={{ left: PIANO_WIDTH + (event.tick / project.ppq) * pixelsPerBeat }}>{KEY_NAMES[event.tonic]}{event.mode === 'major' ? '大' : '小'}</span>
           ))}
+          <span className="timeline-playhead-segment is-ruler" style={{ left: playheadX }} aria-hidden="true" />
         </div>
 
         <div
@@ -882,6 +890,14 @@ export function PianoRoll({
           onAuxClick={(event) => event.preventDefault()}
         >
           <span className="lane-sticky-label">和弦</span>
+          {measureGuidePositions.map((guide) => (
+            <span
+              key={guide.startTick}
+              className="timeline-measure-line"
+              style={{ left: guide.x }}
+              aria-hidden="true"
+            />
+          ))}
           {chordRects.map(({ region: chord, startTick, durationTicks, x, width }) => {
             const formatted = formatChordRegion(project, { ...chord, startTick, durationTicks })
             const issue = diagnostics.find((item) => item.chordIds.includes(chord.id))
@@ -924,6 +940,7 @@ export function PianoRoll({
               }}
             />
           ) : null}
+          <span className="timeline-playhead-segment is-chord" style={{ left: playheadX }} aria-hidden="true" />
         </div>
 
         {chordPalette && paletteChord ? (
