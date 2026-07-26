@@ -221,6 +221,76 @@ async function verifyTimelineGuides() {
   }
 }
 
+async function panelMetrics() {
+  return evaluate(`(() => {
+    const left = document.querySelector('.track-sidebar')?.getBoundingClientRect();
+    const right = document.querySelector('.inspector')?.getBoundingClientRect();
+    const bottom = document.querySelector('.diagnostics-panel')?.getBoundingClientRect();
+    const editor = document.querySelector('.editor-area')?.getBoundingClientRect();
+    const roll = document.querySelector('.piano-roll')?.getBoundingClientRect();
+    const separators = [...document.querySelectorAll('[role="separator"]')];
+    if (!left || !right || !bottom || !editor || !roll) return null;
+    return {
+      left: left.width,
+      right: right.width,
+      bottom: bottom.height,
+      editor: editor.width,
+      roll: roll.height,
+      separators: separators.map((item) => ({
+        label: item.getAttribute('aria-label'),
+        orientation: item.getAttribute('aria-orientation'),
+        value: Number(item.getAttribute('aria-valuenow')),
+      })),
+      resizingClassActive: document.body.classList.contains('is-resizing-columns') || document.body.classList.contains('is-resizing-rows'),
+    };
+  })()`)
+}
+
+async function dragPanelResizeHandle(label, deltaX, deltaY, pointerId) {
+  const dragged = await evaluate(`(() => {
+    const handle = [...document.querySelectorAll('[role="separator"]')].find((item) => item.getAttribute('aria-label') === ${JSON.stringify(label)});
+    if (!handle) return false;
+    handle.setPointerCapture = () => {};
+    handle.releasePointerCapture = () => {};
+    handle.hasPointerCapture = () => true;
+    const rect = handle.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
+    handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: ${pointerId}, clientX, clientY, button: 0 }));
+    handle.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: ${pointerId}, clientX: clientX + ${deltaX}, clientY: clientY + ${deltaY}, button: 0, buttons: 1 }));
+    handle.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: ${pointerId}, clientX: clientX + ${deltaX}, clientY: clientY + ${deltaY}, button: 0 }));
+    return true;
+  })()`)
+  if (!dragged) throw new Error(`Panel resize handle unavailable: ${label}`)
+  await delay(100)
+}
+
+async function verifyPanelResizing() {
+  const before = await panelMetrics()
+  if (!before || before.separators.length !== 3) throw new Error(`Panel separators missing: ${JSON.stringify(before)}`)
+  await dragPanelResizeHandle('调整声部面板宽度', 32, 0, 31)
+  await dragPanelResizeHandle('调整属性面板宽度', -36, 0, 32)
+  await dragPanelResizeHandle('调整问题面板高度', 0, -40, 33)
+  const after = await panelMetrics()
+  const orientations = after?.separators.map((item) => item.orientation).sort().join(',')
+  if (!after || after.left < before.left + 28 || after.right < before.right + 32 || after.bottom < before.bottom + 36
+    || after.editor < 360 || after.roll < 220 || after.resizingClassActive || orientations !== 'horizontal,vertical,vertical') {
+    throw new Error(`Panel resizing failed: ${JSON.stringify({ before, after })}`)
+  }
+
+  for (const label of ['调整声部面板宽度', '调整属性面板宽度', '调整问题面板高度']) {
+    await evaluate(`(() => {
+      const handle = [...document.querySelectorAll('[role="separator"]')].find((item) => item.getAttribute('aria-label') === ${JSON.stringify(label)});
+      handle?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, button: 0 }));
+    })()`)
+    await delay(80)
+  }
+  const reset = await panelMetrics()
+  if (!reset || Math.abs(reset.left - before.left) > 1 || Math.abs(reset.right - before.right) > 1 || Math.abs(reset.bottom - before.bottom) > 1) {
+    throw new Error(`Panel resize reset failed: ${JSON.stringify({ before, reset })}`)
+  }
+}
+
 async function verifyInitialGridSelection() {
   const target = await evaluate(`(() => {
     const select = document.querySelector('select[aria-label="时值对齐"]');
@@ -690,6 +760,7 @@ try {
   }
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '应用启动时默认 SF2 预载', 20_000)
   await verifyTimelineGuides()
+  await verifyPanelResizing()
   await verifyInitialGridSelection()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
   await clickButton('最大化')
@@ -826,6 +897,7 @@ try {
     customWindowFrame: 'ready',
     chordPalette: 'draw-edit-double-click-ready',
     timelineGuides: 'measure-lines-and-full-playhead-ready',
+    panelResizing: 'left-right-bottom-drag-and-reset-ready',
     projectNotes: noteCount,
     midiFormat: midi.header.format,
     midiTracks: midi.tracks.length,

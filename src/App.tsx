@@ -33,6 +33,7 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { IconButton } from './components/IconButton'
 import { Inspector } from './components/Inspector'
+import { PanelResizeHandle } from './components/PanelResizeHandle'
 import { PianoRoll, type EditorTool } from './components/PianoRoll'
 import { TrackSidebar } from './components/TrackSidebar'
 import { defaultChordAnalysisAtTick } from './domain/chords'
@@ -66,6 +67,7 @@ import {
   type VoiceId,
 } from './domain/model'
 import { buildMeasures, eventAtTick, formatPosition, ticksPerBeat } from './domain/time'
+import { DEFAULT_PANEL_SIZES, PANEL_RESIZER_SIZE, usePanelLayout } from './hooks/usePanelLayout'
 import { useProjectHistory } from './hooks/useProjectHistory'
 import {
   autosaveProject,
@@ -156,6 +158,7 @@ function App() {
   const recoveryCheckedRef = useRef(false)
   const defaultSoundFontRequestedRef = useRef(false)
   const playSessionRef = useRef(0)
+  const panelLayout = usePanelLayout()
 
   const harmonyResult = useMemo(() => checkHarmony(project), [project])
   const selectedNote = useMemo(() => {
@@ -926,9 +929,28 @@ function App() {
         </div>
       </div>
 
-      <div className="workspace">
+      <div
+        className="workspace"
+        ref={panelLayout.workspaceRef}
+        style={{
+          gridTemplateColumns: `${panelLayout.sizes.left}px ${PANEL_RESIZER_SIZE}px minmax(0, 1fr) ${PANEL_RESIZER_SIZE}px ${panelLayout.sizes.right}px`,
+        }}
+      >
         <TrackSidebar project={project} activeVoice={activeVoice} onSetActive={setActiveVoice} onUpdateTrack={handleUpdateTrack} />
-        <section className="editor-area">
+        <PanelResizeHandle
+          orientation="vertical"
+          label="调整声部面板宽度"
+          value={panelLayout.sizes.left}
+          min={panelLayout.limits.left.min}
+          max={panelLayout.limits.left.max}
+          defaultValue={DEFAULT_PANEL_SIZES.left}
+          direction={1}
+          onResize={panelLayout.setLeft}
+        />
+        <section
+          className="editor-area"
+          style={{ gridTemplateRows: `minmax(0, 1fr) ${PANEL_RESIZER_SIZE}px ${panelLayout.sizes.bottom}px` }}
+        >
           <PianoRoll
             project={project}
             activeVoice={activeVoice}
@@ -955,8 +977,28 @@ function App() {
             onDeleteChords={handleDeleteChords}
             onSplitChord={handleSplitChord}
           />
+          <PanelResizeHandle
+            orientation="horizontal"
+            label="调整问题面板高度"
+            value={panelLayout.sizes.bottom}
+            min={panelLayout.limits.bottom.min}
+            max={panelLayout.limits.bottom.max}
+            defaultValue={DEFAULT_PANEL_SIZES.bottom}
+            direction={-1}
+            onResize={panelLayout.setBottom}
+          />
           <DiagnosticsPanel project={project} result={harmonyResult} onSelect={handleDiagnostic} />
         </section>
+        <PanelResizeHandle
+          orientation="vertical"
+          label="调整属性面板宽度"
+          value={panelLayout.sizes.right}
+          min={panelLayout.limits.right.min}
+          max={panelLayout.limits.right.max}
+          defaultValue={DEFAULT_PANEL_SIZES.right}
+          direction={-1}
+          onResize={panelLayout.setRight}
+        />
         <Inspector
           project={project}
           activeVoice={activeVoice}
