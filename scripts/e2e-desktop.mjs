@@ -167,6 +167,19 @@ async function clickButton(label) {
   await delay(120)
 }
 
+async function clickPaletteOption(group, label) {
+  const clicked = await evaluate(`(() => {
+    const section = [...document.querySelectorAll('.chord-palette-column')].find((item) => item.querySelector('h3')?.textContent?.trim() === ${JSON.stringify(group)});
+    const button = section && [...section.querySelectorAll('button')].find((item) => item.textContent?.trim() === ${JSON.stringify(label)});
+    if (!button || button.disabled) return false;
+    button.focus();
+    button.click();
+    return true;
+  })()`)
+  if (!clicked) throw new Error(`和弦调色盘选项不可用：${group} / ${label}`)
+  await delay(80)
+}
+
 async function verifyInitialGridSelection() {
   const target = await evaluate(`(() => {
     const select = document.querySelector('select[aria-label="时值对齐"]');
@@ -339,11 +352,38 @@ async function verifyChordTrackEditing(projectPath) {
   await evaluate(`document.querySelector('.chord-lane').dispatchEvent(new PointerEvent('pointerup', {
     bubbles: true, pointerId: 30, clientX: ${draw.endX}, clientY: ${draw.clientY}, button: 0,
   }))`)
-  await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 1`, '绘制和弦范围')
+  await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 1 && Boolean(document.querySelector('.chord-palette'))`, '绘制和弦范围并打开调色盘')
   const firstLabel = await evaluate(`document.querySelector('.chord-label')?.textContent`)
   if (firstLabel !== 'I') throw new Error(`和弦名称未由系统计算：${firstLabel}`)
 
+  await clickPaletteOption('级数', 'V')
+  await clickPaletteOption('和弦性质', '属七')
+  await clickPaletteOption('转位', '一转')
+  await clickPaletteOption('副属目标', 'II')
+  await waitFor(`document.querySelector('.chord-label')?.textContent === 'V6/5/II'`, '调色盘更新和弦名称')
+  const shortcutIsolated = await evaluate(`(() => {
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: '1', code: 'Digit1', bubbles: true }));
+    return document.querySelector('button[aria-label^="铅笔工具"]')?.classList.contains('is-active') === true;
+  })()`)
+  if (!shortcutIsolated) throw new Error('和弦调色盘按键泄漏到编辑器快捷键')
+  await evaluate(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`)
+  await waitFor(`!document.querySelector('.chord-palette')`, '关闭和弦调色盘')
+
   await clickButton('选择工具（1）')
+  const reopened = await evaluate(`(() => {
+    const lane = document.querySelector('.chord-lane');
+    const block = document.querySelector('.chord-block:not(.chord-preview)');
+    if (!lane || !block) return false;
+    const rect = block.getBoundingClientRect();
+    lane.dispatchEvent(new MouseEvent('dblclick', {
+      bubbles: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0,
+    }));
+    return true;
+  })()`)
+  if (!reopened) throw new Error('无法双击和弦区域')
+  await waitFor(`document.querySelector('.chord-palette')?.textContent.includes('V6/5/II')`, '双击重新打开和弦调色盘')
+  await clickButton('关闭和弦设置')
+
   const move = await evaluate(`(() => {
     const lane = document.querySelector('.chord-lane');
     const block = document.querySelector('.chord-block:not(.chord-preview)');
@@ -386,7 +426,14 @@ async function verifyChordTrackEditing(projectPath) {
   await clickButton('保存')
   const saved = JSON.parse(await readFile(projectPath, 'utf8'))
   const region = saved.chordTrack?.regions?.[0]
-  if (saved.schemaVersion !== 2 || region?.startTick !== 2400 || region?.durationTicks !== 1440 || 'label' in region) {
+  if (saved.schemaVersion !== 2
+    || region?.startTick !== 2400
+    || region?.durationTicks !== 1440
+    || region?.analysis?.degree !== 5
+    || region?.analysis?.quality !== 'dominant7'
+    || region?.analysis?.inversion !== 1
+    || region?.analysis?.appliedToDegree !== 2
+    || 'label' in region) {
     throw new Error(`和弦范围保存结果错误：${JSON.stringify({ schemaVersion: saved.schemaVersion, region })}`)
   }
 
@@ -735,6 +782,7 @@ try {
     initialWindowFocus: 'native-and-web-ready',
     middlePan: 'ready',
     customWindowFrame: 'ready',
+    chordPalette: 'draw-edit-double-click-ready',
     projectNotes: noteCount,
     midiFormat: midi.header.format,
     midiTracks: midi.tracks.length,

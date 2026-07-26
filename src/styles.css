@@ -665,6 +665,151 @@ button {
   pointer-events: none;
 }
 
+.chord-palette {
+  position: fixed;
+  z-index: 80;
+  width: min(472px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  border: 1px solid #9ea199;
+  border-radius: 6px;
+  background: #f2f2ee;
+  color: #292b26;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.24);
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.chord-palette-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 6px 7px 6px 12px;
+  border-bottom: 1px solid #aeb0aa;
+  background: #363a35;
+  color: #fff;
+}
+
+.chord-palette-header > span {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.chord-palette-name {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.chord-palette-name strong,
+.chord-palette-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chord-palette-name strong {
+  color: #d9c584;
+  font: 16px Georgia, serif;
+}
+
+.chord-palette-name small {
+  color: #d6d8d2;
+  font-size: 11px;
+}
+
+.chord-palette-close {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #d6d8d2;
+  cursor: pointer;
+}
+
+.chord-palette-close:hover {
+  background: #51564f;
+  color: #fff;
+}
+
+.chord-palette-close svg {
+  width: 15px;
+  height: 15px;
+}
+
+.chord-palette-columns {
+  display: grid;
+  grid-template-columns: 56px 64px minmax(92px, 1fr) 70px 74px;
+  gap: 7px;
+  padding: 10px;
+}
+
+.chord-palette-column {
+  min-width: 0;
+}
+
+.chord-palette-column h3 {
+  height: 25px;
+  margin: 0;
+  overflow: hidden;
+  color: #696b63;
+  font-size: 10px;
+  font-weight: 650;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chord-palette-column button {
+  width: 100%;
+  height: 27px;
+  display: block;
+  padding: 0 4px;
+  border: 1px solid #c7c9c2;
+  border-bottom: 0;
+  border-radius: 0;
+  background: #e4e5df;
+  color: #4d5049;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chord-palette-column button:first-of-type {
+  border-radius: 3px 3px 0 0;
+}
+
+.chord-palette-column button:last-child {
+  border-bottom: 1px solid #c7c9c2;
+  border-radius: 0 0 3px 3px;
+}
+
+.chord-palette-column button:hover:not(:disabled) {
+  background: #d5dbd5;
+}
+
+.chord-palette-column button.is-selected {
+  border-color: #286b59;
+  background: #2f7764;
+  color: #fff;
+}
+
+.chord-palette-column button.is-selected + button {
+  border-top-color: #286b59;
+}
+
+.chord-palette-column button:disabled {
+  color: #a8aaa3;
+  cursor: default;
+}
+
 .piano-keys {
   position: sticky;
   left: 0;

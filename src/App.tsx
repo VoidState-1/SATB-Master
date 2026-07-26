@@ -395,9 +395,10 @@ function App() {
       locked: false,
     }
     const result = addChordRegion(project, chord)
-    if (!commitResult(result)) return
+    if (!commitResult(result)) return undefined
     setSelectedChordIds(new Set([chord.id]))
     setSelectedNoteIds(new Set())
+    return chord.id
   }, [chordBrush, commitResult, project])
 
   const handleUpdateChord = useCallback((chordId: string, patch: ChordRegionPatch) => {

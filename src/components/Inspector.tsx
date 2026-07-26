@@ -6,7 +6,6 @@ import {
   VOICE_CONFIG,
   type ChordAnalysis,
   type ChordRegion,
-  type ChordQuality,
   type EditableRange,
   type KeyMode,
   type NoteEvent,
@@ -16,6 +15,7 @@ import {
 import type { ChordRegionPatch } from '../domain/editing'
 import { formatPosition, keyAtTick } from '../domain/time'
 import { IconButton } from './IconButton'
+import { CHORD_QUALITY_OPTIONS } from './chordAnalysisOptions'
 
 type InspectorTab = 'selection' | 'project' | 'sound'
 
@@ -73,18 +73,6 @@ interface InspectorProps {
   onUseDefaultSoundFont(): void
 }
 
-const qualityOptions: Array<{ value: ChordQuality; label: string }> = [
-  { value: 'major', label: '大三和弦' },
-  { value: 'minor', label: '小三和弦' },
-  { value: 'diminished', label: '减三和弦' },
-  { value: 'augmented', label: '增三和弦' },
-  { value: 'dominant7', label: '属七和弦' },
-  { value: 'major7', label: '大七和弦' },
-  { value: 'minor7', label: '小七和弦' },
-  { value: 'halfDiminished7', label: '半减七和弦' },
-  { value: 'diminished7', label: '减七和弦' },
-]
-
 const nonChordToneOptions = [
   ['passing', '经过音'], ['neighbor', '辅助音'], ['suspension', '延留音'], ['appoggiatura', '倚音'],
   ['anticipation', '先现音'], ['escape', '逃逸音'], ['pedal', '持续音'], ['other', '其他'],
@@ -109,10 +97,10 @@ function ChordAnalysisEditor({ analysis, onChange }: {
       </label>
       <label><span>性质</span>
         <select value={analysis.quality} onChange={(event) => {
-          const quality = event.target.value as ChordQuality
+          const quality = event.target.value as ChordAnalysis['quality']
           onChange({ quality, inversion: Math.min(analysis.inversion, isSeventhChord(quality) ? 3 : 2) as ChordAnalysis['inversion'] })
         }}>
-          {qualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          {CHORD_QUALITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       </label>
       <label><span>转位</span>

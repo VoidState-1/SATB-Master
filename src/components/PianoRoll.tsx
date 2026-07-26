@@ -12,6 +12,7 @@ import {
   type VoiceId,
 } from '../domain/model'
 import type { HarmonyDiagnostic } from '../domain/harmony'
+import { ChordPalette } from './ChordPalette'
 
 export type EditorTool = 'select' | 'pencil' | 'eraser' | 'split'
 
@@ -35,7 +36,7 @@ interface PianoRollProps {
   onMoveNotes(noteIds: Set<string>, tickDelta: number, pitchDelta: number): void
   onDeleteNotes(noteIds: Set<string>): void
   onSplitNote(voiceId: VoiceId, noteId: string, splitTick: number): void
-  onAddChord(tick: number, durationTicks: number): void
+  onAddChord(tick: number, durationTicks: number): string | undefined
   onUpdateChord(chordId: string, patch: ChordRegionPatch): void
   onMoveChords(chordIds: Set<string>, tickDelta: number): void
   onDeleteChords(chordIds: Set<string>): void
@@ -140,6 +141,11 @@ interface ChordPanInteraction extends Omit<PanInteraction, 'kind'> {
 
 type ChordInteraction = ChordDrawInteraction | ChordMoveInteraction | ChordResizeInteraction | ChordEraseInteraction | ChordMarqueeInteraction | ChordPanInteraction
 
+interface ChordPaletteState {
+  chordId: string
+  anchor: { x: number; y: number }
+}
+
 function isBlackKey(midiNote: number) {
   return [1, 3, 6, 8, 10].includes(((midiNote % 12) + 12) % 12)
 }
@@ -179,6 +185,7 @@ export function PianoRoll({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [interaction, setInteraction] = useState<PointerInteraction>()
   const [chordInteraction, setChordInteraction] = useState<ChordInteraction>()
+  const [chordPalette, setChordPalette] = useState<ChordPaletteState>()
   const measures = useMemo(() => buildMeasures(project), [project])
   const rollHeight = (MAX_MIDI - MIN_MIDI + 1) * ROW_HEIGHT
   const timelineWidth = Math.max(920, (project.lengthTicks / project.ppq) * pixelsPerBeat)
@@ -786,7 +793,11 @@ export function PianoRoll({
     if (!chordInteraction) return
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     if (chordInteraction.kind === 'draw' && chordInteraction.nextDurationTicks > 0) {
-      onAddChord(chordInteraction.nextStartTick, chordInteraction.nextDurationTicks)
+      const chordId = onAddChord(chordInteraction.nextStartTick, chordInteraction.nextDurationTicks)
+      if (chordId) {
+        const laneRect = event.currentTarget.getBoundingClientRect()
+        setChordPalette({ chordId, anchor: { x: event.clientX - 18, y: laneRect.bottom } })
+      }
     } else if (chordInteraction.kind === 'erase' && chordInteraction.chordIds.size > 0) {
       onDeleteChords(chordInteraction.chordIds)
     } else if (chordInteraction.kind === 'move' && chordInteraction.tickDelta !== 0) {
@@ -813,6 +824,23 @@ export function PianoRoll({
     }
     setChordInteraction(undefined)
   }
+
+  const handleChordDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (tool !== 'select' && tool !== 'pencil') return
+    const x = event.clientX - event.currentTarget.getBoundingClientRect().left
+    const chord = chordAtX(x)
+    if (!chord || chord.locked || project.chordTrack.locked) return
+    event.preventDefault()
+    onSelectChords(new Set([chord.id]))
+    onSelectNotes(new Set())
+    onSetPlayhead(chord.startTick)
+    const laneRect = event.currentTarget.getBoundingClientRect()
+    setChordPalette({ chordId: chord.id, anchor: { x: event.clientX - 18, y: laneRect.bottom } })
+  }
+
+  const paletteChord = chordPalette
+    ? project.chordTrack.regions.find((region) => region.id === chordPalette.chordId)
+    : undefined
 
   const tempoLabels = project.tempoEvents.filter((event) => event.tick > 0)
   const meterLabels = project.meterEvents.filter((event) => event.tick > 0)
@@ -850,6 +878,7 @@ export function PianoRoll({
           onPointerMove={handleChordPointerMove}
           onPointerUp={finishChordInteraction}
           onPointerCancel={() => setChordInteraction(undefined)}
+          onDoubleClick={handleChordDoubleClick}
           onAuxClick={(event) => event.preventDefault()}
         >
           <span className="lane-sticky-label">和弦</span>
@@ -896,6 +925,16 @@ export function PianoRoll({
             />
           ) : null}
         </div>
+
+        {chordPalette && paletteChord ? (
+          <ChordPalette
+            analysis={paletteChord.analysis}
+            keyEvent={keyAtTick(project.keyEvents, paletteChord.startTick)}
+            anchor={chordPalette.anchor}
+            onChange={(patch) => onUpdateChord(paletteChord.id, { analysis: patch })}
+            onClose={() => setChordPalette(undefined)}
+          />
+        ) : null}
 
         <canvas
           ref={canvasRef}
