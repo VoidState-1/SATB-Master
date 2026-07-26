@@ -171,7 +171,7 @@ function App() {
   const project = history.project
   const [filePath, setFilePath] = useState<string>()
   const [activeVoice, setActiveVoice] = useState<VoiceId>('soprano')
-  const [tool, setTool] = useState<EditorTool>('pencil')
+  const [tool, setTool] = useState<EditorTool>('select')
   const [editorDomain, setEditorDomain] = useState<EditorDomain>('notes')
   const [toolModifiers, setToolModifiers] = useState({ control: false, alt: false })
   const [editorInteractionActive, setEditorInteractionActive] = useState(false)

@@ -365,7 +365,8 @@ function checkChordRules(project: ProjectDocument, slices: Slice[]) {
     if (missing.length > 0) {
       appendMerged(diagnostic(
         'chord-completeness', 'warning', slice.tick, slice.endTick,
-        active.map((item) => item.voiceId), active.map((item) => item.note), '和弦构成音不完整',
+        // 构成音完整性描述的是整个和弦区域，不应把同一条提示重复挂到四个音符上。
+        [], [], '和弦构成音不完整',
         `${chordName} 缺少 ${missing.length} 个标注和弦的构成音。`,
         [chord.id],
       ))

@@ -179,6 +179,22 @@ describe('斯波索宾基础规则检查', () => {
     expect(ruleIds(project)).not.toContain('chord-membership')
   })
 
+  it('和弦构成音不完整只关联和弦区域', () => {
+    const project = createEmptyProject()
+    project.lengthTicks = PPQ
+    project.chordTrack.regions.push({
+      id: 'c-major', startTick: 0, durationTicks: PPQ,
+      analysis: { degree: 1, accidental: 0, quality: 'major', inversion: 0 }, locked: false,
+    })
+    project.tracks[0].notes = [note('soprano-c', 0, PPQ, 72)]
+    project.tracks[1].notes = [note('alto-g', 0, PPQ, 67)]
+    project.tracks[2].notes = [note('tenor-c', 0, PPQ, 60)]
+    project.tracks[3].notes = [note('bass-c', 0, PPQ, 48)]
+
+    const diagnostic = checkHarmony(project).diagnostics.find((item) => item.ruleId === 'chord-completeness')
+    expect(diagnostic).toMatchObject({ chordIds: ['c-major'], voiceIds: [], noteIds: [] })
+  })
+
   it('按斯波索宾基础功能序进提示属到下属的逆功能进行', () => {
     const project = createEmptyProject()
     project.lengthTicks = PPQ * 2

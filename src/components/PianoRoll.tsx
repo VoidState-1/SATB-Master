@@ -152,6 +152,49 @@ interface ChordPaletteState {
   anchor: { x: number; y: number }
 }
 
+interface DiagnosticTooltipState {
+  targetId: string
+  title: string
+  x: number
+  y: number
+  alignLeft: boolean
+  alignAbove: boolean
+  diagnostics: HarmonyDiagnostic[]
+}
+
+const DIAGNOSTIC_PRIORITY: Record<HarmonyDiagnostic['severity'], number> = {
+  error: 0,
+  warning: 1,
+  suggestion: 2,
+}
+
+const DIAGNOSTIC_LABEL: Record<HarmonyDiagnostic['severity'], string> = {
+  error: '错误',
+  warning: '警告',
+  suggestion: '建议',
+}
+
+function groupDiagnostics(diagnostics: HarmonyDiagnostic[], key: 'noteIds' | 'chordIds') {
+  const grouped = new Map<string, HarmonyDiagnostic[]>()
+  diagnostics.forEach((diagnostic) => diagnostic[key].forEach((targetId) => {
+    const targetDiagnostics = grouped.get(targetId) ?? []
+    targetDiagnostics.push(diagnostic)
+    grouped.set(targetId, targetDiagnostics)
+  }))
+  grouped.forEach((items) => items.sort((left, right) => (
+    DIAGNOSTIC_PRIORITY[left.severity] - DIAGNOSTIC_PRIORITY[right.severity]
+  )))
+  return grouped
+}
+
+function primaryDiagnostic(diagnostics: HarmonyDiagnostic[]) {
+  return diagnostics.reduce<HarmonyDiagnostic | undefined>((primary, diagnostic) => (
+    !primary || DIAGNOSTIC_PRIORITY[diagnostic.severity] < DIAGNOSTIC_PRIORITY[primary.severity]
+      ? diagnostic
+      : primary
+  ), undefined)
+}
+
 function isBlackKey(midiNote: number) {
   return [1, 3, 6, 8, 10].includes(((midiNote % 12) + 12) % 12)
 }
@@ -199,7 +242,10 @@ export function PianoRoll({
   const [interaction, setInteraction] = useState<PointerInteraction>()
   const [chordInteraction, setChordInteraction] = useState<ChordInteraction>()
   const [chordPalette, setChordPalette] = useState<ChordPaletteState>()
+  const [diagnosticTooltip, setDiagnosticTooltip] = useState<DiagnosticTooltipState>()
   const measures = useMemo(() => buildMeasures(project), [project])
+  const diagnosticsByNote = useMemo(() => groupDiagnostics(diagnostics, 'noteIds'), [diagnostics])
+  const diagnosticsByChord = useMemo(() => groupDiagnostics(diagnostics, 'chordIds'), [diagnostics])
   const rollHeight = (MAX_MIDI - MIN_MIDI + 1) * ROW_HEIGHT
   const timelineWidth = Math.max(920, (project.lengthTicks / project.ppq) * pixelsPerBeat)
   const totalWidth = timelineWidth + PIANO_WIDTH
@@ -323,12 +369,6 @@ export function PianoRoll({
       context.fillText(`锁定 ${range.voiceIds.map((voiceId) => VOICE_CONFIG[voiceId].shortName).join('/')}`, x + 5, HEADER_HEIGHT + 13)
     })
 
-    const diagnosticsByNote = new Map<string, HarmonyDiagnostic>()
-    diagnostics.forEach((item) => item.noteIds.forEach((noteId) => {
-      const existing = diagnosticsByNote.get(noteId)
-      if (!existing || item.severity === 'error') diagnosticsByNote.set(noteId, item)
-    }))
-
     noteRects.forEach(({ track, note, midiNote, x, y, width, height }) => {
       const config = VOICE_CONFIG[track.id]
       context.fillStyle = track.id === activeVoice ? config.color : `${config.color}b8`
@@ -341,9 +381,11 @@ export function PianoRoll({
         context.lineWidth = 2
         context.stroke()
       }
-      const issue = diagnosticsByNote.get(note.id)
+      const issue = primaryDiagnostic(diagnosticsByNote.get(note.id) ?? [])
       if (issue) {
-        context.fillStyle = issue.severity === 'error' ? '#c93f34' : '#d49324'
+        context.fillStyle = issue.severity === 'error'
+          ? '#c93f34'
+          : issue.severity === 'warning' ? '#d49324' : '#4d7469'
         context.fillRect(x, y + height - 3, width, 3)
       }
       if (width > 25) {
@@ -393,7 +435,7 @@ export function PianoRoll({
     context.moveTo(playheadX, HEADER_HEIGHT)
     context.lineTo(playheadX, totalHeight)
     context.stroke()
-  }, [activeVoice, diagnostics, interaction, measures, noteRects, pixelsPerBeat, playheadX, project.exercise.editableRanges, project.ppq, rollHeight, selectedNoteIds, timelineWidth, totalHeight, totalWidth])
+  }, [activeVoice, diagnosticsByNote, interaction, measures, noteRects, pixelsPerBeat, playheadX, project.exercise.editableRanges, project.ppq, rollHeight, selectedNoteIds, timelineWidth, totalHeight, totalWidth])
 
   useEffect(() => {
     const scroll = scrollRef.current
@@ -500,7 +542,29 @@ export function PianoRoll({
     scrollRef.current?.focus({ preventScroll: true })
   }
 
+  const showDiagnosticTooltip = (
+    event: React.PointerEvent,
+    targetId: string,
+    title: string,
+    targetDiagnostics: HarmonyDiagnostic[],
+  ) => {
+    if (targetDiagnostics.length === 0) {
+      setDiagnosticTooltip(undefined)
+      return
+    }
+    setDiagnosticTooltip((current) => current?.targetId === targetId ? current : {
+      targetId,
+      title,
+      x: event.clientX + (event.clientX > window.innerWidth - 340 ? -12 : 12),
+      y: event.clientY + (event.clientY > window.innerHeight - 200 ? -12 : 12),
+      alignLeft: event.clientX > window.innerWidth - 340,
+      alignAbove: event.clientY > window.innerHeight - 200,
+      diagnostics: targetDiagnostics,
+    })
+  }
+
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    setDiagnosticTooltip(undefined)
     focusEditor('notes')
     if (event.button === 1) {
       const scroll = scrollRef.current
@@ -586,7 +650,21 @@ export function PianoRoll({
   }
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!interaction) return
+    if (!interaction) {
+      const point = localPoint(event)
+      const hit = hitTest(point.x, point.y)
+      if (!hit) {
+        setDiagnosticTooltip(undefined)
+        return
+      }
+      showDiagnosticTooltip(
+        event,
+        `note:${hit.note.id}`,
+        `${noteName(hit.midiNote)} · ${VOICE_CONFIG[hit.track.id].name}`,
+        diagnosticsByNote.get(hit.note.id) ?? [],
+      )
+      return
+    }
     if (interaction.kind === 'pan') {
       const scroll = scrollRef.current
       if (scroll) {
@@ -691,6 +769,7 @@ export function PianoRoll({
   )
 
   const handleChordPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    setDiagnosticTooltip(undefined)
     focusEditor('chords')
     if (event.button === 1) {
       const scroll = scrollRef.current
@@ -913,7 +992,13 @@ export function PianoRoll({
   const keyLabels = project.keyEvents.filter((event) => event.tick > 0)
 
   return (
-    <div className="piano-roll" ref={scrollRef} tabIndex={0} onWheel={handleWheel}>
+    <div
+      className="piano-roll"
+      ref={scrollRef}
+      tabIndex={0}
+      onWheel={handleWheel}
+      onScroll={() => setDiagnosticTooltip(undefined)}
+    >
       <div className="piano-roll-inner" style={{ width: totalWidth, height: totalHeight }}>
         <div
           className="ruler-lane"
@@ -972,7 +1057,8 @@ export function PianoRoll({
           ))}
           {chordRects.map(({ region: chord, startTick, durationTicks, x, width }) => {
             const formatted = formatChordRegion(project, { ...chord, startTick, durationTicks })
-            const issue = diagnostics.find((item) => item.chordIds.includes(chord.id))
+            const chordDiagnostics = diagnosticsByChord.get(chord.id) ?? []
+            const issue = primaryDiagnostic(chordDiagnostics)
             const display = project.chordTrack.displayMode === 'roman'
               ? formatted.roman
               : project.chordTrack.displayMode === 'absolute' ? formatted.absolute : `${formatted.roman}  ${formatted.absolute}`
@@ -986,7 +1072,16 @@ export function PianoRoll({
                 left: x,
                 width,
               }}
-              title={`${formatted.roman} · ${formatted.absolute}${chord.locked ? '（已锁定）' : ''}`}
+              title={chordDiagnostics.length === 0
+                ? `${formatted.roman} · ${formatted.absolute}${chord.locked ? '（已锁定）' : ''}`
+                : undefined}
+              onPointerEnter={(event) => showDiagnosticTooltip(
+                event,
+                `chord:${chord.id}`,
+                `${formatted.roman} · ${formatted.absolute}`,
+                chordDiagnostics,
+              )}
+              onPointerLeave={() => setDiagnosticTooltip(undefined)}
             >
               <span className="chord-resize-handle left" />
               <span className="chord-label">{display}</span>
@@ -1032,6 +1127,7 @@ export function PianoRoll({
           onPointerMove={handlePointerMove}
           onPointerUp={finishInteraction}
           onPointerCancel={() => setInteraction(undefined)}
+          onPointerLeave={() => setDiagnosticTooltip(undefined)}
           onDoubleClick={handleNoteDoubleClick}
           onAuxClick={(event) => event.preventDefault()}
         />
@@ -1044,6 +1140,26 @@ export function PianoRoll({
           ))}
         </div>
       </div>
+      {diagnosticTooltip ? (
+        <div
+          className={`diagnostic-tooltip ${diagnosticTooltip.alignLeft ? 'align-left' : ''} ${diagnosticTooltip.alignAbove ? 'align-above' : ''}`}
+          style={{ left: diagnosticTooltip.x, top: diagnosticTooltip.y }}
+          role="tooltip"
+        >
+          <strong>{diagnosticTooltip.title}</strong>
+          <div className="diagnostic-tooltip-list">
+            {diagnosticTooltip.diagnostics.map((diagnostic) => (
+              <div key={diagnostic.id} className={`diagnostic-tooltip-item ${diagnostic.severity}`}>
+                <span>{DIAGNOSTIC_LABEL[diagnostic.severity]}</span>
+                <div>
+                  <b>{diagnostic.title}</b>
+                  <small>{diagnostic.message}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
