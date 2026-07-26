@@ -16,12 +16,19 @@ import {
   formatChordRegion,
 } from './chords'
 import { keyAtTick } from './time'
+import {
+  chordDependentRuleIds,
+  defaultHarmonyRuleSeverities,
+  type DiagnosticSeverity,
+  type HarmonyRuleId,
+  type HarmonyRuleSeverities,
+} from './harmonyRules'
 
-export type DiagnosticSeverity = 'error' | 'warning' | 'suggestion'
+export type { DiagnosticSeverity } from './harmonyRules'
 
 export interface HarmonyDiagnostic {
   id: string
-  ruleId: string
+  ruleId: HarmonyRuleId
   severity: DiagnosticSeverity
   tick: number
   endTick: number
@@ -43,15 +50,7 @@ interface Slice {
   notes: Partial<Record<VoiceId, NoteEvent>>
 }
 
-const CHORD_RULE_IDS = [
-  'chord-membership',
-  'chord-completeness',
-  'chord-inversion',
-  'leading-tone-doubling',
-  'chord-seventh-resolution',
-  'functional-retrogression',
-  'secondary-dominant-resolution',
-]
+const CHORD_RULE_IDS = chordDependentRuleIds()
 
 function pitchClass(note: number) {
   return ((note % 12) + 12) % 12
@@ -62,7 +61,7 @@ function direction(from: number, to: number) {
 }
 
 function diagnostic(
-  ruleId: string,
+  ruleId: HarmonyRuleId,
   severity: DiagnosticSeverity,
   tick: number,
   endTick: number,
@@ -144,7 +143,7 @@ function checkMelodicMotion(project: ProjectDocument) {
       const interval = Math.abs(current.midiNote - previous.midiNote)
       if (interval > 12) {
         diagnostics.push(diagnostic(
-          'melodic-large-leap', 'error', current.startTick, current.startTick + current.durationTicks,
+          'melodic-leap-over-octave', 'error', current.startTick, current.startTick + current.durationTicks,
           [track.id], [previous, current], '旋律跳进过大', `${track.name}出现超过八度的跳进（${interval} 个半音）。`,
         ))
       } else if (interval > 7) {
@@ -429,7 +428,10 @@ function checkChordProgressions(project: ProjectDocument) {
   return diagnostics
 }
 
-export function checkHarmony(project: ProjectDocument): HarmonyCheckResult {
+export function checkHarmony(
+  project: ProjectDocument,
+  ruleSeverities: HarmonyRuleSeverities = defaultHarmonyRuleSeverities(),
+): HarmonyCheckResult {
   const slices = buildSlices(project)
   const diagnostics = [
     ...checkRanges(project),
@@ -437,16 +439,24 @@ export function checkHarmony(project: ProjectDocument): HarmonyCheckResult {
     ...checkVerticalSlices(slices),
     ...checkVoiceLeading(slices),
   ]
-  const skippedRuleIds = project.chordTrack.regions.length === 0 ? CHORD_RULE_IDS : []
+  const skippedRuleIds = project.chordTrack.regions.length === 0
+    ? CHORD_RULE_IDS.filter((ruleId) => ruleSeverities[ruleId] !== 'off')
+    : []
   if (project.chordTrack.regions.length > 0) {
     diagnostics.push(...checkChordRules(project, slices))
     diagnostics.push(...checkChordToneResolution(project))
     diagnostics.push(...checkChordProgressions(project))
   }
 
-  const unique = new Map(diagnostics.map((item) => [item.id, item]))
+  // 规则先产生可定位的诊断，最后统一应用用户严重度；“无”不进入结果或跳过统计。
+  const configuredDiagnostics = diagnostics.flatMap((item) => {
+    const severity = ruleSeverities[item.ruleId]
+    return severity === 'off' ? [] : [{ ...item, severity }]
+  })
+  const unique = new Map(configuredDiagnostics.map((item) => [item.id, item]))
+  const severityOrder: Record<DiagnosticSeverity, number> = { error: 0, warning: 1, suggestion: 2 }
   return {
-    diagnostics: [...unique.values()].sort((a, b) => a.tick - b.tick || a.severity.localeCompare(b.severity)),
+    diagnostics: [...unique.values()].sort((a, b) => a.tick - b.tick || severityOrder[a.severity] - severityOrder[b.severity]),
     skippedRuleIds,
   }
 }

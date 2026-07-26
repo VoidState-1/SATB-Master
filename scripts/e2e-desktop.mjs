@@ -778,7 +778,7 @@ async function verifyShortcutSettings() {
   await clickButton('设置')
   await waitFor(`Boolean(document.querySelector('.settings-dialog'))`, '快捷键设置页打开')
   const tabCount = await evaluate(`document.querySelectorAll('.settings-tabs button').length`)
-  if (tabCount !== 1) throw new Error(`设置页选项卡数量错误：${tabCount}`)
+  if (tabCount !== 2) throw new Error(`设置页选项卡数量错误：${tabCount}`)
   const dialogLayout = await evaluate(`(() => {
     const dialog = document.querySelector('.settings-dialog');
     const content = document.querySelector('.shortcut-settings-content');
@@ -830,6 +830,59 @@ async function verifyShortcutSettings() {
   await delay(100)
   await clickButton('关闭设置')
   await waitFor(`document.querySelector('button[aria-label^="选择工具（1）"]') !== null`, '工具快捷键恢复默认')
+}
+
+async function configureHarmonyRuleSeverity() {
+  await clickButton('设置')
+  await clickButton('检查规则设置')
+  await waitFor(`document.querySelectorAll('.rule-row').length === 19`, '列出全部检查规则')
+  const layout = await evaluate(`(() => {
+    const content = document.querySelector('.rule-settings-content');
+    const row = document.querySelector('.rule-row');
+    return content && row ? {
+      contentOverflow: content.scrollWidth - content.clientWidth,
+      rowOverflow: row.scrollWidth - row.clientWidth,
+    } : null;
+  })()`)
+  if (!layout || layout.contentOverflow > 1 || layout.rowOverflow > 1) {
+    throw new Error(`检查规则设置页布局溢出：${JSON.stringify(layout)}`)
+  }
+  const changed = await evaluate(`(() => {
+    const select = document.querySelector('select[aria-label="设置“平行纯五度”严重程度"]');
+    if (!select) return false;
+    select.value = 'suggestion';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`)
+  if (!changed) throw new Error('无法修改平行纯五度严重程度')
+  await waitFor(`JSON.parse(localStorage.getItem('satb-master-harmony-rules-v1'))['parallel-fifths'] === 'suggestion'`, '检查规则严重度持久化')
+  await clickButton('关闭设置')
+}
+
+async function verifyHarmonyRuleSeverityApplication() {
+  await waitFor(`(() => {
+    const item = [...document.querySelectorAll('.diagnostic-item')].find((candidate) => candidate.textContent?.includes('平行纯五度'));
+    return item?.classList.contains('suggestion') === true && document.querySelector('.diagnostics-header')?.textContent?.includes('个建议');
+  })()`, '平行纯五度改为建议')
+
+  await clickButton('设置')
+  await clickButton('检查规则设置')
+  await evaluate(`(() => {
+    const select = document.querySelector('select[aria-label="设置“平行纯五度”严重程度"]');
+    select.value = 'off';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`)
+  await clickButton('关闭设置')
+  await waitFor(`![...document.querySelectorAll('.diagnostic-item')].some((item) => item.textContent?.includes('平行纯五度'))`, '严重度为无时关闭规则')
+
+  await clickButton('设置')
+  await clickButton('检查规则设置')
+  await clickButton('恢复“平行纯五度”默认严重程度')
+  await clickButton('关闭设置')
+  await waitFor(`(() => {
+    const item = [...document.querySelectorAll('.diagnostic-item')].find((candidate) => candidate.textContent?.includes('平行纯五度'));
+    return item?.classList.contains('error') === true;
+  })()`, '恢复平行纯五度默认严重度')
 }
 
 async function verifyEditorShortcutGestures() {
@@ -1072,6 +1125,7 @@ try {
   await verifyPanelResizing()
   await verifyInitialGridSelection()
   await verifyShortcutSettings()
+  await configureHarmonyRuleSeverity()
   await verifyEditorShortcutGestures()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
   await clickButton('最大化')
@@ -1102,6 +1156,7 @@ try {
   if (!canvasTexts.includes('C5') || !canvasTexts.includes('D5') || canvasTexts.includes('S')) {
     throw new Error(`音符块音高文字错误：${JSON.stringify(canvasTexts)}`)
   }
+  await verifyHarmonyRuleSeverityApplication()
   await verifyDoubleClickVoiceActivation()
   await verifySelectionAndMovePreview()
   await verifyLiveErase()
@@ -1213,6 +1268,7 @@ try {
     timelineGuides: 'measure-lines-and-full-playhead-ready',
     panelResizing: 'left-right-bottom-drag-and-reset-ready',
     shortcutSettings: 'remap-conflict-persist-reset-ready',
+    harmonyRuleSettings: 'list-severity-disable-persist-reset-ready',
     shortcutGestures: 'modifiers-voice-zoom-navigation-ready',
     selectionShortcuts: 'select-clear-duplicate-cut-paste-ready',
     doubleClickVoice: 'ready',

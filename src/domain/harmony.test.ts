@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { checkHarmony } from './harmony'
+import { defaultHarmonyRuleSeverities } from './harmonyRules'
 import { createEmptyProject, PPQ, type NoteEvent, type VoiceId } from './model'
 
 function addPair(project: ReturnType<typeof createEmptyProject>, voiceId: VoiceId, pitches: [number, number]) {
@@ -32,6 +33,29 @@ describe('斯波索宾基础规则检查', () => {
     expect(result.diagnostics.some((item) => item.ruleId === 'parallel-fifths' && item.tick === PPQ)).toBe(true)
   })
 
+  it('使用规则配置改写诊断严重度', () => {
+    const project = createEmptyProject()
+    project.lengthTicks = PPQ * 2
+    addPair(project, 'soprano', [67, 69])
+    addPair(project, 'bass', [48, 50])
+    const severities = defaultHarmonyRuleSeverities()
+    severities['parallel-fifths'] = 'suggestion'
+
+    const diagnostic = checkHarmony(project, severities).diagnostics.find((item) => item.ruleId === 'parallel-fifths')
+    expect(diagnostic?.severity).toBe('suggestion')
+  })
+
+  it('严重度为无时关闭该规则', () => {
+    const project = createEmptyProject()
+    project.lengthTicks = PPQ * 2
+    addPair(project, 'soprano', [67, 69])
+    addPair(project, 'bass', [48, 50])
+    const severities = defaultHarmonyRuleSeverities()
+    severities['parallel-fifths'] = 'off'
+
+    expect(checkHarmony(project, severities).diagnostics.map((item) => item.ruleId)).not.toContain('parallel-fifths')
+  })
+
   it('和弦轨为空时明确跳过依赖和弦标注的规则', () => {
     const result = checkHarmony(createEmptyProject())
     expect(result.skippedRuleIds).toEqual(expect.arrayContaining([
@@ -41,6 +65,13 @@ describe('斯波索宾基础规则检查', () => {
       'leading-tone-doubling',
       'chord-seventh-resolution',
     ]))
+  })
+
+  it('已关闭的和弦规则不计入跳过统计', () => {
+    const severities = defaultHarmonyRuleSeverities()
+    severities['chord-membership'] = 'off'
+
+    expect(checkHarmony(createEmptyProject(), severities).skippedRuleIds).not.toContain('chord-membership')
   })
 
   it('识别同一声部内时间重叠的音符', () => {

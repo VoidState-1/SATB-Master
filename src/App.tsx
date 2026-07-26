@@ -70,6 +70,7 @@ import {
 } from './domain/model'
 import { buildMeasures, eventAtTick, formatPosition, ticksPerBeat } from './domain/time'
 import { DEFAULT_PANEL_SIZES, PANEL_RESIZER_SIZE, usePanelLayout } from './hooks/usePanelLayout'
+import { useHarmonyRuleSettings } from './hooks/useHarmonyRuleSettings'
 import { useProjectHistory } from './hooks/useProjectHistory'
 import { useShortcutBindings } from './hooks/useShortcutBindings'
 import { commandForKeyboardEvent, formatShortcutBinding } from './shortcuts/shortcutRegistry'
@@ -171,11 +172,15 @@ function App() {
   const playSessionRef = useRef(0)
   const panelLayout = usePanelLayout()
   const shortcutSettings = useShortcutBindings()
+  const harmonyRuleSettings = useHarmonyRuleSettings()
   const effectiveTool: EditorTool = tool === 'select'
     ? toolModifiers.alt ? 'eraser' : toolModifiers.control ? 'pencil' : 'select'
     : tool
 
-  const harmonyResult = useMemo(() => checkHarmony(project), [project])
+  const harmonyResult = useMemo(
+    () => checkHarmony(project, harmonyRuleSettings.severities),
+    [harmonyRuleSettings.severities, project],
+  )
   const selectedNote = useMemo(() => {
     const id = selectedNoteIds.values().next().value as string | undefined
     if (!id) return undefined
@@ -1244,6 +1249,10 @@ function App() {
           onClearBinding={shortcutSettings.clearBinding}
           onResetBinding={shortcutSettings.resetBinding}
           onResetAll={shortcutSettings.resetAllBindings}
+          ruleSeverities={harmonyRuleSettings.severities}
+          onSetRuleSeverity={harmonyRuleSettings.setSeverity}
+          onResetRule={harmonyRuleSettings.resetRule}
+          onResetAllRules={harmonyRuleSettings.resetAllRules}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}

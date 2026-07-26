@@ -1014,6 +1014,7 @@ body.is-resizing-rows * {
 
 .diagnostic-item.error > svg { color: #bd3d32; }
 .diagnostic-item.warning > svg { color: #c18424; }
+.diagnostic-item.suggestion > svg { color: #4d7469; }
 
 .diagnostic-position {
   font: 10px Consolas, monospace;
@@ -1408,6 +1409,9 @@ body.is-resizing-rows * {
 }
 
 .settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding: 10px 7px;
   border-right: 1px solid #c8cac3;
   background: #e9e9e4;
@@ -1440,15 +1444,24 @@ body.is-resizing-rows * {
   box-shadow: inset 3px 0 #2f7764;
 }
 
-.shortcut-settings-content {
+.shortcut-settings-content,
+.rule-settings-content {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 56px auto minmax(0, 1fr);
   background: #f8f8f5;
 }
 
-.shortcut-settings-toolbar {
+.shortcut-settings-content {
+  grid-template-rows: 56px auto minmax(0, 1fr);
+}
+
+.rule-settings-content {
+  grid-template-rows: 56px minmax(0, 1fr);
+}
+
+.shortcut-settings-toolbar,
+.rule-settings-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1488,7 +1501,8 @@ body.is-resizing-rows * {
   box-shadow: 0 0 0 2px rgba(61, 120, 102, 0.12);
 }
 
-.shortcut-settings-toolbar .command-button svg {
+.shortcut-settings-toolbar .command-button svg,
+.rule-settings-toolbar .command-button svg {
   width: 15px;
   height: 15px;
 }
@@ -1501,12 +1515,14 @@ body.is-resizing-rows * {
   font-size: 11px;
 }
 
-.shortcut-groups {
+.shortcut-groups,
+.rule-groups {
   min-height: 0;
   overflow-y: auto;
 }
 
-.shortcut-group h3 {
+.shortcut-group h3,
+.rule-group h3 {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -1583,15 +1599,80 @@ body.is-resizing-rows * {
 }
 
 .shortcut-unassigned,
-.shortcut-empty {
+.settings-empty {
   color: #8a8c84;
   font-size: 11px;
 }
 
-.shortcut-empty {
+.settings-empty {
   padding: 28px 14px;
   text-align: center;
 }
+
+.rule-row {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 14px;
+  border-bottom: 1px solid #e0e1db;
+}
+
+.rule-copy {
+  min-width: 0;
+}
+
+.rule-copy strong,
+.rule-copy small {
+  display: block;
+}
+
+.rule-copy strong {
+  color: #30322d;
+  font-size: 11px;
+}
+
+.rule-copy small {
+  margin-top: 3px;
+  overflow: hidden;
+  color: #74766e;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-row select {
+  width: 112px;
+  height: 30px;
+  padding: 0 7px;
+  border: 1px solid #c7c9c2;
+  border-radius: 4px;
+  outline: 0;
+  background: #fff;
+  color: #33352f;
+  font-size: 11px;
+}
+
+.rule-row select:focus {
+  border-color: #5b8d7f;
+  box-shadow: 0 0 0 2px rgba(61, 120, 102, 0.12);
+}
+
+.rule-row > .icon-button {
+  width: 28px;
+  height: 28px;
+}
+
+.rule-row.severity-off .rule-copy {
+  opacity: .52;
+}
+
+.rule-row.severity-error select { border-left: 3px solid #bd3d32; }
+.rule-row.severity-warning select { border-left: 3px solid #c18424; }
+.rule-row.severity-suggestion select { border-left: 3px solid #4d7469; }
+.rule-row.severity-off select { border-left: 3px solid #a4a69f; }
 
 .confirmation-backdrop {
   position: fixed;
