@@ -477,7 +477,7 @@ button {
   padding: 0;
   border: 0;
   outline: 0;
-  background: #dedfd9;
+  background: transparent;
   touch-action: none;
   user-select: none;
 }
@@ -485,12 +485,17 @@ button {
 .panel-resizer::after {
   position: absolute;
   content: '';
-  background: #bfc0ba;
+  background: transparent;
   transition: background-color 100ms ease, box-shadow 100ms ease;
 }
 
 .panel-resizer.vertical {
+  background: linear-gradient(to right, #f5f5f1 0 50%, #dedfd9 50% 100%);
   cursor: col-resize;
+}
+
+.editor-area + .panel-resizer.vertical {
+  background: linear-gradient(to right, #dedfd9 0 50%, #f5f5f1 50% 100%);
 }
 
 .panel-resizer.vertical::after {
@@ -502,6 +507,7 @@ button {
 }
 
 .panel-resizer.horizontal {
+  background: linear-gradient(to bottom, #f7f7f3 0 50%, #f7f7f4 50% 100%);
   cursor: row-resize;
 }
 
