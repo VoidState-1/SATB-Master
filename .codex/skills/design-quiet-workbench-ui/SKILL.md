@@ -1,116 +1,127 @@
 ---
 name: design-quiet-workbench-ui
-description: Design or refine professional desktop editors, DAWs, IDE-like tools, operational dashboards, and other information-dense applications in a quiet modern workbench style. Use when building or reviewing React/Electron or web interfaces that should feel restrained, precise, compact, domain-focused, comfortable for long sessions, and visually consistent with SATB Master's UI rather than a marketing site or card-heavy consumer app.
+description: 为桌面端或网页端生产力工具建立克制、清晰、紧凑且适合长时间工作的界面设计语言。用于设计或改进文档编辑、项目管理、数据分析、开发工具、业务系统、运营后台及其他信息密集型软件；适合需要连续工作区、明确层级、高操作效率和低视觉噪声的界面，不适用于营销落地页或以装饰和内容消费为主的产品。
 ---
 
-# Design Quiet Workbench UI
+# 静谧工作台界面设计
 
-Create a calm, precise workspace in which the user's material is visually stronger than the application chrome. Favor continuity, hierarchy, and repeated-action efficiency over decoration.
+建立安静、精确、可持续使用的工作环境。让用户正在处理的内容比应用外壳更醒目，以连续性、层级和重复操作效率取代装饰性表达。
 
-## Establish the product frame
+## 建立产品框架
 
-1. Inspect the existing interface, design tokens, component library, domain objects, and primary workflows before changing styles.
-2. Identify the permanent work areas: command bar, navigation or track list, central canvas/table/timeline, inspector, diagnostics, and status surfaces.
-3. Make the actual working experience the first screen. Do not replace it with a landing page, hero, onboarding card wall, or feature explanation.
-4. Preserve established interaction patterns unless the task explicitly requires changing them.
+1. 修改界面前，先检查现有设计标记、组件体系、领域对象和主要工作流。
+2. 识别长期存在的工作区域，例如命令栏、导航区、主工作区、属性面板、问题面板和状态区。
+3. 让实际工作界面成为首屏。不要用宣传页、巨型标题、功能介绍或卡片墙取代核心操作空间。
+4. 除非任务明确要求改变，否则保留产品已有的交互习惯和信息结构。
+5. 先优化高频任务，再处理低频设置和装饰细节。
 
-## Build the visual hierarchy
+## 建立视觉层级
 
-- Use a continuous application frame. Separate major areas with spacing, one-pixel borders, and small surface shifts.
-- Keep the central canvas, document, table, or timeline visually dominant and as uninterrupted as possible.
-- Use cards only for repeated independent objects, dialogs, popovers, or genuinely framed tools. Do not wrap page sections in floating cards or nest cards.
-- Keep permanent controls compact. Target roughly 28-32 px control heights and 16-18 px toolbar icons unless the existing system dictates otherwise.
-- Use radii of 3-6 px for controls, popovers, and selections. Avoid pill shapes except for compact statuses or established toggle patterns.
-- Reserve shadows for transient elevation such as menus, dialogs, and tooltips. Use borders for permanent structure.
-- Keep toolbars, grids, counters, and editor tracks dimensionally stable so hover, selection, labels, and dynamic values do not shift the layout.
+- 使用连续的应用框架，通过间距、单像素边框和轻微的表面明度差分隔区域。
+- 让文档、表格、画布、时间线或数据视图成为视觉中心，并尽量保持完整、连续。
+- 仅将卡片用于独立重复对象、对话框、浮层或确实需要边界的工具。不要把普通页面区段做成悬浮卡片，也不要嵌套卡片。
+- 保持常驻控件紧凑。除非现有系统另有约定，控件高度宜为 28-32 像素，工具栏图标宜为 16-18 像素。
+- 控件、浮层和选区使用 3-6 像素圆角。除紧凑状态标记或既有切换模式外，避免胶囊形状。
+- 仅为菜单、对话框和提示浮层等临时层级使用阴影；永久结构优先使用边框。
+- 固定工具栏、网格、计数器和编辑区域的关键尺寸，避免悬停、选中或动态数值引发布局跳动。
 
-## Use a quiet color system
+## 使用安静且中性的色彩系统
 
-Start with warm neutral surfaces and charcoal text. Use hue mainly to communicate identity or state.
+以中性表面和深灰文字为基础，主要使用色相表达身份、类别和状态，而不是装饰背景。
 
-For a close SATB Master treatment, use these values as seed tokens rather than mandatory colors:
+以下标记可作为起始参考，不应替代产品自身的品牌和无障碍要求：
 
 ```css
---surface-main: #f7f7f3;
---surface-subtle: #eeeee9;
+--surface-base: #f7f8f6;
+--surface-subtle: #eef0ed;
 --surface-raised: #ffffff;
---border: #c7c8c1;
---text: #30332f;
---text-muted: #696b63;
---accent: #2f7764;
---error: #c93f34;
---warning: #d49324;
---suggestion: #4d7469;
+--border: #c8ccc7;
+--text-primary: #292d29;
+--text-muted: #697069;
+--accent: #356b5f;
+--danger: #bd433b;
+--warning: #b9781f;
+--success: #46745f;
 ```
 
-- Keep the neutral system dominant. Do not tint the entire product with one hue family.
-- Give domain categories a restrained set of distinct accents, such as purple, green, blue, and brown.
-- Keep semantic colors separate from category colors. Never assign an ordinary track, team, or object the same color used for errors.
-- Use saturation sparingly. Increase contrast for selection, active tools, warnings, and playback state rather than decorating idle surfaces.
-- Avoid gradients, decorative orbs, bokeh, glass effects, and large atmospheric color fields.
+- 让中性色占据主要面积，不要用单一色系浸染整个产品。
+- 为领域类别选择少量、可区分且饱和度受控的强调色。
+- 严格分离类别色与语义色。普通对象不得使用与错误、警告或成功状态相同的颜色。
+- 谨慎使用高饱和度颜色。通过对比度表达选中、激活、风险和状态变化，而不是装饰空闲区域。
+- 避免渐变、装饰光斑、玻璃效果和大面积氛围色。
+- 检查文字与背景、图标与背景以及状态色之间的对比度。
 
-## Set typography and iconography
+## 设置字体与图标
 
-- Use the platform UI sans serif or the product's established family. Prefer Segoe UI on Windows desktop applications.
-- Keep routine interface text around 11-13 px, section headings around 13-16 px, and reserve larger display type for genuinely prominent content.
-- Use regular or semibold weight to establish hierarchy. Do not compensate for weak hierarchy with oversized headings.
-- Set letter spacing to `0` and do not scale font size with viewport width.
-- Use tabular or monospace numerals for timecodes, ticks, coordinates, measures, and other aligned technical values.
-- Use the existing icon library, preferably Lucide when present. Use familiar symbols for editing tools and add concise tooltips to unfamiliar icon buttons.
+- 优先使用平台界面字体或产品已有字体，不为追求个性牺牲跨平台清晰度。
+- 常规界面文字宜为 11-13 像素，区段标题宜为 13-16 像素；仅为真正重要的内容使用更大字号。
+- 通过常规与半粗字重建立层级，不要用过大的标题弥补层级设计不足。
+- 字间距设为 `0`，不要根据视口宽度连续缩放字号。
+- 为编号、坐标、日期、时长和其他需要纵向比较的数据使用等宽数字或等宽字体。
+- 优先使用产品现有图标库。常见工具使用熟悉符号，陌生图标按钮提供简短提示。
 
-## Design controls for repeated work
+## 设计适合重复工作的控件
 
-- Use icons for tools, segmented controls for modes, tabs for views, toggles or checkboxes for binary state, and select menus for option sets.
-- Give active, hovered, focused, disabled, locked, and destructive states clearly different treatments.
-- Keep focus rings visible but quiet. Do not remove keyboard focus without supplying an equivalent indicator.
-- Place controls near the object or context they affect. Put secondary configuration in an inspector or compact popover.
-- Favor direct manipulation on the canvas while retaining exact numeric editing in the inspector.
-- Make panel seams draggable when users benefit from changing workspace proportions. Keep the resting divider subtle; reveal resize intent through cursor and hover feedback instead of a permanent thick bar.
-- Preserve useful keyboard shortcuts and expose them in tooltips or menus without placing tutorial prose in the workspace.
+- 工具使用图标，模式使用分段控件，视图使用标签页，二元状态使用开关或复选框，选项集合使用菜单或下拉框。
+- 明确区分默认、悬停、激活、选中、聚焦、禁用、锁定和危险状态。
+- 保留清晰但克制的键盘焦点标记，不要无替代地移除焦点轮廓。
+- 将控件放在其影响对象或上下文附近，把次要配置放入属性面板或紧凑浮层。
+- 在可视区域支持直接操作，同时为需要精确输入的属性保留数值编辑方式。
+- 用户需要调整工作区比例时，允许拖拽面板接缝。静止分隔线保持轻量，通过指针和悬停反馈表达可调整性，避免永久显示粗重把手。
+- 保留有价值的快捷键，并在工具提示或菜单中展示；不要在工作区长期显示教学文字。
 
-## Treat timelines and canvases as one system
+## 组织工作内容界面
 
-- Derive rulers, tracks, overlays, selections, loop regions, and playheads from the same coordinate conversion.
-- Continue meaningful guides across related lanes. A measure line or playhead should not stop arbitrarily at a header boundary.
-- Keep sticky labels and rulers aligned during zooming and scrolling.
-- Use category color for object identity and semantic stripes, outlines, or badges for diagnostics.
-- Attach a diagnostic to the object that owns the problem. Show region-level problems on the region, not redundantly on every child object.
-- Aggregate all diagnostics for an object in its hover or focus tooltip while using the highest severity for its compact persistent marker.
+- 让表格、文档、画布、时间线、树形结构和属性面板共享一致的间距、选择和状态规则。
+- 从同一数据或坐标转换生成相互关联的标尺、辅助线、覆盖层和选区，避免缩放或滚动后错位。
+- 让有意义的参考线贯穿相关区域，不要在标题或相邻面板边界处无故中断。
+- 缩放、滚动和固定标题时，保持标签、列、标尺与内容严格对齐。
+- 使用类别色表达对象身份，使用色条、描边或标记表达警告和错误，避免两者相互混淆。
+- 将问题归属到真正拥有该问题的对象或区域，不要把一条区域级问题重复标记在所有子对象上。
+- 在对象的悬停或聚焦提示中汇总其全部问题，常驻标记仅采用其中最高严重程度。
 
-## Adapt without losing density
+## 控制信息密度
 
-- Design desktop-first for professional tools, then define explicit minimum widths and heights for each panel.
-- Allow side and bottom panels to resize; collapse or hide secondary areas before compressing the primary workspace beyond usability.
-- Let text wrap where appropriate and use ellipsis only when the full value remains available through a tooltip or inspector.
-- Prevent controls, labels, and panels from overlapping at the minimum supported viewport.
-- Do not transform a dense workbench into a decorative mobile card feed. Create a focused compact mode if narrow-screen support is required.
+- 让高频信息始终可见，将低频信息放入次级面板、菜单或按需展开区域。
+- 使用对齐、分组和留白提升可扫描性，不要依赖大量分隔框。
+- 在紧凑界面中保留稳定的行高、列宽和控件尺寸，避免因为内容变化频繁重排。
+- 为数据密集视图提供筛选、排序、搜索、批量操作和清晰的空状态。
+- 将关键状态放在用户视线和操作路径附近，不依赖远离对象的全局提示。
 
-## Write interface copy
+## 适应不同窗口尺寸
 
-- Use short domain terms and direct commands.
-- Prefer labels such as `音源`, `属性`, `锁定`, and `导出 MIDI` over explanatory sentences.
-- Put instructions in documentation, onboarding, or contextual help rather than permanently visible workspace text.
-- Distinguish error, warning, suggestion, loading, empty, and success states with precise language.
+- 以专业桌面工作流为主要目标，并为每个面板定义明确的最小宽度和最小高度。
+- 允许调整侧边和底部面板；在主工作区失去可用性之前，优先折叠或隐藏次要区域。
+- 在适当位置换行；仅当完整内容可通过提示或属性区查看时使用省略号。
+- 在最小支持窗口下，确保控件、标签、浮层和面板不会重叠。
+- 如果需要窄屏支持，设计专门的紧凑模式，不要把高密度工作台改造成装饰性卡片信息流。
 
-## Avoid common drift
+## 编写界面文案
 
-Do not introduce:
+- 使用简短的领域名词和直接命令，例如 `属性`、`筛选`、`保存`、`导出`。
+- 把操作说明放入文档、引导或上下文帮助，不要长期占用工作区。
+- 准确区分错误、警告、建议、加载、空白、离线和成功状态。
+- 保持同一动作、对象和状态的命名一致。
 
-- oversized marketing headings inside the application;
-- decorative card grids for ordinary settings or sections;
-- excessive rounding, shadows, or floating containers;
-- monochromatic purple, blue, beige, or dark-slate themes;
-- category colors that collide with error or warning colors;
-- thick permanent resize bars;
-- controls that change size when their state or label changes;
-- visible prose explaining obvious controls;
-- decoration that competes with the user's score, timeline, data, or document.
+## 避免风格漂移
 
-## Verify the result
+不要引入：
 
-1. Exercise the primary workflow at the minimum supported window size and a wide desktop size.
-2. Check empty, populated, selected, hovered, focused, disabled, loading, warning, error, and overflow states.
-3. Confirm that text fits, panels remain usable, and no controls overlap.
-4. Verify keyboard navigation and resize handles.
-5. Inspect screenshots at normal scale; the work content should attract attention before the application frame.
-6. Scan the final color tokens. Confirm that neutrals dominate, accents remain purposeful, and semantic colors are unambiguous.
+- 应用内部的营销式巨型标题；
+- 用于普通设置或页面区段的装饰性卡片墙；
+- 过度圆角、阴影和悬浮容器；
+- 被单一紫色、蓝色、米色或深灰色主导的单调配色；
+- 与错误或警告颜色冲突的类别色；
+- 永久可见的粗重调整分隔线；
+- 状态或标签变化时尺寸跳动的控件；
+- 解释显而易见功能的常驻文字；
+- 与用户的文档、数据、任务或创作内容争夺注意力的装饰。
+
+## 验证结果
+
+1. 在最小支持窗口和宽屏窗口下完成一次主要工作流。
+2. 检查空白、已填充、选中、悬停、聚焦、禁用、加载、警告、错误和内容溢出状态。
+3. 确认文字完整可读、面板保持可用、控件不会重叠，动态内容不会引发布局跳动。
+4. 验证键盘导航、快捷键、调整把手和焦点顺序。
+5. 以正常缩放比例检查截图，工作内容应当先于应用外壳吸引注意力。
+6. 扫描最终颜色标记，确认中性色占主导、强调色用途明确、语义色不会产生歧义。
