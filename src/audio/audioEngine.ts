@@ -1,6 +1,7 @@
 import { WorkletSynthesizer } from 'spessasynth_lib'
 import { VOICE_ORDER, type ProjectDocument, type VoiceId } from '../domain/model'
 import { buildMeasures, eventAtTick, secondsToTick, ticksPerBeat, tickToSeconds } from '../domain/time'
+import { installExclusiveSoundFont } from './soundFontLifecycle'
 
 export type AudioEngineState = 'idle' | 'loading' | 'ready-sf2' | 'ready-fallback' | 'playing' | 'error'
 
@@ -28,6 +29,7 @@ export class SatbAudioEngine {
   private synth?: WorkletSynthesizer
   private soundBankId?: string
   private soundFontLoadQueue: Promise<void> = Promise.resolve()
+  private soundFontChangeGeneration = 0
   private output?: GainNode
   private analyser?: AnalyserNode
   private analyserSamples?: Float32Array<ArrayBuffer>
@@ -67,11 +69,7 @@ export class SatbAudioEngine {
     try {
       const processorUrl = new URL('spessasynth_processor.min.js', window.location.href).toString()
       await this.context.audioWorklet.addModule(processorUrl)
-      this.synth = new WorkletSynthesizer(this.context)
-      await this.synth.isReady
-      // WorkletSynthesizer 不会自动连接系统输出；悬空时 API 状态正常但 SF2 完全静音。
-      this.synth.connect(this.output)
-      this.synth.setLogLevel(false, true, false)
+      this.synth = await this.createWorkletSynth()
       this.setState('ready-fallback', 'SF2 尚未加载，使用回退音色')
     } catch (error) {
       console.warn('SF2 AudioWorklet 初始化失败，将使用 Web Audio 回退音色。', error)
@@ -80,40 +78,94 @@ export class SatbAudioEngine {
     }
   }
 
-  async loadSoundFont(buffer: ArrayBuffer, id: string) {
+  private async createWorkletSynth() {
+    if (!this.context || !this.output) throw new Error('音频输出尚未初始化')
+    const synth = new WorkletSynthesizer(this.context)
+    await synth.isReady
+    // WorkletSynthesizer 不会自动连接系统输出；悬空时 API 状态正常但 SF2 完全静音。
+    synth.connect(this.output)
+    synth.setLogLevel(false, true, false)
+    return synth
+  }
+
+  private async ensureWorkletSynth() {
     await this.initialize()
+    if (!this.synth) this.synth = await this.createWorkletSynth()
+    return this.synth
+  }
+
+  beginSoundFontChange() {
+    this.soundFontChangeGeneration += 1
+    return this.soundFontChangeGeneration
+  }
+
+  isSoundFontChangeCurrent(generation: number) {
+    return generation === this.soundFontChangeGeneration
+  }
+
+  async loadSoundFont(buffer: ArrayBuffer, id: string, generation = this.beginSoundFontChange()) {
+    await this.ensureWorkletSynth()
+    if (!this.isSoundFontChangeCurrent(generation)) return false
     if (!this.synth) throw new Error('当前环境无法初始化 SF2 AudioWorklet')
-    const synth = this.synth
-    // 启动预载、播放和手动换音色可能并发到达；串行替换音色库，避免删除正在加载的音色。
+    // 启动预载、播放和手动换音色可能并发到达；队列与代次检查共同保证最后一次选择生效。
     const operation = this.soundFontLoadQueue.catch(() => undefined).then(async () => {
-      if (this.soundBankId === id) return
+      if (!this.isSoundFontChangeCurrent(generation)) return false
+      if (this.soundBankId === id) return true
       this.setState('loading', '正在解析 SoundFont')
       try {
-        if (this.soundBankId) {
-          await synth.soundBankManager.deleteSoundBank(this.soundBankId)
-          this.soundBankId = undefined
+        let synth = this.synth
+        if (!synth) {
+          synth = await this.createWorkletSynth()
+          this.synth = synth
         }
-        await synth.soundBankManager.addSoundBank(buffer, id)
+        if (this.soundBankId) this.stop(false)
+        const installed = await installExclusiveSoundFont(
+          synth,
+          this.soundBankId,
+          buffer,
+          id,
+          async () => {
+            this.synth = undefined
+            this.soundBankId = undefined
+            const replacement = await this.createWorkletSynth()
+            this.synth = replacement
+            return replacement
+          },
+        )
+        this.synth = installed.synth
         this.soundBankId = id
+        if (!this.isSoundFontChangeCurrent(generation)) return false
         this.setState('ready-sf2', 'SoundFont 已就绪')
+        return true
       } catch (error) {
-        this.setState('ready-fallback', 'SoundFont 加载失败，使用回退音色')
+        this.synth?.destroy()
+        this.synth = undefined
+        this.soundBankId = undefined
+        if (this.isSoundFontChangeCurrent(generation)) {
+          this.setState('ready-fallback', 'SoundFont 加载失败，使用回退音色')
+        }
         throw error
       }
     })
-    this.soundFontLoadQueue = operation
-    await operation
+    this.soundFontLoadQueue = operation.then(() => undefined)
+    return operation
   }
 
   isSoundFontLoaded(id: string) {
     return this.soundBankId === id
   }
 
-  async unloadSoundFont() {
+  async unloadSoundFont(generation = this.beginSoundFontChange()) {
     await this.soundFontLoadQueue.catch(() => undefined)
-    if (this.synth && this.soundBankId) await this.synth.soundBankManager.deleteSoundBank(this.soundBankId)
+    if (!this.isSoundFontChangeCurrent(generation)) return false
+    this.stop(false)
+    if (this.synth && this.soundBankId) {
+      this.synth.destroy()
+      this.synth = undefined
+    }
     this.soundBankId = undefined
     this.setState('ready-fallback', '使用内置回退音色')
+    return true
   }
 
   async resume() {
