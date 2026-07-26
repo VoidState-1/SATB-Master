@@ -1,10 +1,13 @@
 import { app, dialog, ipcMain } from 'electron'
-import { createHash } from 'node:crypto'
 import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import {
+  hashSoundFontResource,
+  prepareSoundFontResource,
+  releaseSoundFontResource,
+} from './soundfont-resource.js'
 
 const MAX_PROJECT_BYTES = 20 * 1024 * 1024
-const MAX_SOUNDFONT_BYTES = 512 * 1024 * 1024
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
 
 function defaultSoundFontDirectory() {
@@ -12,16 +15,6 @@ function defaultSoundFontDirectory() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'soundfonts')
     : path.join(app.getAppPath(), 'public', 'soundfonts')
-}
-
-async function readSoundFont(filePath: string) {
-  const info = await stat(filePath)
-  if (info.size > MAX_SOUNDFONT_BYTES) throw new Error('SoundFont 文件超过 512 MB 限制')
-  const buffer = await readFile(filePath)
-  return {
-    bytes: new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength),
-    hash: createHash('sha256').update(buffer).digest('hex'),
-  }
 }
 
 interface SaveRequest {
@@ -37,6 +30,10 @@ interface RecoveryRequest {
 
 interface LoadSoundFontRequest {
   filePath: string
+}
+
+interface SoundFontTokenRequest {
+  token: string
 }
 
 interface RecoveryEnvelope {
@@ -189,7 +186,8 @@ export function registerProjectIpc() {
     })
     if (selection.canceled || !selection.filePaths[0]) return { canceled: true }
     const filePath = selection.filePaths[0]
-    const soundFont = await readSoundFont(filePath)
+    assertSoundFontPath(filePath)
+    const soundFont = await prepareSoundFontResource(filePath)
     return {
       canceled: false,
       filePath,
@@ -201,7 +199,7 @@ export function registerProjectIpc() {
   ipcMain.handle('soundfont:load-path', async (_event, request: LoadSoundFontRequest) => {
     // 工程只保存用户主动选取的绝对路径；重开时仍限制扩展名、大小并重新计算摘要。
     assertSoundFontPath(request?.filePath)
-    const soundFont = await readSoundFont(request.filePath)
+    const soundFont = await prepareSoundFontResource(request.filePath)
     return {
       filePath: request.filePath,
       name: path.basename(request.filePath),
@@ -211,12 +209,25 @@ export function registerProjectIpc() {
 
   ipcMain.handle('soundfont:default', async () => {
     const directory = defaultSoundFontDirectory()
-    const soundFont = await readSoundFont(path.join(directory, 'default.sf2'))
     const expectedHash = (await readFile(path.join(directory, 'default.sf2.sha256'), 'utf8')).trim().split(/\s+/)[0]
-    if (!expectedHash || soundFont.hash !== expectedHash) throw new Error('默认 SoundFont 摘要校验失败')
+    if (!expectedHash) throw new Error('默认 SoundFont 摘要文件无效')
+    const soundFont = await prepareSoundFontResource(path.join(directory, 'default.sf2'), expectedHash)
     return {
       name: 'SATB Master Basic Choir',
       ...soundFont,
     }
+  })
+
+  ipcMain.handle('soundfont:hash', async (event, request: SoundFontTokenRequest) => {
+    if (typeof request?.token !== 'string') throw new Error('SoundFont 加载凭据无效')
+    return hashSoundFontResource(request.token, (processedBytes, totalBytes) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('soundfont:hash-progress', { token: request.token, processedBytes, totalBytes })
+      }
+    })
+  })
+
+  ipcMain.handle('soundfont:release', (_event, request: SoundFontTokenRequest) => {
+    if (typeof request?.token === 'string') releaseSoundFontResource(request.token)
   })
 }

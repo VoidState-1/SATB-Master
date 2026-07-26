@@ -32,5 +32,18 @@ contextBridge.exposeInMainWorld('desktop', {
     open: () => ipcRenderer.invoke('soundfont:open'),
     loadPath: (filePath: string) => ipcRenderer.invoke('soundfont:load-path', { filePath }),
     loadDefault: () => ipcRenderer.invoke('soundfont:default'),
+    hash: (token: string, callback: (processedBytes: number, totalBytes: number) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, progress: {
+        token: string
+        processedBytes: number
+        totalBytes: number
+      }) => {
+        if (progress.token === token) callback(progress.processedBytes, progress.totalBytes)
+      }
+      ipcRenderer.on('soundfont:hash-progress', listener)
+      return ipcRenderer.invoke('soundfont:hash', { token })
+        .finally(() => ipcRenderer.removeListener('soundfont:hash-progress', listener))
+    },
+    release: (token: string) => ipcRenderer.invoke('soundfont:release', { token }),
   },
 })

@@ -80,9 +80,13 @@ import {
   exportMidi,
   findRecovery,
   loadDefaultSoundFont,
+  loadPreparedDesktopSoundFont,
   loadUserSoundFont,
+  MAX_SOUNDFONT_BYTES,
   openProject,
+  readSoundFontBuffer,
   saveProject,
+  type SoundFontLoadProgress,
 } from './services/desktop'
 
 interface ClipboardNote {
@@ -120,20 +124,42 @@ function soundFontId(soundFont: ProjectDocument['audio']['soundFont']) {
   return soundFont.kind === 'default' ? 'default' : `user:${soundFont.hash ?? soundFont.path ?? soundFont.name}`
 }
 
-async function ensureSoundFontLoaded(soundFontConfig: ProjectDocument['audio']['soundFont']) {
+function formatByteSize(bytes: number) {
+  const gibibyte = 1024 * 1024 * 1024
+  if (bytes >= gibibyte) return `${(bytes / gibibyte).toFixed(1)} GB`
+  return `${Math.ceil(bytes / (1024 * 1024))} MB`
+}
+
+function soundFontProgressMessage(progress: SoundFontLoadProgress) {
+  if (progress.phase === 'parsing') return '正在解析 SoundFont'
+  const percent = progress.totalBytes > 0 ? Math.floor(progress.completedBytes / progress.totalBytes * 100) : 0
+  return `正在读取并校验 SoundFont ${percent}%`
+}
+
+async function ensureSoundFontLoaded(
+  soundFontConfig: ProjectDocument['audio']['soundFont'],
+  onProgress?: (progress: SoundFontLoadProgress) => void,
+) {
   const targetSoundFontId = soundFontId(soundFontConfig)
   if (audioEngine.isSoundFontLoaded(targetSoundFontId)) return
+  // 大音色加载前先释放旧音色，避免旧采样与新文件缓冲区同时占据峰值内存。
+  await audioEngine.unloadSoundFont()
   const soundFont = soundFontConfig.kind === 'default'
-    ? await loadDefaultSoundFont()
-    : await loadUserSoundFont(soundFontConfig.path ?? '')
+    ? await loadDefaultSoundFont(onProgress)
+    : await loadUserSoundFont(soundFontConfig.path ?? '', onProgress)
   if (soundFontConfig.kind === 'user' && soundFontConfig.hash && soundFont.hash !== soundFontConfig.hash) {
     throw new Error('工程引用的 SoundFont 文件已被替换')
   }
-  const buffer = soundFont.bytes.buffer.slice(
-    soundFont.bytes.byteOffset,
-    soundFont.bytes.byteOffset + soundFont.bytes.byteLength,
-  ) as ArrayBuffer
-  await audioEngine.loadSoundFont(buffer, targetSoundFontId)
+  onProgress?.({
+    phase: 'parsing',
+    completedBytes: soundFont.sizeBytes,
+    totalBytes: soundFont.sizeBytes,
+    fileSizeBytes: soundFont.sizeBytes,
+    requiredMemoryBytes: soundFont.requiredMemoryBytes,
+    availableMemoryBytes: soundFont.availableMemoryBytes,
+  })
+  await audioEngine.loadSoundFont(soundFont.buffer, targetSoundFontId)
+  return soundFont
 }
 
 function App() {
@@ -161,6 +187,8 @@ function App() {
   const [audioState, setAudioState] = useState<AudioEngineState>('idle')
   const [audioMessage, setAudioMessage] = useState('尚未启动音频')
   const [audioLevel, setAudioLevel] = useState(0)
+  const [soundFontProgress, setSoundFontProgress] = useState<SoundFontLoadProgress>()
+  const [soundFontSizeBytes, setSoundFontSizeBytes] = useState<number>()
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
   const [notice, setNotice] = useState<string>()
   const [confirmation, setConfirmation] = useState<ConfirmationState>()
@@ -199,6 +227,12 @@ function App() {
     window.setTimeout(() => setNotice((current) => current === message ? undefined : current), 2800)
   }, [])
 
+  const reportSoundFontProgress = useCallback((progress: SoundFontLoadProgress) => {
+    setSoundFontProgress(progress)
+    setAudioState('loading')
+    setAudioMessage(soundFontProgressMessage(progress))
+  }, [])
+
   const requestConfirmation = useCallback((options: ConfirmationState) => new Promise<boolean>((resolve) => {
     confirmationResolverRef.current?.(false)
     confirmationResolverRef.current = resolve
@@ -227,11 +261,16 @@ function App() {
   useEffect(() => {
     if (defaultSoundFontRequestedRef.current) return
     defaultSoundFontRequestedRef.current = true
-    void ensureSoundFontLoaded(initialProject.audio.soundFont).catch(async (error) => {
-      await audioEngine.unloadSoundFont()
-      console.warn('启动时加载默认 SoundFont 失败，将使用回退音色。', error)
-    })
-  }, [initialProject.audio.soundFont])
+    void ensureSoundFontLoaded(initialProject.audio.soundFont, reportSoundFontProgress)
+      .then((soundFont) => {
+        if (soundFont) setSoundFontSizeBytes(soundFont.sizeBytes)
+      })
+      .catch(async (error) => {
+        await audioEngine.unloadSoundFont()
+        console.warn('启动时加载默认 SoundFont 失败，将使用回退音色。', error)
+      })
+      .finally(() => setSoundFontProgress(undefined))
+  }, [initialProject.audio.soundFont, reportSoundFontProgress])
 
   useEffect(() => {
     const controls = window.desktop?.windowControls
@@ -590,14 +629,30 @@ function App() {
       let name: string
       let path: string | undefined
       let hash: string | undefined
-      let bytes: Uint8Array
+      let buffer: ArrayBuffer
+      let sizeBytes: number
       if (window.desktop) {
         const result = await window.desktop.soundFont.open()
-        if (result.canceled || !result.bytes || !result.name) return
-        name = result.name
-        path = result.filePath
-        hash = result.hash
-        bytes = result.bytes
+        if (result.canceled) return
+        if (
+          !result.name || !result.token || !result.sourceUrl || result.sizeBytes === undefined
+          || result.requiredMemoryBytes === undefined || result.availableMemoryBytes === undefined
+        ) throw new Error('SoundFont 加载信息不完整')
+        await audioEngine.unloadSoundFont()
+        const loaded = await loadPreparedDesktopSoundFont({
+          name: result.name,
+          filePath: result.filePath,
+          token: result.token,
+          sourceUrl: result.sourceUrl,
+          sizeBytes: result.sizeBytes,
+          requiredMemoryBytes: result.requiredMemoryBytes,
+          availableMemoryBytes: result.availableMemoryBytes,
+        }, reportSoundFontProgress)
+        name = loaded.name
+        path = loaded.filePath
+        hash = loaded.hash
+        buffer = loaded.buffer
+        sizeBytes = loaded.sizeBytes
       } else {
         const input = document.createElement('input')
         input.type = 'file'
@@ -607,21 +662,44 @@ function App() {
           input.click()
         })
         if (!file) return
+        if (file.size > MAX_SOUNDFONT_BYTES) throw new Error('SoundFont 文件超过 2 GB 限制')
         name = file.name
-        bytes = new Uint8Array(await file.arrayBuffer())
+        sizeBytes = file.size
+        await audioEngine.unloadSoundFont()
+        const sourceUrl = URL.createObjectURL(file)
+        try {
+          buffer = await readSoundFontBuffer(sourceUrl, file.size, (completedBytes) => {
+            reportSoundFontProgress({
+              phase: 'loading',
+              completedBytes,
+              totalBytes: file.size,
+              fileSizeBytes: file.size,
+            })
+          })
+        } finally {
+          URL.revokeObjectURL(sourceUrl)
+        }
       }
 
-      const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
       const selection = { kind: 'user' as const, name, path, hash }
+      reportSoundFontProgress({
+        phase: 'parsing',
+        completedBytes: sizeBytes,
+        totalBytes: sizeBytes,
+        fileSizeBytes: sizeBytes,
+      })
       await audioEngine.loadSoundFont(buffer, soundFontId(selection))
       history.commit(replaceProject(project, (draft) => {
         draft.audio.soundFont = selection
       }))
+      setSoundFontSizeBytes(sizeBytes)
       showNotice('SoundFont 已加载')
     } catch (error) {
       showNotice(error instanceof Error ? error.message : 'SoundFont 加载失败')
+    } finally {
+      setSoundFontProgress(undefined)
     }
-  }, [history, project, showNotice])
+  }, [history, project, reportSoundFontProgress, showNotice])
 
   const handleUseDefaultSoundFont = useCallback(async () => {
     await audioEngine.unloadSoundFont()
@@ -630,12 +708,15 @@ function App() {
       draft.audio.soundFont = defaultSoundFont
     }))
     try {
-      await ensureSoundFontLoaded(defaultSoundFont)
+      const soundFont = await ensureSoundFontLoaded(defaultSoundFont, reportSoundFontProgress)
+      if (soundFont) setSoundFontSizeBytes(soundFont.sizeBytes)
       showNotice('默认音色已加载')
     } catch (error) {
       showNotice(error instanceof Error ? error.message : '默认音色加载失败')
+    } finally {
+      setSoundFontProgress(undefined)
     }
-  }, [history, project, showNotice])
+  }, [history, project, reportSoundFontProgress, showNotice])
 
   const handleStop = useCallback((returnToStart = false) => {
     playSessionRef.current += 1
@@ -654,7 +735,8 @@ function App() {
       const soundFontConfig = project.audio.soundFont
       if (!audioEngine.isSoundFontLoaded(soundFontId(soundFontConfig))) {
         try {
-          await ensureSoundFontLoaded(soundFontConfig)
+          const soundFont = await ensureSoundFontLoaded(soundFontConfig, reportSoundFontProgress)
+          if (soundFont) setSoundFontSizeBytes(soundFont.sizeBytes)
         } catch (error) {
           // 音源缺失、摘要变化或安装路径异常时清掉旧音色，防止误用上一个工程的音色。
           await audioEngine.unloadSoundFont()
@@ -662,6 +744,8 @@ function App() {
           showNotice(soundFontConfig.kind === 'default'
             ? '默认音色不可用，已切换到回退音色'
             : '工程引用的音色不可用，已切换到回退音色')
+        } finally {
+          setSoundFontProgress(undefined)
         }
       }
       const session = playSessionRef.current + 1
@@ -691,7 +775,7 @@ function App() {
       setIsPlaying(false)
       showNotice(error instanceof Error ? error.message : '播放失败')
     }
-  }, [handleStop, isPlaying, loopEnabled, loopEndTick, loopStartTick, metronomeEnabled, playheadTick, project, showNotice])
+  }, [handleStop, isPlaying, loopEnabled, loopEndTick, loopStartTick, metronomeEnabled, playheadTick, project, reportSoundFontProgress, showNotice])
 
   const setLoopBoundary = useCallback((boundary: 'start' | 'end') => {
     const tick = Math.max(0, Math.min(project.lengthTicks, Math.round(playheadTick / gridTicks) * gridTicks))
@@ -1212,6 +1296,21 @@ function App() {
           chordBrush={chordBrush}
           playheadTick={playheadTick}
           audioStatus={audioMessage}
+          soundFontSize={soundFontSizeBytes ? formatByteSize(soundFontSizeBytes) : undefined}
+          soundFontLoad={soundFontProgress ? {
+            percent: soundFontProgress.totalBytes > 0
+              ? Math.round(soundFontProgress.completedBytes / soundFontProgress.totalBytes * 100)
+              : 0,
+            detail: [
+              `文件 ${formatByteSize(soundFontProgress.fileSizeBytes)}`,
+              soundFontProgress.requiredMemoryBytes
+                ? `建议可用 ${formatByteSize(soundFontProgress.requiredMemoryBytes)}`
+                : undefined,
+              soundFontProgress.availableMemoryBytes
+                ? `当前可用 ${formatByteSize(soundFontProgress.availableMemoryBytes)}`
+                : undefined,
+            ].filter(Boolean).join(' · '),
+          } : undefined}
           onUpdateProject={handleUpdateProject}
           onUpdateInstructions={handleUpdateInstructions}
           onAddEditableRange={handleAddEditableRange}

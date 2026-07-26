@@ -54,6 +54,8 @@ interface InspectorProps {
   chordBrush: ChordAnalysis
   playheadTick: number
   audioStatus: string
+  soundFontSize?: string
+  soundFontLoad?: { percent: number; detail: string }
   onUpdateProject(patch: Partial<Pick<ProjectDocument, 'title' | 'author' | 'notes' | 'lengthTicks'>>): void
   onUpdateInstructions(instructions: string): void
   onAddEditableRange(): void
@@ -131,6 +133,8 @@ export function Inspector({
   chordBrush,
   playheadTick,
   audioStatus,
+  soundFontSize,
+  soundFontLoad,
   onUpdateProject,
   onUpdateInstructions,
   onAddEditableRange,
@@ -336,7 +340,16 @@ export function Inspector({
             <section className="property-section soundfont-section">
               <header>SoundFont</header>
               <strong>{project.audio.soundFont.name}</strong>
-              <small>{audioStatus}</small>
+              <div className="soundfont-status">
+                <small>{audioStatus}</small>
+                {soundFontSize && !soundFontLoad ? <small>文件大小 {soundFontSize}</small> : null}
+                {soundFontLoad ? (
+                  <>
+                    <progress max="100" value={soundFontLoad.percent} aria-label="SoundFont 加载进度" />
+                    <small>{soundFontLoad.detail}</small>
+                  </>
+                ) : null}
+              </div>
               <button type="button" className="command-button primary" onClick={onChooseSoundFont}><FolderOpen />选择本地 SF2</button>
               {project.audio.soundFont.kind === 'user' ? (
                 <button type="button" className="command-button" onClick={onUseDefaultSoundFont}>恢复默认音色</button>

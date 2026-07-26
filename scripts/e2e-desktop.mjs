@@ -1204,11 +1204,19 @@ try {
   const userSoundFontPath = appDirectory
     ? path.join(appDirectory, 'public', 'soundfonts', 'default.sf2')
     : path.join(path.dirname(executable), 'resources', 'soundfonts', 'default.sf2')
-  const userSoundFont = await evaluate(`window.desktop.soundFont.loadPath(${JSON.stringify(userSoundFontPath)}).then((result) => ({
-    name: result.name,
-    hash: result.hash,
-    byteLength: result.bytes.byteLength,
-  }))`)
+  const userSoundFont = await evaluate(`(async () => {
+    const result = await window.desktop.soundFont.loadPath(${JSON.stringify(userSoundFontPath)});
+    try {
+      const [hash, response] = await Promise.all([
+        window.desktop.soundFont.hash(result.token, () => {}),
+        fetch(result.sourceUrl, { cache: 'no-store' }),
+      ]);
+      const buffer = await response.arrayBuffer();
+      return { name: result.name, hash, byteLength: buffer.byteLength };
+    } finally {
+      await window.desktop.soundFont.release(result.token);
+    }
+  })()`)
   if (!userSoundFont.hash || userSoundFont.byteLength < 1) throw new Error('按工程路径读取用户 SoundFont 失败')
   draftProject.audio.soundFont = {
     kind: 'user',

@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerProjectIpc } from './project-ipc.js'
+import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 const developmentServerUrl = process.argv.includes('--dev')
@@ -11,6 +12,7 @@ const shouldOpenDevTools = process.argv.includes('--devtools')
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
 
 if (e2eDirectory) app.setPath('userData', path.join(e2eDirectory, 'user-data'))
+registerSoundFontScheme()
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -77,6 +79,7 @@ function registerWindowIpc() {
 }
 
 app.whenReady().then(() => {
+  registerSoundFontProtocol()
   registerProjectIpc()
   registerWindowIpc()
   createWindow()

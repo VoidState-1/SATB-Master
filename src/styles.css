@@ -1277,7 +1277,7 @@ body.is-resizing-rows * {
 }
 
 .soundfont-section > strong,
-.soundfont-section > small {
+.soundfont-status > small {
   display: block;
 }
 
@@ -1286,10 +1286,23 @@ body.is-resizing-rows * {
   font-size: 12px;
 }
 
-.soundfont-section > small {
+.soundfont-status {
   margin: 5px 0 10px;
+}
+
+.soundfont-status > small {
+  margin: 3px 0 0;
   color: #777970;
   font-size: 10px;
+}
+
+.soundfont-status > progress {
+  width: 100%;
+  height: 5px;
+  display: block;
+  margin: 7px 0 5px;
+  border: 0;
+  accent-color: #2f7764;
 }
 
 .property-hint {

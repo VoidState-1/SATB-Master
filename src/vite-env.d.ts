@@ -43,20 +43,31 @@ interface Window {
         canceled: boolean
         filePath?: string
         name?: string
-        hash?: string
-        bytes?: Uint8Array
+        token?: string
+        sourceUrl?: string
+        sizeBytes?: number
+        requiredMemoryBytes?: number
+        availableMemoryBytes?: number
       }>
       loadPath(filePath: string): Promise<{
         filePath: string
         name: string
-        hash: string
-        bytes: Uint8Array
+        token: string
+        sourceUrl: string
+        sizeBytes: number
+        requiredMemoryBytes: number
+        availableMemoryBytes: number
       }>
       loadDefault(): Promise<{
         name: string
-        hash: string
-        bytes: Uint8Array
+        token: string
+        sourceUrl: string
+        sizeBytes: number
+        requiredMemoryBytes: number
+        availableMemoryBytes: number
       }>
+      hash(token: string, onProgress: (processedBytes: number, totalBytes: number) => void): Promise<string>
+      release(token: string): Promise<void>
     }
   }
 }
