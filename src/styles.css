@@ -37,6 +37,14 @@ button {
   grid-template-rows: 42px 52px minmax(0, 1fr);
   height: 100vh;
   background: #ecece8;
+  user-select: none;
+}
+
+/* 工作台默认不产生浏览器文本选区；精确输入区域按需恢复文字选择。 */
+.app-shell input,
+.app-shell textarea,
+.app-shell [contenteditable='true'] {
+  user-select: text;
 }
 
 .app-titlebar {
