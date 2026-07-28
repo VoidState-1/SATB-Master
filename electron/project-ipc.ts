@@ -9,6 +9,11 @@ import {
 
 const MAX_PROJECT_BYTES = 20 * 1024 * 1024
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
+type DialogDirectoryKind = 'project' | 'midi' | 'soundfont'
+type DialogDirectories = Partial<Record<DialogDirectoryKind, string>>
+
+let dialogDirectories: DialogDirectories | undefined
+let dialogDirectoryWrite = Promise.resolve()
 
 function defaultSoundFontDirectory() {
   // 安装包使用 extraResources 放到 resources/soundfonts；开发环境则直接读取 public 中的同一份资源。
@@ -55,6 +60,59 @@ function recoveryPath() {
   return path.join(app.getPath('userData'), 'recovery.json')
 }
 
+function dialogDirectoriesPath() {
+  return path.join(app.getPath('userData'), 'dialog-directories.json')
+}
+
+async function loadDialogDirectories() {
+  if (dialogDirectories) return dialogDirectories
+  try {
+    const stored = JSON.parse(await readFile(dialogDirectoriesPath(), 'utf8')) as Record<string, unknown>
+    dialogDirectories = Object.fromEntries(
+      (['project', 'midi', 'soundfont'] as DialogDirectoryKind[])
+        .filter((kind) => typeof stored[kind] === 'string' && path.isAbsolute(stored[kind] as string))
+        .map((kind) => [kind, stored[kind] as string]),
+    )
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('读取最近文件夹记录失败，将使用系统默认目录。', error)
+    }
+    dialogDirectories = {}
+  }
+  return dialogDirectories
+}
+
+async function recentDialogDirectory(kind: DialogDirectoryKind) {
+  const directory = (await loadDialogDirectories())[kind]
+  if (!directory) return undefined
+  try {
+    return (await stat(directory)).isDirectory() ? directory : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function rememberDialogDirectory(kind: DialogDirectoryKind, filePath: string) {
+  if (e2eDirectory) return
+  const directories = await loadDialogDirectories()
+  directories[kind] = path.dirname(filePath)
+  const snapshot = { ...directories }
+  // 文件对话框可能连续打开，串行写入可避免较早的异步写操作覆盖较新的目录。
+  dialogDirectoryWrite = dialogDirectoryWrite
+    .catch(() => undefined)
+    .then(() => writeJsonAtomic(dialogDirectoriesPath(), snapshot))
+  try {
+    await dialogDirectoryWrite
+  } catch (error) {
+    console.warn('保存最近文件夹记录失败。', error)
+  }
+}
+
+async function rememberedDefaultPath(kind: DialogDirectoryKind, fileName?: string) {
+  const directory = await recentDialogDirectory(kind)
+  return directory && fileName ? path.join(directory, fileName) : directory ?? fileName
+}
+
 async function writeJsonAtomic(filePath: string, value: unknown) {
   const json = JSON.stringify(value, null, 2)
   if (Buffer.byteLength(json, 'utf8') > MAX_PROJECT_BYTES) throw new Error('工程文件超过 20 MB 限制')
@@ -89,11 +147,13 @@ export function registerProjectIpc() {
     } else {
       const selection = await dialog.showOpenDialog({
         title: '打开 SATB 工程',
+        defaultPath: await rememberedDefaultPath('project'),
         properties: ['openFile'],
         filters: [{ name: 'SATB Master 工程', extensions: ['satb'] }],
       })
       if (selection.canceled || !selection.filePaths[0]) return { canceled: true }
       filePath = selection.filePaths[0]
+      await rememberDialogDirectory('project', filePath)
     }
 
     const info = await stat(filePath)
@@ -108,11 +168,12 @@ export function registerProjectIpc() {
     if (!e2eDirectory && (!filePath || request.forceDialog)) {
       const selection = await dialog.showSaveDialog({
         title: '保存 SATB 工程',
-        defaultPath: filePath ?? '未命名练习.satb',
+        defaultPath: filePath ?? await rememberedDefaultPath('project', '未命名练习.satb'),
         filters: [{ name: 'SATB Master 工程', extensions: ['satb'] }],
       })
       if (selection.canceled || !selection.filePath) return { canceled: true }
       filePath = selection.filePath.toLowerCase().endsWith('.satb') ? selection.filePath : `${selection.filePath}.satb`
+      await rememberDialogDirectory('project', filePath)
     }
 
     if (!filePath) throw new Error('没有可用的工程保存路径')
@@ -170,10 +231,11 @@ export function registerProjectIpc() {
 
     const selection = await dialog.showSaveDialog({
       title: '导出 MIDI',
-      defaultPath: `${request.defaultName || 'SATB Master'}.mid`,
+      defaultPath: await rememberedDefaultPath('midi', `${request.defaultName || 'SATB Master'}.mid`),
       filters: [{ name: 'Standard MIDI File', extensions: ['mid', 'midi'] }],
     })
     if (selection.canceled || !selection.filePath) return { canceled: true }
+    await rememberDialogDirectory('midi', selection.filePath)
     await writeFile(selection.filePath, request.bytes)
     return { canceled: false, filePath: selection.filePath }
   })
@@ -181,12 +243,14 @@ export function registerProjectIpc() {
   ipcMain.handle('soundfont:open', async () => {
     const selection = await dialog.showOpenDialog({
       title: '选择 SoundFont',
+      defaultPath: await rememberedDefaultPath('soundfont'),
       properties: ['openFile'],
       filters: [{ name: 'SoundFont 2', extensions: ['sf2', 'sf3'] }],
     })
     if (selection.canceled || !selection.filePaths[0]) return { canceled: true }
     const filePath = selection.filePaths[0]
     assertSoundFontPath(filePath)
+    await rememberDialogDirectory('soundfont', filePath)
     const soundFont = await prepareSoundFontResource(filePath)
     return {
       canceled: false,
