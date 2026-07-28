@@ -1,15 +1,27 @@
-import { Eye, EyeOff, Lock, LockOpen, Volume2, VolumeX } from 'lucide-react'
-import { VOICE_CONFIG, type ProjectDocument, type VoiceId } from '../domain/model'
-import { IconButton } from './IconButton'
+import { Eye, EyeOff, Lock, LockOpen, Volume2, VolumeX } from "lucide-react";
+import {
+  VOICE_CONFIG,
+  type ProjectDocument,
+  type VoiceId,
+} from "../domain/model";
+import { IconButton } from "./IconButton";
 
 interface TrackSidebarProps {
-  project: ProjectDocument
-  activeVoice: VoiceId
-  onSetActive(voiceId: VoiceId): void
-  onUpdateTrack(voiceId: VoiceId, patch: Partial<ProjectDocument['tracks'][number]>): void
+  project: ProjectDocument;
+  activeVoice: VoiceId;
+  onSetActive(voiceId: VoiceId): void;
+  onUpdateTrack(
+    voiceId: VoiceId,
+    patch: Partial<ProjectDocument["tracks"][number]>,
+  ): void;
 }
 
-export function TrackSidebar({ project, activeVoice, onSetActive, onUpdateTrack }: TrackSidebarProps) {
+export function TrackSidebar({
+  project,
+  activeVoice,
+  onSetActive,
+  onUpdateTrack,
+}: TrackSidebarProps) {
   return (
     <aside className="track-sidebar" aria-label="四个声部">
       <div className="sidebar-heading">
@@ -18,42 +30,58 @@ export function TrackSidebar({ project, activeVoice, onSetActive, onUpdateTrack 
       </div>
       <div className="voice-track-list">
         {project.tracks.map((track) => {
-          const config = VOICE_CONFIG[track.id]
+          const config = VOICE_CONFIG[track.id];
           return (
             <section
               key={track.id}
-              className={`voice-track ${activeVoice === track.id ? 'is-active' : ''}`}
-              style={{ '--voice-color': config.color } as React.CSSProperties}
+              className={`voice-track ${activeVoice === track.id ? "is-active" : ""}`}
+              style={{ "--voice-color": config.color } as React.CSSProperties}
               onClick={() => onSetActive(track.id)}
             >
               <div className="voice-track-title">
                 <span className="voice-badge">{track.shortName}</span>
-                <span><strong>{track.name}</strong><small>{config.min}-{config.max}</small></span>
+                <span>
+                  <strong>{track.name}</strong>
+                  <small>
+                    {config.min}-{config.max}
+                  </small>
+                </span>
               </div>
-              <div className="track-actions" onClick={(event) => event.stopPropagation()}>
+              <div
+                className="track-actions"
+                onClick={(event) => event.stopPropagation()}
+              >
                 <IconButton
-                  label={track.muted ? '取消静音' : '静音'}
+                  label={track.muted ? "取消静音" : "静音"}
                   icon={track.muted ? <VolumeX /> : <Volume2 />}
                   active={track.muted}
-                  onClick={() => onUpdateTrack(track.id, { muted: !track.muted })}
+                  onClick={() =>
+                    onUpdateTrack(track.id, { muted: !track.muted })
+                  }
                 />
                 <button
                   type="button"
-                  className={`solo-button ${track.solo ? 'is-active' : ''}`}
+                  className={`solo-button ${track.solo ? "is-active" : ""}`}
                   title="独奏"
                   aria-label={`${track.name}独奏`}
                   onClick={() => onUpdateTrack(track.id, { solo: !track.solo })}
-                >S</button>
+                >
+                  S
+                </button>
                 <IconButton
-                  label={track.visible ? '隐藏声部' : '显示声部'}
+                  label={track.visible ? "隐藏声部" : "显示声部"}
                   icon={track.visible ? <Eye /> : <EyeOff />}
-                  onClick={() => onUpdateTrack(track.id, { visible: !track.visible })}
+                  onClick={() =>
+                    onUpdateTrack(track.id, { visible: !track.visible })
+                  }
                 />
                 <IconButton
-                  label={track.locked ? '解锁声部' : '锁定声部'}
+                  label={track.locked ? "解锁声部" : "锁定声部"}
                   icon={track.locked ? <Lock /> : <LockOpen />}
                   active={track.locked}
-                  onClick={() => onUpdateTrack(track.id, { locked: !track.locked })}
+                  onClick={() =>
+                    onUpdateTrack(track.id, { locked: !track.locked })
+                  }
                 />
               </div>
               <label className="track-slider">
@@ -64,14 +92,20 @@ export function TrackSidebar({ project, activeVoice, onSetActive, onUpdateTrack 
                   max="1"
                   step="0.01"
                   value={track.volume}
-                  onChange={(event) => onUpdateTrack(track.id, { volume: Number(event.target.value) })}
+                  onChange={(event) =>
+                    onUpdateTrack(track.id, {
+                      volume: Number(event.target.value),
+                    })
+                  }
                 />
               </label>
             </section>
-          )
+          );
         })}
       </div>
-      <div className="sidebar-footnote">当前输入：{VOICE_CONFIG[activeVoice].name}</div>
+      <div className="sidebar-footnote">
+        当前输入：{VOICE_CONFIG[activeVoice].name}
+      </div>
     </aside>
-  )
+  );
 }
