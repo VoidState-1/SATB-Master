@@ -830,8 +830,8 @@ function App() {
     }
   }, [handleStop, isPlaying, loopEnabled, loopEndTick, loopStartTick, metronomeEnabled, playheadTick, project, reportSoundFontProgress, showNotice])
 
-  const setLoopBoundary = useCallback((boundary: 'start' | 'end') => {
-    const tick = Math.max(0, Math.min(project.lengthTicks, Math.round(playheadTick / gridTicks) * gridTicks))
+  const setLoopBoundary = useCallback((boundary: 'start' | 'end', requestedTick = playheadTick) => {
+    const tick = Math.max(0, Math.min(project.lengthTicks, Math.round(requestedTick / gridTicks) * gridTicks))
     if (boundary === 'start') {
       if (tick >= loopEndTick) return showNotice('循环起点必须早于终点')
       setLoopStartTick(tick)
@@ -1327,6 +1327,7 @@ function App() {
             onAddTimingEvent={handleAddTimingEvent}
             onUpdateTimingEvent={handleUpdateTimingEvent}
             onDeleteTimingEvent={handleDeleteTimingEvent}
+            onSetLoopBoundary={setLoopBoundary}
           />
           <PanelResizeHandle
             orientation="horizontal"

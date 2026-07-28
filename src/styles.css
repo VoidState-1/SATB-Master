@@ -642,7 +642,7 @@ body.is-resizing-rows * {
 
 .measure-number {
   position: absolute;
-  top: 8px;
+  top: 12px;
   z-index: 2;
   padding-left: 5px;
   color: #65675f;
@@ -703,44 +703,38 @@ body.is-resizing-rows * {
   position: absolute;
   top: 4px;
   z-index: 4;
-  min-width: 16px;
-  height: 13px;
-  display: grid;
-  place-items: center;
-  border-radius: 0 0 3px 3px;
+  width: 8px;
+  height: 8px;
   background: #8b8f88;
-  color: #fff;
-  font-size: 8px;
-  font-weight: 700;
-  line-height: 1;
   pointer-events: none;
 }
 
-.ruler-loop-marker.start { transform: translateX(13px); }
+.ruler-loop-marker.start { clip-path: polygon(0 0, 100% 50%, 0 100%); }
+.ruler-loop-marker.end { clip-path: polygon(100% 0, 0 50%, 100% 100%); }
 .ruler-loop-marker.end { transform: translateX(-100%); }
 .ruler-loop-marker.is-enabled { background: #2f7764; }
 
 .ruler-scale-tick {
   position: absolute;
-  bottom: 0;
+  top: 0;
   z-index: 1;
   width: 1px;
-  height: 5px;
+  height: 11px;
   background: #c8cac3;
   pointer-events: none;
 }
 
 .ruler-scale-tick.beat {
-  height: 10px;
+  height: 18px;
   background: #9fa29a;
 }
 
 .timing-marker-group {
   position: absolute;
-  top: 21px;
+  top: 25px;
   z-index: 5;
   max-width: 240px;
-  height: 21px;
+  height: 19px;
   display: flex;
   align-items: center;
   overflow: hidden;
@@ -779,6 +773,68 @@ body.is-resizing-rows * {
 .timing-marker-group .tempo { color: #76522f; }
 .timing-marker-group .meter { color: #2f6d60; }
 .timing-marker-group .key { color: #49658f; }
+
+.ruler-context-menu {
+  position: fixed;
+  z-index: 90;
+  width: 212px;
+  padding: 4px;
+  border: 1px solid #a9aca4;
+  border-radius: 5px;
+  background: #f8f8f5;
+  color: #30332d;
+  box-shadow: 0 9px 24px rgba(28, 31, 27, 0.2);
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.ruler-context-position {
+  height: 25px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: #777b73;
+  font: 10px Consolas, monospace;
+}
+
+.ruler-context-menu > button {
+  width: 100%;
+  height: 29px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 3px;
+  outline: 0;
+  background: transparent;
+  color: #343731;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ruler-context-menu > button:hover:not(:disabled),
+.ruler-context-menu > button:focus-visible {
+  background: #e6eee9;
+  color: #255e50;
+}
+
+.ruler-context-menu > button:disabled {
+  color: #a4a79f;
+  cursor: default;
+}
+
+.ruler-context-menu > button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.ruler-context-separator {
+  height: 1px;
+  margin: 4px 5px;
+  background: #d8dad4;
+}
 
 .chord-block {
   position: absolute;
@@ -1133,7 +1189,7 @@ body.is-resizing-rows * {
 .timing-marker-editor-row {
   min-height: 36px;
   display: grid;
-  grid-template-columns: 43px minmax(0, 1fr) 42px 28px;
+  grid-template-columns: 43px minmax(0, 1fr) 58px 28px;
   align-items: center;
   gap: 6px;
   padding: 4px 5px 4px 8px;

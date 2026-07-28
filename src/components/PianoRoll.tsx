@@ -14,6 +14,7 @@ import {
 import type { HarmonyDiagnostic } from '../domain/harmony'
 import { buildTimelineRulerTicks, buildTimingMarkerGroups } from '../domain/timelineRuler'
 import { ChordPalette } from './ChordPalette'
+import { RulerContextMenu } from './RulerContextMenu'
 import { TimingMarkerPopover } from './TimingMarkerPopover'
 
 export type EditorTool = 'select' | 'pencil' | 'eraser' | 'split'
@@ -55,6 +56,7 @@ interface PianoRollProps {
   onAddTimingEvent(type: 'tempo' | 'meter' | 'key', tick: number): void
   onUpdateTimingEvent(type: 'tempo' | 'meter' | 'key', id: string, patch: Record<string, string | number>): void
   onDeleteTimingEvent(type: 'tempo' | 'meter' | 'key', id: string): void
+  onSetLoopBoundary(boundary: 'start' | 'end', tick: number): void
 }
 
 const MIN_MIDI = 36
@@ -166,6 +168,12 @@ interface TimingMarkerEditorState {
   anchor: { x: number; y: number }
 }
 
+interface RulerContextMenuState {
+  tick: number
+  measureStartTick: number
+  anchor: { x: number; y: number }
+}
+
 interface DiagnosticTooltipState {
   targetId: string
   title: string
@@ -254,6 +262,7 @@ export function PianoRoll({
   onAddTimingEvent,
   onUpdateTimingEvent,
   onDeleteTimingEvent,
+  onSetLoopBoundary,
 }: PianoRollProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -263,6 +272,7 @@ export function PianoRoll({
   const [chordInteraction, setChordInteraction] = useState<ChordInteraction>()
   const [chordPalette, setChordPalette] = useState<ChordPaletteState>()
   const [timingMarkerEditor, setTimingMarkerEditor] = useState<TimingMarkerEditorState>()
+  const [rulerContextMenu, setRulerContextMenu] = useState<RulerContextMenuState>()
   const [diagnosticTooltip, setDiagnosticTooltip] = useState<DiagnosticTooltipState>()
   const measures = useMemo(() => buildMeasures(project), [project])
   const rulerTicks = useMemo(() => buildTimelineRulerTicks(project), [project])
@@ -301,6 +311,7 @@ export function PianoRoll({
     setInteraction(undefined)
     setChordInteraction(undefined)
     setTimingMarkerEditor(undefined)
+    setRulerContextMenu(undefined)
   }, [cancelRequest])
 
   const noteRects = useMemo(() => {
@@ -1009,6 +1020,26 @@ export function PianoRoll({
     }
   }
 
+  const handleRulerContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    focusEditor()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const rawTick = rawTickAtX(event.clientX - rect.left)
+    // 右键位置按当前网格向前吸附；拍号和调号仍由菜单限制在小节起点。
+    const tick = snapTickBackward(rawTick, gridTicks, project.lengthTicks)
+    const measure = measures.find((candidate) => tick >= candidate.startTick && tick < candidate.endTick)
+      ?? measures[measures.length - 1]
+    setChordPalette(undefined)
+    setTimingMarkerEditor(undefined)
+    setDiagnosticTooltip(undefined)
+    setRulerContextMenu({
+      tick,
+      measureStartTick: measure?.startTick ?? 0,
+      anchor: { x: event.clientX, y: event.clientY },
+    })
+  }
+
   const paletteChord = chordPalette
     ? project.chordTrack.regions.find((region) => region.id === chordPalette.chordId)
     : undefined
@@ -1026,6 +1057,7 @@ export function PianoRoll({
       onScroll={() => {
         setDiagnosticTooltip(undefined)
         setTimingMarkerEditor(undefined)
+        setRulerContextMenu(undefined)
       }}
     >
       <div className="piano-roll-inner" style={{ width: totalWidth, height: totalHeight }}>
@@ -1034,6 +1066,7 @@ export function PianoRoll({
           style={{ width: totalWidth }}
           onPointerDown={() => focusEditor()}
           onDoubleClick={(event) => onSetPlayhead(snapStartTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}
+          onContextMenu={handleRulerContextMenu}
         >
           <span className="lane-sticky-label">小节</span>
           <span
@@ -1041,8 +1074,8 @@ export function PianoRoll({
             style={{ left: loopStartX, width: Math.max(0, loopEndX - loopStartX) }}
             aria-hidden="true"
           />
-          <span className={`ruler-loop-marker start ${loopEnabled ? 'is-enabled' : ''}`} style={{ left: loopStartX }} aria-hidden="true">起</span>
-          <span className={`ruler-loop-marker end ${loopEnabled ? 'is-enabled' : ''}`} style={{ left: loopEndX }} aria-hidden="true">止</span>
+          <span className={`ruler-loop-marker start ${loopEnabled ? 'is-enabled' : ''}`} style={{ left: loopStartX }} aria-hidden="true" />
+          <span className={`ruler-loop-marker end ${loopEnabled ? 'is-enabled' : ''}`} style={{ left: loopEndX }} aria-hidden="true" />
           {measureGuidePositions.map((guide) => (
             <span
               key={guide.startTick}
@@ -1197,6 +1230,23 @@ export function PianoRoll({
             onUpdate={onUpdateTimingEvent}
             onDelete={onDeleteTimingEvent}
             onClose={() => setTimingMarkerEditor(undefined)}
+          />
+        ) : null}
+
+        {rulerContextMenu ? (
+          <RulerContextMenu
+            project={project}
+            tick={rulerContextMenu.tick}
+            measureStartTick={rulerContextMenu.measureStartTick}
+            loopStartTick={loopStartTick}
+            loopEndTick={loopEndTick}
+            anchor={rulerContextMenu.anchor}
+            onAdd={(type, tick) => {
+              onAddTimingEvent(type, tick)
+              setTimingMarkerEditor({ tick, anchor: rulerContextMenu.anchor })
+            }}
+            onSetLoopBoundary={onSetLoopBoundary}
+            onClose={() => setRulerContextMenu(undefined)}
           />
         ) : null}
 
