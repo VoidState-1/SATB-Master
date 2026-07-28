@@ -515,8 +515,16 @@ function App() {
     return buildMeasures(project).find((measure) => playheadTick >= measure.startTick && playheadTick < measure.endTick)?.startTick ?? 0
   }, [gridTicks, playheadTick, project])
 
-  const handleAddTimingEvent = useCallback((type: 'tempo' | 'meter' | 'key') => {
-    const tick = timingTick(type)
+  const handleAddTimingEvent = useCallback((type: 'tempo' | 'meter' | 'key', requestedTick?: number) => {
+    const tick = requestedTick === undefined
+      ? timingTick(type)
+      : Math.max(0, Math.min(project.lengthTicks, Math.round(requestedTick)))
+    if (requestedTick !== undefined && type !== 'tempo') {
+      const measure = buildMeasures(project).find((candidate) => (
+        tick >= candidate.startTick && tick < candidate.endTick
+      ))
+      if (measure?.startTick !== tick) return showNotice('拍号和调号变化只能添加在小节起点')
+    }
     if (type === 'key' && project.chordTrack.regions.some((region) => (
       region.startTick < tick && region.startTick + region.durationTicks > tick
     ))) return showNotice('调性变化不能插入和弦区域内部，请先切分和弦')
@@ -1294,6 +1302,9 @@ function App() {
             chordBrush={chordBrush}
             diagnostics={harmonyResult.diagnostics}
             playheadTick={playheadTick}
+            loopEnabled={loopEnabled}
+            loopStartTick={loopStartTick}
+            loopEndTick={loopEndTick}
             cancelRequest={cancelEditorRequest}
             onSetPlayhead={setPlayheadTick}
             onSetPixelsPerBeat={setPixelsPerBeat}
@@ -1313,6 +1324,9 @@ function App() {
             onMoveChords={handleMoveChords}
             onDeleteChords={handleDeleteChords}
             onSplitChord={handleSplitChord}
+            onAddTimingEvent={handleAddTimingEvent}
+            onUpdateTimingEvent={handleUpdateTimingEvent}
+            onDeleteTimingEvent={handleDeleteTimingEvent}
           />
           <PanelResizeHandle
             orientation="horizontal"

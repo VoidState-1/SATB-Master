@@ -12,7 +12,9 @@ import {
   type VoiceId,
 } from '../domain/model'
 import type { HarmonyDiagnostic } from '../domain/harmony'
+import { buildTimelineRulerTicks, buildTimingMarkerGroups } from '../domain/timelineRuler'
 import { ChordPalette } from './ChordPalette'
+import { TimingMarkerPopover } from './TimingMarkerPopover'
 
 export type EditorTool = 'select' | 'pencil' | 'eraser' | 'split'
 export type EditorDomain = 'notes' | 'chords'
@@ -28,6 +30,9 @@ interface PianoRollProps {
   chordBrush: ChordAnalysis
   diagnostics: HarmonyDiagnostic[]
   playheadTick: number
+  loopEnabled: boolean
+  loopStartTick: number
+  loopEndTick: number
   cancelRequest: number
   onSetPlayhead(tick: number): void
   onSetPixelsPerBeat(value: number): void
@@ -47,13 +52,17 @@ interface PianoRollProps {
   onMoveChords(chordIds: Set<string>, tickDelta: number): void
   onDeleteChords(chordIds: Set<string>): void
   onSplitChord(chordId: string, splitTick: number): void
+  onAddTimingEvent(type: 'tempo' | 'meter' | 'key', tick: number): void
+  onUpdateTimingEvent(type: 'tempo' | 'meter' | 'key', id: string, patch: Record<string, string | number>): void
+  onDeleteTimingEvent(type: 'tempo' | 'meter' | 'key', id: string): void
 }
 
 const MIN_MIDI = 36
 const MAX_MIDI = 84
 const ROW_HEIGHT = 22
 const PIANO_WIDTH = 58
-const HEADER_HEIGHT = 72
+const RULER_HEIGHT = 46
+const HEADER_HEIGHT = RULER_HEIGHT + 42
 
 interface NoteInteraction {
   kind: 'move' | 'resize'
@@ -152,6 +161,11 @@ interface ChordPaletteState {
   anchor: { x: number; y: number }
 }
 
+interface TimingMarkerEditorState {
+  tick: number
+  anchor: { x: number; y: number }
+}
+
 interface DiagnosticTooltipState {
   targetId: string
   title: string
@@ -215,6 +229,9 @@ export function PianoRoll({
   chordBrush,
   diagnostics,
   playheadTick,
+  loopEnabled,
+  loopStartTick,
+  loopEndTick,
   cancelRequest,
   onSetPlayhead,
   onSetPixelsPerBeat,
@@ -234,6 +251,9 @@ export function PianoRoll({
   onMoveChords,
   onDeleteChords,
   onSplitChord,
+  onAddTimingEvent,
+  onUpdateTimingEvent,
+  onDeleteTimingEvent,
 }: PianoRollProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -242,8 +262,11 @@ export function PianoRoll({
   const [interaction, setInteraction] = useState<PointerInteraction>()
   const [chordInteraction, setChordInteraction] = useState<ChordInteraction>()
   const [chordPalette, setChordPalette] = useState<ChordPaletteState>()
+  const [timingMarkerEditor, setTimingMarkerEditor] = useState<TimingMarkerEditorState>()
   const [diagnosticTooltip, setDiagnosticTooltip] = useState<DiagnosticTooltipState>()
   const measures = useMemo(() => buildMeasures(project), [project])
+  const rulerTicks = useMemo(() => buildTimelineRulerTicks(project), [project])
+  const timingMarkerGroups = useMemo(() => buildTimingMarkerGroups(project), [project])
   const diagnosticsByNote = useMemo(() => groupDiagnostics(diagnostics, 'noteIds'), [diagnostics])
   const diagnosticsByChord = useMemo(() => groupDiagnostics(diagnostics, 'chordIds'), [diagnostics])
   const rollHeight = (MAX_MIDI - MIN_MIDI + 1) * ROW_HEIGHT
@@ -256,6 +279,8 @@ export function PianoRoll({
     x: PIANO_WIDTH + (measure.startTick / project.ppq) * pixelsPerBeat,
   })), [measures, pixelsPerBeat, project.ppq])
   const playheadX = PIANO_WIDTH + (playheadTick / project.ppq) * pixelsPerBeat
+  const loopStartX = PIANO_WIDTH + (loopStartTick / project.ppq) * pixelsPerBeat
+  const loopEndX = PIANO_WIDTH + (loopEndTick / project.ppq) * pixelsPerBeat
 
   useLayoutEffect(() => {
     const previousPixelsPerBeat = previousPixelsPerBeatRef.current
@@ -275,6 +300,7 @@ export function PianoRoll({
   useEffect(() => {
     setInteraction(undefined)
     setChordInteraction(undefined)
+    setTimingMarkerEditor(undefined)
   }, [cancelRequest])
 
   const noteRects = useMemo(() => {
@@ -987,9 +1013,9 @@ export function PianoRoll({
     ? project.chordTrack.regions.find((region) => region.id === chordPalette.chordId)
     : undefined
 
-  const tempoLabels = project.tempoEvents.filter((event) => event.tick > 0)
-  const meterLabels = project.meterEvents.filter((event) => event.tick > 0)
-  const keyLabels = project.keyEvents.filter((event) => event.tick > 0)
+  const activeTimingMarker = timingMarkerEditor
+    ? timingMarkerGroups.find((group) => group.tick === timingMarkerEditor.tick)
+    : undefined
 
   return (
     <div
@@ -997,7 +1023,10 @@ export function PianoRoll({
       ref={scrollRef}
       tabIndex={0}
       onWheel={handleWheel}
-      onScroll={() => setDiagnosticTooltip(undefined)}
+      onScroll={() => {
+        setDiagnosticTooltip(undefined)
+        setTimingMarkerEditor(undefined)
+      }}
     >
       <div className="piano-roll-inner" style={{ width: totalWidth, height: totalHeight }}>
         <div
@@ -1007,6 +1036,13 @@ export function PianoRoll({
           onDoubleClick={(event) => onSetPlayhead(snapStartTick(event.clientX - event.currentTarget.getBoundingClientRect().left))}
         >
           <span className="lane-sticky-label">小节</span>
+          <span
+            className={`ruler-loop-range ${loopEnabled ? 'is-enabled' : ''}`}
+            style={{ left: loopStartX, width: Math.max(0, loopEndX - loopStartX) }}
+            aria-hidden="true"
+          />
+          <span className={`ruler-loop-marker start ${loopEnabled ? 'is-enabled' : ''}`} style={{ left: loopStartX }} aria-hidden="true">起</span>
+          <span className={`ruler-loop-marker end ${loopEnabled ? 'is-enabled' : ''}`} style={{ left: loopEndX }} aria-hidden="true">止</span>
           {measureGuidePositions.map((guide) => (
             <span
               key={guide.startTick}
@@ -1024,15 +1060,46 @@ export function PianoRoll({
               {measure.number}
             </span>
           ))}
-          {tempoLabels.map((event) => (
-            <span key={event.id} className="timeline-marker tempo" style={{ left: PIANO_WIDTH + (event.tick / project.ppq) * pixelsPerBeat }}>♩={event.bpm}</span>
+          {rulerTicks.map((tick) => (
+            <span
+              key={`${tick.kind}-${tick.tick}`}
+              className={`ruler-scale-tick ${tick.kind}`}
+              style={{ left: PIANO_WIDTH + (tick.tick / project.ppq) * pixelsPerBeat }}
+              aria-hidden="true"
+            />
           ))}
-          {meterLabels.map((event) => (
-            <span key={event.id} className="timeline-marker meter" style={{ left: PIANO_WIDTH + (event.tick / project.ppq) * pixelsPerBeat }}>{event.numerator}/{event.denominator}</span>
-          ))}
-          {keyLabels.map((event) => (
-            <span key={event.id} className="timeline-marker key" style={{ left: PIANO_WIDTH + (event.tick / project.ppq) * pixelsPerBeat }}>{KEY_NAMES[event.tonic]}{event.mode === 'major' ? '大' : '小'}</span>
-          ))}
+          {timingMarkerGroups.map((group) => {
+            const label = [
+              group.tempo ? `♩ ${group.tempo.bpm}` : undefined,
+              group.meter ? `${group.meter.numerator}/${group.meter.denominator}` : undefined,
+              group.key ? `${KEY_NAMES[group.key.tonic]} ${group.key.mode === 'major' ? '大调' : '小调'}` : undefined,
+            ].filter(Boolean).join(' · ')
+            return (
+              <button
+                type="button"
+                key={group.tick}
+                className={`timing-marker-group ${timingMarkerEditor?.tick === group.tick ? 'is-active' : ''}`}
+                style={{ left: PIANO_WIDTH + (group.tick / project.ppq) * pixelsPerBeat }}
+                aria-label={`时间变化 ${label}`}
+                title={label}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onSetPlayhead(group.tick)
+                }}
+                onDoubleClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  focusEditor()
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  setTimingMarkerEditor({ tick: group.tick, anchor: { x: rect.left, y: rect.bottom } })
+                }}
+              >
+                {group.tempo ? <span className="tempo">♩ {group.tempo.bpm}</span> : null}
+                {group.meter ? <span className="meter">{group.meter.numerator}/{group.meter.denominator}</span> : null}
+                {group.key ? <span className="key">{KEY_NAMES[group.key.tonic]} {group.key.mode === 'major' ? '大调' : '小调'}</span> : null}
+              </button>
+            )
+          })}
           <span className="timeline-playhead-segment is-ruler" style={{ left: playheadX }} aria-hidden="true" />
         </div>
 
@@ -1117,6 +1184,19 @@ export function PianoRoll({
             anchor={chordPalette.anchor}
             onChange={(patch) => onUpdateChord(paletteChord.id, { analysis: patch })}
             onClose={() => setChordPalette(undefined)}
+          />
+        ) : null}
+
+        {timingMarkerEditor && activeTimingMarker ? (
+          <TimingMarkerPopover
+            project={project}
+            group={activeTimingMarker}
+            anchor={timingMarkerEditor.anchor}
+            canAddMeterOrKey={measures.some((measure) => measure.startTick === activeTimingMarker.tick)}
+            onAdd={onAddTimingEvent}
+            onUpdate={onUpdateTimingEvent}
+            onDelete={onDeleteTimingEvent}
+            onClose={() => setTimingMarkerEditor(undefined)}
           />
         ) : null}
 
