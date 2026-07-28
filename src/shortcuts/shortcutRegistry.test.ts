@@ -30,6 +30,17 @@ describe('shortcut registry', () => {
     expect(formatShortcutBinding('BracketLeft')).toBe('[')
   })
 
+  it('can keep voice switching active while Control is a temporary tool modifier', () => {
+    const bindings = defaultShortcutBindings()
+    expect(commandForKeyboardEvent(event('Tab', { ctrlKey: true }), bindings)).toBeUndefined()
+    expect(commandForKeyboardEvent(event('Tab', { ctrlKey: true }), bindings, { ignoreControl: true })?.id).toBe('nextVoice')
+    expect(commandForKeyboardEvent(
+      event('Tab', { ctrlKey: true, shiftKey: true }),
+      bindings,
+      { ignoreControl: true },
+    )?.id).toBe('previousVoice')
+  })
+
   it('does not ship conflicting default bindings', () => {
     const owners = new Map<string, string>()
     SHORTCUT_DEFINITIONS.forEach((definition) => definition.defaultBindings.forEach((binding) => {

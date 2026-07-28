@@ -154,8 +154,19 @@ export function defaultShortcutBindings(): ShortcutBindings {
   return Object.fromEntries(SHORTCUT_DEFINITIONS.map((definition) => [definition.id, [...definition.defaultBindings]])) as ShortcutBindings
 }
 
-export function commandForKeyboardEvent(event: KeyboardBindingSource, bindings: ShortcutBindings) {
-  const binding = keyboardEventToBinding(event)
+export function commandForKeyboardEvent(
+  event: KeyboardBindingSource,
+  bindings: ShortcutBindings,
+  options: { ignoreControl?: boolean } = {},
+) {
+  const binding = keyboardEventToBinding(options.ignoreControl ? {
+    code: event.code,
+    key: event.key,
+    ctrlKey: false,
+    altKey: event.altKey,
+    shiftKey: event.shiftKey,
+    metaKey: event.metaKey,
+  } : event)
   if (!binding) return undefined
   return SHORTCUT_DEFINITIONS.find((definition) => bindings[definition.id].includes(binding))
 }

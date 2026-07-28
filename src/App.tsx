@@ -1093,7 +1093,12 @@ function App() {
       if (confirmation || settingsOpen || event.isComposing) return
       const target = event.target instanceof HTMLElement ? event.target : document.body
       if (target.matches('input, textarea, select, [contenteditable="true"]') || target.closest('[role="dialog"]')) return
-      const command = commandForKeyboardEvent(event, shortcutSettings.bindings)
+      // Ctrl 仅作为选择工具的临时画笔修饰键时，不应改变 Tab / Shift+Tab 的声部切换绑定。
+      const transparentToolControl = tool === 'select'
+        && event.ctrlKey && !event.altKey && !event.metaKey && event.code === 'Tab'
+      const command = commandForKeyboardEvent(event, shortcutSettings.bindings, {
+        ignoreControl: transparentToolControl,
+      })
       if (!command || (event.repeat && !command.allowRepeat)) return
       if ((command.id === 'nextVoice' || command.id === 'previousVoice')
         && target !== document.body && !target.closest('.piano-roll')) return
@@ -1146,7 +1151,7 @@ function App() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [changeGridResolution, changeTimelineZoom, clearSelection, confirmation, copySelection, cutSelection, cycleActiveVoice, duplicateSelection, editorDomain, editorInteractionActive, gridTicks, handleDeleteChords, handleDeleteNotes, handleNew, handleOpen, handlePlay, handleSave, history, movePlayheadByMeasure, pasteSelection, project.lengthTicks, selectAllInEditorDomain, selectedChordIds, selectedNoteIds, settingsOpen, shortcutSettings.bindings, transformSelection])
+  }, [changeGridResolution, changeTimelineZoom, clearSelection, confirmation, copySelection, cutSelection, cycleActiveVoice, duplicateSelection, editorDomain, editorInteractionActive, gridTicks, handleDeleteChords, handleDeleteNotes, handleNew, handleOpen, handlePlay, handleSave, history, movePlayheadByMeasure, pasteSelection, project.lengthTicks, selectAllInEditorDomain, selectedChordIds, selectedNoteIds, settingsOpen, shortcutSettings.bindings, tool, transformSelection])
 
   const handleDiagnostic = (diagnostic: HarmonyDiagnostic) => {
     setPlayheadTick(diagnostic.tick)
