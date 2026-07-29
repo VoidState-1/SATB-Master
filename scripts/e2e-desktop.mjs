@@ -44,6 +44,7 @@ await writeFile(path.join(e2eDirectory, 'user-data', 'recovery.json'), JSON.stri
   project: recoveryProject,
 }, null, 2), 'utf8')
 const debugPort = 9_337
+const pianoRollHeaderHeight = 88
 const launchArguments = [`--remote-debugging-port=${debugPort}`, '--remote-allow-origins=*', '--disable-gpu']
 if (appDirectory) launchArguments.push(appDirectory)
 let childLog = ''
@@ -342,7 +343,7 @@ async function addNote(voiceIndex, tick, midiNote, pointerTick = tick) {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
     if (!roll || !canvas) return null;
-    const localY = 72 + (84 - ${midiNote}) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (84 - ${midiNote}) * 22 + 10;
     roll.scrollTop = Math.max(0, localY - 180);
     roll.scrollLeft = 0;
     const rect = canvas.getBoundingClientRect();
@@ -383,7 +384,7 @@ async function dragDrawNote(voiceIndex, startRawTick, endRawTick, midiNote) {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
     if (!roll || !canvas) return null;
-    const localY = 72 + (84 - ${midiNote}) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (84 - ${midiNote}) * 22 + 10;
     roll.scrollTop = Math.max(0, localY - 180);
     roll.scrollLeft = 0;
     const rect = canvas.getBoundingClientRect();
@@ -423,7 +424,7 @@ async function resizeNote(startTick, durationTicks, midiNote, requestedEndTick) 
     const noteWidth = Math.max(10, (${durationTicks} / 960) * 72 - 2);
     const startX = rect.left + noteX + noteWidth - 3;
     const endX = rect.left + 58 + (${requestedEndTick} / 960) * 72;
-    const clientY = rect.top + 72 + (84 - ${midiNote}) * 22 + 10;
+    const clientY = rect.top + ${pianoRollHeaderHeight} + (84 - ${midiNote}) * 22 + 10;
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 10, clientX: startX, clientY, button: 0 }));
     return { startX, endX, clientY };
   })()`)
@@ -627,7 +628,7 @@ async function verifySelectionAndMovePreview() {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
     if (!roll || !canvas) return null;
-    const localY = 72 + (84 - 72) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (84 - 72) * 22 + 10;
     roll.scrollTop = Math.max(0, localY - 180);
     roll.scrollLeft = 0;
     const rect = canvas.getBoundingClientRect();
@@ -663,7 +664,7 @@ async function verifySelectionAndMovePreview() {
     if (!canvas) return false;
     const rect = canvas.getBoundingClientRect();
     const clientX = rect.left + 58 + (480 / 960) * 72 + 17;
-    const clientY = rect.top + 72 + (84 - 74) * 22 + 10;
+    const clientY = rect.top + ${pianoRollHeaderHeight} + (84 - 74) * 22 + 10;
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 22, clientX, clientY, button: 0, shiftKey: true }));
     canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 22, clientX, clientY, button: 0, shiftKey: true }));
     return true;
@@ -680,7 +681,7 @@ async function verifyLiveErase() {
     const canvas = document.querySelector('.roll-canvas');
     if (!roll || !canvas) return null;
     const localX = 58 + 17;
-    const localY = 72 + (84 - 72) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (84 - 72) * 22 + 10;
     roll.scrollTop = Math.max(0, localY - 180);
     roll.scrollLeft = 0;
     const rect = canvas.getBoundingClientRect();
@@ -1026,7 +1027,7 @@ async function verifyEditorShortcutGestures() {
   const pendingDraw = await evaluate(`(() => {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
-    const localY = 72 + (84 - 72) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (84 - 72) * 22 + 10;
     roll.scrollLeft = 0;
     roll.scrollTop = Math.max(0, localY - 180);
     const rect = canvas.getBoundingClientRect();
@@ -1091,7 +1092,7 @@ async function verifyDoubleClickVoiceActivation() {
   const activated = await evaluate(`(() => {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
-    const localY = 72 + (84 - 72) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (84 - 72) * 22 + 10;
     roll.scrollLeft = 0;
     roll.scrollTop = Math.max(0, localY - 180);
     const rect = canvas.getBoundingClientRect();
