@@ -74,4 +74,15 @@ describe("shortcut registry", () => {
       }),
     );
   });
+
+  it("allows undo and redo to follow keyboard auto-repeat", () => {
+    expect(
+      SHORTCUT_DEFINITIONS.find((definition) => definition.id === "undo")
+        ?.allowRepeat,
+    ).toBe(true);
+    expect(
+      SHORTCUT_DEFINITIONS.find((definition) => definition.id === "redo")
+        ?.allowRepeat,
+    ).toBe(true);
+  });
 });

@@ -88,12 +88,14 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     label: "撤销",
     group: "project",
     defaultBindings: ["Ctrl+KeyZ"],
+    allowRepeat: true,
   },
   {
     id: "redo",
     label: "重做",
     group: "project",
     defaultBindings: ["Ctrl+Shift+KeyZ", "Ctrl+KeyY"],
+    allowRepeat: true,
   },
 
   {
