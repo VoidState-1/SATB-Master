@@ -45,6 +45,9 @@ await writeFile(path.join(e2eDirectory, 'user-data', 'recovery.json'), JSON.stri
 }, null, 2), 'utf8')
 const debugPort = 9_337
 const pianoRollHeaderHeight = 88
+const pianoRollMinMidi = 0
+const pianoRollMaxMidi = 127
+const pianoRollRowHeight = 22
 const launchArguments = [`--remote-debugging-port=${debugPort}`, '--remote-allow-origins=*', '--disable-gpu']
 if (appDirectory) launchArguments.push(appDirectory)
 let childLog = ''
@@ -222,6 +225,41 @@ async function verifyTimelineGuides() {
   }
 }
 
+async function verifyFullMidiRange() {
+  const result = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const canvas = document.querySelector('.roll-canvas');
+    const keys = [...document.querySelectorAll('.piano-key')];
+    if (!roll || !canvas || keys.length === 0) return null;
+    return {
+      minMidi: Number(roll.dataset.minMidi),
+      maxMidi: Number(roll.dataset.maxMidi),
+      rowHeight: Number(roll.dataset.rowHeight),
+      headerHeight: Number(roll.dataset.headerHeight),
+      keyCount: keys.length,
+      firstMidi: Number(keys[0].dataset.midi),
+      lastMidi: Number(keys[keys.length - 1].dataset.midi),
+      labels: keys.map((key) => key.textContent?.trim()).filter(Boolean),
+      canvasHeight: Number.parseFloat(canvas.style.height),
+    };
+  })()`)
+  const expectedHeight = pianoRollHeaderHeight +
+    (pianoRollMaxMidi - pianoRollMinMidi + 1) * pianoRollRowHeight
+  if (!result
+    || result.minMidi !== pianoRollMinMidi
+    || result.maxMidi !== pianoRollMaxMidi
+    || result.rowHeight !== pianoRollRowHeight
+    || result.headerHeight !== pianoRollHeaderHeight
+    || result.keyCount !== pianoRollMaxMidi - pianoRollMinMidi + 1
+    || result.firstMidi !== pianoRollMaxMidi
+    || result.lastMidi !== pianoRollMinMidi
+    || !result.labels.includes('C9')
+    || !result.labels.includes('C-1')
+    || result.canvasHeight !== expectedHeight) {
+    throw new Error(`Full MIDI range mismatch: ${JSON.stringify(result)}`)
+  }
+}
+
 async function panelMetrics() {
   return evaluate(`(() => {
     const left = document.querySelector('.track-sidebar')?.getBoundingClientRect();
@@ -343,7 +381,7 @@ async function addNote(voiceIndex, tick, midiNote, pointerTick = tick) {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
     if (!roll || !canvas) return null;
-    const localY = ${pianoRollHeaderHeight} + (84 - ${midiNote}) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (${pianoRollMaxMidi} - ${midiNote}) * ${pianoRollRowHeight} + 10;
     roll.scrollTop = Math.max(0, localY - 180);
     roll.scrollLeft = 0;
     const rect = canvas.getBoundingClientRect();
@@ -384,7 +422,7 @@ async function dragDrawNote(voiceIndex, startRawTick, endRawTick, midiNote) {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
     if (!roll || !canvas) return null;
-    const localY = ${pianoRollHeaderHeight} + (84 - ${midiNote}) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (${pianoRollMaxMidi} - ${midiNote}) * ${pianoRollRowHeight} + 10;
     roll.scrollTop = Math.max(0, localY - 180);
     roll.scrollLeft = 0;
     const rect = canvas.getBoundingClientRect();
@@ -424,7 +462,7 @@ async function resizeNote(startTick, durationTicks, midiNote, requestedEndTick) 
     const noteWidth = Math.max(10, (${durationTicks} / 960) * 72 - 2);
     const startX = rect.left + noteX + noteWidth - 3;
     const endX = rect.left + 58 + (${requestedEndTick} / 960) * 72;
-    const clientY = rect.top + ${pianoRollHeaderHeight} + (84 - ${midiNote}) * 22 + 10;
+    const clientY = rect.top + ${pianoRollHeaderHeight} + (${pianoRollMaxMidi} - ${midiNote}) * ${pianoRollRowHeight} + 10;
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 10, clientX: startX, clientY, button: 0 }));
     return { startX, endX, clientY };
   })()`)
@@ -628,7 +666,7 @@ async function verifySelectionAndMovePreview() {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
     if (!roll || !canvas) return null;
-    const localY = ${pianoRollHeaderHeight} + (84 - 72) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (${pianoRollMaxMidi} - 72) * ${pianoRollRowHeight} + 10;
     roll.scrollTop = Math.max(0, localY - 180);
     roll.scrollLeft = 0;
     const rect = canvas.getBoundingClientRect();
@@ -664,7 +702,7 @@ async function verifySelectionAndMovePreview() {
     if (!canvas) return false;
     const rect = canvas.getBoundingClientRect();
     const clientX = rect.left + 58 + (480 / 960) * 72 + 17;
-    const clientY = rect.top + ${pianoRollHeaderHeight} + (84 - 74) * 22 + 10;
+    const clientY = rect.top + ${pianoRollHeaderHeight} + (${pianoRollMaxMidi} - 74) * ${pianoRollRowHeight} + 10;
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 22, clientX, clientY, button: 0, shiftKey: true }));
     canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 22, clientX, clientY, button: 0, shiftKey: true }));
     return true;
@@ -681,7 +719,7 @@ async function verifyLiveErase() {
     const canvas = document.querySelector('.roll-canvas');
     if (!roll || !canvas) return null;
     const localX = 58 + 17;
-    const localY = ${pianoRollHeaderHeight} + (84 - 72) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (${pianoRollMaxMidi} - 72) * ${pianoRollRowHeight} + 10;
     roll.scrollTop = Math.max(0, localY - 180);
     roll.scrollLeft = 0;
     const rect = canvas.getBoundingClientRect();
@@ -1027,7 +1065,7 @@ async function verifyEditorShortcutGestures() {
   const pendingDraw = await evaluate(`(() => {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
-    const localY = ${pianoRollHeaderHeight} + (84 - 72) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (${pianoRollMaxMidi} - 72) * ${pianoRollRowHeight} + 10;
     roll.scrollLeft = 0;
     roll.scrollTop = Math.max(0, localY - 180);
     const rect = canvas.getBoundingClientRect();
@@ -1092,7 +1130,7 @@ async function verifyDoubleClickVoiceActivation() {
   const activated = await evaluate(`(() => {
     const roll = document.querySelector('.piano-roll');
     const canvas = document.querySelector('.roll-canvas');
-    const localY = ${pianoRollHeaderHeight} + (84 - 72) * 22 + 10;
+    const localY = ${pianoRollHeaderHeight} + (${pianoRollMaxMidi} - 72) * ${pianoRollRowHeight} + 10;
     roll.scrollLeft = 0;
     roll.scrollTop = Math.max(0, localY - 180);
     const rect = canvas.getBoundingClientRect();
@@ -1123,6 +1161,7 @@ try {
   }
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '应用启动时默认 SF2 预载', 20_000)
   await verifyTimelineGuides()
+  await verifyFullMidiRange()
   await verifyPanelResizing()
   await verifyInitialGridSelection()
   await verifyShortcutSettings()
@@ -1275,6 +1314,7 @@ try {
     customWindowFrame: 'ready',
     chordPalette: 'draw-edit-double-click-ready',
     timelineGuides: 'measure-lines-and-full-playhead-ready',
+    pianoRollRange: 'midi-0-127-ready',
     panelResizing: 'left-right-bottom-drag-and-reset-ready',
     shortcutSettings: 'remap-conflict-persist-reset-ready',
     harmonyRuleSettings: 'list-severity-disable-persist-reset-ready',

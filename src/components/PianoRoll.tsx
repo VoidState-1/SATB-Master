@@ -84,8 +84,9 @@ interface PianoRollProps {
   onSetLoopBoundary(boundary: "start" | "end", tick: number): void;
 }
 
-const MIN_MIDI = 36;
-const MAX_MIDI = 84;
+// 卷帘窗与工程模型共用标准 MIDI 0-127 音域，避免快捷键能移动到画布之外。
+const MIN_MIDI = 0;
+const MAX_MIDI = 127;
 const ROW_HEIGHT = 22;
 const PIANO_WIDTH = 58;
 const RULER_HEIGHT = 46;
@@ -1481,6 +1482,10 @@ export function PianoRoll({
       className="piano-roll"
       ref={scrollRef}
       tabIndex={0}
+      data-min-midi={MIN_MIDI}
+      data-max-midi={MAX_MIDI}
+      data-row-height={ROW_HEIGHT}
+      data-header-height={HEADER_HEIGHT}
       onWheel={handleWheel}
       onScroll={() => {
         setDiagnosticTooltip(undefined);
@@ -1792,6 +1797,7 @@ export function PianoRoll({
           ).map((midi) => (
             <div
               key={midi}
+              data-midi={midi}
               className={`piano-key ${isBlackKey(midi) ? "black" : ""}`}
               style={{ height: ROW_HEIGHT }}
             >
