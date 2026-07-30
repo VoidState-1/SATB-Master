@@ -1,4 +1,9 @@
-import { useEffect, useState, type InputHTMLAttributes } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type InputHTMLAttributes,
+} from "react";
 import { FolderOpen, Lock, LockOpen, Plus, Trash2 } from "lucide-react";
 import {
   formatChord,
@@ -17,7 +22,12 @@ import {
   type VoiceId,
 } from "../domain/model";
 import type { ChordRegionPatch } from "../domain/editing";
-import { formatPosition, keyAtTick } from "../domain/time";
+import {
+  buildMeasures,
+  formatPosition,
+  keyAtTick,
+  ticksForMeasures,
+} from "../domain/time";
 import { IconButton } from "./IconButton";
 import { CHORD_QUALITY_OPTIONS } from "./chordAnalysisOptions";
 
@@ -256,6 +266,10 @@ export function Inspector({
 }: InspectorProps) {
   const [tab, setTab] = useState<InspectorTab>("selection");
   const activeTrack = project.tracks.find((track) => track.id === activeVoice)!;
+  const projectMeasureCount = useMemo(
+    () => buildMeasures(project).length,
+    [project],
+  );
 
   return (
     <aside className="inspector">
@@ -523,13 +537,16 @@ export function Inspector({
                 />
               </label>
               <label>
-                <span>总长度（tick）</span>
+                <span>总长度（小节）</span>
                 <CommitField
                   type="number"
-                  min={project.ppq * 4}
-                  value={project.lengthTicks}
+                  min={1}
+                  step={1}
+                  value={projectMeasureCount}
                   onCommit={(value) =>
-                    onUpdateProject({ lengthTicks: Number(value) })
+                    onUpdateProject({
+                      lengthTicks: ticksForMeasures(project, Number(value)),
+                    })
                   }
                 />
               </label>

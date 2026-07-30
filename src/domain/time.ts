@@ -110,6 +110,25 @@ export function buildMeasures(
   return measures;
 }
 
+export function ticksForMeasures(
+  project: Pick<ProjectDocument, "ppq" | "meterEvents">,
+  measureCount: number,
+) {
+  const safeCount = Math.max(1, Math.floor(Number(measureCount)));
+  const meters = [...project.meterEvents].sort((a, b) => a.tick - b.tick);
+  let tick = 0;
+  for (let index = 0; index < safeCount; index += 1) {
+    const meter = eventAtTick(meters, tick);
+    const beatLength = ticksPerBeat(project.ppq, meter.denominator);
+    const expectedEnd = tick + beatLength * meter.numerator;
+    const nextMeter = meters.find(
+      (event) => event.tick > tick && event.tick < expectedEnd,
+    );
+    tick = nextMeter?.tick ?? expectedEnd;
+  }
+  return tick;
+}
+
 export function tickToPosition(
   project: Pick<ProjectDocument, "ppq" | "meterEvents" | "lengthTicks">,
   tick: number,

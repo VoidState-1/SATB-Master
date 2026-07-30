@@ -597,12 +597,6 @@ export function PianoRoll({
       context.restore();
     }
 
-    context.strokeStyle = "#c84132";
-    context.lineWidth = 1.5;
-    context.beginPath();
-    context.moveTo(playheadX, HEADER_HEIGHT);
-    context.lineTo(playheadX, totalHeight);
-    context.stroke();
   }, [
     activeVoice,
     diagnosticsByNote,
@@ -610,7 +604,6 @@ export function PianoRoll({
     measures,
     noteRects,
     pixelsPerBeat,
-    playheadX,
     project.exercise.editableRanges,
     project.ppq,
     rollHeight,
@@ -897,7 +890,7 @@ export function PianoRoll({
       const point = localPoint(event);
       const hit = hitTest(point.x, point.y);
       if (!hit) {
-        setDiagnosticTooltip(undefined);
+        if (diagnosticTooltip) setDiagnosticTooltip(undefined);
         return;
       }
       showDiagnosticTooltip(
@@ -1488,9 +1481,9 @@ export function PianoRoll({
       data-header-height={HEADER_HEIGHT}
       onWheel={handleWheel}
       onScroll={() => {
-        setDiagnosticTooltip(undefined);
-        setTimingMarkerEditor(undefined);
-        setRulerContextMenu(undefined);
+        if (diagnosticTooltip) setDiagnosticTooltip(undefined);
+        if (timingMarkerEditor) setTimingMarkerEditor(undefined);
+        if (rulerContextMenu) setRulerContextMenu(undefined);
       }}
     >
       <div
@@ -1788,6 +1781,16 @@ export function PianoRoll({
           onPointerLeave={() => setDiagnosticTooltip(undefined)}
           onDoubleClick={handleNoteDoubleClick}
           onAuxClick={(event) => event.preventDefault()}
+        />
+
+        <div
+          className="roll-playhead"
+          aria-hidden="true"
+          style={{
+            transform: `translateX(${playheadX}px)`,
+            top: HEADER_HEIGHT,
+            height: rollHeight,
+          }}
         />
 
         <div className="piano-keys" style={{ height: rollHeight }}>

@@ -7,6 +7,7 @@ import {
   snapTickForward,
   tickToPosition,
   tickToSeconds,
+  ticksForMeasures,
 } from "./time";
 
 describe("音乐时间轴", () => {
@@ -59,5 +60,17 @@ describe("音乐时间轴", () => {
     expect(snapTickForward(480, 480, 1_920)).toBe(480);
     expect(snapTickForward(481, 480, 1_920)).toBe(960);
     expect(snapTickForward(2_100, 480, 1_920)).toBe(1_920);
+  });
+
+  it("converts measure counts to ticks across meter changes", () => {
+    const project = createEmptyProject();
+    project.meterEvents = [
+      { id: "meter-1", tick: 0, numerator: 4, denominator: 4 },
+      { id: "meter-2", tick: PPQ * 4, numerator: 3, denominator: 4 },
+    ];
+
+    expect(ticksForMeasures(project, 1)).toBe(PPQ * 4);
+    expect(ticksForMeasures(project, 2)).toBe(PPQ * 7);
+    expect(ticksForMeasures(project, 3)).toBe(PPQ * 10);
   });
 });
