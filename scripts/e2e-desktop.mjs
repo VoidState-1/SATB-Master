@@ -1206,6 +1206,38 @@ async function verifyDoubleClickVoiceActivation() {
   if (!sopranoActive) throw new Error('双击非当前声部音符未切换当前声部')
 }
 
+async function verifySponsorDialog() {
+  await clickButton('赞助作者')
+  await waitFor(`(() => {
+    const dialog = document.querySelector('.sponsor-dialog[role="dialog"]');
+    const image = dialog?.querySelector('.sponsor-qr');
+    return Boolean(dialog && image?.complete && image.naturalWidth > 0);
+  })()`, '赞助二维码加载')
+  const layout = await evaluate(`(() => {
+    const dialog = document.querySelector('.sponsor-dialog');
+    const image = document.querySelector('.sponsor-qr');
+    const rect = dialog.getBoundingClientRect();
+    return {
+      source: image.getAttribute('src'),
+      naturalWidth: image.naturalWidth,
+      naturalHeight: image.naturalHeight,
+      insideViewport: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
+    };
+  })()`)
+  if (
+    layout.source !== './assets/sponsor-alipay.jpg' ||
+    layout.naturalWidth <= 0 ||
+    layout.naturalHeight <= 0 ||
+    !layout.insideViewport
+  ) {
+    throw new Error(`赞助二维码资源或布局错误：${JSON.stringify(layout)}`)
+  }
+  await dispatchShortcut('Escape')
+  await waitFor(`!document.querySelector('.sponsor-dialog')`, '关闭赞助二维码')
+  const focusRestored = await evaluate(`document.activeElement?.getAttribute('aria-label') === '赞助作者'`)
+  if (!focusRestored) throw new Error('关闭赞助二维码后未恢复入口焦点')
+}
+
 try {
   const debuggerUrl = await waitForTarget()
   client = new CdpClient(debuggerUrl)
@@ -1221,6 +1253,7 @@ try {
     await waitFor(`window.desktop.project.recovery().then((result) => result.available === false)`, '确认放弃恢复内容')
   }
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '应用启动时默认 SF2 预载', 20_000)
+  await verifySponsorDialog()
   await verifyTimelineGuides()
   await verifyFullMidiRange()
   await verifyViewportCanvas()
@@ -1364,6 +1397,7 @@ try {
     executable,
     defaultSoundFont: 'ready',
     startupDefaultSoundFont: 'preloaded',
+    sponsorDialog: 'asset-focus-dismiss-ready',
     userSoundFontReload: 'path-hash-ready',
     audibleOutput: 'play-pause-preview-ready',
     selectionPreview: 'single-only-ready',

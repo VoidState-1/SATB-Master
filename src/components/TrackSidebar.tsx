@@ -1,10 +1,20 @@
-import { Eye, EyeOff, Lock, LockOpen, Volume2, VolumeX } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Heart,
+  Lock,
+  LockOpen,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
+import { useRef, useState } from "react";
 import {
   VOICE_CONFIG,
   type ProjectDocument,
   type VoiceId,
 } from "../domain/model";
 import { IconButton } from "./IconButton";
+import { SponsorDialog } from "./SponsorDialog";
 
 interface TrackSidebarProps {
   project: ProjectDocument;
@@ -22,6 +32,9 @@ export function TrackSidebar({
   onSetActive,
   onUpdateTrack,
 }: TrackSidebarProps) {
+  const [sponsorDialogOpen, setSponsorDialogOpen] = useState(false);
+  const sponsorButtonRef = useRef<HTMLButtonElement>(null);
+
   return (
     <aside className="track-sidebar" aria-label="四个声部">
       <div className="sidebar-heading">
@@ -103,9 +116,27 @@ export function TrackSidebar({
           );
         })}
       </div>
-      <div className="sidebar-footnote">
-        当前输入：{VOICE_CONFIG[activeVoice].name}
+      <div className="sidebar-footer">
+        <button
+          ref={sponsorButtonRef}
+          type="button"
+          className="sponsor-button"
+          aria-label="赞助作者"
+          onClick={() => setSponsorDialogOpen(true)}
+        >
+          <Heart aria-hidden="true" />
+          <span>赞助作者</span>
+        </button>
+        <div className="sidebar-footnote">
+          当前输入：{VOICE_CONFIG[activeVoice].name}
+        </div>
       </div>
+      {sponsorDialogOpen ? (
+        <SponsorDialog
+          returnFocusRef={sponsorButtonRef}
+          onClose={() => setSponsorDialogOpen(false)}
+        />
+      ) : null}
     </aside>
   );
 }
