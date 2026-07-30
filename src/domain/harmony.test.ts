@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { checkHarmony } from "./harmony";
 import { defaultHarmonyRuleSeverities } from "./harmonyRules";
-import { createEmptyProject, PPQ, type NoteEvent, type VoiceId } from "./model";
+import {
+  createEmptyProject,
+  PPQ,
+  type ChordAnalysis,
+  type NoteEvent,
+  type VoiceId,
+} from "./model";
 
 function addPair(
   project: ReturnType<typeof createEmptyProject>,
@@ -18,6 +24,32 @@ function addPair(
       locked: false,
     }),
   );
+}
+
+function addLine(
+  project: ReturnType<typeof createEmptyProject>,
+  voiceId: VoiceId,
+  pitches: number[],
+) {
+  project.tracks.find((track) => track.id === voiceId)!.notes = pitches.map(
+    (midiNote, index) =>
+      note(`${voiceId}-${index}`, index * PPQ, PPQ, midiNote),
+  );
+}
+
+function addChord(
+  project: ReturnType<typeof createEmptyProject>,
+  id: string,
+  index: number,
+  analysis: ChordAnalysis,
+) {
+  project.chordTrack.regions.push({
+    id,
+    startTick: index * PPQ,
+    durationTicks: PPQ,
+    analysis,
+    locked: false,
+  });
 }
 
 function note(
@@ -53,6 +85,98 @@ describe("斯波索宾基础规则检查", () => {
         (item) => item.ruleId === "parallel-fifths" && item.tick === PPQ,
       ),
     ).toBe(true);
+  });
+
+  it("同和弦转换仍检查平行八度", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    const tonic: ChordAnalysis = {
+      degree: 1,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    };
+    addChord(project, "tonic-root", 0, tonic);
+    addChord(project, "tonic-second-inversion", 1, {
+      ...tonic,
+      inversion: 2,
+    });
+    addPair(project, "soprano", [72, 79]);
+    addPair(project, "bass", [48, 55]);
+
+    expect(ruleIds(project)).toContain("parallel-octaves");
+  });
+
+  it("同和弦转换仍检查声部交叉", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    const tonic: ChordAnalysis = {
+      degree: 1,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    };
+    addChord(project, "tonic-1", 0, tonic);
+    addChord(project, "tonic-2", 1, tonic);
+    addPair(project, "soprano", [72, 67]);
+    addPair(project, "alto", [67, 72]);
+
+    expect(ruleIds(project)).toContain("voice-crossing");
+  });
+
+  it("同和弦转换放宽八度内大跳与声部超越", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    const tonic: ChordAnalysis = {
+      degree: 1,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    };
+    addChord(project, "tonic-1", 0, tonic);
+    addChord(project, "tonic-2", 1, tonic);
+    addPair(project, "soprano", [67, 76]);
+    addPair(project, "alto", [64, 72]);
+
+    const ids = ruleIds(project);
+    expect(ids).not.toContain("melodic-large-leap");
+    expect(ids).not.toContain("voice-overlap");
+  });
+
+  it("同和弦转换放宽外声部隐伏完全协和音程", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    const tonic: ChordAnalysis = {
+      degree: 1,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    };
+    addChord(project, "tonic-root", 0, tonic);
+    addChord(project, "tonic-second-inversion", 1, {
+      ...tonic,
+      inversion: 2,
+    });
+    addPair(project, "soprano", [64, 67]);
+    addPair(project, "bass", [48, 55]);
+
+    expect(ruleIds(project)).not.toContain("hidden-perfect-interval");
+  });
+
+  it("同一七和弦内的三全音分解不触发旋律警告", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    const dominantSeventh: ChordAnalysis = {
+      degree: 5,
+      accidental: 0,
+      quality: "dominant7",
+      inversion: 0,
+    };
+    addChord(project, "dominant-7-1", 0, dominantSeventh);
+    addChord(project, "dominant-7-2", 1, dominantSeventh);
+    addPair(project, "soprano", [71, 65]);
+
+    expect(ruleIds(project)).not.toContain("melodic-tritone");
   });
 
   it("使用规则配置改写诊断严重度", () => {
@@ -157,6 +281,73 @@ describe("斯波索宾基础规则检查", () => {
     expect(ruleIds(project)).not.toContain("leading-tone-resolution");
   });
 
+  it("同和弦连续转换后再检查导音解决", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    const dominant: ChordAnalysis = {
+      degree: 5,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    };
+    addChord(project, "dominant-1", 0, dominant);
+    addChord(project, "dominant-2", 1, { ...dominant, inversion: 1 });
+    addChord(project, "tonic", 2, {
+      degree: 1,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    });
+    addLine(project, "tenor", [59, 59, 60]);
+
+    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+  });
+
+  it("离开同和弦后导音仍未解决时给出提示", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    const dominant: ChordAnalysis = {
+      degree: 5,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    };
+    addChord(project, "dominant-1", 0, dominant);
+    addChord(project, "dominant-2", 1, dominant);
+    addChord(project, "tonic", 2, {
+      degree: 1,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    });
+    addLine(project, "tenor", [59, 59, 57]);
+
+    const diagnostic = checkHarmony(project).diagnostics.find(
+      (item) => item.ruleId === "leading-tone-resolution",
+    );
+    expect(diagnostic?.tick).toBe(PPQ * 2);
+  });
+
+  it("和弦性质变化不作为同和弦转换", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    addChord(project, "dominant", 0, {
+      degree: 5,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    });
+    addChord(project, "dominant-seventh", 1, {
+      degree: 5,
+      accidental: 0,
+      quality: "dominant7",
+      inversion: 0,
+    });
+    addLine(project, "tenor", [59, 59]);
+
+    expect(ruleIds(project)).toContain("leading-tone-resolution");
+  });
+
   it("七和弦七音级进下行解决时通过", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
@@ -195,6 +386,31 @@ describe("斯波索宾基础规则检查", () => {
     addPair(project, "alto", [65, 67]);
 
     expect(ruleIds(project)).toContain("chord-seventh-resolution");
+  });
+
+  it("同一七和弦转换结束后再检查七音解决", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    const dominantSeventh: ChordAnalysis = {
+      degree: 5,
+      accidental: 0,
+      quality: "dominant7",
+      inversion: 0,
+    };
+    addChord(project, "dominant-7-1", 0, dominantSeventh);
+    addChord(project, "dominant-7-2", 1, {
+      ...dominantSeventh,
+      inversion: 2,
+    });
+    addChord(project, "tonic", 2, {
+      degree: 1,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+    });
+    addLine(project, "alto", [65, 65, 64]);
+
+    expect(ruleIds(project)).not.toContain("chord-seventh-resolution");
   });
 
   it("检查和弦区域后半段的和弦外音并关联区域", () => {
@@ -265,6 +481,56 @@ describe("斯波索宾基础规则检查", () => {
     });
   });
 
+  it("同和弦转换中临时缺音与重复导音在最终恢复时通过", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    project.chordTrack.regions.push({
+      id: "dominant",
+      startTick: 0,
+      durationTicks: PPQ * 3,
+      analysis: {
+        degree: 5,
+        accidental: 0,
+        quality: "major",
+        inversion: 0,
+      },
+      locked: false,
+    });
+    addLine(project, "soprano", [74, 79, 74]);
+    addLine(project, "alto", [71, 71, 71]);
+    addLine(project, "tenor", [67, 59, 67]);
+    addLine(project, "bass", [43, 43, 43]);
+
+    const ids = ruleIds(project);
+    expect(ids).not.toContain("chord-completeness");
+    expect(ids).not.toContain("leading-tone-doubling");
+  });
+
+  it("同和弦转换结束时仍缺音或重复导音继续给出提示", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    project.chordTrack.regions.push({
+      id: "dominant",
+      startTick: 0,
+      durationTicks: PPQ * 3,
+      analysis: {
+        degree: 5,
+        accidental: 0,
+        quality: "major",
+        inversion: 0,
+      },
+      locked: false,
+    });
+    addLine(project, "soprano", [74, 79, 79]);
+    addLine(project, "alto", [71, 71, 71]);
+    addLine(project, "tenor", [67, 59, 59]);
+    addLine(project, "bass", [43, 43, 43]);
+
+    const ids = ruleIds(project);
+    expect(ids).toContain("chord-completeness");
+    expect(ids).toContain("leading-tone-doubling");
+  });
+
   it("按斯波索宾基础功能序进提示属到下属的逆功能进行", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
@@ -290,6 +556,31 @@ describe("斯波索宾基础规则检查", () => {
     );
     expect(diagnostic?.chordIds).toEqual(["dominant", "subdominant"]);
     expect(diagnostic?.severity).toBe("warning");
+  });
+
+  it("副属和弦重复转换后再检查目标解决", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    const secondaryDominant: ChordAnalysis = {
+      degree: 5,
+      accidental: 0,
+      quality: "major",
+      inversion: 0,
+      appliedToDegree: 2,
+    };
+    addChord(project, "secondary-dominant-1", 0, secondaryDominant);
+    addChord(project, "secondary-dominant-2", 1, {
+      ...secondaryDominant,
+      inversion: 1,
+    });
+    addChord(project, "supertonic", 2, {
+      degree: 2,
+      accidental: 0,
+      quality: "minor",
+      inversion: 0,
+    });
+
+    expect(ruleIds(project)).not.toContain("secondary-dominant-resolution");
   });
 
   it("空白区间会中断功能进行判断", () => {

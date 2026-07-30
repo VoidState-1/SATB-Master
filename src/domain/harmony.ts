@@ -56,6 +56,34 @@ function pitchClass(note: number) {
   return ((note % 12) + 12) % 12;
 }
 
+function sameHarmonyAtTransition(
+  project: ProjectDocument,
+  previousTick: number,
+  currentTick: number,
+) {
+  const previousChord = chordAtTick(project, previousTick);
+  const currentChord = chordAtTick(project, currentTick);
+  if (!previousChord || !currentChord) return false;
+
+  const previousKey = keyAtTick(project.keyEvents, previousTick);
+  const currentKey = keyAtTick(project.keyEvents, currentTick);
+  if (
+    previousKey.tonic !== currentKey.tonic ||
+    previousKey.mode !== currentKey.mode
+  )
+    return false;
+
+  const previous = previousChord.analysis;
+  const current = currentChord.analysis;
+  // 同和弦转换允许改变转位；级数、变化音、性质和副属目标仍须一致。
+  return (
+    previous.degree === current.degree &&
+    previous.accidental === current.accidental &&
+    previous.quality === current.quality &&
+    previous.appliedToDegree === current.appliedToDegree
+  );
+}
+
 function direction(from: number, to: number) {
   return Math.sign(to - from);
 }
@@ -165,6 +193,11 @@ function checkMelodicMotion(project: ProjectDocument) {
       }
 
       const interval = Math.abs(current.midiNote - previous.midiNote);
+      const sameHarmony = sameHarmonyAtTransition(
+        project,
+        previous.startTick,
+        current.startTick,
+      );
       if (interval > 12) {
         diagnostics.push(
           diagnostic(
@@ -178,7 +211,7 @@ function checkMelodicMotion(project: ProjectDocument) {
             `${track.name}出现超过八度的跳进（${interval} 个半音）。`,
           ),
         );
-      } else if (interval > 7) {
+      } else if (interval > 7 && !sameHarmony) {
         diagnostics.push(
           diagnostic(
             "melodic-large-leap",
@@ -191,7 +224,7 @@ function checkMelodicMotion(project: ProjectDocument) {
             `${track.name}出现大于纯五度的跳进，需检查前后旋律方向。`,
           ),
         );
-      } else if (interval === 6) {
+      } else if (interval === 6 && !sameHarmony) {
         diagnostics.push(
           diagnostic(
             "melodic-tritone",
@@ -216,7 +249,12 @@ function checkMelodicMotion(project: ProjectDocument) {
         current.startTick === previous.startTick + previous.durationTicks;
 
       // 只在连续两音处检查，并避开换调边界；小调的导音指升高的第七级（主音下方半音）。
-      if (sameKeyContext && previousDegree === 11 && contiguous) {
+      if (
+        sameKeyContext &&
+        previousDegree === 11 &&
+        contiguous &&
+        !sameHarmony
+      ) {
         if (
           pitchClass(current.midiNote) !== pitchClass(previousKey.tonic) ||
           current.midiNote <= previous.midiNote
@@ -249,6 +287,14 @@ function checkChordToneResolution(project: ProjectDocument) {
       const previous = notes[index - 1];
       const current = notes[index];
       if (current.startTick !== previous.startTick + previous.durationTicks)
+        continue;
+      if (
+        sameHarmonyAtTransition(
+          project,
+          previous.startTick,
+          current.startTick,
+        )
+      )
         continue;
 
       const chord = chordAtTick(project, previous.startTick);
@@ -335,13 +381,18 @@ function checkVerticalSlices(slices: Slice[]) {
   return diagnostics;
 }
 
-function checkVoiceLeading(slices: Slice[]) {
+function checkVoiceLeading(project: ProjectDocument, slices: Slice[]) {
   const diagnostics: HarmonyDiagnostic[] = [];
   const seen = new Set<string>();
 
   for (let index = 1; index < slices.length; index += 1) {
     const previous = slices[index - 1];
     const current = slices[index];
+    const sameHarmony = sameHarmonyAtTransition(
+      project,
+      previous.tick,
+      current.tick,
+    );
 
     for (
       let upperIndex = 0;
@@ -403,6 +454,7 @@ function checkVoiceLeading(slices: Slice[]) {
         if (
           upperId === "soprano" &&
           lowerId === "bass" &&
+          !sameHarmony &&
           similarMotion &&
           (currentInterval === 0 || currentInterval === 7)
         ) {
@@ -433,6 +485,7 @@ function checkVoiceLeading(slices: Slice[]) {
       ["tenor", "bass"],
     ];
     adjacent.forEach(([upperId, lowerId]) => {
+      if (sameHarmony) return;
       const previousUpper = previous.notes[upperId];
       const previousLower = previous.notes[lowerId];
       const currentUpper = current.notes[upperId];
@@ -482,9 +535,14 @@ function checkChordRules(project: ProjectDocument, slices: Slice[]) {
     diagnostics.push(item);
   };
 
-  slices.forEach((slice) => {
+  slices.forEach((slice, sliceIndex) => {
     const chord = chordAtTick(project, slice.tick);
     if (!chord) return;
+    const nextSlice = slices[sliceIndex + 1];
+    const isIntermediateSameHarmony = Boolean(
+      nextSlice &&
+        sameHarmonyAtTransition(project, slice.tick, nextSlice.tick),
+    );
     const active = VOICE_ORDER.map((voiceId) => ({
       voiceId,
       note: slice.notes[voiceId],
@@ -521,7 +579,7 @@ function checkChordRules(project: ProjectDocument, slices: Slice[]) {
       active.map(({ note }) => pitchClass(note.midiNote)),
     );
     const missing = chordTones.filter((tone) => !present.has(tone));
-    if (missing.length > 0) {
+    if (missing.length > 0 && !isIntermediateSameHarmony) {
       appendMerged(
         diagnostic(
           "chord-completeness",
@@ -561,7 +619,7 @@ function checkChordRules(project: ProjectDocument, slices: Slice[]) {
     const leadingNotes = active.filter(
       ({ note }) => pitchClass(note.midiNote) === leadingTone,
     );
-    if (leadingNotes.length > 1) {
+    if (leadingNotes.length > 1 && !isIntermediateSameHarmony) {
       appendMerged(
         diagnostic(
           "leading-tone-doubling",
@@ -594,6 +652,15 @@ function checkChordProgressions(project: ProjectDocument) {
     if (
       previousKey.tonic !== currentKey.tonic ||
       previousKey.mode !== currentKey.mode
+    )
+      continue;
+    // 同和弦的重复、换位或转位属于一次和声延续，功能目标留到离开该和弦时判断。
+    if (
+      sameHarmonyAtTransition(
+        project,
+        previous.startTick,
+        current.startTick,
+      )
     )
       continue;
 
@@ -647,7 +714,7 @@ export function checkHarmony(
     ...checkRanges(project),
     ...checkMelodicMotion(project),
     ...checkVerticalSlices(slices),
-    ...checkVoiceLeading(slices),
+    ...checkVoiceLeading(project, slices),
   ];
   const skippedRuleIds =
     project.chordTrack.regions.length === 0

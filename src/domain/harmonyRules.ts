@@ -60,7 +60,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     group: "voice",
     defaultSeverity: "warning",
     requiresChord: false,
-    description: "检查当前声部是否进入相邻声部前一位置的音域。",
+    description: "检查当前声部是否进入相邻声部前一位置的音域；同和弦转换允许声部超越。",
   },
   {
     id: "melodic-leap-over-octave",
@@ -76,7 +76,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     group: "melody",
     defaultSeverity: "warning",
     requiresChord: false,
-    description: "检查单一声部相邻音符是否出现大于纯五度、不超过八度的跳进。",
+    description: "检查不同和弦间是否出现大于纯五度、不超过八度的跳进。",
   },
   {
     id: "melodic-tritone",
@@ -84,7 +84,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     group: "melody",
     defaultSeverity: "warning",
     requiresChord: false,
-    description: "检查单一声部的相邻音符是否构成三全音跳进。",
+    description: "检查不同和弦间的相邻音符是否构成三全音跳进。",
   },
   {
     id: "leading-tone-resolution",
@@ -92,7 +92,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     group: "melody",
     defaultSeverity: "warning",
     requiresChord: false,
-    description: "检查连续旋律中的导音是否上行解决到主音。",
+    description: "检查导音离开同和弦延续后是否上行解决到主音。",
   },
   {
     id: "parallel-fifths",
@@ -116,7 +116,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     group: "voiceLeading",
     defaultSeverity: "warning",
     requiresChord: false,
-    description: "检查外声部是否同向进入纯五度或八度，且高声部发生跳进。",
+    description: "检查不同和弦间外声部是否同向跳进到纯五度或八度。",
   },
   {
     id: "chord-membership",
@@ -132,7 +132,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     group: "chord",
     defaultSeverity: "warning",
     requiresChord: true,
-    description: "检查四声部齐全时是否缺少已标注和弦的构成音。",
+    description: "检查同和弦转换结束时是否缺少已标注和弦的构成音。",
   },
   {
     id: "chord-inversion",
@@ -148,7 +148,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     group: "chord",
     defaultSeverity: "error",
     requiresChord: true,
-    description: "检查完整四声部和弦中是否重复了调内导音。",
+    description: "检查同和弦转换结束时是否仍重复调内导音。",
   },
   {
     id: "chord-seventh-resolution",
@@ -156,7 +156,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     group: "chord",
     defaultSeverity: "warning",
     requiresChord: true,
-    description: "检查七和弦的七音是否以半音或全音级进下行解决。",
+    description: "检查七音离开同和弦延续后是否以半音或全音级进下行解决。",
   },
   {
     id: "functional-retrogression",
