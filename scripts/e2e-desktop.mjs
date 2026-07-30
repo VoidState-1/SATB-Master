@@ -261,6 +261,32 @@ async function verifyFullMidiRange() {
   }
 }
 
+async function verifyViewportCanvas() {
+  const result = await evaluate(`(() => {
+    const roll = document.querySelector('.piano-roll');
+    const interactionCanvas = document.querySelector('.roll-canvas');
+    const viewportCanvas = document.querySelector('.roll-viewport-canvas');
+    if (!roll || !interactionCanvas || !viewportCanvas) return null;
+    const ratio = window.devicePixelRatio || 1;
+    return {
+      ratio,
+      clientWidth: roll.clientWidth,
+      clientHeight: roll.clientHeight,
+      scrollWidth: roll.scrollWidth,
+      interactionWidth: Number.parseFloat(interactionCanvas.style.width),
+      bitmapWidth: viewportCanvas.width,
+      bitmapHeight: viewportCanvas.height,
+    };
+  })()`)
+  if (!result
+    || result.scrollWidth <= result.clientWidth
+    || result.interactionWidth <= result.clientWidth
+    || result.bitmapWidth > Math.ceil(result.clientWidth * result.ratio) + 1
+    || result.bitmapHeight > Math.ceil(result.clientHeight * result.ratio) + 1) {
+    throw new Error(`Viewport canvas allocation mismatch: ${JSON.stringify(result)}`)
+  }
+}
+
 async function panelMetrics() {
   return evaluate(`(() => {
     const left = document.querySelector('.track-sidebar')?.getBoundingClientRect();
@@ -734,28 +760,40 @@ async function verifySelectionAndMovePreview() {
 
 async function verifyLiveErase() {
   await clickButton('擦除工具（3）')
-  const pointer = await evaluate(`(() => {
+  const target = await evaluate(`(() => {
     const roll = document.querySelector('.piano-roll');
-    const canvas = document.querySelector('.roll-canvas');
-    if (!roll || !canvas) return null;
+    if (!roll) return null;
     const localX = 58 + 17;
     const localY = ${pianoRollHeaderHeight} + (${pianoRollMaxMidi} - 72) * ${pianoRollRowHeight} + 10;
     roll.scrollTop = Math.max(0, localY - 180);
     roll.scrollLeft = 0;
+    return { localX, localY };
+  })()`)
+  if (!target) throw new Error('无法定位实时擦除音符')
+  await delay(100)
+  const pointer = await evaluate(`(() => {
+    const canvas = document.querySelector('.roll-canvas');
+    const viewportCanvas = document.querySelector('.roll-viewport-canvas');
+    if (!canvas || !viewportCanvas) return null;
+    const localX = ${target.localX};
+    const localY = ${target.localY};
     const rect = canvas.getBoundingClientRect();
+    const viewportRect = viewportCanvas.getBoundingClientRect();
     const ratio = window.devicePixelRatio || 1;
-    const before = [...canvas.getContext('2d').getImageData(Math.round(localX * ratio), Math.round(localY * ratio), 1, 1).data];
     const clientX = rect.left + localX;
     const clientY = rect.top + localY;
+    const pixelX = Math.round((clientX - viewportRect.left) * ratio);
+    const pixelY = Math.round((clientY - viewportRect.top) * ratio);
+    const before = [...viewportCanvas.getContext('2d').getImageData(pixelX, pixelY, 1, 1).data];
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 23, clientX, clientY, button: 0 }));
-    return { clientX, clientY, localX, localY, ratio, before };
+    return { clientX, clientY, pixelX, pixelY, before };
   })()`)
   if (!pointer) throw new Error('无法开始实时擦除验证')
   await delay(100)
   const during = await evaluate(`(() => {
-    const canvas = document.querySelector('.roll-canvas');
+    const canvas = document.querySelector('.roll-viewport-canvas');
     return [...canvas.getContext('2d').getImageData(
-      Math.round(${pointer.localX} * ${pointer.ratio}), Math.round(${pointer.localY} * ${pointer.ratio}), 1, 1,
+      ${pointer.pixelX}, ${pointer.pixelY}, 1, 1,
     ).data];
   })()`)
   if (JSON.stringify(pointer.before) === JSON.stringify(during)) throw new Error('擦除按下后音符画面未实时更新')
@@ -1182,6 +1220,7 @@ try {
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '应用启动时默认 SF2 预载', 20_000)
   await verifyTimelineGuides()
   await verifyFullMidiRange()
+  await verifyViewportCanvas()
   await verifyPanelResizing()
   await verifyInitialGridSelection()
   await verifyShortcutSettings()
@@ -1335,6 +1374,7 @@ try {
     chordPalette: 'draw-edit-double-click-ready',
     timelineGuides: 'measure-lines-and-full-playhead-ready',
     pianoRollRange: 'midi-0-127-ready',
+    viewportCanvas: 'bounded-allocation-ready',
     panelResizing: 'left-right-bottom-drag-and-reset-ready',
     shortcutSettings: 'remap-conflict-persist-reset-ready',
     harmonyRuleSettings: 'list-severity-disable-persist-reset-ready',

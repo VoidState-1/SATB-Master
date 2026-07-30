@@ -570,12 +570,22 @@ body.is-resizing-rows * {
   position: relative;
 }
 
+.roll-viewport-canvas,
 .roll-canvas {
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 1;
   display: block;
+}
+
+.roll-viewport-canvas {
+  z-index: 1;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.roll-canvas {
+  z-index: 4;
   touch-action: none;
 }
 
