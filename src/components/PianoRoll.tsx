@@ -1876,7 +1876,7 @@ export function PianoRoll({
           className="roll-playhead"
           aria-hidden="true"
           style={{
-            transform: `translateX(${playheadX}px)`,
+            transform: `translate3d(${playheadX}px, 0, 0) translateX(-50%)`,
             top: HEADER_HEIGHT,
             height: rollHeight,
           }}

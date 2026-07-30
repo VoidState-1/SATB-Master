@@ -192,11 +192,13 @@ async function verifyTimelineGuides() {
     const chord = document.querySelector('.chord-lane');
     const rulerPlayhead = ruler?.querySelector('.timeline-playhead-segment');
     const chordPlayhead = chord?.querySelector('.timeline-playhead-segment');
-    if (!roll || !ruler || !chord || !rulerPlayhead || !chordPlayhead) return null;
+    const rollPlayhead = document.querySelector('.roll-playhead');
+    if (!roll || !ruler || !chord || !rulerPlayhead || !chordPlayhead || !rollPlayhead) return null;
     const rulerRect = ruler.getBoundingClientRect();
     const chordRect = chord.getBoundingClientRect();
     const rulerPlayheadRect = rulerPlayhead.getBoundingClientRect();
     const chordPlayheadRect = chordPlayhead.getBoundingClientRect();
+    const rollPlayheadRect = rollPlayhead.getBoundingClientRect();
     const rulerGuides = [...ruler.querySelectorAll('.timeline-measure-line')].map((line) => line.getBoundingClientRect().left);
     const chordGuides = [...chord.querySelectorAll('.timeline-measure-line')].map((line) => line.getBoundingClientRect().left);
     roll.scrollLeft = 144;
@@ -209,6 +211,7 @@ async function verifyTimelineGuides() {
       chordGuides,
       measureNumbers: ruler.querySelectorAll('.measure-number').length,
       playheadXDelta: Math.abs(rulerPlayheadRect.left - chordPlayheadRect.left),
+      rollPlayheadXDelta: Math.abs(chordPlayheadRect.left - rollPlayheadRect.left),
       rulerTopDelta: Math.abs(rulerRect.top - rulerPlayheadRect.top),
       laneJoinOverlap: rulerPlayheadRect.bottom - chordPlayheadRect.top,
       chordBottomOverlap: chordPlayheadRect.bottom - chordRect.bottom,
@@ -221,7 +224,7 @@ async function verifyTimelineGuides() {
   }
   const guidesAligned = result.rulerGuides.every((left, index) => Math.abs(left - result.chordGuides[index]) < 0.1)
   const triangleWidth = Number.parseFloat(result.triangleWidth)
-  if (!guidesAligned || result.playheadXDelta >= 0.1 || result.rulerTopDelta >= 0.1 || result.laneJoinOverlap < 0 || result.laneJoinOverlap > 2 || result.chordBottomOverlap < 0 || result.chordBottomOverlap > 2 || triangleWidth < 6 || triangleWidth > 7.1 || Math.abs(result.horizontalScrollDelta - 144) > 0.1) {
+  if (!guidesAligned || result.playheadXDelta >= 0.1 || result.rollPlayheadXDelta >= 0.1 || result.rulerTopDelta >= 0.1 || result.laneJoinOverlap < 0 || result.laneJoinOverlap > 2 || result.chordBottomOverlap < 0 || result.chordBottomOverlap > 2 || triangleWidth < 6 || triangleWidth > 7.1 || Math.abs(result.horizontalScrollDelta - 144) > 0.1) {
     throw new Error(`Timeline guide alignment mismatch: ${JSON.stringify(result)}`)
   }
 }
