@@ -90,6 +90,12 @@ export interface ChordTrack {
   regions: ChordRegion[];
 }
 
+export interface LoopSettings {
+  enabled: boolean;
+  startTick: number;
+  endTick: number;
+}
+
 export interface EditableRange {
   id: string;
   voiceIds: VoiceId[];
@@ -113,6 +119,7 @@ export interface ProjectDocument {
   keyEvents: KeyEvent[];
   tracks: VoiceTrack[];
   chordTrack: ChordTrack;
+  loop: LoopSettings;
   exercise: {
     instructions: string;
     editableRanges: EditableRange[];
@@ -247,6 +254,11 @@ export function createEmptyProject(title = "未命名练习"): ProjectDocument {
       displayMode: "roman",
       regions: [],
     },
+    loop: {
+      enabled: false,
+      startTick: 0,
+      endTick: PPQ * 4,
+    },
     exercise: { instructions: "", editableRanges: [] },
     audio: {
       masterVolume: 0.78,
@@ -267,6 +279,28 @@ export function getTrack(project: ProjectDocument, voiceId: VoiceId) {
 
 export function normalizeProject(project: ProjectDocument): ProjectDocument {
   const normalized = cloneProject(project);
+  if (!normalized.loop) {
+    normalized.loop = {
+      enabled: false,
+      startTick: 0,
+      endTick: Math.min(normalized.lengthTicks, normalized.ppq * 4),
+    };
+  } else {
+    const maximumStartTick = Math.max(0, normalized.lengthTicks - 1);
+    const startTick = Math.max(
+      0,
+      Math.min(maximumStartTick, Math.round(normalized.loop.startTick)),
+    );
+    const endTick = Math.max(
+      startTick + 1,
+      Math.min(normalized.lengthTicks, Math.round(normalized.loop.endTick)),
+    );
+    normalized.loop = {
+      enabled: normalized.loop.enabled,
+      startTick,
+      endTick,
+    };
+  }
   normalized.tempoEvents.sort((a, b) => a.tick - b.tick);
   normalized.meterEvents.sort((a, b) => a.tick - b.tick);
   normalized.keyEvents.sort((a, b) => a.tick - b.tick);
@@ -482,6 +516,14 @@ export function validateProject(value: unknown): value is ProjectDocument {
     )
   )
     return false;
+  if (
+    !isRecord(project.loop) ||
+    typeof project.loop.enabled !== "boolean" ||
+    !isInteger(project.loop.startTick, 0, project.lengthTicks as number) ||
+    !isInteger(project.loop.endTick, 1, project.lengthTicks as number) ||
+    (project.loop.endTick as number) <= (project.loop.startTick as number)
+  )
+    return false;
   const orderedChords = [...project.chordTrack.regions].sort(
     (a, b) => (a as ChordRegion).startTick - (b as ChordRegion).startTick,
   ) as ChordRegion[];
@@ -541,6 +583,20 @@ export function validateProject(value: unknown): value is ProjectDocument {
 export function migrateProject(value: unknown): ProjectDocument | undefined {
   if (validateProject(value)) return normalizeProject(value);
   if (
+    isRecord(value) &&
+    value.schemaVersion === PROJECT_SCHEMA_VERSION &&
+    !isRecord(value.loop) &&
+    isInteger(value.lengthTicks, 1)
+  ) {
+    const legacy = structuredClone(value) as Record<string, unknown>;
+    legacy.loop = {
+      enabled: false,
+      startTick: 0,
+      endTick: Math.min(value.lengthTicks as number, PPQ * 4),
+    };
+    if (validateProject(legacy)) return normalizeProject(legacy);
+  }
+  if (
     !isRecord(value) ||
     value.schemaVersion !== 1 ||
     !Array.isArray(value.chords)
@@ -573,6 +629,13 @@ export function migrateProject(value: unknown): ProjectDocument | undefined {
     regions,
   };
   delete migrated.chords;
+  if (!isRecord(migrated.loop) && isInteger(migrated.lengthTicks, 1)) {
+    migrated.loop = {
+      enabled: false,
+      startTick: 0,
+      endTick: Math.min(migrated.lengthTicks as number, PPQ * 4),
+    };
+  }
   if (!validateProject(migrated)) return undefined;
   return normalizeProject(migrated);
 }

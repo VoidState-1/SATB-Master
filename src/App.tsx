@@ -199,6 +199,9 @@ function App() {
   const initialProject = useMemo(() => createEmptyProject(), []);
   const history = useProjectHistory(initialProject);
   const project = history.project;
+  const loopEnabled = project.loop.enabled;
+  const loopStartTick = project.loop.startTick;
+  const loopEndTick = project.loop.endTick;
   const [filePath, setFilePath] = useState<string>();
   const [activeVoice, setActiveVoice] = useState<VoiceId>("soprano");
   const [tool, setTool] = useState<EditorTool>("select");
@@ -223,9 +226,6 @@ function App() {
   const [playheadTick, setPlayheadTick] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
-  const [loopEnabled, setLoopEnabled] = useState(false);
-  const [loopStartTick, setLoopStartTick] = useState(0);
-  const [loopEndTick, setLoopEndTick] = useState(initialProject.ppq * 4);
   const [audioState, setAudioState] = useState<AudioEngineState>("idle");
   const [audioMessage, setAudioMessage] = useState("尚未启动音频");
   const [audioLevel, setAudioLevel] = useState(0);
@@ -906,8 +906,6 @@ function App() {
     setSelectedChordIds(new Set());
     setChordBrush(defaultChordAnalysisAtTick(initialProject, 0));
     setPlayheadTick(0);
-    setLoopStartTick(0);
-    setLoopEndTick(initialProject.ppq * 4);
   }, [history, initialProject, requestConfirmation]);
 
   const handleOpen = useCallback(async () => {
@@ -931,10 +929,6 @@ function App() {
       setSelectedChordIds(new Set());
       setChordBrush(defaultChordAnalysisAtTick(result.project, 0));
       setPlayheadTick(0);
-      setLoopStartTick(0);
-      setLoopEndTick(
-        Math.min(result.project.lengthTicks, result.project.ppq * 4),
-      );
       showNotice("工程已打开");
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "打开工程失败");
@@ -1231,6 +1225,14 @@ function App() {
     showNotice,
   ]);
 
+  const toggleLoop = useCallback(() => {
+    history.commit(
+      replaceProject(project, (draft) => {
+        draft.loop.enabled = !draft.loop.enabled;
+      }),
+    );
+  }, [history, project]);
+
   const setLoopBoundary = useCallback(
     (boundary: "start" | "end", requestedTick = playheadTick) => {
       const tick = Math.max(
@@ -1242,18 +1244,27 @@ function App() {
       );
       if (boundary === "start") {
         if (tick >= loopEndTick) return showNotice("循环起点必须早于终点");
-        setLoopStartTick(tick);
+        history.commit(
+          replaceProject(project, (draft) => {
+            draft.loop.startTick = tick;
+          }),
+        );
       } else {
         if (tick <= loopStartTick) return showNotice("循环终点必须晚于起点");
-        setLoopEndTick(tick);
+        history.commit(
+          replaceProject(project, (draft) => {
+            draft.loop.endTick = tick;
+          }),
+        );
       }
     },
     [
       gridTicks,
+      history,
       loopEndTick,
       loopStartTick,
       playheadTick,
-      project.lengthTicks,
+      project,
       showNotice,
     ],
   );
@@ -1991,7 +2002,7 @@ function App() {
             label="循环播放"
             icon={<Repeat2 />}
             active={loopEnabled}
-            onClick={() => setLoopEnabled((value) => !value)}
+            onClick={toggleLoop}
           />
           <button
             type="button"

@@ -35,6 +35,7 @@ const recoveryProject = {
     volume: 0.82, pan, program,
   })),
   chordTrack: { visible: true, locked: false, displayMode: 'roman', regions: [] },
+  loop: { enabled: false, startTick: 0, endTick: 3840 },
   exercise: { instructions: '', editableRanges: [] },
   audio: { masterVolume: 0.78, soundFont: { kind: 'default', name: 'SATB Master 默认音色' } },
 }
@@ -574,9 +575,28 @@ async function verifyChordTrackEditing(projectPath) {
   }))`)
   await delay(100)
   await clickButton('保存')
+  await evaluate(`document.querySelector('.piano-roll')?.focus()`)
+  await dispatchShortcut('Home')
+  await dispatchShortcut('PageDown')
+  await dispatchShortcut('PageDown')
+  await evaluate(`(() => {
+    const button = document.querySelectorAll('.loop-boundary')[1];
+    button?.click();
+  })()`)
+  await dispatchShortcut('Home')
+  await dispatchShortcut('PageDown')
+  await evaluate(`(() => {
+    const button = document.querySelectorAll('.loop-boundary')[0];
+    button?.click();
+  })()`)
+  await delay(120)
+  await clickButton('保存')
   const saved = JSON.parse(await readFile(projectPath, 'utf8'))
   const region = saved.chordTrack?.regions?.[0]
   if (saved.schemaVersion !== 2
+    || saved.loop?.enabled !== false
+    || saved.loop?.startTick !== 3840
+    || saved.loop?.endTick !== 7680
     || region?.startTick !== 2400
     || region?.durationTicks !== 1440
     || region?.analysis?.degree !== 5

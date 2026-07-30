@@ -95,4 +95,16 @@ describe("工程文件校验", () => {
     });
     expect(migrated?.chordTrack.regions[0]).not.toHaveProperty("label");
   });
+
+  it("migrates schema v2 projects without loop settings", () => {
+    const project = createEmptyProject() as unknown as Record<string, unknown>;
+    delete project.loop;
+
+    const migrated = migrateProject(project);
+    expect(migrated?.loop).toEqual({
+      enabled: false,
+      startTick: 0,
+      endTick: 3840,
+    });
+  });
 });
