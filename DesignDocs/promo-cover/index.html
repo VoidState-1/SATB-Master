@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SATB Master 视频封面</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC",
+          "Source Han Sans SC", sans-serif;
+        background: #171b18;
+        color: #252a26;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        background: #171b18;
+        user-select: none;
+      }
+
+      .cover {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        transform: translate(-50%, -50%) scale(1);
+        transform-origin: center;
+        background: #f6f7f4;
+      }
+
+      .top-rule {
+        position: absolute;
+        z-index: 4;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 14px;
+        background: #2f7568;
+      }
+
+      .product-shot {
+        position: absolute;
+        z-index: 1;
+        top: 80px;
+        left: 650px;
+        width: 1390px;
+        height: 890px;
+        overflow: hidden;
+        border: 1px solid #bdc3bd;
+        border-radius: 5px 0 0 5px;
+        background: #fff;
+        box-shadow: 0 28px 70px rgb(27 37 31 / 18%);
+      }
+
+      .product-shot img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: 37% center;
+      }
+
+      .product-shot::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid rgb(255 255 255 / 45%);
+        pointer-events: none;
+      }
+
+      .copy-panel {
+        position: absolute;
+        z-index: 3;
+        inset: 0 auto 0 0;
+        width: 735px;
+        background: #f6f7f4;
+        border-right: 1px solid #d8dcd7;
+      }
+
+      .brand {
+        position: absolute;
+        top: 88px;
+        left: 96px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        color: #4c544e;
+        font-size: 24px;
+        font-weight: 650;
+        letter-spacing: 0;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 46px;
+        height: 46px;
+        place-items: center;
+        border-radius: 5px;
+        background: #26322c;
+        color: #fff;
+        font-family: "Segoe UI", sans-serif;
+        font-size: 19px;
+        font-weight: 750;
+        letter-spacing: 0;
+      }
+
+      .headline {
+        position: absolute;
+        top: 258px;
+        left: 92px;
+        display: flex;
+        width: 580px;
+        flex-direction: column;
+        align-items: flex-start;
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      .headline .lead {
+        margin-bottom: 30px;
+        color: #565d57;
+        font-size: 78px;
+        font-weight: 650;
+      }
+
+      .headline .subject,
+      .headline .action {
+        white-space: nowrap;
+        font-size: 136px;
+        font-weight: 780;
+      }
+
+      .headline .subject {
+        color: #7154a1;
+      }
+
+      .headline .action {
+        margin-top: 22px;
+        color: #242a26;
+      }
+
+      .accent {
+        position: absolute;
+        top: 780px;
+        left: 96px;
+        display: flex;
+        width: 320px;
+        height: 14px;
+      }
+
+      .accent span:nth-child(1) {
+        width: 46%;
+        background: #bd433b;
+      }
+
+      .accent span:nth-child(2) {
+        width: 31%;
+        background: #356b5f;
+      }
+
+      .accent span:nth-child(3) {
+        flex: 1;
+        background: #4878ad;
+      }
+
+      .edition {
+        position: absolute;
+        bottom: 96px;
+        left: 96px;
+        color: #757c76;
+        font-family: "Segoe UI", sans-serif;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: 0;
+      }
+
+      .bottom-field {
+        position: absolute;
+        z-index: 0;
+        right: 0;
+        bottom: 0;
+        width: 1185px;
+        height: 110px;
+        background: #e7ebe7;
+        border-top: 1px solid #cdd2cd;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="cover" aria-label="SATB Master 宣传视频封面">
+      <div class="top-rule"></div>
+      <div class="bottom-field"></div>
+
+      <figure class="product-shot" aria-label="SATB Master 四部和声编辑界面">
+        <img
+          src="./satb-master-editor.png"
+          alt="SATB Master 四部和声编辑器，包含和弦轨、四个声部和纠错列表"
+        />
+      </figure>
+
+      <section class="copy-panel">
+        <div class="brand">
+          <span class="brand-mark">SM</span>
+          <span>SATB Master</span>
+        </div>
+
+        <h1 class="headline">
+          <span class="lead">超好用的</span>
+          <span class="subject">四部和声</span>
+          <span class="action">纠错器</span>
+        </h1>
+
+        <div class="accent" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+
+        <div class="edition">SATB MASTER · 1.0</div>
+      </section>
+    </main>
+
+    <script>
+      const cover = document.querySelector(".cover");
+
+      function fitCover() {
+        const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+        cover.style.transform = `translate(-50%, -50%) scale(${scale})`;
+      }
+
+      fitCover();
+      window.addEventListener("resize", fitCover);
+    </script>
+  </body>
+</html>
