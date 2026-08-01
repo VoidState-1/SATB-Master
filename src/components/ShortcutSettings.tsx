@@ -7,6 +7,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  Download,
   Bug,
   Keyboard,
   RotateCcw,
@@ -15,6 +16,11 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
+import {
+  type ExternalRuleFailure,
+  type InstalledExternalRulePackage,
+} from "../domain/externalRules";
+import type { RuleProfileRef } from "../domain/model";
 import {
   HARMONY_RULE_DEFINITIONS,
   HARMONY_RULE_GROUPS,
@@ -32,6 +38,7 @@ import {
   type ShortcutCommandId,
 } from "../shortcuts/shortcutRegistry";
 import { IconButton } from "./IconButton";
+import { ExternalRuleSettings } from "./ExternalRuleSettings";
 
 interface ShortcutSettingsProps {
   bindings: ShortcutBindings;
@@ -43,6 +50,22 @@ interface ShortcutSettingsProps {
   onSetRuleSeverity(ruleId: HarmonyRuleId, severity: HarmonyRuleSeverity): void;
   onResetRule(ruleId: HarmonyRuleId): void;
   onResetAllRules(): void;
+  externalRulePackages: InstalledExternalRulePackage[];
+  externalRuleReferences: RuleProfileRef["external"];
+  externalRuleFailures: ExternalRuleFailure[];
+  externalRuleLibraryLoading: boolean;
+  externalRuleLibraryError?: string;
+  onImportExternalRulePackage(): void;
+  onMountExternalRulePackage(installedPackage: InstalledExternalRulePackage): void;
+  onRemoveExternalRulePackage(installedPackage: InstalledExternalRulePackage): void;
+  onSetExternalRuleEnabled(
+    reference: RuleProfileRef["external"][number],
+    enabled: boolean,
+  ): void;
+  onSetExternalRuleSeverity(
+    reference: RuleProfileRef["external"][number],
+    severity: HarmonyRuleSeverity,
+  ): void;
   developerMode: boolean;
   onSetDeveloperMode(enabled: boolean): void;
   onClose(): void;
@@ -65,6 +88,16 @@ export function ShortcutSettings({
   onSetRuleSeverity,
   onResetRule,
   onResetAllRules,
+  externalRulePackages,
+  externalRuleReferences,
+  externalRuleFailures,
+  externalRuleLibraryLoading,
+  externalRuleLibraryError,
+  onImportExternalRulePackage,
+  onMountExternalRulePackage,
+  onRemoveExternalRulePackage,
+  onSetExternalRuleEnabled,
+  onSetExternalRuleSeverity,
   developerMode,
   onSetDeveloperMode,
   onClose,
@@ -353,6 +386,15 @@ export function ShortcutSettings({
                 <button
                   type="button"
                   className="command-button"
+                  aria-label="导入外置规则"
+                  onClick={onImportExternalRulePackage}
+                >
+                  <Download aria-hidden="true" />
+                  导入外置规则
+                </button>
+                <button
+                  type="button"
+                  className="command-button"
                   onClick={onResetAllRules}
                 >
                   <RotateCcw aria-hidden="true" />
@@ -409,9 +451,18 @@ export function ShortcutSettings({
                     </section>
                   );
                 })}
-                {filteredRules.length === 0 ? (
-                  <div className="settings-empty">没有匹配的检查规则</div>
-                ) : null}
+                <ExternalRuleSettings
+                  packages={externalRulePackages}
+                  references={externalRuleReferences}
+                  failures={externalRuleFailures}
+                  loading={externalRuleLibraryLoading}
+                  error={externalRuleLibraryError}
+                  query={ruleQuery}
+                  onMount={onMountExternalRulePackage}
+                  onRemove={onRemoveExternalRulePackage}
+                  onSetEnabled={onSetExternalRuleEnabled}
+                  onSetSeverity={onSetExternalRuleSeverity}
+                />
               </div>
             </div>
           ) : (

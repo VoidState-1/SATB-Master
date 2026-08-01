@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseMidi } from 'midi-file'
@@ -47,6 +48,35 @@ await writeFile(path.join(e2eDirectory, 'user-data', 'recovery.json'), JSON.stri
   sourcePath: recoverySourcePath,
   project: recoveryProject,
 }, null, 2), 'utf8')
+const externalRuleSource = `SATB_RULE.register({
+  manifest: {
+    apiVersion: 1,
+    packageId: "org.satbmaster.e2e",
+    version: "1.0.0",
+    rules: [{
+      id: "phase-c-e2e",
+      label: "Phase C E2E 规则",
+      description: "验证外置规则私有库、QuickJS Worker 与诊断归并。",
+      group: "custom",
+      defaultSeverity: "suggestion",
+      dependencyScope: "project",
+    }],
+  },
+  rules: [{
+    id: "phase-c-e2e",
+    evaluate() {
+      return [{
+        tick: 0,
+        endTick: 0,
+        title: "Phase C 外置规则已运行",
+        message: "该诊断来自无宿主权限的 QuickJS Worker。",
+        noteIds: [], chordIds: [], voiceIds: [], evidence: [], confidence: 1,
+      }];
+    },
+  }],
+});`
+const externalRuleHash = createHash('sha256').update(externalRuleSource, 'utf8').digest('hex')
+await writeFile(path.join(e2eDirectory, 'example.satb-rule.js'), externalRuleSource, 'utf8')
 const debugPort = 9_337
 const pianoRollHeaderHeight = 88
 const pianoRollMinMidi = 0
@@ -887,7 +917,7 @@ async function verifyShortcutSettings() {
   await clickButton('设置')
   await waitFor(`Boolean(document.querySelector('.settings-dialog'))`, '快捷键设置页打开')
   const tabCount = await evaluate(`document.querySelectorAll('.settings-tabs button').length`)
-  if (tabCount !== 2) throw new Error(`设置页选项卡数量错误：${tabCount}`)
+  if (tabCount !== 3) throw new Error(`设置页选项卡数量错误：${tabCount}`)
   const dialogLayout = await evaluate(`(() => {
     const dialog = document.querySelector('.settings-dialog');
     const content = document.querySelector('.shortcut-settings-content');
@@ -966,6 +996,61 @@ async function configureHarmonyRuleSeverity() {
   if (!changed) throw new Error('无法修改平行纯五度严重程度')
   await waitFor(`JSON.parse(localStorage.getItem('satb-master-harmony-rules-v1'))['parallel-fifths'] === 'suggestion'`, '检查规则严重度持久化')
   await clickButton('关闭设置')
+}
+
+async function verifyExternalRuleSandbox() {
+  await clickButton('设置')
+  await clickButton('检查规则设置')
+  await clickButton('导入外置规则')
+  await waitFor(
+    `document.body.innerText.includes('org.satbmaster.e2e') && document.body.innerText.includes('Phase C E2E 规则')`,
+    '外置规则包导入并挂载',
+    15_000,
+  )
+  await waitForFile(
+    path.join(e2eDirectory, 'user-data', 'rule-library', `${externalRuleHash}.satb-rule.js`),
+    '外置规则私有副本',
+  )
+  const mounted = await evaluate(`(() => {
+    const checkbox = document.querySelector('input[aria-label="启用外置规则“Phase C E2E 规则”"]');
+    const button = [...document.querySelectorAll('.external-rule-mount-button')]
+      .find((item) => item.textContent?.includes('已挂载'));
+    return Boolean(checkbox?.checked && button?.disabled);
+  })()`)
+  if (!mounted) throw new Error('外置规则未以启用状态挂载到工程')
+  await clickButton('关闭设置')
+  await waitFor(`document.body.innerText.includes('Phase C 外置规则已运行')`, 'QuickJS 外置诊断归并', 15_000)
+
+  await clickButton('设置')
+  await clickButton('检查规则设置')
+  const disabled = await evaluate(`(() => {
+    const checkbox = document.querySelector('input[aria-label="启用外置规则“Phase C E2E 规则”"]');
+    if (!checkbox) return false;
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`)
+  if (!disabled) throw new Error('无法关闭外置规则')
+  await clickButton('关闭设置')
+  await waitFor(`!document.body.innerText.includes('Phase C 外置规则已运行')`, '关闭外置规则后移除诊断')
+
+  await clickButton('设置')
+  await clickButton('检查规则设置')
+  await evaluate(`(() => {
+    const checkbox = document.querySelector('input[aria-label="启用外置规则“Phase C E2E 规则”"]');
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`)
+  await clickButton('移除规则包“org.satbmaster.e2e”的本机副本')
+  await clickButton('移除')
+  await waitFor(
+    `document.body.innerText.includes('未挂载的工程规则') && window.desktop.ruleLibrary.list().then((items) => items.length === 0)`,
+    '移除本机副本但保留工程引用',
+  )
+  await clickButton('导入外置规则')
+  await waitFor(`document.body.innerText.includes('Phase C E2E 规则') && !document.body.innerText.includes('未挂载的工程规则')`, '重新挂载匹配规则包', 15_000)
+  await clickButton('关闭设置')
+  await waitFor(`document.body.innerText.includes('Phase C 外置规则已运行')`, '重新导入后恢复外置诊断', 15_000)
 }
 
 async function verifyHarmonyRuleSeverityApplication() {
@@ -1270,6 +1355,7 @@ try {
   await verifyInitialGridSelection()
   await verifyShortcutSettings()
   await configureHarmonyRuleSeverity()
+  await verifyExternalRuleSandbox()
   await verifyEditorShortcutGestures()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
   await clickButton('最大化')
@@ -1433,6 +1519,7 @@ try {
     panelResizing: 'left-right-bottom-drag-and-reset-ready',
     shortcutSettings: 'remap-conflict-persist-reset-ready',
     harmonyRuleSettings: 'list-severity-disable-persist-reset-ready',
+    externalRuleSandbox: 'private-library-quickjs-limits-mount-remove-ready',
     shortcutGestures: 'modifiers-voice-zoom-navigation-ready',
     selectionShortcuts: 'select-clear-duplicate-cut-paste-ready',
     doubleClickVoice: 'ready',

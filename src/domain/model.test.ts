@@ -167,6 +167,28 @@ describe("工程文件校验", () => {
     expect(validateProject(project)).toBe(false);
   });
 
+  it("校验外置规则引用的标识、摘要、配置与唯一性", () => {
+    const project = createEmptyProject();
+    const reference = {
+      ruleId: "example-rule",
+      packageId: "org.example.rules",
+      version: "1.0.0",
+      contentHash: "a".repeat(64),
+      severity: "warning" as const,
+      enabled: true,
+      config: { threshold: 4 },
+    };
+    project.ruleProfile.external = [reference];
+    expect(validateProject(project)).toBe(true);
+
+    project.ruleProfile.external.push({ ...reference });
+    expect(validateProject(project)).toBe(false);
+    project.ruleProfile.external = [
+      { ...reference, contentHash: "../invalid", config: { threshold: Infinity } },
+    ];
+    expect(validateProject(project)).toBe(false);
+  });
+
   it("拒绝越过工程末尾的 SATB 或辅助轨音符", () => {
     const project = createEmptyProject();
     project.satbTracks[0].notes.push({

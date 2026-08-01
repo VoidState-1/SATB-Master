@@ -85,5 +85,23 @@ interface Window {
       ): Promise<string>;
       release(token: string): Promise<void>;
     };
+    ruleLibrary: {
+      list(): Promise<unknown[]>;
+      importFile(): Promise<{
+        canceled: boolean;
+        source?: string;
+        sourcePath?: string;
+        contentHash?: string;
+        sizeBytes?: number;
+      }>;
+      install(request: {
+        source: string;
+        sourcePath?: string;
+        contentHash: string;
+        manifest: unknown;
+      }): Promise<unknown>;
+      loadSource(contentHash: string): Promise<{ source: string }>;
+      remove(contentHash: string): Promise<{ removed: boolean }>;
+    };
   };
 }

@@ -33,8 +33,8 @@ export interface DiagnosticEvidence {
 
 export interface HarmonyDiagnostic {
   id: string;
-  ruleId: HarmonyRuleId;
-  source: "builtin";
+  ruleId: string;
+  source: "builtin" | "external";
   severity: DiagnosticSeverity;
   tick: number;
   endTick: number;
@@ -59,7 +59,7 @@ export type RuleSkipReason =
   | "rule-error";
 
 export interface SkippedRule {
-  ruleId: HarmonyRuleId;
+  ruleId: string;
   reason: RuleSkipReason;
   message: string;
   partial: boolean;
@@ -68,7 +68,7 @@ export interface SkippedRule {
 export interface HarmonyCheckResult {
   diagnostics: HarmonyDiagnostic[];
   skippedRules: SkippedRule[];
-  skippedRuleIds: HarmonyRuleId[];
+  skippedRuleIds: string[];
   revision: number;
   superseded: boolean;
   invalidationRanges: readonly AnalysisInvalidationRange[];

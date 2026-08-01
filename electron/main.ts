@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerProjectIpc } from './project-ipc.js'
+import { registerRuleLibraryIpc } from './rule-library.js'
 import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
@@ -81,6 +82,7 @@ function registerWindowIpc() {
 app.whenReady().then(() => {
   registerSoundFontProtocol()
   registerProjectIpc()
+  registerRuleLibraryIpc()
   registerWindowIpc()
   createWindow()
 

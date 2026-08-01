@@ -10,7 +10,7 @@ import {
 
 const MAX_PROJECT_BYTES = 20 * 1024 * 1024
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
-type DialogDirectoryKind = 'project' | 'midi' | 'soundfont'
+export type DialogDirectoryKind = 'project' | 'midi' | 'soundfont' | 'rule'
 type DialogDirectories = Partial<Record<DialogDirectoryKind, string>>
 
 let dialogDirectories: DialogDirectories | undefined
@@ -78,7 +78,7 @@ async function loadDialogDirectories() {
   try {
     const stored = JSON.parse(await readFile(dialogDirectoriesPath(), 'utf8')) as Record<string, unknown>
     dialogDirectories = Object.fromEntries(
-      (['project', 'midi', 'soundfont'] as DialogDirectoryKind[])
+      (['project', 'midi', 'soundfont', 'rule'] as DialogDirectoryKind[])
         .filter((kind) => typeof stored[kind] === 'string' && path.isAbsolute(stored[kind] as string))
         .map((kind) => [kind, stored[kind] as string]),
     )
@@ -101,7 +101,7 @@ async function recentDialogDirectory(kind: DialogDirectoryKind) {
   }
 }
 
-async function rememberDialogDirectory(kind: DialogDirectoryKind, filePath: string) {
+export async function rememberDialogDirectory(kind: DialogDirectoryKind, filePath: string) {
   if (e2eDirectory) return
   const directories = await loadDialogDirectories()
   directories[kind] = path.dirname(filePath)
@@ -117,7 +117,7 @@ async function rememberDialogDirectory(kind: DialogDirectoryKind, filePath: stri
   }
 }
 
-async function rememberedDefaultPath(kind: DialogDirectoryKind, fileName?: string) {
+export async function rememberedDefaultPath(kind: DialogDirectoryKind, fileName?: string) {
   const directory = await recentDialogDirectory(kind)
   return directory && fileName ? path.join(directory, fileName) : directory ?? fileName
 }

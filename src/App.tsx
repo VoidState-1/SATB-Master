@@ -62,6 +62,12 @@ import {
   createHarmonyRuleScheduler,
   type HarmonyDiagnostic,
 } from "./domain/harmony";
+import {
+  externalRuleReferenceKey,
+  type ExternalRuleFailure,
+  type InstalledExternalRulePackage,
+} from "./domain/externalRules";
+import type { HarmonyRuleSeverity } from "./domain/harmonyRules";
 import { buildMidi, midiFileName } from "./domain/midi";
 import {
   createEmptyProject,
@@ -75,6 +81,7 @@ import {
   type EditableRange,
   type NoteEvent,
   type ProjectDocument,
+  type RuleProfileRef,
   type SatbTrack,
   type VoiceId,
 } from "./domain/model";
@@ -99,6 +106,7 @@ import {
 } from "./hooks/usePanelLayout";
 import { useHarmonyRuleSettings } from "./hooks/useHarmonyRuleSettings";
 import { useDeveloperMode } from "./hooks/useDeveloperMode";
+import { useExternalRuleLibrary } from "./hooks/useExternalRuleLibrary";
 import { useProjectHistory } from "./hooks/useProjectHistory";
 import { useShortcutBindings } from "./hooks/useShortcutBindings";
 import {
@@ -119,6 +127,10 @@ import {
   saveProject,
   type SoundFontLoadProgress,
 } from "./services/desktop";
+import {
+  ExternalRuleRuntime,
+  mergeHarmonyWithExternalRules,
+} from "./services/externalRuleRuntime";
 
 interface ClipboardNote {
   voiceId: VoiceId;
@@ -268,8 +280,13 @@ function App() {
   const shortcutSettings = useShortcutBindings();
   const harmonyRuleSettings = useHarmonyRuleSettings();
   const developerMode = useDeveloperMode();
+  const externalRuleLibrary = useExternalRuleLibrary();
   const harmonySchedulerRef = useRef(createHarmonyRuleScheduler());
+  const externalRuleRuntimeRef = useRef(new ExternalRuleRuntime());
   const harmonyRevisionRef = useRef(0);
+  const [externalRuleFailures, setExternalRuleFailures] = useState<
+    ExternalRuleFailure[]
+  >([]);
   const effectiveTool: EditorTool =
     tool === "select"
       ? toolModifiers.alt
@@ -285,20 +302,50 @@ function App() {
   useEffect(() => {
     const controller = new AbortController();
     const revision = ++harmonyRevisionRef.current;
-    void harmonySchedulerRef.current
-      .run({
-        project,
-        severities: harmonyRuleSettings.severities,
-        revision,
-        signal: controller.signal,
-      })
-      .then((result) => {
+    const builtinRun = harmonySchedulerRef.current.run({
+      project,
+      severities: harmonyRuleSettings.severities,
+      revision,
+      signal: controller.signal,
+    });
+    const externalRun = externalRuleRuntimeRef.current.run({
+      project,
+      packages: externalRuleLibrary.packages,
+      revision,
+      signal: controller.signal,
+    });
+    void builtinRun.then((builtinResult) => {
+      // 外置规则即使超时或启动失败，也不能延迟或覆盖内置规则的可用结果。
+      if (!builtinResult.superseded && !controller.signal.aborted)
+        setHarmonyResult(builtinResult);
+    });
+    void Promise.all([builtinRun, externalRun])
+      .then(([builtinResult, externalResult]) => {
         // 编辑动作可能连续触发多个 revision；被取消的旧结果绝不能覆盖较新的诊断。
-        if (!result.superseded && !controller.signal.aborted)
-          setHarmonyResult(result);
+        if (
+          !builtinResult.superseded &&
+          !externalResult.superseded &&
+          !controller.signal.aborted
+        ) {
+          setHarmonyResult(
+            mergeHarmonyWithExternalRules(builtinResult, externalResult),
+          );
+          setExternalRuleFailures(externalResult.failures);
+        }
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          console.warn("外置规则调度失败", error);
       });
-    return () => controller.abort();
-  }, [harmonyRuleSettings.severities, project]);
+    return () => {
+      controller.abort();
+      externalRuleRuntimeRef.current.cancel();
+    };
+  }, [
+    externalRuleLibrary.packages,
+    harmonyRuleSettings.severities,
+    project,
+  ]);
   const selectedNote = useMemo(() => {
     const id = selectedNoteIds.values().next().value as string | undefined;
     if (!id) return undefined;
@@ -348,6 +395,90 @@ function App() {
     setConfirmation(undefined);
     resolve?.(confirmed);
   }, []);
+
+  const mountExternalRulePackage = useCallback(
+    (installedPackage: InstalledExternalRulePackage) => {
+      history.commit(
+        replaceProject(project, (draft) => {
+          const previous = draft.ruleProfile.external.filter(
+            (reference) =>
+              reference.packageId === installedPackage.manifest.packageId,
+          );
+          draft.ruleProfile.external = draft.ruleProfile.external.filter(
+            (reference) =>
+              reference.packageId !== installedPackage.manifest.packageId,
+          );
+          installedPackage.manifest.rules.forEach((rule) => {
+            const existing = previous.find(
+              (reference) => reference.ruleId === rule.id,
+            );
+            draft.ruleProfile.external.push({
+              ruleId: rule.id,
+              packageId: installedPackage.manifest.packageId,
+              version: installedPackage.manifest.version,
+              contentHash: installedPackage.contentHash,
+              severity: existing?.severity ?? rule.defaultSeverity,
+              enabled: existing?.enabled ?? true,
+              config: { ...(existing?.config ?? {}) },
+            });
+          });
+        }),
+      );
+    },
+    [history, project],
+  );
+
+  const handleImportExternalRulePackage = useCallback(async () => {
+    try {
+      const installedPackage = await externalRuleLibrary.importPackage();
+      if (!installedPackage) return;
+      mountExternalRulePackage(installedPackage);
+      showNotice(
+        `已导入并挂载规则包 ${installedPackage.manifest.packageId} ${installedPackage.manifest.version}`,
+      );
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "外置规则导入失败");
+    }
+  }, [externalRuleLibrary, mountExternalRulePackage, showNotice]);
+
+  const handleRemoveExternalRulePackage = useCallback(
+    async (installedPackage: InstalledExternalRulePackage) => {
+      const confirmed = await requestConfirmation({
+        title: "移除本机规则包",
+        message:
+          `将移除 ${installedPackage.manifest.packageId} ${installedPackage.manifest.version} 的本机私有副本。` +
+          "工程中的引用会保留，并显示为未挂载。",
+        confirmLabel: "移除",
+        cancelLabel: "取消",
+      });
+      if (!confirmed) return;
+      try {
+        await externalRuleLibrary.removePackage(installedPackage.contentHash);
+        showNotice("已移除本机规则包，工程引用仍然保留");
+      } catch (error) {
+        showNotice(error instanceof Error ? error.message : "规则包移除失败");
+      }
+    },
+    [externalRuleLibrary, requestConfirmation, showNotice],
+  );
+
+  const updateExternalRuleReference = useCallback(
+    (
+      target: RuleProfileRef["external"][number],
+      patch: { enabled?: boolean; severity?: HarmonyRuleSeverity },
+    ) => {
+      const targetKey = externalRuleReferenceKey(target);
+      history.commit(
+        replaceProject(project, (draft) => {
+          const reference = draft.ruleProfile.external.find(
+            (candidate) => externalRuleReferenceKey(candidate) === targetKey,
+          );
+          if (reference) Object.assign(reference, patch);
+        }),
+      );
+    },
+    [history, project],
+  );
 
   useEffect(
     () => () => {
@@ -2346,6 +2477,24 @@ function App() {
           onSetRuleSeverity={harmonyRuleSettings.setSeverity}
           onResetRule={harmonyRuleSettings.resetRule}
           onResetAllRules={harmonyRuleSettings.resetAllRules}
+          externalRulePackages={externalRuleLibrary.packages}
+          externalRuleReferences={project.ruleProfile.external}
+          externalRuleFailures={externalRuleFailures}
+          externalRuleLibraryLoading={externalRuleLibrary.loading}
+          externalRuleLibraryError={externalRuleLibrary.error}
+          onImportExternalRulePackage={() =>
+            void handleImportExternalRulePackage()
+          }
+          onMountExternalRulePackage={mountExternalRulePackage}
+          onRemoveExternalRulePackage={(installedPackage) =>
+            void handleRemoveExternalRulePackage(installedPackage)
+          }
+          onSetExternalRuleEnabled={(reference, enabled) =>
+            updateExternalRuleReference(reference, { enabled })
+          }
+          onSetExternalRuleSeverity={(reference, severity) =>
+            updateExternalRuleReference(reference, { severity })
+          }
           developerMode={developerMode.enabled}
           onSetDeveloperMode={developerMode.setEnabled}
           onClose={() => setSettingsOpen(false)}

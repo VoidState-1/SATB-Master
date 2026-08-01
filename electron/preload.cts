@@ -46,4 +46,13 @@ contextBridge.exposeInMainWorld('desktop', {
     },
     release: (token: string) => ipcRenderer.invoke('soundfont:release', { token }),
   },
+  ruleLibrary: {
+    list: () => ipcRenderer.invoke('rule-library:list'),
+    importFile: () => ipcRenderer.invoke('rule-library:import'),
+    install: (request: unknown) => ipcRenderer.invoke('rule-library:install', request),
+    loadSource: (contentHash: string) =>
+      ipcRenderer.invoke('rule-library:load-source', { contentHash }),
+    remove: (contentHash: string) =>
+      ipcRenderer.invoke('rule-library:remove', { contentHash }),
+  },
 })

@@ -601,22 +601,41 @@ function validateChordRegion(value: unknown, projectLength: number) {
 function validateRuleProfile(value: unknown) {
   if (!isRecord(value) || !isRecord(value.builtin) || !Array.isArray(value.external))
     return false;
+  if (value.external.length > 256) return false;
   const severities = ["error", "warning", "suggestion", "off"];
   if (!Object.values(value.builtin).every((severity) => severities.includes(severity as string)))
     return false;
-  return value.external.every(
-    (rule) =>
-      isRecord(rule) &&
-      ["ruleId", "packageId", "version", "contentHash"].every((key) =>
-        hasString(rule, key),
-      ) &&
-      severities.includes(rule.severity as string) &&
-      typeof rule.enabled === "boolean" &&
-      isRecord(rule.config) &&
-      Object.values(rule.config).every((item) =>
-        ["string", "number", "boolean"].includes(typeof item),
-      ),
-  );
+  const ids = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
+  const versions = /^[0-9A-Za-z](?:[0-9A-Za-z.+-]{0,62}[0-9A-Za-z])?$/;
+  const hashes = /^[a-f0-9]{64}$/;
+  const references = new Set<string>();
+  return value.external.every((rule) => {
+    if (
+      !isRecord(rule) ||
+      typeof rule.ruleId !== "string" ||
+      !ids.test(rule.ruleId) ||
+      typeof rule.packageId !== "string" ||
+      !ids.test(rule.packageId) ||
+      typeof rule.version !== "string" ||
+      !versions.test(rule.version) ||
+      typeof rule.contentHash !== "string" ||
+      !hashes.test(rule.contentHash) ||
+      !severities.includes(rule.severity as string) ||
+      typeof rule.enabled !== "boolean" ||
+      !isRecord(rule.config) ||
+      !Object.values(rule.config).every(
+        (item) =>
+          typeof item === "string" ||
+          typeof item === "boolean" ||
+          (typeof item === "number" && Number.isFinite(item)),
+      )
+    )
+      return false;
+    const key = `${rule.packageId}@${rule.version}:${rule.contentHash}:${rule.ruleId}`;
+    if (references.has(key)) return false;
+    references.add(key);
+    return true;
+  });
 }
 
 export function validateProject(value: unknown): value is ProjectDocument {
