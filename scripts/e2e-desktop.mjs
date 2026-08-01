@@ -12,6 +12,7 @@ const recoveryChoice = process.env.SATB_MASTER_E2E_RECOVERY_CHOICE === 'discard'
 // Chromium 子进程必须能写入 userData；项目内的临时目录也便于受限环境稳定执行。
 await mkdir(path.join(e2eDirectory, 'user-data'), { recursive: true })
 const recoveryTimestamp = new Date().toISOString()
+const recoverySourcePath = path.join(e2eDirectory, 'project.satb')
 const recoveryProject = {
   schemaVersion: 2,
   id: 'project-e2e-recovery',
@@ -39,9 +40,11 @@ const recoveryProject = {
   exercise: { instructions: '', editableRanges: [] },
   audio: { masterVolume: 0.78, soundFont: { kind: 'default', name: 'SATB Master 默认音色' } },
 }
+await writeFile(recoverySourcePath, JSON.stringify(recoveryProject, null, 2), 'utf8')
 await writeFile(path.join(e2eDirectory, 'user-data', 'recovery.json'), JSON.stringify({
   format: 'satb-master-recovery-v1',
   savedAt: recoveryTimestamp,
+  sourcePath: recoverySourcePath,
   project: recoveryProject,
 }, null, 2), 'utf8')
 const debugPort = 9_337
@@ -63,6 +66,11 @@ for (const stream of [child.stdout, child.stderr]) {
 }
 
 let client
+
+const naturalPitchClasses = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
+function midiOf(note) {
+  return (note.pitch.octave + 1) * 12 + naturalPitchClasses[note.pitch.step] + note.pitch.alter
+}
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
@@ -622,16 +630,17 @@ async function verifyChordTrackEditing(projectPath) {
   await clickButton('保存')
   const saved = JSON.parse(await readFile(projectPath, 'utf8'))
   const region = saved.chordTrack?.regions?.[0]
-  if (saved.schemaVersion !== 2
+  if (saved.schemaVersion !== 3
     || saved.loop?.enabled !== false
     || saved.loop?.startTick !== 3840
     || saved.loop?.endTick !== 7680
     || region?.startTick !== 2400
     || region?.durationTicks !== 1440
-    || region?.analysis?.degree !== 5
-    || region?.analysis?.quality !== 'dominant7'
-    || region?.analysis?.inversion !== 1
-    || region?.analysis?.appliedToDegree !== 2
+    || region?.function?.degree !== 5
+    || region?.function?.quality !== 'dominant7'
+    || region?.function?.inversion !== 1
+    || region?.function?.applied?.targetDegree !== 2
+    || !region?.identity?.root
     || 'label' in region) {
     throw new Error(`和弦范围保存结果错误：${JSON.stringify({ schemaVersion: saved.schemaVersion, region })}`)
   }
@@ -1153,7 +1162,7 @@ async function verifySelectionShortcuts(projectPath) {
   await dispatchShortcut('KeyX', { ctrlKey: true })
   await clickButton('保存')
   const cleared = JSON.parse(await readFile(projectPath, 'utf8'))
-  const clearedCount = cleared.tracks.reduce((count, track) => count + track.notes.length, 0)
+  const clearedCount = cleared.satbTracks.reduce((count, track) => count + track.notes.length, 0)
   if (clearedCount !== 8) throw new Error(`Ctrl+Shift+A 未清除选择：${clearedCount}`)
 
   await dispatchShortcut('KeyA', { ctrlKey: true })
@@ -1161,14 +1170,14 @@ async function verifySelectionShortcuts(projectPath) {
   await dispatchShortcut('KeyX', { ctrlKey: true })
   await clickButton('保存')
   const escaped = JSON.parse(await readFile(projectPath, 'utf8'))
-  const escapedCount = escaped.tracks.reduce((count, track) => count + track.notes.length, 0)
+  const escapedCount = escaped.satbTracks.reduce((count, track) => count + track.notes.length, 0)
   if (escapedCount !== 8) throw new Error(`Esc 未清除选择：${escapedCount}`)
 
   await dispatchShortcut('KeyA', { ctrlKey: true })
   await dispatchShortcut('KeyD', { ctrlKey: true })
   await clickButton('保存')
   const duplicated = JSON.parse(await readFile(projectPath, 'utf8'))
-  const duplicateCount = duplicated.tracks.reduce((count, track) => count + track.notes.length, 0)
+  const duplicateCount = duplicated.satbTracks.reduce((count, track) => count + track.notes.length, 0)
   if (duplicateCount !== 16) throw new Error(`Ctrl+A / Ctrl+D 批量重复错误：${duplicateCount}`)
   await clickButton('撤销')
 
@@ -1176,13 +1185,13 @@ async function verifySelectionShortcuts(projectPath) {
   await dispatchShortcut('KeyX', { ctrlKey: true })
   await clickButton('保存')
   const cut = JSON.parse(await readFile(projectPath, 'utf8'))
-  const cutCount = cut.tracks.reduce((count, track) => count + track.notes.length, 0)
+  const cutCount = cut.satbTracks.reduce((count, track) => count + track.notes.length, 0)
   if (cutCount !== 0) throw new Error(`Ctrl+X 未剪切全部音符：${cutCount}`)
   await dispatchShortcut('Home')
   await dispatchShortcut('KeyV', { ctrlKey: true })
   await clickButton('保存')
   const pasted = JSON.parse(await readFile(projectPath, 'utf8'))
-  const pastedCount = pasted.tracks.reduce((count, track) => count + track.notes.length, 0)
+  const pastedCount = pasted.satbTracks.reduce((count, track) => count + track.notes.length, 0)
   if (pastedCount !== 8) throw new Error(`剪切后 Ctrl+V 恢复音符错误：${pastedCount}`)
 }
 
@@ -1301,8 +1310,16 @@ try {
   await clickButton('保存')
   const projectPath = path.join(e2eDirectory, 'project.satb')
   await waitForFile(projectPath, '拖绘工程保存')
+  const migrationBackupPath = path.join(e2eDirectory, 'project.schema-v2-backup.satb')
+  if (recoveryChoice === 'recover') {
+    await waitForFile(migrationBackupPath, 'v2 迁移备份')
+    const migrationBackup = JSON.parse(await readFile(migrationBackupPath, 'utf8'))
+    if (migrationBackup.schemaVersion !== 2 || !Array.isArray(migrationBackup.tracks)) {
+      throw new Error(`v2 迁移备份内容错误：${migrationBackupPath}`)
+    }
+  }
   const drawProject = JSON.parse(await readFile(projectPath, 'utf8'))
-  const drawnNote = drawProject.tracks[0].notes.find((note) => note.startTick === 960 && note.midiNote === 76)
+  const drawnNote = drawProject.satbTracks[0].notes.find((note) => note.startTick === 960 && midiOf(note) === 76)
   if (drawnNote?.durationTicks !== 960) throw new Error(`拖绘时值吸附错误：${drawnNote?.durationTicks}`)
   await clickButton('撤销')
 
@@ -1311,7 +1328,7 @@ try {
   await resizeNote(960, 480, 76, 1_500)
   await clickButton('保存')
   const resizeProject = JSON.parse(await readFile(projectPath, 'utf8'))
-  const resizedNote = resizeProject.tracks[0].notes.find((note) => note.startTick === 960 && note.midiNote === 76)
+  const resizedNote = resizeProject.satbTracks[0].notes.find((note) => note.startTick === 960 && midiOf(note) === 76)
   if (resizedNote?.durationTicks !== 960) throw new Error(`缩放时值吸附错误：${resizedNote?.durationTicks}`)
   await clickButton('撤销')
   await clickButton('撤销')
@@ -1322,7 +1339,7 @@ try {
   await verifySelectionShortcuts(projectPath)
   await verifyChordTrackEditing(projectPath)
   const draftProject = JSON.parse(await readFile(projectPath, 'utf8'))
-  const draftNotes = draftProject.tracks.map((track) => track.notes.map((note) => [note.startTick, note.midiNote]))
+  const draftNotes = draftProject.satbTracks.map((track) => track.notes.map((note) => [note.startTick, midiOf(note)]))
   const expectedNotes = [[[0, 72], [480, 74]], [[0, 65], [480, 67]], [[0, 60], [480, 62]], [[0, 48], [480, 50]]]
   if (JSON.stringify(draftNotes) !== JSON.stringify(expectedNotes)) throw new Error('卷帘输入结果与预期不一致')
   await waitFor(`document.body.innerText.includes('平行纯五度') && document.body.innerText.includes('平行八度或同度')`, '和声规则诊断')
@@ -1378,7 +1395,8 @@ try {
 
   const project = JSON.parse(await readFile(path.join(e2eDirectory, 'project.satb'), 'utf8'))
   const midi = parseMidi(new Uint8Array(await readFile(path.join(e2eDirectory, 'export.mid'))))
-  const noteCount = project.tracks.reduce((count, track) => count + track.notes.length, 0)
+  const noteCount = [...project.satbTracks, ...project.auxiliaryTracks]
+    .reduce((count, track) => count + track.notes.length, 0)
   const midiNoteOns = midi.tracks.flat().filter((event) => event.type === 'noteOn').length
   if (noteCount !== 8) throw new Error(`工程往返音符数错误：${noteCount}`)
   if (midi.header.format !== 1 || midi.tracks.length !== 6 || midiNoteOns !== 8) {
@@ -1388,7 +1406,7 @@ try {
   await addNote(0, 960, 76)
   await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) > 0.001`, '暂停后绘制音符预听')
   await waitFor(`window.desktop.project.recovery().then((result) => (
-    result.available && result.project.tracks.reduce((count, track) => count + track.notes.length, 0) === 9
+    result.available && result.project.satbTracks.reduce((count, track) => count + track.notes.length, 0) === 9
   ))`, '自动恢复写入', 8_000)
   await clickButton('保存')
   await waitFor(`window.desktop.project.recovery().then((result) => result.available === false)`, '显式保存后清理恢复文件')
@@ -1424,6 +1442,7 @@ try {
     midiNoteOns,
     recoveryPrompt: `${recoveryChoice}-dropdown-ready`,
     recoveryLifecycle: 'write-read-clear',
+    v2MigrationBackup: recoveryChoice === 'recover' ? path.basename(migrationBackupPath) : 'not-applicable',
   }, null, 2))
 } finally {
   try {

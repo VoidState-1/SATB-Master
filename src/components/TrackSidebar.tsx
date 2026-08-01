@@ -11,6 +11,7 @@ import { useRef, useState } from "react";
 import {
   VOICE_CONFIG,
   type ProjectDocument,
+  type SatbTrack,
   type VoiceId,
 } from "../domain/model";
 import { IconButton } from "./IconButton";
@@ -22,7 +23,7 @@ interface TrackSidebarProps {
   onSetActive(voiceId: VoiceId): void;
   onUpdateTrack(
     voiceId: VoiceId,
-    patch: Partial<ProjectDocument["tracks"][number]>,
+    patch: Partial<SatbTrack>,
   ): void;
 }
 
@@ -42,7 +43,7 @@ export function TrackSidebar({
         <span>四轨</span>
       </div>
       <div className="voice-track-list">
-        {project.tracks.map((track) => {
+        {project.satbTracks.map((track) => {
           const config = VOICE_CONFIG[track.id];
           return (
             <section

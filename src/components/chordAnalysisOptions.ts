@@ -14,7 +14,7 @@ export const CHORD_DEGREE_OPTIONS: ReadonlyArray<{
 ];
 
 export const CHORD_ACCIDENTAL_OPTIONS: ReadonlyArray<{
-  value: ChordAnalysis["accidental"];
+  value: ChordAnalysis["degreeAlteration"];
   label: string;
   title: string;
 }> = [
@@ -52,7 +52,7 @@ export const CHORD_INVERSION_OPTIONS: ReadonlyArray<{
 ];
 
 export const CHORD_APPLIED_OPTIONS: ReadonlyArray<{
-  value: ChordAnalysis["appliedToDegree"];
+  value: ChordAnalysis["degree"] | undefined;
   label: string;
 }> = [
   { value: undefined, label: "无" },

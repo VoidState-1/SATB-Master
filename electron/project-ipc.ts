@@ -1,5 +1,6 @@
 import { app, dialog, ipcMain } from 'electron'
-import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { copyFile, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
   hashSoundFontResource,
@@ -26,11 +27,13 @@ interface SaveRequest {
   project: unknown
   currentPath?: string
   forceDialog?: boolean
+  migrationBackupSourcePath?: string
 }
 
 interface RecoveryRequest {
   project: unknown
   sourcePath?: string
+  migrationBackupSourcePath?: string
 }
 
 interface LoadSoundFontRequest {
@@ -45,13 +48,19 @@ interface RecoveryEnvelope {
   format: 'satb-master-recovery-v1'
   savedAt: string
   sourcePath?: string
+  migrationBackupSourcePath?: string
   project: unknown
 }
 
 function assertProjectEnvelope(value: unknown) {
   if (!value || typeof value !== 'object') throw new Error('工程内容不是有效对象')
-  const project = value as { schemaVersion?: unknown; tracks?: unknown }
-  if (![1, 2].includes(project.schemaVersion as number) || !Array.isArray(project.tracks) || project.tracks.length !== 4) {
+  const project = value as { schemaVersion?: unknown; tracks?: unknown; satbTracks?: unknown }
+  const supported = project.schemaVersion === 2
+    ? Array.isArray(project.tracks) && project.tracks.length === 4
+    : project.schemaVersion === 3
+      ? Array.isArray(project.satbTracks) && project.satbTracks.length === 4
+      : false
+  if (!supported) {
     throw new Error('工程结构或版本无效')
   }
 }
@@ -132,6 +141,27 @@ async function writeProjectAtomic(filePath: string, project: unknown) {
   await writeJsonAtomic(filePath, project)
 }
 
+async function backUpMigratedProject(sourcePath: string, destinationPath: string) {
+  if (!path.isAbsolute(sourcePath)) throw new Error('迁移备份源路径无效')
+  if (path.resolve(sourcePath).toLowerCase() !== path.resolve(destinationPath).toLowerCase()) {
+    return undefined
+  }
+  const parsed = path.parse(sourcePath)
+  const baseName = path.join(parsed.dir, `${parsed.name}.schema-v2-backup${parsed.ext || '.satb'}`)
+  let backupPath = baseName
+  try {
+    await copyFile(sourcePath, backupPath, constants.COPYFILE_EXCL)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    backupPath = path.join(
+      parsed.dir,
+      `${parsed.name}.schema-v2-backup-${Date.now()}${parsed.ext || '.satb'}`,
+    )
+    await copyFile(sourcePath, backupPath, constants.COPYFILE_EXCL)
+  }
+  return backupPath
+}
+
 function assertSoundFontPath(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error('SoundFont 路径无效')
   const extension = path.extname(value).toLowerCase()
@@ -177,9 +207,13 @@ export function registerProjectIpc() {
     }
 
     if (!filePath) throw new Error('没有可用的工程保存路径')
+    // v2 首次被 v3 覆盖前保留原文件；另存为时原文件本身仍是完整备份，无需复制。
+    const migrationBackupPath = request.migrationBackupSourcePath
+      ? await backUpMigratedProject(request.migrationBackupSourcePath, filePath)
+      : undefined
     await writeProjectAtomic(filePath, request.project)
     await rm(recoveryPath(), { force: true })
-    return { canceled: false, filePath }
+    return { canceled: false, filePath, migrationBackupPath }
   })
 
   ipcMain.handle('project:autosave', async (_event, request: RecoveryRequest) => {
@@ -188,6 +222,7 @@ export function registerProjectIpc() {
       format: 'satb-master-recovery-v1',
       savedAt: new Date().toISOString(),
       sourcePath: request.sourcePath,
+      migrationBackupSourcePath: request.migrationBackupSourcePath,
       project: request.project,
     }
     const filePath = recoveryPath()
@@ -209,6 +244,10 @@ export function registerProjectIpc() {
         available: true,
         savedAt: envelope.savedAt,
         sourcePath: typeof envelope.sourcePath === 'string' ? envelope.sourcePath : undefined,
+        migrationBackupSourcePath:
+          typeof envelope.migrationBackupSourcePath === 'string'
+            ? envelope.migrationBackupSourcePath
+            : undefined,
         project: envelope.project,
       }
     } catch (error) {

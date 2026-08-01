@@ -18,7 +18,7 @@ describe("timeline ruler", () => {
     project.keyEvents.push({
       id: "key-2",
       tick: PPQ * 8,
-      tonic: 7,
+      tonic: { step: "G", alter: 0 },
       mode: "major",
     });
 

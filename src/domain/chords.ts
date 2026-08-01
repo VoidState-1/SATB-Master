@@ -1,32 +1,22 @@
 import {
-  KEY_NAMES,
+  QUALITY_INTERVALS,
+  isSeventhChord,
+  resolveChordIdentity,
+} from "./chordModel";
+import {
   type ChordAnalysis,
+  type ChordIdentity,
   type ChordQuality,
   type ChordRegion,
   type KeyEvent,
   type ProjectDocument,
 } from "./model";
+import { accidentalSymbol, formatPitchClass, pitchClassValue } from "./pitch";
 import { keyAtTick } from "./time";
 
-export const QUALITY_INTERVALS: Record<ChordQuality, number[]> = {
-  major: [0, 4, 7],
-  minor: [0, 3, 7],
-  diminished: [0, 3, 6],
-  augmented: [0, 4, 8],
-  dominant7: [0, 4, 7, 10],
-  major7: [0, 4, 7, 11],
-  minor7: [0, 3, 7, 10],
-  halfDiminished7: [0, 3, 6, 10],
-  diminished7: [0, 3, 6, 9],
-};
+export { QUALITY_INTERVALS, isSeventhChord } from "./chordModel";
 
-const DEGREE_INTERVALS = {
-  major: [0, 2, 4, 5, 7, 9, 11],
-  minor: [0, 2, 3, 5, 7, 8, 10],
-} as const;
 const ROMAN_DEGREES = ["I", "II", "III", "IV", "V", "VI", "VII"];
-const LETTERS = ["C", "D", "E", "F", "G", "A", "B"];
-const NATURAL_PITCH_CLASSES = [0, 2, 4, 5, 7, 9, 11];
 
 export type ChordFunction = "tonic" | "subdominant" | "dominant" | "other";
 
@@ -37,69 +27,27 @@ export interface FormattedChordName {
   spokenDescription: string;
 }
 
-function pitchClass(value: number) {
-  return ((value % 12) + 12) % 12;
-}
-
-function accidentalPrefix(value: number) {
-  if (value < 0) return "♭".repeat(-value);
-  if (value > 0) return "♯".repeat(value);
-  return "";
-}
-
-function signedPitchDifference(target: number, natural: number) {
-  let difference = pitchClass(target - natural);
-  if (difference > 6) difference -= 12;
-  return difference;
-}
-
-function spellPitch(pitch: number, letterIndex: number) {
-  const normalizedLetter = ((letterIndex % 7) + 7) % 7;
-  const difference = signedPitchDifference(
-    pitch,
-    NATURAL_PITCH_CLASSES[normalizedLetter],
-  );
-  return `${LETTERS[normalizedLetter]}${accidentalPrefix(difference)}`;
-}
-
-function tonicLetterIndex(key: KeyEvent) {
-  const tonicName = KEY_NAMES[key.tonic] ?? "C";
-  return Math.max(0, LETTERS.indexOf(tonicName[0]));
-}
-
-function analysisContext(analysis: ChordAnalysis, key: KeyEvent) {
-  if (!analysis.appliedToDegree) return key;
-  const targetIndex = analysis.appliedToDegree - 1;
-  return {
-    ...key,
-    tonic: pitchClass(key.tonic + DEGREE_INTERVALS[key.mode][targetIndex]),
-    mode: "major" as const,
-  };
-}
-
-export function isSeventhChord(quality: ChordQuality) {
-  return QUALITY_INTERVALS[quality].length === 4;
-}
-
 export function chordRootPitchClass(analysis: ChordAnalysis, key: KeyEvent) {
-  const context = analysisContext(analysis, key);
-  return pitchClass(
-    context.tonic +
-      DEGREE_INTERVALS[context.mode][analysis.degree - 1] +
-      analysis.accidental,
-  );
+  return pitchClassValue(resolveChordIdentity(analysis, key).root);
 }
 
 export function chordPitchClasses(analysis: ChordAnalysis, key: KeyEvent) {
-  const root = chordRootPitchClass(analysis, key);
-  return QUALITY_INTERVALS[analysis.quality].map((interval) =>
-    pitchClass(root + interval),
+  const identity = resolveChordIdentity(analysis, key);
+  const root = pitchClassValue(identity.root);
+  return QUALITY_INTERVALS[identity.quality].map((interval) =>
+    ((root + interval) % 12 + 12) % 12,
+  );
+}
+
+export function chordIdentityPitchClasses(identity: ChordIdentity) {
+  const root = pitchClassValue(identity.root);
+  return QUALITY_INTERVALS[identity.quality].map((interval) =>
+    ((root + interval) % 12 + 12) % 12,
   );
 }
 
 export function chordFunction(analysis: ChordAnalysis): ChordFunction {
-  if (analysis.appliedToDegree && [5, 7].includes(analysis.degree))
-    return "dominant";
+  if (analysis.applied && [5, 7].includes(analysis.degree)) return "dominant";
   if ([1, 3, 6].includes(analysis.degree)) return "tonic";
   if ([2, 4].includes(analysis.degree)) return "subdominant";
   if ([5, 7].includes(analysis.degree)) return "dominant";
@@ -124,17 +72,13 @@ function romanName(analysis: ChordAnalysis) {
   const figures = isSeventhChord(analysis.quality)
     ? ["7", "6/5", "4/3", "4/2"][analysis.inversion]
     : ["", "6", "6/4"][analysis.inversion];
-  const target = analysis.appliedToDegree
-    ? `/${ROMAN_DEGREES[analysis.appliedToDegree - 1]}`
+  const target = analysis.applied
+    ? `/${ROMAN_DEGREES[analysis.applied.targetDegree - 1]}`
     : "";
-  return `${accidentalPrefix(analysis.accidental)}${numeral}${qualityMark}${figures}${target}`;
+  return `${accidentalSymbol(analysis.degreeAlteration)}${numeral}${qualityMark}${figures}${target}`;
 }
 
-function absoluteName(analysis: ChordAnalysis, key: KeyEvent) {
-  const context = analysisContext(analysis, key);
-  const rootPitch = chordRootPitchClass(analysis, key);
-  const rootLetter = tonicLetterIndex(context) + analysis.degree - 1;
-  const root = spellPitch(rootPitch, rootLetter);
+function absoluteName(identity: ChordIdentity) {
   const suffix: Record<ChordQuality, string> = {
     major: "",
     minor: "m",
@@ -146,31 +90,41 @@ function absoluteName(analysis: ChordAnalysis, key: KeyEvent) {
     halfDiminished7: "ø7",
     diminished7: "°7",
   };
-  if (analysis.inversion === 0) return `${root}${suffix[analysis.quality]}`;
-  const bassPitch = pitchClass(
-    rootPitch + QUALITY_INTERVALS[analysis.quality][analysis.inversion],
-  );
-  const bass = spellPitch(bassPitch, rootLetter + analysis.inversion * 2);
-  return `${root}${suffix[analysis.quality]}/${bass}`;
+  const root = formatPitchClass(identity.root);
+  if (
+    identity.root.step === identity.bass.step &&
+    identity.root.alter === identity.bass.alter
+  )
+    return `${root}${suffix[identity.quality]}`;
+  return `${root}${suffix[identity.quality]}/${formatPitchClass(identity.bass)}`;
 }
 
 export function formatChord(
   analysis: ChordAnalysis,
   key: KeyEvent,
 ): FormattedChordName {
-  const roman = romanName(analysis);
-  const absolute = absoluteName(analysis, key);
-  const functionName = chordFunction(analysis);
+  return formatChordIdentity(resolveChordIdentity(analysis, key), analysis);
+}
+
+export function formatChordIdentity(
+  identity: ChordIdentity,
+  analysis?: ChordAnalysis,
+): FormattedChordName {
+  const roman = analysis ? romanName(analysis) : "?";
+  const absolute = absoluteName(identity);
+  const functionName = analysis ? chordFunction(analysis) : "other";
   const baseLabel =
-    functionName === "tonic"
-      ? "主功能"
-      : functionName === "subdominant"
-        ? "下属功能"
-        : functionName === "dominant"
-          ? "属功能"
-          : "其他功能";
-  const functionLabel = analysis.appliedToDegree
-    ? `${baseLabel} · 指向 ${ROMAN_DEGREES[analysis.appliedToDegree - 1]} 级`
+    !analysis
+      ? "未分析"
+      : functionName === "tonic"
+        ? "主功能"
+        : functionName === "subdominant"
+          ? "下属功能"
+          : functionName === "dominant"
+            ? "属功能"
+            : "其他功能";
+  const functionLabel = analysis?.applied
+    ? `${baseLabel} · 指向 ${ROMAN_DEGREES[analysis.applied.targetDegree - 1]} 级`
     : baseLabel;
   return {
     roman,
@@ -181,13 +135,10 @@ export function formatChord(
 }
 
 export function formatChordRegion(
-  project: ProjectDocument,
+  _project: ProjectDocument,
   region: ChordRegion,
 ) {
-  return formatChord(
-    region.analysis,
-    keyAtTick(project.keyEvents, region.startTick),
-  );
+  return formatChordIdentity(region.identity, region.function);
 }
 
 export function chordAtTick(project: ProjectDocument, tick: number) {
@@ -205,8 +156,42 @@ export function defaultChordAnalysisAtTick(
   const key = keyAtTick(project.keyEvents, tick);
   return {
     degree: 1,
-    accidental: 0,
+    degreeAlteration: 0,
     quality: key.mode === "major" ? "major" : "minor",
     inversion: 0,
+    source: "manual",
+  };
+}
+
+export function createChordRegion(
+  project: ProjectDocument,
+  startTick: number,
+  durationTicks: number,
+  analysis: ChordAnalysis,
+  id: string,
+): ChordRegion {
+  const key = keyAtTick(project.keyEvents, startTick);
+  return {
+    id,
+    startTick,
+    durationTicks,
+    identity: resolveChordIdentity(analysis, key),
+    function: analysis,
+    locked: false,
+  };
+}
+
+export function updateChordFunctionIdentity(
+  project: ProjectDocument,
+  region: ChordRegion,
+  analysis: ChordAnalysis,
+) {
+  return {
+    ...region,
+    function: analysis,
+    identity: resolveChordIdentity(
+      analysis,
+      keyAtTick(project.keyEvents, region.startTick),
+    ),
   };
 }

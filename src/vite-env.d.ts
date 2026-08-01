@@ -25,15 +25,22 @@ interface Window {
         project: unknown;
         currentPath?: string;
         forceDialog?: boolean;
-      }): Promise<{ canceled: boolean; filePath?: string }>;
+        migrationBackupSourcePath?: string;
+      }): Promise<{
+        canceled: boolean;
+        filePath?: string;
+        migrationBackupPath?: string;
+      }>;
       autosave(request: {
         project: unknown;
         sourcePath?: string;
+        migrationBackupSourcePath?: string;
       }): Promise<{ recoveryPath: string }>;
       recovery(): Promise<{
         available: boolean;
         savedAt?: string;
         sourcePath?: string;
+        migrationBackupSourcePath?: string;
         project?: unknown;
       }>;
       discardRecovery(): Promise<{ discarded: boolean }>;

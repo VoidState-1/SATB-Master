@@ -1,5 +1,4 @@
 import {
-  KEY_NAMES,
   VOICE_CONFIG,
   VOICE_ORDER,
   getTrack,
@@ -11,10 +10,15 @@ import {
   QUALITY_INTERVALS,
   chordAtTick,
   chordFunction,
-  chordPitchClasses,
-  chordRootPitchClass,
+  chordIdentityPitchClasses,
   formatChordRegion,
 } from "./chords";
+import {
+  formatPitchClass,
+  pitchClassEquals,
+  pitchClassValue,
+  toMidi,
+} from "./pitch";
 import { keyAtTick } from "./time";
 import {
   chordDependentRuleIds,
@@ -68,19 +72,22 @@ function sameHarmonyAtTransition(
   const previousKey = keyAtTick(project.keyEvents, previousTick);
   const currentKey = keyAtTick(project.keyEvents, currentTick);
   if (
-    previousKey.tonic !== currentKey.tonic ||
+    !pitchClassEquals(previousKey.tonic, currentKey.tonic) ||
     previousKey.mode !== currentKey.mode
   )
     return false;
 
-  const previous = previousChord.analysis;
-  const current = currentChord.analysis;
-  // 同和弦转换允许改变转位；级数、变化音、性质和副属目标仍须一致。
+  const previous = previousChord.function;
+  const current = currentChord.function;
+  if (!previous || !current) return false;
+  // 同和弦转换允许改变转位；根音拼写、性质、级数和副属目标仍须一致。
   return (
+    pitchClassEquals(previousChord.identity.root, currentChord.identity.root) &&
+    previousChord.identity.quality === currentChord.identity.quality &&
     previous.degree === current.degree &&
-    previous.accidental === current.accidental &&
+    previous.degreeAlteration === current.degreeAlteration &&
     previous.quality === current.quality &&
-    previous.appliedToDegree === current.appliedToDegree
+    previous.applied?.targetDegree === current.applied?.targetDegree
   );
 }
 
@@ -116,7 +123,7 @@ function diagnostic(
 
 function buildSlices(project: ProjectDocument): Slice[] {
   const boundaries = new Set<number>([0, project.lengthTicks]);
-  project.tracks.forEach((track) =>
+  project.satbTracks.forEach((track) =>
     track.notes.forEach((note) => {
       boundaries.add(note.startTick);
       boundaries.add(note.startTick + note.durationTicks);
@@ -133,7 +140,7 @@ function buildSlices(project: ProjectDocument): Slice[] {
     .sort((a, b) => a - b);
   return ordered.slice(0, -1).map((tick, index) => {
     const notes: Slice["notes"] = {};
-    project.tracks.forEach((track) => {
+    project.satbTracks.forEach((track) => {
       notes[track.id] = track.notes.find(
         (note) =>
           note.startTick <= tick && note.startTick + note.durationTicks > tick,
@@ -145,10 +152,11 @@ function buildSlices(project: ProjectDocument): Slice[] {
 
 function checkRanges(project: ProjectDocument) {
   const diagnostics: HarmonyDiagnostic[] = [];
-  project.tracks.forEach((track) =>
+  project.satbTracks.forEach((track) =>
     track.notes.forEach((note) => {
       const range = VOICE_CONFIG[track.id];
-      if (note.midiNote < range.min || note.midiNote > range.max) {
+      const midiNote = toMidi(note.pitch);
+      if (midiNote < range.min || midiNote > range.max) {
         diagnostics.push(
           diagnostic(
             "voice-range",
@@ -158,7 +166,7 @@ function checkRanges(project: ProjectDocument) {
             [track.id],
             [note],
             "超出建议音域",
-            `${track.name}建议使用 MIDI ${range.min}-${range.max}，当前音高为 ${note.midiNote}。`,
+            `${track.name}建议使用 MIDI ${range.min}-${range.max}，当前音高为 ${midiNote}。`,
           ),
         );
       }
@@ -169,7 +177,7 @@ function checkRanges(project: ProjectDocument) {
 
 function checkMelodicMotion(project: ProjectDocument) {
   const diagnostics: HarmonyDiagnostic[] = [];
-  project.tracks.forEach((track) => {
+  project.satbTracks.forEach((track) => {
     const notes = [...track.notes].sort((a, b) => a.startTick - b.startTick);
     for (let index = 1; index < notes.length; index += 1) {
       const previous = notes[index - 1];
@@ -192,7 +200,9 @@ function checkMelodicMotion(project: ProjectDocument) {
         continue;
       }
 
-      const interval = Math.abs(current.midiNote - previous.midiNote);
+      const previousMidi = toMidi(previous.pitch);
+      const currentMidi = toMidi(current.pitch);
+      const interval = Math.abs(currentMidi - previousMidi);
       const sameHarmony = sameHarmonyAtTransition(
         project,
         previous.startTick,
@@ -242,9 +252,11 @@ function checkMelodicMotion(project: ProjectDocument) {
       const previousKey = keyAtTick(project.keyEvents, previous.startTick);
       const currentKey = keyAtTick(project.keyEvents, current.startTick);
       const sameKeyContext =
-        previousKey.tonic === currentKey.tonic &&
+        pitchClassEquals(previousKey.tonic, currentKey.tonic) &&
         previousKey.mode === currentKey.mode;
-      const previousDegree = pitchClass(previous.midiNote - previousKey.tonic);
+      const previousDegree = pitchClass(
+        previousMidi - pitchClassValue(previousKey.tonic),
+      );
       const contiguous =
         current.startTick === previous.startTick + previous.durationTicks;
 
@@ -256,8 +268,8 @@ function checkMelodicMotion(project: ProjectDocument) {
         !sameHarmony
       ) {
         if (
-          pitchClass(current.midiNote) !== pitchClass(previousKey.tonic) ||
-          current.midiNote <= previous.midiNote
+          pitchClass(currentMidi) !== pitchClassValue(previousKey.tonic) ||
+          currentMidi <= previousMidi
         ) {
           diagnostics.push(
             diagnostic(
@@ -268,7 +280,7 @@ function checkMelodicMotion(project: ProjectDocument) {
               [track.id],
               [previous, current],
               "导音未上行解决",
-              `${KEY_NAMES[previousKey.tonic]} ${previousKey.mode === "major" ? "大调" : "小调"}中的导音通常应上行解决到主音。`,
+              `${formatPitchClass(previousKey.tonic)} ${previousKey.mode === "major" ? "大调" : "小调"}中的导音通常应上行解决到主音。`,
             ),
           );
         }
@@ -281,7 +293,7 @@ function checkMelodicMotion(project: ProjectDocument) {
 function checkChordToneResolution(project: ProjectDocument) {
   const diagnostics: HarmonyDiagnostic[] = [];
 
-  project.tracks.forEach((track) => {
+  project.satbTracks.forEach((track) => {
     const notes = [...track.notes].sort((a, b) => a.startTick - b.startTick);
     for (let index = 1; index < notes.length; index += 1) {
       const previous = notes[index - 1];
@@ -299,17 +311,16 @@ function checkChordToneResolution(project: ProjectDocument) {
 
       const chord = chordAtTick(project, previous.startTick);
       if (!chord) continue;
-      const intervals = QUALITY_INTERVALS[chord.analysis.quality];
+      const intervals = QUALITY_INTERVALS[chord.identity.quality];
       if (intervals.length !== 4) continue;
 
-      const key = keyAtTick(project.keyEvents, chord.startTick);
       const seventh = pitchClass(
-        chordRootPitchClass(chord.analysis, key) + intervals[3],
+        pitchClassValue(chord.identity.root) + intervals[3],
       );
-      if (pitchClass(previous.midiNote) !== seventh) continue;
+      if (pitchClass(toMidi(previous.pitch)) !== seventh) continue;
 
       // 标注七和弦的七音以半音或全音下行解决；跨休止与无和弦标注处不作推断。
-      const resolution = current.midiNote - previous.midiNote;
+      const resolution = toMidi(current.pitch) - toMidi(previous.pitch);
       if (resolution !== -1 && resolution !== -2) {
         diagnostics.push(
           diagnostic(
@@ -347,7 +358,9 @@ function checkVerticalSlices(slices: Slice[]) {
       const lower = notes[lowerId];
       if (!upper || !lower) return;
 
-      if (upper.midiNote < lower.midiNote) {
+      const upperMidi = toMidi(upper.pitch);
+      const lowerMidi = toMidi(lower.pitch);
+      if (upperMidi < lowerMidi) {
         const item = diagnostic(
           "voice-crossing",
           "error",
@@ -362,7 +375,7 @@ function checkVerticalSlices(slices: Slice[]) {
         seen.add(item.id);
       }
 
-      if (pairIndex < 2 && upper.midiNote - lower.midiNote > 12) {
+      if (pairIndex < 2 && upperMidi - lowerMidi > 12) {
         const item = diagnostic(
           "upper-spacing",
           "warning",
@@ -414,18 +427,18 @@ function checkVoiceLeading(project: ProjectDocument, slices: Slice[]) {
           continue;
 
         const upperDirection = direction(
-          previousUpper.midiNote,
-          currentUpper.midiNote,
+          toMidi(previousUpper.pitch),
+          toMidi(currentUpper.pitch),
         );
         const lowerDirection = direction(
-          previousLower.midiNote,
-          currentLower.midiNote,
+          toMidi(previousLower.pitch),
+          toMidi(currentLower.pitch),
         );
         const previousInterval = pitchClass(
-          previousUpper.midiNote - previousLower.midiNote,
+          toMidi(previousUpper.pitch) - toMidi(previousLower.pitch),
         );
         const currentInterval = pitchClass(
-          currentUpper.midiNote - currentLower.midiNote,
+          toMidi(currentUpper.pitch) - toMidi(currentLower.pitch),
         );
         const similarMotion =
           upperDirection !== 0 && upperDirection === lowerDirection;
@@ -459,7 +472,8 @@ function checkVoiceLeading(project: ProjectDocument, slices: Slice[]) {
           (currentInterval === 0 || currentInterval === 7)
         ) {
           if (
-            Math.abs(currentUpper.midiNote - previousUpper.midiNote) > 2 &&
+            Math.abs(toMidi(currentUpper.pitch) - toMidi(previousUpper.pitch)) >
+              2 &&
             previousInterval !== currentInterval
           ) {
             const item = diagnostic(
@@ -493,8 +507,8 @@ function checkVoiceLeading(project: ProjectDocument, slices: Slice[]) {
       if (!previousUpper || !previousLower || !currentUpper || !currentLower)
         return;
       if (
-        currentUpper.midiNote < previousLower.midiNote ||
-        currentLower.midiNote > previousUpper.midiNote
+        toMidi(currentUpper.pitch) < toMidi(previousLower.pitch) ||
+        toMidi(currentLower.pitch) > toMidi(previousUpper.pitch)
       ) {
         const item = diagnostic(
           "voice-overlap",
@@ -550,12 +564,12 @@ function checkChordRules(project: ProjectDocument, slices: Slice[]) {
       Boolean(item.note),
     );
     const key = keyAtTick(project.keyEvents, slice.tick);
-    const chordTones = chordPitchClasses(chord.analysis, key);
+    const chordTones = chordIdentityPitchClasses(chord.identity);
     const chordName = formatChordRegion(project, chord).roman;
     const outside = active.filter(
       ({ note }) =>
         !note.nonChordToneRole &&
-        !chordTones.includes(pitchClass(note.midiNote)),
+        !chordTones.includes(pitchClass(toMidi(note.pitch))),
     );
     if (outside.length > 0) {
       appendMerged(
@@ -576,7 +590,7 @@ function checkChordRules(project: ProjectDocument, slices: Slice[]) {
     if (active.length < 4) return;
 
     const present = new Set(
-      active.map(({ note }) => pitchClass(note.midiNote)),
+      active.map(({ note }) => pitchClass(toMidi(note.pitch))),
     );
     const missing = chordTones.filter((tone) => !present.has(tone));
     if (missing.length > 0 && !isIntermediateSameHarmony) {
@@ -597,9 +611,8 @@ function checkChordRules(project: ProjectDocument, slices: Slice[]) {
     }
 
     const bass = active.find((item) => item.voiceId === "bass");
-    const expectedBass =
-      chordTones[Math.min(chord.analysis.inversion, chordTones.length - 1)];
-    if (bass && pitchClass(bass.note.midiNote) !== expectedBass) {
+    const expectedBass = pitchClassValue(chord.identity.bass);
+    if (bass && pitchClass(toMidi(bass.note.pitch)) !== expectedBass) {
       appendMerged(
         diagnostic(
           "chord-inversion",
@@ -615,9 +628,9 @@ function checkChordRules(project: ProjectDocument, slices: Slice[]) {
       );
     }
 
-    const leadingTone = pitchClass(key.tonic + 11);
+    const leadingTone = pitchClass(pitchClassValue(key.tonic) + 11);
     const leadingNotes = active.filter(
-      ({ note }) => pitchClass(note.midiNote) === leadingTone,
+      ({ note }) => pitchClass(toMidi(note.pitch)) === leadingTone,
     );
     if (leadingNotes.length > 1 && !isIntermediateSameHarmony) {
       appendMerged(
@@ -650,7 +663,7 @@ function checkChordProgressions(project: ProjectDocument) {
     const previousKey = keyAtTick(project.keyEvents, previous.startTick);
     const currentKey = keyAtTick(project.keyEvents, current.startTick);
     if (
-      previousKey.tonic !== currentKey.tonic ||
+      !pitchClassEquals(previousKey.tonic, currentKey.tonic) ||
       previousKey.mode !== currentKey.mode
     )
       continue;
@@ -666,8 +679,10 @@ function checkChordProgressions(project: ProjectDocument) {
 
     // 斯波索宾基础功能序进中，属功能回到下属功能属于典型逆功能进行；先作为教学警告。
     if (
-      chordFunction(previous.analysis) === "dominant" &&
-      chordFunction(current.analysis) === "subdominant"
+      previous.function &&
+      current.function &&
+      chordFunction(previous.function) === "dominant" &&
+      chordFunction(current.function) === "subdominant"
     ) {
       diagnostics.push(
         diagnostic(
@@ -684,8 +699,9 @@ function checkChordProgressions(project: ProjectDocument) {
       );
     }
     if (
-      previous.analysis.appliedToDegree &&
-      current.analysis.degree !== previous.analysis.appliedToDegree
+      previous.function?.applied &&
+      current.function &&
+      current.function.degree !== previous.function.applied.targetDegree
     ) {
       diagnostics.push(
         diagnostic(
@@ -696,7 +712,7 @@ function checkChordProgressions(project: ProjectDocument) {
           [],
           [],
           "副属和弦未进入目标",
-          `${formatChordRegion(project, previous).roman} 通常应进入其指向的 ${previous.analysis.appliedToDegree} 级和弦。`,
+          `${formatChordRegion(project, previous).roman} 通常应进入其指向的 ${previous.function.applied.targetDegree} 级和弦。`,
           [previous.id, current.id],
         ),
       );

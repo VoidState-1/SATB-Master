@@ -35,33 +35,49 @@ export interface LoadedSoundFont {
 type SoundFontProgressListener = (progress: SoundFontLoadProgress) => void;
 
 export async function openProject(): Promise<
-  { project: ProjectDocument; filePath?: string } | undefined
+  {
+    project: ProjectDocument;
+    filePath?: string;
+    migratedFromSchemaVersion?: 2;
+  } | undefined
 > {
   if (window.desktop) {
     const result = await window.desktop.project.open();
     if (result.canceled) return undefined;
+    const sourceSchemaVersion = (result.project as { schemaVersion?: unknown })
+      ?.schemaVersion;
     const project = migrateProject(result.project);
     if (!project) throw new Error("所选文件不是受支持的 SATB 工程");
-    return { project, filePath: result.filePath };
+    return {
+      project,
+      filePath: result.filePath,
+      migratedFromSchemaVersion: sourceSchemaVersion === 2 ? 2 : undefined,
+    };
   }
 
   const raw = localStorage.getItem(BROWSER_PROJECT_KEY);
   if (!raw) throw new Error("浏览器预览中还没有保存的工程");
-  const project = migrateProject(JSON.parse(raw) as unknown);
+  const stored = JSON.parse(raw) as { schemaVersion?: unknown };
+  const project = migrateProject(stored);
   if (!project) throw new Error("浏览器中的工程数据无效");
-  return { project };
+  return {
+    project,
+    migratedFromSchemaVersion: stored.schemaVersion === 2 ? 2 : undefined,
+  };
 }
 
 export async function saveProject(
   project: ProjectDocument,
   currentPath?: string,
   forceDialog = false,
+  migrationBackupSourcePath?: string,
 ) {
   if (window.desktop) {
     const result = await window.desktop.project.save({
       project,
       currentPath,
       forceDialog,
+      migrationBackupSourcePath,
     });
     if (!result.canceled)
       localStorage.removeItem(`${BROWSER_PROJECT_KEY}-recovery`);
@@ -76,15 +92,21 @@ export async function saveProject(
 export async function autosaveProject(
   project: ProjectDocument,
   sourcePath?: string,
+  migrationBackupSourcePath?: string,
 ) {
   if (window.desktop)
-    return window.desktop.project.autosave({ project, sourcePath });
+    return window.desktop.project.autosave({
+      project,
+      sourcePath,
+      migrationBackupSourcePath,
+    });
   localStorage.setItem(
     `${BROWSER_PROJECT_KEY}-recovery`,
     JSON.stringify({
       format: "satb-master-recovery-v1",
       savedAt: new Date().toISOString(),
       sourcePath,
+      migrationBackupSourcePath,
       project,
     }),
   );
@@ -95,7 +117,9 @@ export async function findRecovery(): Promise<
   | {
       savedAt: string;
       sourcePath?: string;
+      migrationBackupSourcePath?: string;
       project: ProjectDocument;
+      migratedFromSchemaVersion?: 2;
     }
   | undefined
 > {
@@ -103,6 +127,7 @@ export async function findRecovery(): Promise<
     available: boolean;
     savedAt?: unknown;
     sourcePath?: unknown;
+    migrationBackupSourcePath?: unknown;
     project?: unknown;
   } = window.desktop
     ? await window.desktop.project.recovery()
@@ -113,6 +138,8 @@ export async function findRecovery(): Promise<
           : { available: false };
       })();
   if (!result.available) return undefined;
+  const sourceSchemaVersion = (result.project as { schemaVersion?: unknown })
+    ?.schemaVersion;
   const project = migrateProject(result.project);
   if (typeof result.savedAt !== "string" || !project)
     throw new Error("自动恢复文件无效");
@@ -120,7 +147,12 @@ export async function findRecovery(): Promise<
     savedAt: result.savedAt,
     sourcePath:
       typeof result.sourcePath === "string" ? result.sourcePath : undefined,
+    migrationBackupSourcePath:
+      typeof result.migrationBackupSourcePath === "string"
+        ? result.migrationBackupSourcePath
+        : undefined,
     project,
+    migratedFromSchemaVersion: sourceSchemaVersion === 2 ? 2 : undefined,
   };
 }
 

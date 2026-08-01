@@ -6,21 +6,31 @@ import {
 } from "react";
 import { FolderOpen, Lock, LockOpen, Plus, Trash2 } from "lucide-react";
 import {
+  defaultChordAnalysisAtTick,
   formatChord,
   formatChordRegion,
   isSeventhChord,
 } from "../domain/chords";
 import {
-  KEY_NAMES,
   VOICE_CONFIG,
+  type Alteration,
   type ChordAnalysis,
   type ChordRegion,
+  type DiatonicStep,
   type EditableRange,
   type KeyMode,
   type NoteEvent,
   type ProjectDocument,
+  type SatbTrack,
   type VoiceId,
 } from "../domain/model";
+import {
+  formatPitchClass,
+  keyTonicOptions,
+  serializePitchClass,
+  spellMidi,
+  toMidi,
+} from "../domain/pitch";
 import type { ChordRegionPatch } from "../domain/editing";
 import {
   buildMeasures,
@@ -105,7 +115,7 @@ interface InspectorProps {
   onUpdateAudio(masterVolume: number): void;
   onUpdateTrack(
     voiceId: VoiceId,
-    patch: Partial<ProjectDocument["tracks"][number]>,
+    patch: Partial<SatbTrack>,
   ): void;
   onChooseSoundFont(): void;
   onUseDefaultSoundFont(): void;
@@ -152,12 +162,12 @@ function ChordAnalysisEditor({
       <label>
         <span>变化音</span>
         <select
-          value={analysis.accidental}
+          value={analysis.degreeAlteration}
           onChange={(event) =>
             onChange({
-              accidental: Number(
+              degreeAlteration: Number(
                 event.target.value,
-              ) as ChordAnalysis["accidental"],
+              ) as ChordAnalysis["degreeAlteration"],
             })
           }
         >
@@ -211,13 +221,15 @@ function ChordAnalysisEditor({
       <label>
         <span>副属目标</span>
         <select
-          value={analysis.appliedToDegree ?? ""}
+          value={analysis.applied?.targetDegree ?? ""}
           onChange={(event) =>
             onChange({
-              appliedToDegree: event.target.value
-                ? (Number(
-                    event.target.value,
-                  ) as ChordAnalysis["appliedToDegree"])
+              applied: event.target.value
+                ? {
+                    targetDegree: Number(
+                      event.target.value,
+                    ) as ChordAnalysis["degree"],
+                  }
                 : undefined,
             })
           }
@@ -265,7 +277,9 @@ export function Inspector({
   onUseDefaultSoundFont,
 }: InspectorProps) {
   const [tab, setTab] = useState<InspectorTab>("selection");
-  const activeTrack = project.tracks.find((track) => track.id === activeVoice)!;
+  const activeTrack = project.satbTracks.find(
+    (track) => track.id === activeVoice,
+  )!;
   const projectMeasureCount = useMemo(
     () => buildMeasures(project).length,
     [project],
@@ -308,15 +322,84 @@ export function Inspector({
               音符 · {VOICE_CONFIG[selectedNote.voiceId].name}
             </header>
             <label>
-              <span>音高（MIDI）</span>
+              <span>音名</span>
+              <select
+                value={selectedNote.note.pitch.step}
+                onChange={(event) =>
+                  onUpdateNote(selectedNote.voiceId, selectedNote.note.id, {
+                    pitch: {
+                      ...selectedNote.note.pitch,
+                      step: event.target.value as DiatonicStep,
+                    },
+                    spellingSource: "manual",
+                  })
+                }
+              >
+                {(["C", "D", "E", "F", "G", "A", "B"] as const).map(
+                  (step) => (
+                    <option key={step} value={step}>
+                      {step}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+            <label>
+              <span>升降号</span>
+              <select
+                value={selectedNote.note.pitch.alter}
+                onChange={(event) =>
+                  onUpdateNote(selectedNote.voiceId, selectedNote.note.id, {
+                    pitch: {
+                      ...selectedNote.note.pitch,
+                      alter: Number(event.target.value) as Alteration,
+                    },
+                    spellingSource: "manual",
+                  })
+                }
+              >
+                <option value="-2">重降</option>
+                <option value="-1">降</option>
+                <option value="0">还原</option>
+                <option value="1">升</option>
+                <option value="2">重升</option>
+              </select>
+            </label>
+            <label>
+              <span>八度</span>
+              <CommitField
+                type="number"
+                min="-1"
+                max="9"
+                value={selectedNote.note.pitch.octave}
+                onCommit={(value) =>
+                  onUpdateNote(selectedNote.voiceId, selectedNote.note.id, {
+                    pitch: {
+                      ...selectedNote.note.pitch,
+                      octave: Number(value),
+                    },
+                    spellingSource: "manual",
+                  })
+                }
+              />
+            </label>
+            <label>
+              <span>实际音高（MIDI）</span>
               <CommitField
                 type="number"
                 min="0"
                 max="127"
-                value={selectedNote.note.midiNote}
+                value={toMidi(selectedNote.note.pitch)}
                 onCommit={(value) =>
                   onUpdateNote(selectedNote.voiceId, selectedNote.note.id, {
-                    midiNote: Number(value),
+                    pitch: spellMidi(
+                      Number(value),
+                      keyAtTick(
+                        project.keyEvents,
+                        selectedNote.note.startTick,
+                      ),
+                    ),
+                    spellingSource: "manual",
                   })
                 }
               />
@@ -409,9 +492,22 @@ export function Inspector({
               </small>
             </div>
             <ChordAnalysisEditor
-              analysis={selectedChord.analysis}
+              analysis={
+                selectedChord.function ??
+                defaultChordAnalysisAtTick(project, selectedChord.startTick)
+              }
               onChange={(patch) =>
-                onUpdateChord(selectedChord.id, { analysis: patch })
+                onUpdateChord(selectedChord.id, {
+                  function: selectedChord.function
+                    ? patch
+                    : {
+                        ...defaultChordAnalysisAtTick(
+                          project,
+                          selectedChord.startTick,
+                        ),
+                        ...patch,
+                      },
+                })
               }
             />
             <label>
@@ -652,7 +748,7 @@ export function Inspector({
                     />
                   </label>
                   <div className="range-voices" aria-label="锁定声部">
-                    {project.tracks.map((track) => (
+                    {project.satbTracks.map((track) => (
                       <label key={track.id}>
                         <input
                           type="checkbox"
@@ -721,16 +817,19 @@ export function Inspector({
                 <div className="timing-row" key={event.id}>
                   <small>{formatPosition(project, event.tick)}</small>
                   <select
-                    value={event.tonic}
+                    value={serializePitchClass(event.tonic)}
                     onChange={(change) =>
                       onUpdateTimingEvent("key", event.id, {
-                        tonic: Number(change.target.value),
+                        tonic: change.target.value,
                       })
                     }
                   >
-                    {KEY_NAMES.map((key, index) => (
-                      <option key={key} value={index}>
-                        {key}
+                    {keyTonicOptions(event.mode).map((tonic) => (
+                      <option
+                        key={serializePitchClass(tonic)}
+                        value={serializePitchClass(tonic)}
+                      >
+                        {formatPitchClass(tonic)}
                       </option>
                     ))}
                   </select>

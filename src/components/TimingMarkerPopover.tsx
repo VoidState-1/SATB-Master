@@ -1,7 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Trash2, X } from "lucide-react";
-import { KEY_NAMES, type KeyMode, type ProjectDocument } from "../domain/model";
+import { type KeyMode, type ProjectDocument } from "../domain/model";
+import {
+  formatPitchClass,
+  keyTonicOptions,
+  serializePitchClass,
+} from "../domain/pitch";
 import { formatPosition } from "../domain/time";
 import type { TimingMarkerGroup } from "../domain/timelineRuler";
 
@@ -237,17 +242,20 @@ export function TimingMarkerPopover({
             <>
               <select
                 aria-label="调号主音"
-                value={group.key.tonic}
+                value={serializePitchClass(group.key.tonic)}
                 onChange={(event) =>
                   onUpdate("key", group.key!.id, {
-                    tonic: Number(event.target.value),
+                    tonic: event.target.value,
                     mode: group.key!.mode,
                   })
                 }
               >
-                {KEY_NAMES.map((name, tonic) => (
-                  <option key={name} value={tonic}>
-                    {name}
+                {keyTonicOptions(group.key.mode).map((tonic) => (
+                  <option
+                    key={serializePitchClass(tonic)}
+                    value={serializePitchClass(tonic)}
+                  >
+                    {formatPitchClass(tonic)}
                   </option>
                 ))}
               </select>
@@ -256,7 +264,7 @@ export function TimingMarkerPopover({
                 value={group.key.mode}
                 onChange={(event) =>
                   onUpdate("key", group.key!.id, {
-                    tonic: group.key!.tonic,
+                    tonic: serializePitchClass(group.key!.tonic),
                     mode: event.target.value as KeyMode,
                   })
                 }

@@ -1,15 +1,18 @@
 import { isSeventhChord } from "./chords";
+import { resolveChordIdentity } from "./chordModel";
 import {
   cloneProject,
   createId,
-  getTrack,
+  getAllPlayableTracks,
+  getMusicalTrack,
   type ChordAnalysis,
   type ChordRegion,
   type ChordTrack,
   type NoteEvent,
   type ProjectDocument,
-  type VoiceId,
 } from "./model";
+import { toMidi } from "./pitch";
+import { keyAtTick } from "./time";
 
 export interface EditResult {
   project: ProjectDocument;
@@ -29,9 +32,9 @@ function hasValidNoteValues(note: NoteEvent) {
     note.startTick >= 0 &&
     Number.isInteger(note.durationTicks) &&
     note.durationTicks > 0 &&
-    Number.isInteger(note.midiNote) &&
-    note.midiNote >= 0 &&
-    note.midiNote <= 127 &&
+    Number.isInteger(toMidi(note.pitch)) &&
+    toMidi(note.pitch) >= 0 &&
+    toMidi(note.pitch) <= 127 &&
     Number.isInteger(note.velocity) &&
     note.velocity >= 1 &&
     note.velocity <= 127
@@ -40,13 +43,15 @@ function hasValidNoteValues(note: NoteEvent) {
 
 function isRangeLocked(
   project: ProjectDocument,
-  voiceId: VoiceId,
+  trackId: string,
   note: NoteEvent,
 ) {
+  const track = getMusicalTrack(project, trackId);
+  if (track.kind === "auxiliary") return false;
   return project.exercise.editableRanges.some(
     (range) =>
       range.editable === false &&
-      range.voiceIds.includes(voiceId) &&
+      range.voiceIds.includes(track.voice) &&
       note.startTick < range.toTick &&
       note.startTick + note.durationTicks > range.fromTick,
   );
@@ -54,22 +59,22 @@ function isRangeLocked(
 
 function canEditNote(
   project: ProjectDocument,
-  voiceId: VoiceId,
+  trackId: string,
   note?: NoteEvent,
 ) {
-  const track = getTrack(project, voiceId);
+  const track = getMusicalTrack(project, trackId);
   if (track.locked) return false;
   if (note?.locked) return false;
-  return note ? !isRangeLocked(project, voiceId, note) : true;
+  return note ? !isRangeLocked(project, trackId, note) : true;
 }
 
 export function addNote(
   project: ProjectDocument,
-  voiceId: VoiceId,
+  trackId: string,
   note: NoteEvent,
 ): EditResult {
-  const track = getTrack(project, voiceId);
-  if (!canEditNote(project, voiceId, note))
+  const track = getMusicalTrack(project, trackId);
+  if (!canEditNote(project, trackId, note))
     return { project, error: "该声部或时间范围已锁定" };
   if (!hasValidNoteValues(note)) return { project, error: "音符参数无效" };
   if (
@@ -78,41 +83,45 @@ export function addNote(
   ) {
     return { project, error: "音符超出工程时间范围" };
   }
-  if (track.notes.some((candidate) => overlaps(candidate, note))) {
+  if (
+    track.monophonic &&
+    track.notes.some((candidate) => overlaps(candidate, note))
+  ) {
     // 四部写作中的每条轨道是单旋律声部，重叠必须在命令层拒绝，不能依赖播放时“最后音符优先”。
     return { project, error: "同一声部不能出现重叠音符" };
   }
 
   const next = cloneProject(project);
-  getTrack(next, voiceId).notes.push(note);
-  getTrack(next, voiceId).notes.sort((a, b) => a.startTick - b.startTick);
+  getMusicalTrack(next, trackId).notes.push(note);
+  getMusicalTrack(next, trackId).notes.sort((a, b) => a.startTick - b.startTick);
   next.updatedAt = new Date().toISOString();
   return { project: next };
 }
 
 export function updateNote(
   project: ProjectDocument,
-  voiceId: VoiceId,
+  trackId: string,
   noteId: string,
   patch: Partial<
     Pick<
       NoteEvent,
       | "startTick"
       | "durationTicks"
-      | "midiNote"
+      | "pitch"
       | "velocity"
       | "locked"
+      | "spellingSource"
       | "nonChordToneRole"
     >
   >,
 ): EditResult {
-  const track = getTrack(project, voiceId);
+  const track = getMusicalTrack(project, trackId);
   const current = track.notes.find((note) => note.id === noteId);
   if (!current) return { project, error: "找不到要编辑的音符" };
   if (track.locked) return { project, error: "该声部已锁定" };
   if (current.locked && patch.locked !== false)
     return { project, error: "该音符已锁定" };
-  if (isRangeLocked(project, voiceId, current))
+  if (isRangeLocked(project, trackId, current))
     return { project, error: "该音符位于锁定区间" };
 
   const updated = { ...current, ...patch };
@@ -125,17 +134,18 @@ export function updateNote(
     return { project, error: "音符超出工程时间范围" };
   }
   if (
+    track.monophonic &&
     track.notes.some(
       (candidate) => candidate.id !== noteId && overlaps(candidate, updated),
     )
   ) {
     return { project, error: "移动后会与同声部音符重叠" };
   }
-  if (isRangeLocked(project, voiceId, updated))
+  if (isRangeLocked(project, trackId, updated))
     return { project, error: "移动后会进入锁定区间" };
 
   const next = cloneProject(project);
-  const nextTrack = getTrack(next, voiceId);
+  const nextTrack = getMusicalTrack(next, trackId);
   nextTrack.notes = nextTrack.notes.map((note) =>
     note.id === noteId ? updated : note,
   );
@@ -147,13 +157,13 @@ export function updateNote(
 export function transformNotes(
   project: ProjectDocument,
   noteIds: Set<string>,
-  transform: (note: NoteEvent, voiceId: VoiceId) => NoteEvent,
+  transform: (note: NoteEvent, trackId: string) => NoteEvent,
 ): EditResult {
   const next = cloneProject(project);
   let transformed = 0;
   let hasLockedNote = false;
 
-  for (const track of next.tracks) {
+  for (const track of getAllPlayableTracks(next)) {
     if (track.locked && track.notes.some((note) => noteIds.has(note.id)))
       return { project, error: `${track.name}已锁定` };
     track.notes = track.notes.map((note) => {
@@ -180,7 +190,7 @@ export function transformNotes(
       ) {
         return { project, error: "批量操作会使音符超出工程范围" };
       }
-      if (index > 0 && overlaps(ordered[index - 1], note))
+      if (track.monophonic && index > 0 && overlaps(ordered[index - 1], note))
         return { project, error: "批量操作会造成同声部音符重叠" };
     }
     track.notes = ordered;
@@ -198,7 +208,7 @@ export function deleteNotes(
   const next = cloneProject(project);
   let deleted = 0;
 
-  for (const track of next.tracks) {
+  for (const track of getAllPlayableTracks(next)) {
     if (track.locked) continue;
     track.notes = track.notes.filter((note) => {
       if (
@@ -219,21 +229,21 @@ export function deleteNotes(
 
 export function splitNote(
   project: ProjectDocument,
-  voiceId: VoiceId,
+  trackId: string,
   noteId: string,
   splitTick: number,
 ): EditResult {
-  const track = getTrack(project, voiceId);
+  const track = getMusicalTrack(project, trackId);
   const current = track.notes.find((note) => note.id === noteId);
   if (!current) return { project, error: "找不到要切分的音符" };
-  if (!canEditNote(project, voiceId, current))
+  if (!canEditNote(project, trackId, current))
     return { project, error: "该音符或所在范围已锁定" };
   const endTick = current.startTick + current.durationTicks;
   if (splitTick <= current.startTick || splitTick >= endTick)
     return { project, error: "切分点必须位于音符内部" };
 
   const next = cloneProject(project);
-  const nextTrack = getTrack(next, voiceId);
+  const nextTrack = getMusicalTrack(next, trackId);
   nextTrack.notes = nextTrack.notes
     .flatMap((note) =>
       note.id === noteId
@@ -266,16 +276,16 @@ function hasValidChordAnalysis(analysis: ChordAnalysis) {
     Number.isInteger(analysis.degree) &&
     analysis.degree >= 1 &&
     analysis.degree <= 7 &&
-    Number.isInteger(analysis.accidental) &&
-    analysis.accidental >= -2 &&
-    analysis.accidental <= 2 &&
+    Number.isInteger(analysis.degreeAlteration) &&
+    analysis.degreeAlteration >= -2 &&
+    analysis.degreeAlteration <= 2 &&
     Number.isInteger(analysis.inversion) &&
     analysis.inversion >= 0 &&
     analysis.inversion <= maximumInversion &&
-    (analysis.appliedToDegree === undefined ||
-      (Number.isInteger(analysis.appliedToDegree) &&
-        analysis.appliedToDegree >= 1 &&
-        analysis.appliedToDegree <= 7))
+    (analysis.applied === undefined ||
+      (Number.isInteger(analysis.applied.targetDegree) &&
+        analysis.applied.targetDegree >= 1 &&
+        analysis.applied.targetDegree <= 7))
   );
 }
 
@@ -295,7 +305,8 @@ function chordRegionError(
     region.startTick + region.durationTicks > project.lengthTicks
   )
     return "和弦超出工程时间范围";
-  if (!hasValidChordAnalysis(region.analysis)) return "和弦分析参数无效";
+  if (region.function && !hasValidChordAnalysis(region.function))
+    return "和弦分析参数无效";
   if (
     project.keyEvents.some(
       (event) =>
@@ -322,10 +333,19 @@ export function addChordRegion(
   region: ChordRegion,
 ): EditResult {
   if (project.chordTrack.locked) return { project, error: "和弦轨已锁定" };
-  const error = chordRegionError(project, region);
+  const normalizedRegion = region.function
+    ? {
+        ...region,
+        identity: resolveChordIdentity(
+          region.function,
+          keyAtTick(project.keyEvents, region.startTick),
+        ),
+      }
+    : region;
+  const error = chordRegionError(project, normalizedRegion);
   if (error) return { project, error };
   const next = cloneProject(project);
-  next.chordTrack.regions.push(region);
+  next.chordTrack.regions.push(normalizedRegion);
   next.chordTrack.regions.sort((a, b) => a.startTick - b.startTick);
   next.updatedAt = new Date().toISOString();
   return { project: next };
@@ -334,7 +354,7 @@ export function addChordRegion(
 export type ChordRegionPatch = Partial<
   Pick<ChordRegion, "startTick" | "durationTicks" | "locked">
 > & {
-  analysis?: Partial<ChordAnalysis>;
+  function?: Partial<ChordAnalysis>;
 };
 
 export function updateChordRegion(
@@ -349,11 +369,26 @@ export function updateChordRegion(
   if (project.chordTrack.locked) return { project, error: "和弦轨已锁定" };
   if (current.locked && patch.locked !== false)
     return { project, error: "该和弦已锁定" };
-  const updated: ChordRegion = {
+  const { function: functionPatch, ...directPatch } = patch;
+  let updated: ChordRegion = {
     ...current,
-    ...patch,
-    analysis: { ...current.analysis, ...patch.analysis },
+    ...directPatch,
   };
+  if (current.function || functionPatch) {
+    const analysis = {
+      ...current.function,
+      ...functionPatch,
+    } as ChordAnalysis;
+    updated = {
+      ...updated,
+      function: analysis,
+      // 和弦移动跨过调性边界时，实体拼写必须跟随新位置重新解析。
+      identity: resolveChordIdentity(
+        analysis,
+        keyAtTick(project.keyEvents, updated.startTick),
+      ),
+    };
+  }
   const error = chordRegionError(project, updated, new Set([chordId]));
   if (error) return { project, error };
   const next = cloneProject(project);
@@ -377,7 +412,19 @@ export function transformChordRegions(
   if (selected.some((region) => region.locked))
     return { project, error: "选区包含锁定和弦" };
 
-  const transformed = selected.map(transform);
+  const transformed = selected.map((region) => {
+    const updated = transform(region);
+    return updated.function
+      ? {
+          ...updated,
+          // 批量移动也必须按新位置调性重算实体拼写，避免 function 与 identity 分叉。
+          identity: resolveChordIdentity(
+            updated.function,
+            keyAtTick(project.keyEvents, updated.startTick),
+          ),
+        }
+      : updated;
+  });
   for (const region of transformed) {
     const error = chordRegionError(project, region, chordIds);
     if (error) return { project, error };

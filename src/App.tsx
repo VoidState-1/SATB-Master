@@ -38,7 +38,10 @@ import { PanelResizeHandle } from "./components/PanelResizeHandle";
 import { PianoRoll, type EditorTool } from "./components/PianoRoll";
 import { ShortcutSettings } from "./components/ShortcutSettings";
 import { TrackSidebar } from "./components/TrackSidebar";
-import { defaultChordAnalysisAtTick } from "./domain/chords";
+import {
+  createChordRegion,
+  defaultChordAnalysisAtTick,
+} from "./domain/chords";
 import {
   addChordRegion,
   addNote,
@@ -59,19 +62,30 @@ import { buildMidi, midiFileName } from "./domain/midi";
 import {
   createEmptyProject,
   createId,
+  getAllPlayableTracks,
   getTrack,
   normalizeProject,
+  reconcileChordIdentities,
   type ChordAnalysis,
   type ChordRegion,
   type EditableRange,
   type NoteEvent,
   type ProjectDocument,
+  type SatbTrack,
   type VoiceId,
 } from "./domain/model";
+import {
+  coerceKeyTonicForMode,
+  parsePitchClass,
+  spellMidi,
+  toMidi,
+  transposeSpelledPitch,
+} from "./domain/pitch";
 import {
   buildMeasures,
   eventAtTick,
   formatPosition,
+  keyAtTick,
   ticksPerBeat,
 } from "./domain/time";
 import {
@@ -203,6 +217,8 @@ function App() {
   const loopStartTick = project.loop.startTick;
   const loopEndTick = project.loop.endTick;
   const [filePath, setFilePath] = useState<string>();
+  const [migrationBackupSourcePath, setMigrationBackupSourcePath] =
+    useState<string>();
   const [activeVoice, setActiveVoice] = useState<VoiceId>("soprano");
   const [tool, setTool] = useState<EditorTool>("select");
   const [editorDomain, setEditorDomain] = useState<EditorDomain>("notes");
@@ -262,7 +278,7 @@ function App() {
   const selectedNote = useMemo(() => {
     const id = selectedNoteIds.values().next().value as string | undefined;
     if (!id) return undefined;
-    for (const track of project.tracks) {
+    for (const track of project.satbTracks) {
       const note = track.notes.find((candidate) => candidate.id === id);
       if (note) return { voiceId: track.id, note };
     }
@@ -387,6 +403,12 @@ function App() {
         if (shouldRecover) {
           history.recover(recovery.project);
           setFilePath(recovery.sourcePath);
+          setMigrationBackupSourcePath(
+            recovery.migrationBackupSourcePath ??
+              (recovery.migratedFromSchemaVersion === 2
+                ? recovery.sourcePath
+                : undefined),
+          );
           showNotice("已恢复未保存内容");
         } else {
           await discardRecovery();
@@ -398,12 +420,16 @@ function App() {
   useEffect(() => {
     if (!history.isDirty) return;
     const timer = window.setTimeout(() => {
-      void autosaveProject(project, filePath).catch((error) =>
+      void autosaveProject(
+        project,
+        filePath,
+        migrationBackupSourcePath,
+      ).catch((error) =>
         console.warn("自动恢复保存失败", error),
       );
     }, 5000);
     return () => window.clearTimeout(timer);
-  }, [filePath, history.isDirty, project]);
+  }, [filePath, history.isDirty, migrationBackupSourcePath, project]);
 
   const commitResult = useCallback(
     (result: { project: ProjectDocument; error?: string }) => {
@@ -428,14 +454,15 @@ function App() {
         id: createId("note"),
         startTick: tick,
         durationTicks,
-        midiNote,
+        pitch: spellMidi(midiNote, keyAtTick(project.keyEvents, tick)),
         velocity: 88,
         locked: false,
+        spellingSource: "manual",
       });
       if (commitResult(result)) {
         const note = getTrack(result.project, voiceId).notes.find(
           (candidate) =>
-            candidate.startTick === tick && candidate.midiNote === midiNote,
+            candidate.startTick === tick && toMidi(candidate.pitch) === midiNote,
         );
         if (note) setSelectedNoteIds(new Set([note.id]));
         setSelectedChordIds(new Set());
@@ -448,11 +475,18 @@ function App() {
   const handleMoveNotes = useCallback(
     (noteIds: Set<string>, tickDelta: number, pitchDelta: number) => {
       commitResult(
-        transformNotes(project, noteIds, (note) => ({
-          ...note,
-          startTick: note.startTick + tickDelta,
-          midiNote: note.midiNote + pitchDelta,
-        })),
+        transformNotes(project, noteIds, (note) => {
+          const startTick = note.startTick + tickDelta;
+          return {
+            ...note,
+            startTick,
+            pitch: transposeSpelledPitch(
+              note.pitch,
+              pitchDelta,
+              keyAtTick(project.keyEvents, startTick),
+            ),
+          };
+        }),
       );
     },
     [commitResult, project],
@@ -467,10 +501,10 @@ function App() {
       }
       if (noteIds.size !== 1) return;
       const noteId = noteIds.values().next().value;
-      for (const track of project.tracks) {
+      for (const track of project.satbTracks) {
         const note = track.notes.find((candidate) => candidate.id === noteId);
         if (note) {
-          void audioEngine.previewNote(note.midiNote, track.id);
+          void audioEngine.previewNote(toMidi(note.pitch), track.id);
           return;
         }
       }
@@ -489,7 +523,7 @@ function App() {
       const chord = project.chordTrack.regions.find(
         (candidate) => candidate.id === chordIds.values().next().value,
       );
-      if (chord) setChordBrush(chord.analysis);
+      if (chord?.function) setChordBrush(chord.function);
     },
     [project.chordTrack.regions],
   );
@@ -513,10 +547,10 @@ function App() {
       const result = updateNote(project, voiceId, noteId, patch);
       if (
         commitResult(result) &&
-        typeof patch.midiNote === "number" &&
+        patch.pitch !== undefined &&
         selectedNoteIds.size === 1
       ) {
-        void audioEngine.previewNote(patch.midiNote, voiceId);
+        void audioEngine.previewNote(toMidi(patch.pitch), voiceId);
       }
     },
     [commitResult, project, selectedNoteIds.size],
@@ -531,7 +565,7 @@ function App() {
   );
 
   const handleUpdateTrack = useCallback(
-    (voiceId: VoiceId, patch: Partial<ProjectDocument["tracks"][number]>) => {
+    (voiceId: VoiceId, patch: Partial<SatbTrack>) => {
       history.commit(
         replaceProject(project, (draft) =>
           Object.assign(getTrack(draft, voiceId), patch),
@@ -549,7 +583,7 @@ function App() {
     ) => {
       if (patch.lengthTicks !== undefined) {
         const latestEvent = Math.max(
-          ...project.tracks.flatMap((track) =>
+          ...getAllPlayableTracks(project).flatMap((track) =>
             track.notes.map((note) => note.startTick + note.durationTicks),
           ),
           ...project.chordTrack.regions.map(
@@ -644,13 +678,13 @@ function App() {
 
   const handleAddChord = useCallback(
     (tick: number, durationTicks: number) => {
-      const chord: ChordRegion = {
-        id: createId("chord"),
-        startTick: tick,
+      const chord: ChordRegion = createChordRegion(
+        project,
+        tick,
         durationTicks,
-        analysis: chordBrush,
-        locked: false,
-      };
+        chordBrush,
+        createId("chord"),
+      );
       const result = addChordRegion(project, chord);
       if (!commitResult(result)) return undefined;
       setSelectedChordIds(new Set([chord.id]));
@@ -667,7 +701,7 @@ function App() {
       const updated = result.project.chordTrack.regions.find(
         (region) => region.id === chordId,
       );
-      if (updated && patch.analysis) setChordBrush(updated.analysis);
+      if (updated?.function && patch.function) setChordBrush(updated.function);
     },
     [commitResult, project],
   );
@@ -841,16 +875,25 @@ function App() {
           } else {
             draft.keyEvents = draft.keyEvents.map((event) =>
               event.id === id
-                ? {
-                    ...event,
-                    tonic: Math.max(
-                      0,
-                      Math.min(11, Number(patch.tonic ?? event.tonic)),
-                    ),
-                    mode: patch.mode === "minor" ? "minor" : "major",
-                  }
+                ? (() => {
+                    const mode =
+                      patch.mode === undefined
+                        ? event.mode
+                        : patch.mode === "minor"
+                          ? "minor"
+                          : "major";
+                    return {
+                      ...event,
+                      tonic: coerceKeyTonicForMode(
+                        parsePitchClass(String(patch.tonic)) ?? event.tonic,
+                        mode,
+                      ),
+                      mode,
+                    };
+                  })()
                 : event,
             );
+            reconcileChordIdentities(draft);
           }
         }),
       );
@@ -882,6 +925,7 @@ function App() {
             draft.keyEvents = draft.keyEvents.filter(
               (event) => event.id !== id,
             );
+          if (type === "key") reconcileChordIdentities(draft);
         }),
       );
     },
@@ -902,6 +946,7 @@ function App() {
     audioEngine.stop();
     history.load(createEmptyProject());
     setFilePath(undefined);
+    setMigrationBackupSourcePath(undefined);
     setSelectedNoteIds(new Set());
     setSelectedChordIds(new Set());
     setChordBrush(defaultChordAnalysisAtTick(initialProject, 0));
@@ -925,6 +970,9 @@ function App() {
       audioEngine.stop();
       history.load(result.project);
       setFilePath(result.filePath);
+      setMigrationBackupSourcePath(
+        result.migratedFromSchemaVersion === 2 ? result.filePath : undefined,
+      );
       setSelectedNoteIds(new Set());
       setSelectedChordIds(new Set());
       setChordBrush(defaultChordAnalysisAtTick(result.project, 0));
@@ -942,16 +990,22 @@ function App() {
           normalizeProject(project),
           filePath,
           forceDialog,
+          migrationBackupSourcePath,
         );
         if (result.canceled) return;
         setFilePath(result.filePath ?? filePath);
+        setMigrationBackupSourcePath(undefined);
         history.markSaved();
-        showNotice("工程已保存");
+        showNotice(
+          result.migrationBackupPath
+            ? "工程已升级为 v3 并备份原文件；旧版本不能打开新文件"
+            : "工程已保存",
+        );
       } catch (error) {
         showNotice(error instanceof Error ? error.message : "保存工程失败");
       }
     },
-    [filePath, history, project, showNotice],
+    [filePath, history, migrationBackupSourcePath, project, showNotice],
   );
 
   const handleExportMidi = useCallback(async () => {
@@ -1288,7 +1342,7 @@ function App() {
     }
     const selected: ClipboardNote[] = [];
     let earliest = Number.POSITIVE_INFINITY;
-    project.tracks.forEach((track) =>
+    project.satbTracks.forEach((track) =>
       track.notes.forEach((note) => {
         if (selectedNoteIds.has(note.id)) {
           earliest = Math.min(earliest, note.startTick);
@@ -1366,7 +1420,7 @@ function App() {
     }
     setSelectedNoteIds(
       new Set(
-        project.tracks
+        project.satbTracks
           .filter((track) => track.visible)
           .flatMap((track) => track.notes.map((note) => note.id)),
       ),
@@ -1402,7 +1456,7 @@ function App() {
 
     const selected: ClipboardNote[] = [];
     let earliest = Number.POSITIVE_INFINITY;
-    project.tracks.forEach((track) =>
+    project.satbTracks.forEach((track) =>
       track.notes.forEach((note) => {
         if (!selectedNoteIds.has(note.id)) return;
         earliest = Math.min(earliest, note.startTick);
@@ -1411,7 +1465,7 @@ function App() {
     );
     if (selected.length === 0) return showNotice("没有选中的音符");
     const result = deleteNotes(project, selectedNoteIds);
-    const remaining = result.project.tracks.reduce(
+    const remaining = result.project.satbTracks.reduce(
       (count, track) =>
         count +
         track.notes.filter((note) => selectedNoteIds.has(note.id)).length,
@@ -1471,7 +1525,7 @@ function App() {
       return;
     }
 
-    const selected = project.tracks.flatMap((track) =>
+    const selected = project.satbTracks.flatMap((track) =>
       track.notes
         .filter((note) => selectedNoteIds.has(note.id))
         .map((note) => ({ voiceId: track.id, note })),
@@ -1511,7 +1565,7 @@ function App() {
 
   const cycleActiveVoice = useCallback(
     (direction: 1 | -1) => {
-      const visibleVoices = project.tracks
+      const visibleVoices = project.satbTracks
         .filter((track) => track.visible)
         .map((track) => track.id);
       if (visibleVoices.length <= 1) return;
@@ -1525,7 +1579,7 @@ function App() {
             visibleVoices.length;
       setActiveVoice(visibleVoices[nextIndex]);
     },
-    [activeVoice, project.tracks],
+    [activeVoice, project.satbTracks],
   );
 
   const movePlayheadByMeasure = useCallback(
@@ -1580,21 +1634,30 @@ function App() {
         );
         return;
       }
-      const result = transformNotes(project, selectedNoteIds, (note) => ({
-        ...note,
-        startTick: quantize
+      const result = transformNotes(project, selectedNoteIds, (note) => {
+        const startTick = quantize
           ? Math.round(note.startTick / gridTicks) * gridTicks
-          : note.startTick + tickDelta,
-        midiNote: Math.max(0, Math.min(127, note.midiNote + pitchDelta)),
-      }));
+          : note.startTick + tickDelta;
+        const currentMidi = toMidi(note.pitch);
+        const nextMidi = Math.max(0, Math.min(127, currentMidi + pitchDelta));
+        return {
+          ...note,
+          startTick,
+          pitch: transposeSpelledPitch(
+            note.pitch,
+            nextMidi - currentMidi,
+            keyAtTick(project.keyEvents, startTick),
+          ),
+        };
+      });
       if (!commitResult(result) || selectedNoteIds.size !== 1) return;
       const selectedId = selectedNoteIds.values().next().value;
-      for (const track of result.project.tracks) {
+      for (const track of result.project.satbTracks) {
         const note = track.notes.find(
           (candidate) => candidate.id === selectedId,
         );
         if (note) {
-          void audioEngine.previewNote(note.midiNote, track.id);
+          void audioEngine.previewNote(toMidi(note.pitch), track.id);
           return;
         }
       }

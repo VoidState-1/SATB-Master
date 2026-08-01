@@ -1,9 +1,11 @@
 import { WorkletSynthesizer } from "spessasynth_lib";
 import {
   VOICE_ORDER,
+  getAllPlayableTracks,
   type ProjectDocument,
   type VoiceId,
 } from "../domain/model";
+import { toMidi } from "../domain/pitch";
 import {
   buildMeasures,
   eventAtTick,
@@ -32,6 +34,10 @@ interface FallbackVoice {
 interface ScheduledSynthEvent {
   time: number;
   action(): void;
+}
+
+function channelForTrack(trackIndex: number) {
+  return trackIndex < 9 ? trackIndex : (trackIndex + 1) % 16;
 }
 
 export class SatbAudioEngine {
@@ -244,25 +250,28 @@ export class SatbAudioEngine {
       options.startTick,
       Math.min(project.lengthTicks, options.endTick ?? project.lengthTicks),
     );
-    const soloed = project.tracks.some((track) => track.solo);
+    const playableTracks = getAllPlayableTracks(project);
+    const soloed = playableTracks.some((track) => track.solo);
 
-    project.tracks.forEach((track, voiceIndex) => {
+    playableTracks.forEach((track, trackIndex) => {
       if (track.muted || (soloed && !track.solo)) return;
+      const channel = channelForTrack(trackIndex);
       if (this.synth && this.soundBankId) {
-        this.synth.programChange(voiceIndex, track.program);
+        this.synth.programChange(channel, track.program);
         this.synth.sendMessage([
-          0xb0 | voiceIndex,
+          0xb0 | channel,
           7,
           Math.round(project.audio.masterVolume * track.volume * 127),
         ]);
         this.synth.sendMessage([
-          0xb0 | voiceIndex,
+          0xb0 | channel,
           10,
           Math.round((track.pan + 1) * 63.5),
         ]);
       }
 
       track.notes.forEach((note) => {
+        const midiNote = toMidi(note.pitch);
         const noteEnd = note.startTick + note.durationTicks;
         if (noteEnd <= options.startTick || note.startTick >= projectEndTick)
           return;
@@ -278,14 +287,14 @@ export class SatbAudioEngine {
         if (this.synth && this.soundBankId) {
           // Worklet 的未来事件队列没有取消 API；改用可清理定时任务，暂停时不会遗留后续音符。
           this.scheduleSynthEvent(eventStart, () =>
-            this.synth?.noteOn(voiceIndex, note.midiNote, note.velocity),
+            this.synth?.noteOn(channel, midiNote, note.velocity),
           );
           this.scheduleSynthEvent(eventEnd, () =>
-            this.synth?.noteOff(voiceIndex, note.midiNote),
+            this.synth?.noteOff(channel, midiNote),
           );
         } else {
           this.scheduleFallback(
-            note.midiNote,
+            midiNote,
             eventStart,
             Math.max(0.02, eventEnd - eventStart),
             project.audio.masterVolume * track.volume * 0.085,

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { addNote, deleteNotes, updateNote } from "./editing";
+import {
+  addNote,
+  deleteNotes,
+  transformNotes,
+  updateNote,
+} from "./editing";
 import { createEmptyProject, PPQ, type NoteEvent } from "./model";
 
 function note(id: string, startTick: number): NoteEvent {
@@ -7,9 +12,10 @@ function note(id: string, startTick: number): NoteEvent {
     id,
     startTick,
     durationTicks: PPQ,
-    midiNote: 60,
+    pitch: { step: "C", alter: 0, octave: 4 },
     velocity: 88,
     locked: false,
+    spellingSource: "manual",
   };
 }
 
@@ -42,7 +48,7 @@ describe("练习锁定约束", () => {
         editable: false,
       },
     ];
-    project.tracks.find((track) => track.id === "bass")!.notes = [
+    project.satbTracks.find((track) => track.id === "bass")!.notes = [
       note("given", 0),
       note("answer", PPQ * 3),
     ];
@@ -54,7 +60,7 @@ describe("练习锁定约束", () => {
       "没有可删除",
     );
     expect(
-      project.tracks.find((track) => track.id === "bass")!.notes,
+      project.satbTracks.find((track) => track.id === "bass")!.notes,
     ).toHaveLength(2);
   });
 });
@@ -64,7 +70,10 @@ describe("音符数值边界", () => {
     const project = createEmptyProject();
 
     expect(
-      addNote(project, "soprano", { ...note("high", 0), midiNote: 128 }).error,
+      addNote(project, "soprano", {
+        ...note("high", 0),
+        pitch: { step: "C", alter: 0, octave: 10 },
+      }).error,
     ).toContain("参数无效");
     expect(
       addNote(project, "soprano", {
@@ -76,10 +85,51 @@ describe("音符数值边界", () => {
 
   it("拒绝属性编辑产生非法力度", () => {
     const project = createEmptyProject();
-    project.tracks[0].notes = [note("existing", 0)];
+    project.satbTracks[0].notes = [note("existing", 0)];
 
     expect(
       updateNote(project, "soprano", "existing", { velocity: 0 }).error,
     ).toContain("参数无效");
+  });
+});
+
+describe("辅助轨编辑能力", () => {
+  it("允许辅助轨重叠，并让批量移动与删除覆盖辅助轨音符", () => {
+    const project = createEmptyProject();
+    project.auxiliaryTracks.push({
+      id: "aux-reference",
+      kind: "auxiliary",
+      role: "reference",
+      name: "参考材料",
+      shortName: "Ref",
+      notes: [note("aux-1", 0)],
+      participatesInHarmony: false,
+      monophonic: false,
+      visible: true,
+      muted: false,
+      solo: false,
+      locked: false,
+      volume: 0.8,
+      pan: 0,
+      program: 0,
+    });
+
+    const added = addNote(project, "aux-reference", note("aux-2", 0));
+    expect(added.error).toBeUndefined();
+    expect(added.project.auxiliaryTracks[0].notes).toHaveLength(2);
+
+    const moved = transformNotes(
+      added.project,
+      new Set(["aux-1", "aux-2"]),
+      (item) => ({ ...item, startTick: PPQ }),
+    );
+    expect(moved.error).toBeUndefined();
+    expect(
+      moved.project.auxiliaryTracks[0].notes.map((item) => item.startTick),
+    ).toEqual([PPQ, PPQ]);
+
+    const deleted = deleteNotes(moved.project, new Set(["aux-1", "aux-2"]));
+    expect(deleted.error).toBeUndefined();
+    expect(deleted.project.auxiliaryTracks[0].notes).toEqual([]);
   });
 });

@@ -1,5 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { formatChord, formatChordRegion } from "../domain/chords";
+import {
+  defaultChordAnalysisAtTick,
+  formatChord,
+  formatChordRegion,
+} from "../domain/chords";
 import type { ChordRegionPatch } from "../domain/editing";
 import {
   buildMeasures,
@@ -8,7 +12,6 @@ import {
   snapTickForward,
 } from "../domain/time";
 import {
-  KEY_NAMES,
   VOICE_CONFIG,
   type ChordRegion,
   type ChordAnalysis,
@@ -16,6 +19,13 @@ import {
   type ProjectDocument,
   type VoiceId,
 } from "../domain/model";
+import {
+  formatPitchClass,
+  formatSpelledPitch,
+  spellMidi,
+  toMidi,
+  transposeSpelledPitch,
+} from "../domain/pitch";
 import type { HarmonyDiagnostic } from "../domain/harmony";
 import {
   buildTimelineRulerTicks,
@@ -426,7 +436,7 @@ export function PianoRoll({
   const noteRects = useMemo(() => {
     const erasedNoteIds =
       interaction?.kind === "erase" ? interaction.noteIds : undefined;
-    return project.tracks.flatMap((track) => {
+    return project.satbTracks.flatMap((track) => {
       if (!track.visible) return [];
       return track.notes
         .filter((note) => !erasedNoteIds?.has(note.id))
@@ -439,22 +449,32 @@ export function PianoRoll({
           const isGroupMove =
             noteDrag?.kind === "move" && noteDrag.selectedIds.includes(note.id);
           const startTick = isAnchor
-            ? noteDrag.nextStartTick
+            ? noteDrag!.nextStartTick
             : isGroupMove
-              ? note.startTick + noteDrag.tickDelta
+              ? note.startTick + noteDrag!.tickDelta
               : note.startTick;
           const durationTicks = isAnchor
-            ? noteDrag.nextDurationTicks
+            ? noteDrag!.nextDurationTicks
             : note.durationTicks;
+          const baseMidiNote = toMidi(note.pitch);
           const midiNote = isAnchor
-            ? noteDrag.nextMidiNote
+            ? noteDrag!.nextMidiNote
             : isGroupMove
-              ? note.midiNote + noteDrag.pitchDelta
-              : note.midiNote;
+              ? baseMidiNote + noteDrag!.pitchDelta
+              : baseMidiNote;
+          const displayPitch =
+            midiNote === baseMidiNote
+              ? note.pitch
+              : transposeSpelledPitch(
+                  note.pitch,
+                  midiNote - baseMidiNote,
+                  keyAtTick(project.keyEvents, startTick),
+                );
           return {
             track,
             note,
             midiNote,
+            label: formatSpelledPitch(displayPitch),
             x: PIANO_WIDTH + (startTick / project.ppq) * pixelsPerBeat,
             y: HEADER_HEIGHT + (MAX_MIDI - midiNote) * ROW_HEIGHT + 2,
             width: Math.max(
@@ -586,7 +606,7 @@ export function PianoRoll({
           );
         });
 
-      noteRects.forEach(({ track, note, midiNote, x, y, width, height }) => {
+      noteRects.forEach(({ track, note, label, x, y, width, height }) => {
         if (
           x > visibleRight ||
           x + width < visibleLeft ||
@@ -619,7 +639,7 @@ export function PianoRoll({
         if (width > 25) {
           context.fillStyle = "#fff";
           context.font = "600 10px Segoe UI";
-          context.fillText(noteName(midiNote), x + 5, y + 12);
+          context.fillText(label, x + 5, y + 12);
         }
         if ((note.locked || track.locked) && width > 48) {
           context.fillStyle = "rgba(255,255,255,.72)";
@@ -645,7 +665,16 @@ export function PianoRoll({
         if (width > 25) {
           context.fillStyle = "#fff";
           context.font = "600 10px Segoe UI";
-          context.fillText(noteName(interaction.midiNote), x + 5, y + 12);
+          context.fillText(
+            formatSpelledPitch(
+              spellMidi(
+                interaction.midiNote,
+                keyAtTick(project.keyEvents, interaction.nextStartTick),
+              ),
+            ),
+            x + 5,
+            y + 12,
+          );
         }
       }
 
@@ -957,12 +986,12 @@ export function PianoRoll({
       originY: point.y,
       startTick: hit.note.startTick,
       durationTicks: hit.note.durationTicks,
-      midiNote: hit.note.midiNote,
+      midiNote: toMidi(hit.note.pitch),
       tickDelta: 0,
       pitchDelta: 0,
       nextStartTick: hit.note.startTick,
       nextDurationTicks: hit.note.durationTicks,
-      nextMidiNote: hit.note.midiNote,
+      nextMidiNote: toMidi(hit.note.pitch),
     });
   };
 
@@ -977,7 +1006,7 @@ export function PianoRoll({
       showDiagnosticTooltip(
         event,
         `note:${hit.note.id}`,
-        `${noteName(hit.midiNote)} · ${VOICE_CONFIG[hit.track.id].name}`,
+        `${hit.label} · ${VOICE_CONFIG[hit.track.id].name}`,
         diagnosticsByNote.get(hit.note.id) ?? [],
       );
       return;
@@ -1070,10 +1099,10 @@ export function PianoRoll({
         ),
       );
       const minPitch = Math.min(
-        ...selectedRects.map((rect) => rect.note.midiNote),
+        ...selectedRects.map((rect) => rect.midiNote),
       );
       const maxPitch = Math.max(
-        ...selectedRects.map((rect) => rect.note.midiNote),
+        ...selectedRects.map((rect) => rect.midiNote),
       );
       const tickDelta = Math.max(
         -minStart,
@@ -1642,7 +1671,7 @@ export function PianoRoll({
                 ? `${group.meter.numerator}/${group.meter.denominator}`
                 : undefined,
               group.key
-                ? `${KEY_NAMES[group.key.tonic]} ${group.key.mode === "major" ? "大调" : "小调"}`
+                ? `${formatPitchClass(group.key.tonic)} ${group.key.mode === "major" ? "大调" : "小调"}`
                 : undefined,
             ]
               .filter(Boolean)
@@ -1683,7 +1712,7 @@ export function PianoRoll({
                 ) : null}
                 {group.key ? (
                   <span className="key">
-                    {KEY_NAMES[group.key.tonic]}{" "}
+                    {formatPitchClass(group.key.tonic)}{" "}
                     {group.key.mode === "major" ? "大调" : "小调"}
                   </span>
                 ) : null}
@@ -1810,11 +1839,24 @@ export function PianoRoll({
 
         {chordPalette && paletteChord ? (
           <ChordPalette
-            analysis={paletteChord.analysis}
+            analysis={
+              paletteChord.function ??
+              defaultChordAnalysisAtTick(project, paletteChord.startTick)
+            }
             keyEvent={keyAtTick(project.keyEvents, paletteChord.startTick)}
             anchor={chordPalette.anchor}
             onChange={(patch) =>
-              onUpdateChord(paletteChord.id, { analysis: patch })
+              onUpdateChord(paletteChord.id, {
+                function: paletteChord.function
+                  ? patch
+                  : {
+                      ...defaultChordAnalysisAtTick(
+                        project,
+                        paletteChord.startTick,
+                      ),
+                      ...patch,
+                    },
+              })
             }
             onClose={() => setChordPalette(undefined)}
           />

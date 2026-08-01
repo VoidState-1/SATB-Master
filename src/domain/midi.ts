@@ -1,6 +1,11 @@
 import { writeMidi, type MidiData, type MidiEvent } from "midi-file";
 import { formatChordRegion } from "./chords";
-import { KEY_NAMES, VOICE_ORDER, type ProjectDocument } from "./model";
+import {
+  getAllPlayableTracks,
+  type MusicalTrack,
+  type ProjectDocument,
+} from "./model";
+import { formatPitchClass, keySignatureFifths, toMidi } from "./pitch";
 
 type WithoutDelta<T> = T extends unknown ? Omit<T, "deltaTime"> : never;
 type MidiEventPayload = WithoutDelta<MidiEvent>;
@@ -10,21 +15,6 @@ interface AbsoluteEvent {
   priority: number;
   event: MidiEventPayload;
 }
-
-const MAJOR_FIFTHS: Record<number, number> = {
-  0: 0,
-  1: -5,
-  2: 2,
-  3: -3,
-  4: 4,
-  5: -1,
-  6: 6,
-  7: 1,
-  8: -4,
-  9: 3,
-  10: -2,
-  11: 5,
-};
 
 function toDeltaEvents(events: AbsoluteEvent[], endTick: number): MidiEvent[] {
   const ordered = [...events].sort(
@@ -45,11 +35,6 @@ function toDeltaEvents(events: AbsoluteEvent[], endTick: number): MidiEvent[] {
     meta: true,
   });
   return output;
-}
-
-function keyFifths(tonic: number, mode: "major" | "minor") {
-  const relativeMajor = mode === "minor" ? (tonic + 3) % 12 : tonic;
-  return MAJOR_FIFTHS[relativeMajor] ?? 0;
 }
 
 function globalTrack(project: ProjectDocument) {
@@ -91,7 +76,7 @@ function globalTrack(project: ProjectDocument) {
       priority: 1,
       event: {
         type: "keySignature",
-        key: keyFifths(key.tonic, key.mode),
+        key: keySignatureFifths(key),
         scale: key.mode === "minor" ? 1 : 0,
         meta: true,
       },
@@ -100,11 +85,9 @@ function globalTrack(project: ProjectDocument) {
   return toDeltaEvents(events, project.lengthTicks);
 }
 
-function voiceTrack(project: ProjectDocument, voiceIndex: number) {
-  const voiceId = VOICE_ORDER[voiceIndex];
-  const track = project.tracks.find((candidate) => candidate.id === voiceId);
-  if (!track) throw new Error(`缺少 MIDI 导出声部：${voiceId}`);
-  const channel = voiceIndex;
+function playableTrack(track: MusicalTrack, trackIndex: number, endTick: number) {
+  // MIDI 通道 10（索引 9）保留给打击乐；辅助轨超过可用通道时允许复用通道，但仍保持独立轨道。
+  const channel = trackIndex < 9 ? trackIndex : ((trackIndex + 1) % 16);
   const events: AbsoluteEvent[] = [
     {
       tick: 0,
@@ -124,7 +107,7 @@ function voiceTrack(project: ProjectDocument, voiceIndex: number) {
       event: {
         type: "noteOn",
         channel,
-        noteNumber: note.midiNote,
+        noteNumber: toMidi(note.pitch),
         velocity: note.velocity,
       },
     });
@@ -134,12 +117,12 @@ function voiceTrack(project: ProjectDocument, voiceIndex: number) {
       event: {
         type: "noteOff",
         channel,
-        noteNumber: note.midiNote,
+        noteNumber: toMidi(note.pitch),
         velocity: 0,
       },
     });
   });
-  return toDeltaEvents(events, project.lengthTicks);
+  return toDeltaEvents(events, endTick);
 }
 
 function chordTrack(project: ProjectDocument) {
@@ -179,7 +162,9 @@ function chordTrack(project: ProjectDocument) {
 export function buildMidi(project: ProjectDocument, includeChords = true) {
   const tracks = [
     globalTrack(project),
-    ...VOICE_ORDER.map((_, index) => voiceTrack(project, index)),
+    ...getAllPlayableTracks(project).map((track, index) =>
+      playableTrack(track, index, project.lengthTicks),
+    ),
   ];
   if (includeChords && project.chordTrack.regions.length > 0)
     tracks.push(chordTrack(project));
@@ -198,5 +183,5 @@ export function midiFileName(project: ProjectDocument) {
     .trim()
     .replace(/[\\/:*?"<>|]/g, "-")
     .replace(/\s+/g, " ");
-  return safe || `${KEY_NAMES[project.keyEvents[0]?.tonic ?? 0]}调四部和声`;
+  return safe || `${formatPitchClass(project.keyEvents[0]?.tonic ?? { step: "C", alter: 0 })}调四部和声`;
 }

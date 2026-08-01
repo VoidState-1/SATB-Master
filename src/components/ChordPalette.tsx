@@ -134,10 +134,10 @@ export function ChordPalette({
               type="button"
               title={option.title}
               className={
-                analysis.accidental === option.value ? "is-selected" : ""
+                analysis.degreeAlteration === option.value ? "is-selected" : ""
               }
-              aria-pressed={analysis.accidental === option.value}
-              onClick={() => onChange({ accidental: option.value })}
+              aria-pressed={analysis.degreeAlteration === option.value}
+              onClick={() => onChange({ degreeAlteration: option.value })}
             >
               {option.label}
             </button>
@@ -205,10 +205,19 @@ export function ChordPalette({
               key={option.value ?? "none"}
               type="button"
               className={
-                analysis.appliedToDegree === option.value ? "is-selected" : ""
+                analysis.applied?.targetDegree === option.value
+                  ? "is-selected"
+                  : ""
               }
-              aria-pressed={analysis.appliedToDegree === option.value}
-              onClick={() => onChange({ appliedToDegree: option.value })}
+              aria-pressed={analysis.applied?.targetDegree === option.value}
+              onClick={() =>
+                onChange({
+                  applied:
+                    option.value === undefined
+                      ? undefined
+                      : { targetDegree: option.value },
+                })
+              }
             >
               {option.label}
             </button>
