@@ -31,8 +31,9 @@ export function DiagnosticsPanel({
   ).length;
   const fullySkipped = result.skippedRules.filter((item) => !item.partial);
   const partiallySkipped = result.skippedRules.filter((item) => item.partial);
-  const skippedSummary = [...new Set(result.skippedRules.map((item) => item.message))]
-    .join("\n");
+  const skippedSummary = [
+    ...new Set(result.skippedRules.map((item) => item.message)),
+  ].join("\n");
 
   return (
     <section className="diagnostics-panel" aria-label="和声检查结果">

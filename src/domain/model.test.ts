@@ -102,11 +102,7 @@ function createV2Fixture() {
     return {
       ...legacyTrack,
       notes: track.notes.map((note) => {
-        const {
-          pitch,
-          spellingSource: _spellingSource,
-          ...legacyNote
-        } = note;
+        const { pitch, spellingSource: _spellingSource, ...legacyNote } = note;
         return { ...legacyNote, midiNote: toMidi(pitch) };
       }),
     };
@@ -184,7 +180,11 @@ describe("工程文件校验", () => {
     project.ruleProfile.external.push({ ...reference });
     expect(validateProject(project)).toBe(false);
     project.ruleProfile.external = [
-      { ...reference, contentHash: "../invalid", config: { threshold: Infinity } },
+      {
+        ...reference,
+        contentHash: "../invalid",
+        config: { threshold: Infinity },
+      },
     ];
     expect(validateProject(project)).toBe(false);
   });

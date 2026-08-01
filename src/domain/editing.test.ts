@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  addNote,
-  deleteNotes,
-  transformNotes,
-  updateNote,
-} from "./editing";
+import { addNote, deleteNotes, transformNotes, updateNote } from "./editing";
 import { createEmptyProject, PPQ, type NoteEvent } from "./model";
 
 function note(id: string, startTick: number): NoteEvent {

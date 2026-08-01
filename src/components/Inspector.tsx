@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-  type InputHTMLAttributes,
-} from "react";
+import { useEffect, useMemo, useState, type InputHTMLAttributes } from "react";
 import { FolderOpen, Lock, LockOpen, Plus, Trash2 } from "lucide-react";
 import {
   defaultChordAnalysisAtTick,
@@ -119,10 +114,7 @@ interface InspectorProps {
   ): void;
   onDeleteTimingEvent(type: "tempo" | "meter" | "key", id: string): void;
   onUpdateAudio(masterVolume: number): void;
-  onUpdateTrack(
-    voiceId: VoiceId,
-    patch: Partial<SatbTrack>,
-  ): void;
+  onUpdateTrack(voiceId: VoiceId, patch: Partial<SatbTrack>): void;
   onChooseSoundFont(): void;
   onUseDefaultSoundFont(): void;
 }
@@ -356,13 +348,11 @@ export function Inspector({
                   })
                 }
               >
-                {(["C", "D", "E", "F", "G", "A", "B"] as const).map(
-                  (step) => (
-                    <option key={step} value={step}>
-                      {step}
-                    </option>
-                  ),
-                )}
+                {(["C", "D", "E", "F", "G", "A", "B"] as const).map((step) => (
+                  <option key={step} value={step}>
+                    {step}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
@@ -415,10 +405,7 @@ export function Inspector({
                   onUpdateNote(selectedNote.voiceId, selectedNote.note.id, {
                     pitch: spellMidi(
                       Number(value),
-                      keyAtTick(
-                        project.keyEvents,
-                        selectedNote.note.startTick,
-                      ),
+                      keyAtTick(project.keyEvents, selectedNote.note.startTick),
                     ),
                     spellingSource: "manual",
                   })

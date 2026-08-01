@@ -8,9 +8,14 @@ import type {
   ExternalRuleWorkerResponse,
 } from "../domain/externalRuleWorkerProtocol";
 
-self.addEventListener("message", (event: MessageEvent<ExternalRuleWorkerRequest>) => {
-  void handleRequest(event.data).then((response) => self.postMessage(response));
-});
+self.addEventListener(
+  "message",
+  (event: MessageEvent<ExternalRuleWorkerRequest>) => {
+    void handleRequest(event.data).then((response) =>
+      self.postMessage(response),
+    );
+  },
+);
 
 async function handleRequest(
   request: ExternalRuleWorkerRequest,

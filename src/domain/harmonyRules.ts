@@ -2,16 +2,9 @@ export type DiagnosticSeverity = "error" | "warning" | "suggestion";
 export type HarmonyRuleSeverity = DiagnosticSeverity | "off";
 export type HarmonyRuleGroupId = "voice" | "melody" | "voiceLeading" | "chord";
 export type RuleRequirement =
-  | "written-pitches"
-  | "chords"
-  | "functions"
-  | "complete-satb";
+  "written-pitches" | "chords" | "functions" | "complete-satb";
 export type RuleDependencyScope =
-  | "note"
-  | "slice"
-  | "chord"
-  | "phrase"
-  | "project";
+  "note" | "slice" | "chord" | "phrase" | "project";
 
 export interface HarmonyRuleDefinition {
   id: string;
@@ -77,7 +70,8 @@ export const HARMONY_RULE_DEFINITIONS = [
     defaultSeverity: "warning",
     requires: ["written-pitches"],
     dependencyScope: "slice",
-    description: "检查当前声部是否进入相邻声部前一位置的音域；同和弦转换允许声部超越。",
+    description:
+      "检查当前声部是否进入相邻声部前一位置的音域；同和弦转换允许声部超越。",
   },
   {
     id: "melodic-leap-over-octave",
@@ -122,7 +116,8 @@ export const HARMONY_RULE_DEFINITIONS = [
     defaultSeverity: "warning",
     requires: ["written-pitches"],
     dependencyScope: "note",
-    description: "按书写字母距离与升降号检查增音程、减音程；同和弦转换中的分解和弦跳进予以放宽。",
+    description:
+      "按书写字母距离与升降号检查增音程、减音程；同和弦转换中的分解和弦跳进予以放宽。",
   },
   {
     id: "cross-relation",
@@ -131,7 +126,8 @@ export const HARMONY_RULE_DEFINITIONS = [
     defaultSeverity: "suggestion",
     requires: ["written-pitches"],
     dependencyScope: "phrase",
-    description: "检查相邻时间窗口内不同声部出现的同字母、不同升降号拼写，并区分同时与先后对斜。",
+    description:
+      "检查相邻时间窗口内不同声部出现的同字母、不同升降号拼写，并区分同时与先后对斜。",
   },
   {
     id: "parallel-fifths",

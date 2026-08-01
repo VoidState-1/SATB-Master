@@ -305,7 +305,12 @@ export function createEmptyProject(title = "未命名练习"): ProjectDocument {
       { id: createId("meter"), tick: 0, numerator: 4, denominator: 4 },
     ],
     keyEvents: [
-      { id: createId("key"), tick: 0, tonic: { step: "C", alter: 0 }, mode: "major" },
+      {
+        id: createId("key"),
+        tick: 0,
+        tonic: { step: "C", alter: 0 },
+        mode: "major",
+      },
     ],
     satbTracks: [
       createTrack("soprano", 52),
@@ -351,7 +356,9 @@ export function getAllPlayableTracks(project: ProjectDocument) {
 }
 
 export function getMusicalTrack(project: ProjectDocument, trackId: string) {
-  const track = getAllPlayableTracks(project).find((item) => item.id === trackId);
+  const track = getAllPlayableTracks(project).find(
+    (item) => item.id === trackId,
+  );
   if (!track) throw new Error(`工程缺少轨道：${trackId}`);
   return track;
 }
@@ -441,9 +448,7 @@ function validatePitch(value: unknown): value is SpelledPitch {
   if (!isRecord(value) || !validatePitchClass(value)) return false;
   const pitch = value as unknown as SpelledPitch;
   return (
-    isInteger(pitch.octave, -2, 9) &&
-    toMidi(pitch) >= 0 &&
-    toMidi(pitch) <= 127
+    isInteger(pitch.octave, -2, 9) && toMidi(pitch) >= 0 && toMidi(pitch) <= 127
   );
 }
 
@@ -498,11 +503,15 @@ function validateNote(value: unknown, projectLength: number) {
     ) &&
     (value.nonChordToneRole === undefined ||
       nonChordToneRoles.has(value.nonChordToneRole as NonChordToneRole)) &&
-    (value.importOrigin === undefined || validateImportOrigin(value.importOrigin))
+    (value.importOrigin === undefined ||
+      validateImportOrigin(value.importOrigin))
   );
 }
 
-function validateTrackBase(value: Record<string, unknown>, projectLength: number) {
+function validateTrackBase(
+  value: Record<string, unknown>,
+  projectLength: number,
+) {
   return (
     hasString(value, "id") &&
     hasString(value, "name") &&
@@ -519,7 +528,8 @@ function validateTrackBase(value: Record<string, unknown>, projectLength: number
 }
 
 function validateSatbTrack(value: unknown, projectLength: number) {
-  if (!isRecord(value) || !validateTrackBase(value, projectLength)) return false;
+  if (!isRecord(value) || !validateTrackBase(value, projectLength))
+    return false;
   return (
     value.kind === "satb" &&
     VOICE_ORDER.includes(value.id as VoiceId) &&
@@ -531,7 +541,8 @@ function validateSatbTrack(value: unknown, projectLength: number) {
 }
 
 function validateAuxiliaryTrack(value: unknown, projectLength: number) {
-  if (!isRecord(value) || !validateTrackBase(value, projectLength)) return false;
+  if (!isRecord(value) || !validateTrackBase(value, projectLength))
+    return false;
   return (
     value.kind === "auxiliary" &&
     ["midi-import", "reference", "other"].includes(value.role as string) &&
@@ -540,7 +551,9 @@ function validateAuxiliaryTrack(value: unknown, projectLength: number) {
   );
 }
 
-function validateFunctionalAnalysis(value: unknown): value is FunctionalAnalysis {
+function validateFunctionalAnalysis(
+  value: unknown,
+): value is FunctionalAnalysis {
   if (!isRecord(value)) return false;
   const inversionLimit = isSeventhChord(value.quality as ChordQuality) ? 3 : 2;
   return (
@@ -554,7 +567,8 @@ function validateFunctionalAnalysis(value: unknown): value is FunctionalAnalysis
         validatePitchClass(value.localKey.tonic) &&
         ["major", "minor"].includes(value.localKey.mode as string))) &&
     (value.applied === undefined ||
-      (isRecord(value.applied) && isInteger(value.applied.targetDegree, 1, 7))) &&
+      (isRecord(value.applied) &&
+        isInteger(value.applied.targetDegree, 1, 7))) &&
     (value.mixture === undefined ||
       ["parallel-major", "parallel-minor", "modal"].includes(
         value.mixture as string,
@@ -572,7 +586,9 @@ function validateChordIdentity(value: unknown): value is ChordIdentity {
     validatePitchClass(value.root) &&
     chordQualities.has(value.quality as ChordQuality) &&
     Array.isArray(value.extensions) &&
-    value.extensions.every((extension) => [6, 7, 9, 11, 13].includes(extension)) &&
+    value.extensions.every((extension) =>
+      [6, 7, 9, 11, 13].includes(extension),
+    ) &&
     Array.isArray(value.alterations) &&
     value.alterations.every(
       (alteration) =>
@@ -593,17 +609,26 @@ function validateChordRegion(value: unknown, projectLength: number) {
     (value.startTick as number) + (value.durationTicks as number) <=
       projectLength &&
     validateChordIdentity(value.identity) &&
-    (value.function === undefined || validateFunctionalAnalysis(value.function)) &&
+    (value.function === undefined ||
+      validateFunctionalAnalysis(value.function)) &&
     typeof value.locked === "boolean"
   );
 }
 
 function validateRuleProfile(value: unknown) {
-  if (!isRecord(value) || !isRecord(value.builtin) || !Array.isArray(value.external))
+  if (
+    !isRecord(value) ||
+    !isRecord(value.builtin) ||
+    !Array.isArray(value.external)
+  )
     return false;
   if (value.external.length > 256) return false;
   const severities = ["error", "warning", "suggestion", "off"];
-  if (!Object.values(value.builtin).every((severity) => severities.includes(severity as string)))
+  if (
+    !Object.values(value.builtin).every((severity) =>
+      severities.includes(severity as string),
+    )
+  )
     return false;
   const ids = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
   const versions = /^[0-9A-Za-z](?:[0-9A-Za-z.+-]{0,62}[0-9A-Za-z])?$/;
@@ -667,10 +692,9 @@ export function validateProject(value: unknown): value is ProjectDocument {
     project.satbTracks.map((track) => (track as Record<string, unknown>).id),
   );
   if (!VOICE_ORDER.every((voiceId) => voiceIds.has(voiceId))) return false;
-  const allTrackIds = [
-    ...project.satbTracks,
-    ...project.auxiliaryTracks,
-  ].map((track) => (track as Record<string, unknown>).id);
+  const allTrackIds = [...project.satbTracks, ...project.auxiliaryTracks].map(
+    (track) => (track as Record<string, unknown>).id,
+  );
   if (new Set(allTrackIds).size !== allTrackIds.length) return false;
 
   if (
@@ -722,7 +746,9 @@ export function validateProject(value: unknown): value is ProjectDocument {
     !isRecord(project.chordTrack) ||
     typeof project.chordTrack.visible !== "boolean" ||
     typeof project.chordTrack.locked !== "boolean" ||
-    !["roman", "absolute", "both"].includes(project.chordTrack.displayMode as string) ||
+    !["roman", "absolute", "both"].includes(
+      project.chordTrack.displayMode as string,
+    ) ||
     !Array.isArray(project.chordTrack.regions) ||
     !project.chordTrack.regions.every((region) =>
       validateChordRegion(region, project.lengthTicks as number),
@@ -749,7 +775,13 @@ export function validateProject(value: unknown): value is ProjectDocument {
       .sort((a, b) => a.tick - b.tick)
       .filter((event) => event.tick <= region.startTick)
       .at(-1);
-    if (!key || !chordIdentityEquals(region.identity, resolveChordIdentity(region.function, key)))
+    if (
+      !key ||
+      !chordIdentityEquals(
+        region.identity,
+        resolveChordIdentity(region.function, key),
+      )
+    )
       return false;
   }
 
@@ -773,7 +805,9 @@ export function validateProject(value: unknown): value is ProjectDocument {
         isRecord(range) &&
         hasString(range, "id") &&
         Array.isArray(range.voiceIds) &&
-        range.voiceIds.every((voiceId) => VOICE_ORDER.includes(voiceId as VoiceId)) &&
+        range.voiceIds.every((voiceId) =>
+          VOICE_ORDER.includes(voiceId as VoiceId),
+        ) &&
         isInteger(range.fromTick, 0) &&
         isInteger(range.toTick, 1) &&
         (range.toTick as number) > (range.fromTick as number) &&
@@ -800,10 +834,12 @@ export function validateProject(value: unknown): value is ProjectDocument {
 }
 
 function legacyKeyAtTick(events: KeyEvent[], tick: number) {
-  return [...events]
-    .sort((a, b) => a.tick - b.tick)
-    .filter((event) => event.tick <= tick)
-    .at(-1) ?? events[0];
+  return (
+    [...events]
+      .sort((a, b) => a.tick - b.tick)
+      .filter((event) => event.tick <= tick)
+      .at(-1) ?? events[0]
+  );
 }
 
 function migrateLegacyFunction(value: unknown): FunctionalAnalysis | undefined {
@@ -814,9 +850,14 @@ function migrateLegacyFunction(value: unknown): FunctionalAnalysis | undefined {
     !chordQualities.has(value.quality as ChordQuality)
   )
     return undefined;
-  const maximumInversion = isSeventhChord(value.quality as ChordQuality) ? 3 : 2;
+  const maximumInversion = isSeventhChord(value.quality as ChordQuality)
+    ? 3
+    : 2;
   if (!isInteger(value.inversion, 0, maximumInversion)) return undefined;
-  if (value.appliedToDegree !== undefined && !isInteger(value.appliedToDegree, 1, 7))
+  if (
+    value.appliedToDegree !== undefined &&
+    !isInteger(value.appliedToDegree, 1, 7)
+  )
     return undefined;
   return {
     degree: value.degree as FunctionalAnalysis["degree"],
@@ -832,7 +873,8 @@ function migrateLegacyFunction(value: unknown): FunctionalAnalysis | undefined {
 }
 
 function migrateV2Project(value: Record<string, unknown>) {
-  if (!Array.isArray(value.keyEvents) || !Array.isArray(value.tracks)) return undefined;
+  if (!Array.isArray(value.keyEvents) || !Array.isArray(value.tracks))
+    return undefined;
   const keyEvents = value.keyEvents.map((event) => {
     if (!isRecord(event) || !isInteger(event.tonic, 0, 11)) return event;
     return {
@@ -865,7 +907,11 @@ function migrateV2Project(value: Record<string, unknown>) {
       participatesInHarmony: true,
       monophonic: true,
       notes: track.notes.map((note) => {
-        if (!isRecord(note) || !isInteger(note.midiNote, 0, 127) || !isInteger(note.startTick, 0))
+        if (
+          !isRecord(note) ||
+          !isInteger(note.midiNote, 0, 127) ||
+          !isInteger(note.startTick, 0)
+        )
           return note;
         const key = legacyKeyAtTick(typedKeyEvents, note.startTick as number);
         const migrated = { ...note };
@@ -893,7 +939,10 @@ function migrateV2Project(value: Record<string, unknown>) {
       endTick: Math.min(migrated.lengthTicks as number, PPQ * 4),
     };
   }
-  if (isRecord(migrated.chordTrack) && Array.isArray(migrated.chordTrack.regions)) {
+  if (
+    isRecord(migrated.chordTrack) &&
+    Array.isArray(migrated.chordTrack.regions)
+  ) {
     migrated.chordTrack.regions = migrated.chordTrack.regions.map((region) => {
       if (!isRecord(region)) return region;
       const analysis = migrateLegacyFunction(region.analysis);

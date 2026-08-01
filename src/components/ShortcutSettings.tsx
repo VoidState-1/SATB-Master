@@ -56,8 +56,12 @@ interface ShortcutSettingsProps {
   externalRuleLibraryLoading: boolean;
   externalRuleLibraryError?: string;
   onImportExternalRulePackage(): void;
-  onMountExternalRulePackage(installedPackage: InstalledExternalRulePackage): void;
-  onRemoveExternalRulePackage(installedPackage: InstalledExternalRulePackage): void;
+  onMountExternalRulePackage(
+    installedPackage: InstalledExternalRulePackage,
+  ): void;
+  onRemoveExternalRulePackage(
+    installedPackage: InstalledExternalRulePackage,
+  ): void;
   onSetExternalRuleEnabled(
     reference: RuleProfileRef["external"][number],
     enabled: boolean,
@@ -491,8 +495,8 @@ export function ShortcutSettings({
                 <div className="developer-settings-note">
                   <strong>调试视图为只读</strong>
                   <p>
-                    可选字段即使尚未设置也会列出；数组和嵌套对象会展开，并可复制事件的原始 JSON。
-                    此开关只保存在本机，不写入工程文件。
+                    可选字段即使尚未设置也会列出；数组和嵌套对象会展开，并可复制事件的原始
+                    JSON。 此开关只保存在本机，不写入工程文件。
                   </p>
                 </div>
               </section>

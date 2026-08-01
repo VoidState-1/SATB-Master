@@ -19,7 +19,9 @@ export function useExternalRuleLibrary() {
       setPackages(await listExternalRulePackages());
       setError(undefined);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      setError(
+        nextError instanceof Error ? nextError.message : String(nextError),
+      );
     } finally {
       setLoading(false);
     }

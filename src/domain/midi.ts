@@ -85,9 +85,13 @@ function globalTrack(project: ProjectDocument) {
   return toDeltaEvents(events, project.lengthTicks);
 }
 
-function playableTrack(track: MusicalTrack, trackIndex: number, endTick: number) {
+function playableTrack(
+  track: MusicalTrack,
+  trackIndex: number,
+  endTick: number,
+) {
   // MIDI 通道 10（索引 9）保留给打击乐；辅助轨超过可用通道时允许复用通道，但仍保持独立轨道。
-  const channel = trackIndex < 9 ? trackIndex : ((trackIndex + 1) % 16);
+  const channel = trackIndex < 9 ? trackIndex : (trackIndex + 1) % 16;
   const events: AbsoluteEvent[] = [
     {
       tick: 0,
@@ -183,5 +187,8 @@ export function midiFileName(project: ProjectDocument) {
     .trim()
     .replace(/[\\/:*?"<>|]/g, "-")
     .replace(/\s+/g, " ");
-  return safe || `${formatPitchClass(project.keyEvents[0]?.tonic ?? { step: "C", alter: 0 })}调四部和声`;
+  return (
+    safe ||
+    `${formatPitchClass(project.keyEvents[0]?.tonic ?? { step: "C", alter: 0 })}调四部和声`
+  );
 }

@@ -1098,12 +1098,8 @@ export function PianoRoll({
           (rect) => rect.note.startTick + rect.note.durationTicks,
         ),
       );
-      const minPitch = Math.min(
-        ...selectedRects.map((rect) => rect.midiNote),
-      );
-      const maxPitch = Math.max(
-        ...selectedRects.map((rect) => rect.midiNote),
-      );
+      const minPitch = Math.min(...selectedRects.map((rect) => rect.midiNote));
+      const maxPitch = Math.max(...selectedRects.map((rect) => rect.midiNote));
       const tickDelta = Math.max(
         -minStart,
         Math.min(project.lengthTicks - maxEnd, requestedTickDelta),

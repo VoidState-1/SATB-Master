@@ -38,10 +38,7 @@ import { PanelResizeHandle } from "./components/PanelResizeHandle";
 import { PianoRoll, type EditorTool } from "./components/PianoRoll";
 import { ShortcutSettings } from "./components/ShortcutSettings";
 import { TrackSidebar } from "./components/TrackSidebar";
-import {
-  createChordRegion,
-  defaultChordAnalysisAtTick,
-} from "./domain/chords";
+import { createChordRegion, defaultChordAnalysisAtTick } from "./domain/chords";
 import {
   addChordRegion,
   addNote,
@@ -334,18 +331,13 @@ function App() {
         }
       })
       .catch((error) => {
-        if (!controller.signal.aborted)
-          console.warn("外置规则调度失败", error);
+        if (!controller.signal.aborted) console.warn("外置规则调度失败", error);
       });
     return () => {
       controller.abort();
       externalRuleRuntimeRef.current.cancel();
     };
-  }, [
-    externalRuleLibrary.packages,
-    harmonyRuleSettings.severities,
-    project,
-  ]);
+  }, [externalRuleLibrary.packages, harmonyRuleSettings.severities, project]);
   const selectedNote = useMemo(() => {
     const id = selectedNoteIds.values().next().value as string | undefined;
     if (!id) return undefined;
@@ -575,12 +567,8 @@ function App() {
   useEffect(() => {
     if (!history.isDirty) return;
     const timer = window.setTimeout(() => {
-      void autosaveProject(
-        project,
-        filePath,
-        migrationBackupSourcePath,
-      ).catch((error) =>
-        console.warn("自动恢复保存失败", error),
+      void autosaveProject(project, filePath, migrationBackupSourcePath).catch(
+        (error) => console.warn("自动恢复保存失败", error),
       );
     }, 5000);
     return () => window.clearTimeout(timer);
@@ -617,7 +605,8 @@ function App() {
       if (commitResult(result)) {
         const note = getTrack(result.project, voiceId).notes.find(
           (candidate) =>
-            candidate.startTick === tick && toMidi(candidate.pitch) === midiNote,
+            candidate.startTick === tick &&
+            toMidi(candidate.pitch) === midiNote,
         );
         if (note) setSelectedNoteIds(new Set([note.id]));
         setSelectedChordIds(new Set());

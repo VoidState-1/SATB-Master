@@ -22,10 +22,13 @@ import { loadExternalRulePackageSource } from "./externalRuleLibrary";
 let requestId = 0;
 
 function createRuleWorker() {
-  return new Worker(new URL("../workers/externalRule.worker.ts", import.meta.url), {
-    type: "module",
-    name: "satb-external-rules",
-  });
+  return new Worker(
+    new URL("../workers/externalRule.worker.ts", import.meta.url),
+    {
+      type: "module",
+      name: "satb-external-rules",
+    },
+  );
 }
 
 function abortError() {
@@ -287,7 +290,10 @@ export class ExternalRuleRuntime {
         superseded: Boolean(signal?.aborted),
       };
     } catch (error) {
-      if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+      if (
+        signal?.aborted ||
+        (error instanceof DOMException && error.name === "AbortError")
+      ) {
         return {
           diagnostics: [],
           skippedRules: failures.map(failureSkip),

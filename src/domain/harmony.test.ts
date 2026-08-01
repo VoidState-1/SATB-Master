@@ -40,10 +40,10 @@ function addPair(
   voiceId: VoiceId,
   pitches: [number, number],
 ) {
-  project.satbTracks.find((track) => track.id === voiceId)!.notes =
-    pitches.map((midiNote, index) =>
+  project.satbTracks.find((track) => track.id === voiceId)!.notes = pitches.map(
+    (midiNote, index) =>
       note(`${voiceId}-${index}`, index * PPQ, PPQ, midiNote),
-    );
+  );
 }
 
 function addLine(
@@ -245,9 +245,9 @@ describe("斯波索宾基础规则检查", () => {
     });
 
     const diagnostics = checkHarmony(project).diagnostics;
-    expect(
-      diagnostics.some((item) => item.noteIds.includes("aux-high")),
-    ).toBe(false);
+    expect(diagnostics.some((item) => item.noteIds.includes("aux-high"))).toBe(
+      false,
+    );
   });
 
   it("和弦轨为空时明确跳过依赖和弦标注的规则", () => {

@@ -21,10 +21,7 @@ interface TrackSidebarProps {
   project: ProjectDocument;
   activeVoice: VoiceId;
   onSetActive(voiceId: VoiceId): void;
-  onUpdateTrack(
-    voiceId: VoiceId,
-    patch: Partial<SatbTrack>,
-  ): void;
+  onUpdateTrack(voiceId: VoiceId, patch: Partial<SatbTrack>): void;
 }
 
 export function TrackSidebar({

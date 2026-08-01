@@ -21,7 +21,10 @@ export class ExternalRuleSandboxError extends Error {
   constructor(
     readonly code: Exclude<
       ExternalRuleFailureCode,
-      "missing-package" | "source-error" | "manifest-mismatch" | "invalid-result"
+      | "missing-package"
+      | "source-error"
+      | "manifest-mismatch"
+      | "invalid-result"
     >,
     message: string,
   ) {
@@ -71,7 +74,9 @@ function formatSandboxError(value: unknown) {
     const record = value as Record<string, unknown>;
     const name = typeof record.name === "string" ? record.name : "Error";
     const message =
-      typeof record.message === "string" ? record.message : JSON.stringify(value);
+      typeof record.message === "string"
+        ? record.message
+        : JSON.stringify(value);
     return `${name}: ${message}`;
   }
   return String(value);

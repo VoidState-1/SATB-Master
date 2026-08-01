@@ -93,7 +93,9 @@ export function addNote(
 
   const next = cloneProject(project);
   getMusicalTrack(next, trackId).notes.push(note);
-  getMusicalTrack(next, trackId).notes.sort((a, b) => a.startTick - b.startTick);
+  getMusicalTrack(next, trackId).notes.sort(
+    (a, b) => a.startTick - b.startTick,
+  );
   next.updatedAt = new Date().toISOString();
   return { project: next };
 }

@@ -34,15 +34,15 @@ export function chordRootPitchClass(analysis: ChordAnalysis, key: KeyEvent) {
 export function chordPitchClasses(analysis: ChordAnalysis, key: KeyEvent) {
   const identity = resolveChordIdentity(analysis, key);
   const root = pitchClassValue(identity.root);
-  return QUALITY_INTERVALS[identity.quality].map((interval) =>
-    ((root + interval) % 12 + 12) % 12,
+  return QUALITY_INTERVALS[identity.quality].map(
+    (interval) => (((root + interval) % 12) + 12) % 12,
   );
 }
 
 export function chordIdentityPitchClasses(identity: ChordIdentity) {
   const root = pitchClassValue(identity.root);
-  return QUALITY_INTERVALS[identity.quality].map((interval) =>
-    ((root + interval) % 12 + 12) % 12,
+  return QUALITY_INTERVALS[identity.quality].map(
+    (interval) => (((root + interval) % 12) + 12) % 12,
   );
 }
 
@@ -113,16 +113,15 @@ export function formatChordIdentity(
   const roman = analysis ? romanName(analysis) : "?";
   const absolute = absoluteName(identity);
   const functionName = analysis ? chordFunction(analysis) : "other";
-  const baseLabel =
-    !analysis
-      ? "未分析"
-      : functionName === "tonic"
-        ? "主功能"
-        : functionName === "subdominant"
-          ? "下属功能"
-          : functionName === "dominant"
-            ? "属功能"
-            : "其他功能";
+  const baseLabel = !analysis
+    ? "未分析"
+    : functionName === "tonic"
+      ? "主功能"
+      : functionName === "subdominant"
+        ? "下属功能"
+        : functionName === "dominant"
+          ? "属功能"
+          : "其他功能";
   const functionLabel = analysis?.applied
     ? `${baseLabel} · 指向 ${ROMAN_DEGREES[analysis.applied.targetDegree - 1]} 级`
     : baseLabel;

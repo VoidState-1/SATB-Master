@@ -1,10 +1,5 @@
 import { X } from "lucide-react";
-import {
-  useEffect,
-  useRef,
-  type KeyboardEvent,
-  type RefObject,
-} from "react";
+import { useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 interface SponsorDialogProps {
@@ -15,10 +10,7 @@ interface SponsorDialogProps {
 // 使用相对应用入口的路径，兼容开发服务器与打包后的 file:// 页面。
 const SPONSOR_QR_URL = "./assets/sponsor-alipay.jpg";
 
-export function SponsorDialog({
-  onClose,
-  returnFocusRef,
-}: SponsorDialogProps) {
+export function SponsorDialog({ onClose, returnFocusRef }: SponsorDialogProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {

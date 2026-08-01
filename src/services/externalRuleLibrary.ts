@@ -10,7 +10,9 @@ const BROWSER_LIBRARY_PREFIX = "satb-master-rule-library-v1:";
 const sourceCache = new Map<string, Promise<string>>();
 
 function bytesToHex(bytes: Uint8Array) {
-  return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+  return [...bytes]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function hashSource(source: string) {
@@ -40,9 +42,7 @@ export async function listExternalRulePackages() {
           return undefined;
         }
       })
-      .filter(
-        (value): value is InstalledExternalRulePackage => Boolean(value),
-      );
+      .filter((value): value is InstalledExternalRulePackage => Boolean(value));
   }
 
   const packages: InstalledExternalRulePackage[] = [];
@@ -60,9 +60,10 @@ export async function listExternalRulePackages() {
       // 浏览器预览中的损坏规则记录不应影响应用启动。
     }
   }
-  return packages.sort((left, right) =>
-    left.manifest.packageId.localeCompare(right.manifest.packageId) ||
-    left.manifest.version.localeCompare(right.manifest.version),
+  return packages.sort(
+    (left, right) =>
+      left.manifest.packageId.localeCompare(right.manifest.packageId) ||
+      left.manifest.version.localeCompare(right.manifest.version),
   );
 }
 
@@ -71,11 +72,9 @@ function chooseBrowserRuleFile() {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".js,.satb-rule.js";
-    input.addEventListener(
-      "change",
-      () => resolve(input.files?.[0]),
-      { once: true },
-    );
+    input.addEventListener("change", () => resolve(input.files?.[0]), {
+      once: true,
+    });
     input.click();
   });
 }
@@ -161,7 +160,7 @@ export function loadExternalRulePackageSource(contentHash: string) {
       ? (await window.desktop.ruleLibrary.loadSource(contentHash)).source
       : localStorage.getItem(browserSourceKey(contentHash));
     if (typeof source !== "string") throw new Error("规则包私有副本不存在");
-    if (await hashSource(source) !== contentHash)
+    if ((await hashSource(source)) !== contentHash)
       throw new Error("规则包私有副本的内容摘要不匹配");
     return source;
   })();

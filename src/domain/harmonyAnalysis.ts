@@ -128,14 +128,13 @@ export function analysisChordAtTick(
 ) {
   return analysis.project.chordTrack.regions.find(
     (region) =>
-      region.startTick <= tick && region.startTick + region.durationTicks > tick,
+      region.startTick <= tick &&
+      region.startTick + region.durationTicks > tick,
   );
 }
 
 function sameKey(left: AnalysisKey, right: AnalysisKey) {
-  return (
-    left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic)
-  );
+  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
 function sameOptionalKey(
@@ -174,7 +173,9 @@ function sameChordIdentityWithoutBass(
   const serializeTone = (tone: { step: string; alter: number }) =>
     `${tone.step}:${tone.alter}`;
   const leftTones = chordIdentityToneSpellings(left).map(serializeTone).sort();
-  const rightTones = chordIdentityToneSpellings(right).map(serializeTone).sort();
+  const rightTones = chordIdentityToneSpellings(right)
+    .map(serializeTone)
+    .sort();
   return (
     leftTones.length === rightTones.length &&
     leftTones.every((tone, index) => tone === rightTones[index])
@@ -220,7 +221,10 @@ export function sameHarmonyAtTicks(
   const currentKey = keyAtTick(analysis.project.keyEvents, currentTick);
   return (
     sameKey(previousKey, currentKey) &&
-    sameChordIdentityWithoutBass(previousChord.identity, currentChord.identity) &&
+    sameChordIdentityWithoutBass(
+      previousChord.identity,
+      currentChord.identity,
+    ) &&
     sameFunctionalContext(previousChord.function, currentChord.function)
   );
 }
@@ -329,8 +333,14 @@ function buildMelodyTransitions(
     for (let index = 1; index < notes.length; index += 1) {
       const previous = notes[index - 1];
       const current = notes[index];
-      const previousKey = keyAtTick(analysis.project.keyEvents, previous.startTick);
-      const currentKey = keyAtTick(analysis.project.keyEvents, current.startTick);
+      const previousKey = keyAtTick(
+        analysis.project.keyEvents,
+        previous.startTick,
+      );
+      const currentKey = keyAtTick(
+        analysis.project.keyEvents,
+        current.startTick,
+      );
       transitions.push({
         voiceId,
         previous,
@@ -416,12 +426,16 @@ export function computeAnalysisInvalidationRanges(
   const ranges: AnalysisInvalidationRange[] = [];
   const previousNotes = new Map(
     previous.satbTracks.flatMap((track) =>
-      track.notes.map((note) => [note.id, { note, voiceId: track.id }] as const),
+      track.notes.map(
+        (note) => [note.id, { note, voiceId: track.id }] as const,
+      ),
     ),
   );
   const currentNotes = new Map(
     current.satbTracks.flatMap((track) =>
-      track.notes.map((note) => [note.id, { note, voiceId: track.id }] as const),
+      track.notes.map(
+        (note) => [note.id, { note, voiceId: track.id }] as const,
+      ),
     ),
   );
   new Set([...previousNotes.keys(), ...currentNotes.keys()]).forEach((id) => {
@@ -511,9 +525,16 @@ export function computeAnalysisInvalidationRanges(
     );
   });
 
-  if (entitySignature(previous.keyEvents) !== entitySignature(current.keyEvents)) {
+  if (
+    entitySignature(previous.keyEvents) !== entitySignature(current.keyEvents)
+  ) {
     ranges.push(
-      changeRange(0, current.lengthTicks, ["slice", "chord", "phrase", "project"]),
+      changeRange(0, current.lengthTicks, [
+        "slice",
+        "chord",
+        "phrase",
+        "project",
+      ]),
     );
   }
   if (previous.lengthTicks !== current.lengthTicks) {
@@ -551,7 +572,10 @@ export function buildHarmonyAnalysis(
 ): HarmonyAnalysis {
   // 调度器只向规则暴露冻结后的克隆，避免内置或未来外置规则意外改写编辑器状态。
   const snapshot = deepFreeze(structuredClone(project));
-  const analysisShell = { project: snapshot } as Pick<HarmonyAnalysis, "project">;
+  const analysisShell = { project: snapshot } as Pick<
+    HarmonyAnalysis,
+    "project"
+  >;
   const { slices, notesByVoice } = buildSlices(snapshot);
   const noteById = new Map<string, AnalysisNote>();
   const noteVoiceById = new Map<string, VoiceId>();

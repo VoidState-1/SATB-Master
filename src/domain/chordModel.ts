@@ -132,7 +132,9 @@ export function chordIdentityToneSpellings(
     );
     alteredBase.push(
       spellPitchClassForStep(
-        rootPitchClass + EXTENSION_INTERVALS[extension] + (alteration?.alter ?? 0),
+        rootPitchClass +
+          EXTENSION_INTERVALS[extension] +
+          (alteration?.alter ?? 0),
         rootStep + extension - 1,
       ),
     );
@@ -140,7 +142,8 @@ export function chordIdentityToneSpellings(
 
   return alteredBase.filter(
     (tone, index, source) =>
-      source.findIndex((candidate) => pitchClassEquals(candidate, tone)) === index,
+      source.findIndex((candidate) => pitchClassEquals(candidate, tone)) ===
+      index,
   );
 }
 
@@ -164,10 +167,7 @@ export function resolveChordIdentity(
   };
 }
 
-export function chordIdentityEquals(
-  left: ChordIdentity,
-  right: ChordIdentity,
-) {
+export function chordIdentityEquals(left: ChordIdentity, right: ChordIdentity) {
   return (
     left.quality === right.quality &&
     pitchClassEquals(left.root, right.root) &&

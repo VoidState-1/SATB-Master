@@ -239,14 +239,17 @@ const KEY_FIFTHS: Record<string, number> = {
 };
 
 function asciiPitchClass(pitch: SpelledPitchClass) {
-  const accidental = pitch.alter < 0 ? "b".repeat(-pitch.alter) : "#".repeat(pitch.alter);
+  const accidental =
+    pitch.alter < 0 ? "b".repeat(-pitch.alter) : "#".repeat(pitch.alter);
   return `${pitch.step}${accidental}`;
 }
 
 export function keySignatureFifths(key: KeyLike) {
   const fifths = KEY_FIFTHS[`${key.mode}:${asciiPitchClass(key.tonic)}`];
   if (fifths === undefined) {
-    throw new Error(`${formatPitchClass(key.tonic)} ${key.mode} 不是受支持的调号`);
+    throw new Error(
+      `${formatPitchClass(key.tonic)} ${key.mode} 不是受支持的调号`,
+    );
   }
   return fifths;
 }
@@ -261,10 +264,7 @@ export function keyTonicOptions(mode: KeyMode) {
   );
 }
 
-export function coerceKeyTonicForMode(
-  tonic: SpelledPitchClass,
-  mode: KeyMode,
-) {
+export function coerceKeyTonicForMode(tonic: SpelledPitchClass, mode: KeyMode) {
   if (isSupportedKeySignature({ tonic, mode })) return tonic;
   return (
     keyTonicOptions(mode).find(
@@ -285,10 +285,9 @@ export function spellMidi(midiNote: number, key?: KeyLike): SpelledPitch {
       }
     }
   }
-  spelling ??=
-    (key && keySignatureFifths(key) < 0 ? FLAT_SPELLINGS : SHARP_SPELLINGS)[
-      midiPitchClass
-    ];
+  spelling ??= (
+    key && keySignatureFifths(key) < 0 ? FLAT_SPELLINGS : SHARP_SPELLINGS
+  )[midiPitchClass];
   const natural = NATURAL_PITCH_CLASSES[stepIndex(spelling.step)];
   const octave = Math.floor((midiNote - natural - spelling.alter) / 12) - 1;
   return { ...spelling, octave };

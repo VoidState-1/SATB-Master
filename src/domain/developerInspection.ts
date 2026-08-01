@@ -50,7 +50,11 @@ export function inspectNoteEvent(
         "MidiImportOrigin | undefined",
         note.importOrigin ? "{…}" : undefined,
       ),
-      row("importOrigin.importId", "string | undefined", note.importOrigin?.importId),
+      row(
+        "importOrigin.importId",
+        "string | undefined",
+        note.importOrigin?.importId,
+      ),
       row(
         "importOrigin.sourceTrack",
         "number | undefined",
@@ -110,11 +114,7 @@ export function inspectChordRegion(
   });
   chord.identity.alterations.forEach((alteration, index) => {
     rows.push(
-      row(
-        `identity.alterations[${index}].degree`,
-        "number",
-        alteration.degree,
-      ),
+      row(`identity.alterations[${index}].degree`, "number", alteration.degree),
       row(
         `identity.alterations[${index}].alter`,
         "Alteration",
@@ -162,11 +162,7 @@ export function inspectChordRegion(
       "ChordQuality | undefined",
       chord.function?.quality,
     ),
-    row(
-      "function.inversion",
-      "number | undefined",
-      chord.function?.inversion,
-    ),
+    row("function.inversion", "number | undefined", chord.function?.inversion),
     row(
       "function.applied",
       "AppliedFunction | undefined",
@@ -177,11 +173,7 @@ export function inspectChordRegion(
       "number | undefined",
       chord.function?.applied?.targetDegree,
     ),
-    row(
-      "function.mixture",
-      "string | undefined",
-      chord.function?.mixture,
-    ),
+    row("function.mixture", "string | undefined", chord.function?.mixture),
     row(
       "function.cadenceRole",
       "string | undefined",

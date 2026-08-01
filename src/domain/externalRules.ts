@@ -156,7 +156,9 @@ function requiredString(
   return value;
 }
 
-export function parseExternalRuleManifest(value: unknown): ExternalRuleManifest {
+export function parseExternalRuleManifest(
+  value: unknown,
+): ExternalRuleManifest {
   if (!isRecord(value)) throw new Error("规则包 manifest 不是有效对象");
   if (value.apiVersion !== EXTERNAL_RULE_API_VERSION)
     throw new Error(`仅支持外置规则 API v${EXTERNAL_RULE_API_VERSION}`);
@@ -172,7 +174,11 @@ export function parseExternalRuleManifest(value: unknown): ExternalRuleManifest 
     64,
     VERSION_PATTERN,
   );
-  if (!Array.isArray(value.rules) || value.rules.length < 1 || value.rules.length > 64)
+  if (
+    !Array.isArray(value.rules) ||
+    value.rules.length < 1 ||
+    value.rules.length > 64
+  )
     throw new Error("规则包必须声明 1 到 64 条规则");
 
   const seen = new Set<string>();
@@ -182,8 +188,10 @@ export function parseExternalRuleManifest(value: unknown): ExternalRuleManifest 
     if (seen.has(id)) throw new Error(`规则 ID“${id}”重复`);
     seen.add(id);
     const group = (entry.group ?? "custom") as ExternalRuleGroupId;
-    const defaultSeverity = (entry.defaultSeverity ?? "warning") as DiagnosticSeverity;
-    const dependencyScope = (entry.dependencyScope ?? "project") as RuleDependencyScope;
+    const defaultSeverity = (entry.defaultSeverity ??
+      "warning") as DiagnosticSeverity;
+    const dependencyScope = (entry.dependencyScope ??
+      "project") as RuleDependencyScope;
     if (!VALID_GROUPS.has(group)) throw new Error(`规则“${id}”的分组无效`);
     if (!VALID_SEVERITIES.has(defaultSeverity))
       throw new Error(`规则“${id}”的默认严重程度无效`);
@@ -342,7 +350,9 @@ export function normalizeExternalRuleDiagnostics(options: {
   const { value, project, package: installedPackage, rule, severity } = options;
   if (!Array.isArray(value)) throw new Error("规则 evaluate 必须返回诊断数组");
   if (value.length > MAX_EXTERNAL_DIAGNOSTICS_PER_RULE)
-    throw new Error(`单条规则最多返回 ${MAX_EXTERNAL_DIAGNOSTICS_PER_RULE} 项诊断`);
+    throw new Error(
+      `单条规则最多返回 ${MAX_EXTERNAL_DIAGNOSTICS_PER_RULE} 项诊断`,
+    );
   const noteIds = new Set(
     project.satbTracks.flatMap((track) => track.notes.map((note) => note.id)),
   );
@@ -363,13 +373,20 @@ export function normalizeExternalRuleDiagnostics(options: {
     )
       throw new Error(`第 ${index + 1} 项诊断的 tick 范围无效`);
     const diagnosticNoteIds = stringArray(entry.noteIds ?? [], "诊断 noteIds");
-    const diagnosticChordIds = stringArray(entry.chordIds ?? [], "诊断 chordIds");
+    const diagnosticChordIds = stringArray(
+      entry.chordIds ?? [],
+      "诊断 chordIds",
+    );
     const voiceIds = stringArray(entry.voiceIds ?? [], "诊断 voiceIds");
     if (diagnosticNoteIds.some((id) => !noteIds.has(id)))
       throw new Error(`第 ${index + 1} 项诊断引用了不存在的音符`);
     if (diagnosticChordIds.some((id) => !chordIds.has(id)))
       throw new Error(`第 ${index + 1} 项诊断引用了不存在的和弦`);
-    if (voiceIds.some((id) => !VOICE_ORDER.includes(id as (typeof VOICE_ORDER)[number])))
+    if (
+      voiceIds.some(
+        (id) => !VOICE_ORDER.includes(id as (typeof VOICE_ORDER)[number]),
+      )
+    )
       throw new Error(`第 ${index + 1} 项诊断引用了不存在的 SATB 声部`);
     const confidence = entry.confidence ?? 1;
     if (
@@ -424,7 +441,11 @@ export function mergeExternalRuleResult(
   builtin: HarmonyCheckResult,
   external: ExternalRuleRunResult,
 ): HarmonyCheckResult {
-  if (builtin.superseded || external.superseded || builtin.revision !== external.revision)
+  if (
+    builtin.superseded ||
+    external.superseded ||
+    builtin.revision !== external.revision
+  )
     return { ...builtin, diagnostics: [], superseded: true };
   const skippedRules = [...builtin.skippedRules, ...external.skippedRules];
   return {

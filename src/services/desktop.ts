@@ -35,11 +35,12 @@ export interface LoadedSoundFont {
 type SoundFontProgressListener = (progress: SoundFontLoadProgress) => void;
 
 export async function openProject(): Promise<
-  {
-    project: ProjectDocument;
-    filePath?: string;
-    migratedFromSchemaVersion?: 2;
-  } | undefined
+  | {
+      project: ProjectDocument;
+      filePath?: string;
+      migratedFromSchemaVersion?: 2;
+    }
+  | undefined
 > {
   if (window.desktop) {
     const result = await window.desktop.project.open();

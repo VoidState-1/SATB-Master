@@ -86,7 +86,9 @@ export function ExternalRuleSettings({
       <header className="external-rule-library-header">
         <div>
           <h3>外置规则</h3>
-          <small>脚本在独立 QuickJS Worker 中运行，不具有文件、网络或界面权限。</small>
+          <small>
+            脚本在独立 QuickJS Worker 中运行，不具有文件、网络或界面权限。
+          </small>
         </div>
         <span className="external-rule-library-status">
           {loading ? (
@@ -151,7 +153,7 @@ export function ExternalRuleSettings({
                   <span>v{installedPackage.manifest.version}</span>
                 </strong>
                 <small title={installedPackage.sourcePath}>
-                  {sourceName(installedPackage.sourcePath)} · SHA-256 {" "}
+                  {sourceName(installedPackage.sourcePath)} · SHA-256{" "}
                   {installedPackage.contentHash.slice(0, 12)}…
                 </small>
               </div>
@@ -192,7 +194,8 @@ export function ExternalRuleSettings({
                       disabled={!reference}
                       aria-label={`启用外置规则“${rule.label}”`}
                       onChange={(event) =>
-                        reference && onSetEnabled(reference, event.target.checked)
+                        reference &&
+                        onSetEnabled(reference, event.target.checked)
                       }
                     />
                   </label>
@@ -203,7 +206,10 @@ export function ExternalRuleSettings({
                       {rule.id} · {rule.dependencyScope}
                     </code>
                     {failure ? (
-                      <span className="external-rule-failure" title={failure.message}>
+                      <span
+                        className="external-rule-failure"
+                        title={failure.message}
+                      >
                         {failure.message}
                       </span>
                     ) : null}
@@ -251,7 +257,10 @@ export function ExternalRuleSettings({
                 item.ruleId === reference.ruleId,
             );
             return (
-              <div className="external-rule-row has-failure" key={externalRuleReferenceKey(reference)}>
+              <div
+                className="external-rule-row has-failure"
+                key={externalRuleReferenceKey(reference)}
+              >
                 <label className="external-rule-enabled">
                   <input
                     type="checkbox"
@@ -265,7 +274,8 @@ export function ExternalRuleSettings({
                 <div className="external-rule-copy">
                   <strong>{reference.ruleId}</strong>
                   <small>
-                    {reference.packageId} v{reference.version} · {reference.contentHash.slice(0, 12)}…
+                    {reference.packageId} v{reference.version} ·{" "}
+                    {reference.contentHash.slice(0, 12)}…
                   </small>
                   <span className="external-rule-failure">
                     {failure?.message ?? "本机没有匹配的规则包副本"}

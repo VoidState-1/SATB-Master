@@ -169,9 +169,9 @@ function finalSameHarmonySlice(analysis: HarmonyAnalysis, sliceIndex: number) {
   const next = analysis.slices[sliceIndex + 1];
   return Boolean(
     next &&
-      current.chord &&
-      next.chord &&
-      analysis.sliceTransitions[sliceIndex]?.sameHarmony,
+    current.chord &&
+    next.chord &&
+    analysis.sliceTransitions[sliceIndex]?.sameHarmony,
   );
 }
 
@@ -179,9 +179,8 @@ function activeNotes(slice: HarmonyAnalysis["slices"][number]) {
   return VOICE_ORDER.map((voiceId) => ({
     voiceId,
     note: slice.notes[voiceId],
-  })).filter(
-    (item): item is { voiceId: VoiceId; note: AnalysisNote } =>
-      Boolean(item.note),
+  })).filter((item): item is { voiceId: VoiceId; note: AnalysisNote } =>
+    Boolean(item.note),
   );
 }
 
@@ -248,10 +247,7 @@ function validMelodyTransitions(analysis: HarmonyAnalysis) {
 
 function melodicLeapRule(
   analysis: HarmonyAnalysis,
-  ruleId:
-    | "melodic-leap-over-octave"
-    | "melodic-large-leap"
-    | "melodic-tritone",
+  ruleId: "melodic-leap-over-octave" | "melodic-large-leap" | "melodic-tritone",
 ) {
   const diagnostics: RuleDiagnostic[] = [];
   validMelodyTransitions(analysis).forEach((transition) => {
@@ -351,7 +347,8 @@ function leadingToneResolutionRule(analysis: HarmonyAnalysis) {
     if (!pitchClassEquals(transition.previous.pitch, leadingTone)) return;
     const resolves =
       pitchClassEquals(transition.current.pitch, key.tonic) &&
-      toMidi(transition.current.pitch) - toMidi(transition.previous.pitch) === 1;
+      toMidi(transition.current.pitch) - toMidi(transition.previous.pitch) ===
+        1;
     if (resolves) return;
     diagnostics.push(
       diagnostic(
@@ -400,9 +397,16 @@ function crossRelationRule(analysis: HarmonyAnalysis, config: RuleConfig) {
 
   for (let leftIndex = 0; leftIndex < notes.length; leftIndex += 1) {
     const left = notes[leftIndex];
-    for (let rightIndex = leftIndex + 1; rightIndex < notes.length; rightIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < notes.length;
+      rightIndex += 1
+    ) {
       const right = notes[rightIndex];
-      if (right.note.startTick - (left.note.startTick + left.note.durationTicks) > windowTicks)
+      if (
+        right.note.startTick - (left.note.startTick + left.note.durationTicks) >
+        windowTicks
+      )
         break;
       if (left.voiceId === right.voiceId) continue;
       if (
@@ -510,8 +514,16 @@ function voiceLeadingRule(
 ) {
   const diagnostics: RuleDiagnostic[] = [];
   analysis.sliceTransitions.forEach((transition) => {
-    for (let upperIndex = 0; upperIndex < VOICE_ORDER.length - 1; upperIndex += 1) {
-      for (let lowerIndex = upperIndex + 1; lowerIndex < VOICE_ORDER.length; lowerIndex += 1) {
+    for (
+      let upperIndex = 0;
+      upperIndex < VOICE_ORDER.length - 1;
+      upperIndex += 1
+    ) {
+      for (
+        let lowerIndex = upperIndex + 1;
+        lowerIndex < VOICE_ORDER.length;
+        lowerIndex += 1
+      ) {
         const upperId = VOICE_ORDER[upperIndex];
         const lowerId = VOICE_ORDER[lowerIndex];
         const previousUpper = transition.previous.notes[upperId];
@@ -551,7 +563,8 @@ function voiceLeadingRule(
             similarMotion &&
             (currentInterval === 0 || currentInterval === 7) &&
             previousInterval !== currentInterval &&
-            Math.abs(toMidi(currentUpper.pitch) - toMidi(previousUpper.pitch)) > 2;
+            Math.abs(toMidi(currentUpper.pitch) - toMidi(previousUpper.pitch)) >
+              2;
         } else {
           const adjacent = lowerIndex === upperIndex + 1;
           matches =
@@ -586,10 +599,22 @@ function voiceLeadingRule(
             message,
             {
               evidence: [
-                noteEvidence(previousUpper, `${voiceName(analysis, upperId)}前一音`),
-                noteEvidence(previousLower, `${voiceName(analysis, lowerId)}前一音`),
-                noteEvidence(currentUpper, `${voiceName(analysis, upperId)}当前音`),
-                noteEvidence(currentLower, `${voiceName(analysis, lowerId)}当前音`),
+                noteEvidence(
+                  previousUpper,
+                  `${voiceName(analysis, upperId)}前一音`,
+                ),
+                noteEvidence(
+                  previousLower,
+                  `${voiceName(analysis, lowerId)}前一音`,
+                ),
+                noteEvidence(
+                  currentUpper,
+                  `${voiceName(analysis, upperId)}当前音`,
+                ),
+                noteEvidence(
+                  currentLower,
+                  `${voiceName(analysis, lowerId)}当前音`,
+                ),
               ],
             },
           ),
@@ -658,7 +683,10 @@ function chordSliceRule(
             `${chordLabel(chord)} 要求低音写作 ${formatPitchClass(chord.identity.bass)}，当前为 ${formatPitchClass(bass.note.pitch)}。`,
             {
               chordIds: [chord.id],
-              evidence: [chordEvidence(chord), noteEvidence(bass.note, "男低音")],
+              evidence: [
+                chordEvidence(chord),
+                noteEvidence(bass.note, "男低音"),
+              ],
             },
           ),
         );
@@ -669,7 +697,8 @@ function chordSliceRule(
     if (!slice.completeSatb || intermediate) return;
     if (ruleId === "chord-completeness") {
       const missing = tones.filter(
-        (tone) => !active.some(({ note }) => pitchClassEquals(note.pitch, tone)),
+        (tone) =>
+          !active.some(({ note }) => pitchClassEquals(note.pitch, tone)),
       );
       if (missing.length > 0) {
         diagnostics.push(
@@ -711,7 +740,9 @@ function chordSliceRule(
           ? tones[3]
           : undefined;
     if (!target) return;
-    const repeated = active.filter(({ note }) => pitchClassEquals(note.pitch, target));
+    const repeated = active.filter(({ note }) =>
+      pitchClassEquals(note.pitch, target),
+    );
     if (repeated.length <= 1) return;
     diagnostics.push(
       diagnostic(
@@ -744,7 +775,10 @@ function chordSeventhResolutionRule(analysis: HarmonyAnalysis) {
     const chord = analysisChordAtTick(analysis, transition.previous.startTick);
     if (!chord) return;
     const tones = chordIdentityToneSpellings(chord.identity);
-    if (tones.length !== 4 || !pitchClassEquals(transition.previous.pitch, tones[3]))
+    if (
+      tones.length !== 4 ||
+      !pitchClassEquals(transition.previous.pitch, tones[3])
+    )
       return;
     const resolution =
       toMidi(transition.current.pitch) - toMidi(transition.previous.pitch);
@@ -774,13 +808,15 @@ function chordSeventhResolutionRule(analysis: HarmonyAnalysis) {
 
 function progressionRule(
   analysis: HarmonyAnalysis,
-  ruleId:
-    | "functional-retrogression"
-    | "secondary-dominant-resolution",
+  ruleId: "functional-retrogression" | "secondary-dominant-resolution",
 ) {
   const diagnostics: RuleDiagnostic[] = [];
   analysis.chordProgressions.forEach((progression) => {
-    if (!progression.contiguous || !progression.sameKey || progression.sameHarmony)
+    if (
+      !progression.contiguous ||
+      !progression.sameKey ||
+      progression.sameHarmony
+    )
       return;
     const previousFunction = progression.previous.function;
     const currentFunction = progression.current.function;
@@ -793,7 +829,7 @@ function progressionRule(
     } else if (ruleId === "secondary-dominant-resolution") {
       matches = Boolean(
         previousFunction.applied &&
-          currentFunction.degree !== previousFunction.applied.targetDegree,
+        currentFunction.degree !== previousFunction.applied.targetDegree,
       );
     }
     if (!matches) return;
@@ -843,9 +879,9 @@ function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
     const progression = analysis.chordProgressions[index];
     const resolves = Boolean(
       current &&
-        progression?.contiguous &&
-        progression.sameKey &&
-        progression.currentClass === "dominant",
+      progression?.contiguous &&
+      progression.sameKey &&
+      progression.currentClass === "dominant",
     );
     if (resolves) return;
     diagnostics.push(
@@ -899,17 +935,21 @@ const evaluators: Record<
   "augmented-diminished-interval": (analysis) =>
     augmentedDiminishedIntervalRule(analysis),
   "cross-relation": (analysis, config) => crossRelationRule(analysis, config),
-  "parallel-fifths": (analysis) => voiceLeadingRule(analysis, "parallel-fifths"),
-  "parallel-octaves": (analysis) => voiceLeadingRule(analysis, "parallel-octaves"),
+  "parallel-fifths": (analysis) =>
+    voiceLeadingRule(analysis, "parallel-fifths"),
+  "parallel-octaves": (analysis) =>
+    voiceLeadingRule(analysis, "parallel-octaves"),
   "hidden-perfect-interval": (analysis) =>
     voiceLeadingRule(analysis, "hidden-perfect-interval"),
-  "chord-membership": (analysis) => chordSliceRule(analysis, "chord-membership"),
+  "chord-membership": (analysis) =>
+    chordSliceRule(analysis, "chord-membership"),
   "chord-completeness": (analysis) =>
     chordSliceRule(analysis, "chord-completeness"),
   "chord-inversion": (analysis) => chordSliceRule(analysis, "chord-inversion"),
   "leading-tone-doubling": (analysis) =>
     chordSliceRule(analysis, "leading-tone-doubling"),
-  "chord-seventh-resolution": (analysis) => chordSeventhResolutionRule(analysis),
+  "chord-seventh-resolution": (analysis) =>
+    chordSeventhResolutionRule(analysis),
   "chord-seventh-doubling": (analysis) =>
     chordSliceRule(analysis, "chord-seventh-doubling"),
   "functional-retrogression": (analysis) =>
@@ -934,9 +974,5 @@ export function checkHarmony(
   project: ProjectDocument,
   ruleSeverities: HarmonyRuleSeverities = defaultHarmonyRuleSeverities(),
 ): HarmonyCheckResult {
-  return runRulesSynchronously(
-    BUILTIN_HARMONY_RULES,
-    project,
-    ruleSeverities,
-  );
+  return runRulesSynchronously(BUILTIN_HARMONY_RULES, project, ruleSeverities);
 }

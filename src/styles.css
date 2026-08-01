@@ -1806,7 +1806,9 @@ body.is-resizing-rows * {
   margin-top: 2px;
   overflow: hidden;
   color: #777a72;
-  font: 9px Consolas, monospace;
+  font:
+    9px Consolas,
+    monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1871,7 +1873,10 @@ body.is-resizing-rows * {
 .developer-field-row {
   border-bottom: 1px solid #ecece8;
   color: #4b4e47;
-  font: 9px/1.35 Consolas, "SFMono-Regular", monospace;
+  font:
+    9px/1.35 Consolas,
+    "SFMono-Regular",
+    monospace;
 }
 
 .developer-field-row:last-child {
@@ -1912,7 +1917,10 @@ body.is-resizing-rows * {
   border-radius: 4px;
   background: #242823;
   color: #dfe8e2;
-  font: 9px/1.5 Consolas, "SFMono-Regular", monospace;
+  font:
+    9px/1.5 Consolas,
+    "SFMono-Regular",
+    monospace;
   white-space: pre-wrap;
 }
 
@@ -2610,7 +2618,9 @@ body.is-resizing-rows * {
 .external-rule-package-copy strong span {
   margin-left: 6px;
   color: #737870;
-  font: 9px Consolas, monospace;
+  font:
+    9px Consolas,
+    monospace;
   font-weight: 400;
 }
 
@@ -2618,7 +2628,9 @@ body.is-resizing-rows * {
   margin-top: 3px;
   overflow: hidden;
   color: #737870;
-  font: 9px Consolas, monospace;
+  font:
+    9px Consolas,
+    monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2715,7 +2727,9 @@ body.is-resizing-rows * {
 .external-rule-copy code {
   margin-top: 3px;
   color: #527067;
-  font: 8px Consolas, monospace;
+  font:
+    8px Consolas,
+    monospace;
 }
 
 .external-rule-failure {

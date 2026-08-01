@@ -5,11 +5,7 @@ import {
   type HarmonyAnalysis,
   type ProjectSnapshot,
 } from "./harmonyAnalysis";
-import {
-  VOICE_ORDER,
-  type ProjectDocument,
-  type VoiceId,
-} from "./model";
+import { VOICE_ORDER, type ProjectDocument, type VoiceId } from "./model";
 import {
   type DiagnosticSeverity,
   type HarmonyRuleDefinition,
@@ -18,11 +14,7 @@ import {
 } from "./harmonyRules";
 
 export type DiagnosticEvidenceKind =
-  | "note"
-  | "chord"
-  | "interval"
-  | "key"
-  | "function";
+  "note" | "chord" | "interval" | "key" | "function";
 
 export interface DiagnosticEvidence {
   kind: DiagnosticEvidenceKind;
@@ -87,8 +79,7 @@ export interface RuleEvaluation {
   readonly skipped?: readonly Omit<SkippedRule, "ruleId">[];
 }
 
-export interface RuleDefinition
-  extends Omit<HarmonyRuleDefinition, "id"> {
+export interface RuleDefinition extends Omit<HarmonyRuleDefinition, "id"> {
   readonly id: HarmonyRuleId;
   readonly evaluate: (
     context: ReadonlyRuleContext,
@@ -129,7 +120,8 @@ function validateDiagnostic(
   analysis: HarmonyAnalysis,
   severity: DiagnosticSeverity,
 ) {
-  if (item.ruleId !== definition.id || item.source !== "builtin") return undefined;
+  if (item.ruleId !== definition.id || item.source !== "builtin")
+    return undefined;
   if (
     !Number.isInteger(item.tick) ||
     !Number.isInteger(item.endTick) ||
@@ -330,7 +322,9 @@ function completeResult(
         left.ruleId.localeCompare(right.ruleId),
     ),
     skippedRules: [...uniqueSkips.values()],
-    skippedRuleIds: [...new Set([...uniqueSkips.values()].map((item) => item.ruleId))],
+    skippedRuleIds: [
+      ...new Set([...uniqueSkips.values()].map((item) => item.ruleId)),
+    ],
     revision: analysis.revision,
     superseded,
     invalidationRanges: analysis.invalidationRanges,

@@ -120,7 +120,8 @@ describe("和弦范围命令", () => {
     const first = addChordRegion(project, region(project, "first", 0));
     expect(first.error).toBeUndefined();
     expect(
-      addChordRegion(first.project, region(first.project, "overlap", PPQ / 2)).error,
+      addChordRegion(first.project, region(first.project, "overlap", PPQ / 2))
+        .error,
     ).toContain("重叠");
     expect(
       addChordRegion(
