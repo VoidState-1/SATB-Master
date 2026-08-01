@@ -7,6 +7,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  Bug,
   Keyboard,
   RotateCcw,
   Search,
@@ -42,6 +43,8 @@ interface ShortcutSettingsProps {
   onSetRuleSeverity(ruleId: HarmonyRuleId, severity: HarmonyRuleSeverity): void;
   onResetRule(ruleId: HarmonyRuleId): void;
   onResetAllRules(): void;
+  developerMode: boolean;
+  onSetDeveloperMode(enabled: boolean): void;
   onClose(): void;
 }
 
@@ -62,14 +65,16 @@ export function ShortcutSettings({
   onSetRuleSeverity,
   onResetRule,
   onResetAllRules,
+  developerMode,
+  onSetDeveloperMode,
   onClose,
 }: ShortcutSettingsProps) {
   const shortcutSearchRef = useRef<HTMLInputElement>(null);
   const ruleSearchRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
-  const [activeTab, setActiveTab] = useState<"shortcuts" | "rules">(
-    "shortcuts",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "shortcuts" | "rules" | "developer"
+  >("shortcuts");
   const [shortcutQuery, setShortcutQuery] = useState("");
   const [ruleQuery, setRuleQuery] = useState("");
   const [capturing, setCapturing] = useState<ShortcutCommandId>();
@@ -77,7 +82,7 @@ export function ShortcutSettings({
 
   useEffect(() => {
     if (activeTab === "shortcuts") shortcutSearchRef.current?.focus();
-    else ruleSearchRef.current?.focus();
+    if (activeTab === "rules") ruleSearchRef.current?.focus();
   }, [activeTab]);
 
   useEffect(() => {
@@ -217,6 +222,20 @@ export function ShortcutSettings({
               <ShieldCheck aria-hidden="true" />
               <span>检查规则</span>
             </button>
+            <button
+              type="button"
+              className={activeTab === "developer" ? "is-active" : ""}
+              aria-label="开发者设置"
+              aria-current={activeTab === "developer" ? "page" : undefined}
+              onClick={() => {
+                setActiveTab("developer");
+                setCapturing(undefined);
+                setCaptureError(undefined);
+              }}
+            >
+              <Bug aria-hidden="true" />
+              <span>开发者</span>
+            </button>
           </nav>
 
           {activeTab === "shortcuts" ? (
@@ -317,7 +336,7 @@ export function ShortcutSettings({
                 ) : null}
               </div>
             </div>
-          ) : (
+          ) : activeTab === "rules" ? (
             <div className="rule-settings-content">
               <div className="rule-settings-toolbar">
                 <label className="settings-search">
@@ -394,6 +413,38 @@ export function ShortcutSettings({
                   <div className="settings-empty">没有匹配的检查规则</div>
                 ) : null}
               </div>
+            </div>
+          ) : (
+            <div className="developer-settings-content">
+              <section className="developer-settings-section">
+                <header>
+                  <Bug aria-hidden="true" />
+                  <div>
+                    <h3>开发者模式</h3>
+                    <p>
+                      在右侧属性面板中显示当前选中音符或和弦事件的完整数据模型字段。
+                    </p>
+                  </div>
+                  <label className="developer-mode-toggle">
+                    <input
+                      type="checkbox"
+                      checked={developerMode}
+                      aria-label="启用开发者模式"
+                      onChange={(event) =>
+                        onSetDeveloperMode(event.target.checked)
+                      }
+                    />
+                    <span>{developerMode ? "已启用" : "未启用"}</span>
+                  </label>
+                </header>
+                <div className="developer-settings-note">
+                  <strong>调试视图为只读</strong>
+                  <p>
+                    可选字段即使尚未设置也会列出；数组和嵌套对象会展开，并可复制事件的原始 JSON。
+                    此开关只保存在本机，不写入工程文件。
+                  </p>
+                </div>
+              </section>
             </div>
           )}
         </div>

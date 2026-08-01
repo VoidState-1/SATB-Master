@@ -33,6 +33,10 @@ import {
 } from "../domain/pitch";
 import type { ChordRegionPatch } from "../domain/editing";
 import {
+  inspectChordRegion,
+  inspectNoteEvent,
+} from "../domain/developerInspection";
+import {
   buildMeasures,
   formatPosition,
   keyAtTick,
@@ -40,6 +44,7 @@ import {
 } from "../domain/time";
 import { IconButton } from "./IconButton";
 import { CHORD_QUALITY_OPTIONS } from "./chordAnalysisOptions";
+import { DeveloperEventInspector } from "./DeveloperEventInspector";
 
 type InspectorTab = "selection" | "project" | "sound";
 
@@ -78,6 +83,7 @@ interface InspectorProps {
   selectedChord?: ChordRegion;
   selectedChordIds: Set<string>;
   selectedChordCount: number;
+  developerMode: boolean;
   chordBrush: ChordAnalysis;
   playheadTick: number;
   audioStatus: string;
@@ -253,6 +259,7 @@ export function Inspector({
   selectedChord,
   selectedChordIds,
   selectedChordCount,
+  developerMode,
   chordBrush,
   playheadTick,
   audioStatus,
@@ -283,6 +290,20 @@ export function Inspector({
   const projectMeasureCount = useMemo(
     () => buildMeasures(project).length,
     [project],
+  );
+  const noteInspection = useMemo(
+    () =>
+      developerMode && selectedNote
+        ? inspectNoteEvent(selectedNote.voiceId, selectedNote.note)
+        : undefined,
+    [developerMode, selectedNote],
+  );
+  const chordInspection = useMemo(
+    () =>
+      developerMode && selectedChord
+        ? inspectChordRegion(selectedChord)
+        : undefined,
+    [developerMode, selectedChord],
   );
 
   return (
@@ -479,6 +500,10 @@ export function Inspector({
           </section>
         ) : null}
 
+        {tab === "selection" && noteInspection ? (
+          <DeveloperEventInspector inspection={noteInspection} />
+        ) : null}
+
         {tab === "selection" && selectedChord ? (
           <section className="property-section">
             <header>
@@ -558,6 +583,10 @@ export function Inspector({
               </button>
             </div>
           </section>
+        ) : null}
+
+        {tab === "selection" && chordInspection ? (
+          <DeveloperEventInspector inspection={chordInspection} />
         ) : null}
 
         {tab === "selection" &&

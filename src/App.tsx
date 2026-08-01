@@ -98,6 +98,7 @@ import {
   usePanelLayout,
 } from "./hooks/usePanelLayout";
 import { useHarmonyRuleSettings } from "./hooks/useHarmonyRuleSettings";
+import { useDeveloperMode } from "./hooks/useDeveloperMode";
 import { useProjectHistory } from "./hooks/useProjectHistory";
 import { useShortcutBindings } from "./hooks/useShortcutBindings";
 import {
@@ -266,6 +267,7 @@ function App() {
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
   const harmonyRuleSettings = useHarmonyRuleSettings();
+  const developerMode = useDeveloperMode();
   const harmonySchedulerRef = useRef(createHarmonyRuleScheduler());
   const harmonyRevisionRef = useRef(0);
   const effectiveTool: EditorTool =
@@ -2265,6 +2267,7 @@ function App() {
           selectedChord={selectedChord}
           selectedChordIds={selectedChordIds}
           selectedChordCount={selectedChordIds.size}
+          developerMode={developerMode.enabled}
           chordBrush={chordBrush}
           playheadTick={playheadTick}
           audioStatus={audioMessage}
@@ -2343,6 +2346,8 @@ function App() {
           onSetRuleSeverity={harmonyRuleSettings.setSeverity}
           onResetRule={harmonyRuleSettings.resetRule}
           onResetAllRules={harmonyRuleSettings.resetAllRules}
+          developerMode={developerMode.enabled}
+          onSetDeveloperMode={developerMode.setEnabled}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}
