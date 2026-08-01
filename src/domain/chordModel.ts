@@ -93,6 +93,57 @@ export function chordToneSpellings(
   );
 }
 
+const EXTENSION_INTERVALS: Record<ChordExtension, number> = {
+  6: 9,
+  7: 10,
+  9: 14,
+  11: 17,
+  13: 21,
+};
+
+export function chordIdentityToneSpellings(
+  identity: Readonly<Omit<ChordIdentity, "extensions" | "alterations">> & {
+    readonly extensions: readonly ChordExtension[];
+    readonly alterations: readonly ChordToneAlteration[];
+  },
+) {
+  const rootPitchClass = pitchClassValue(identity.root);
+  const rootStep = stepIndex(identity.root.step);
+  const tones = chordToneSpellings(identity.root, identity.quality);
+  const degreeByToneIndex = [1, 3, 5, 7] as const;
+
+  // 和弦拼写必须保留字母级数；不能把 F♯ 与 G♭ 仅因 MIDI 音级相同而视作同一构成音。
+  const alteredBase = tones.map((tone, index) => {
+    const degree = degreeByToneIndex[index];
+    const alteration = identity.alterations.find(
+      (candidate) => candidate.degree === degree,
+    );
+    if (!alteration) return tone;
+    return spellPitchClassForStep(
+      pitchClassValue(tone) + alteration.alter,
+      stepIndex(tone.step),
+    );
+  });
+
+  for (const extension of identity.extensions) {
+    const degree = extension;
+    const alteration = identity.alterations.find(
+      (candidate) => candidate.degree === degree,
+    );
+    alteredBase.push(
+      spellPitchClassForStep(
+        rootPitchClass + EXTENSION_INTERVALS[extension] + (alteration?.alter ?? 0),
+        rootStep + extension - 1,
+      ),
+    );
+  }
+
+  return alteredBase.filter(
+    (tone, index, source) =>
+      source.findIndex((candidate) => pitchClassEquals(candidate, tone)) === index,
+  );
+}
+
 export function resolveChordIdentity(
   analysis: FunctionalAnalysis,
   key: KeyLike,

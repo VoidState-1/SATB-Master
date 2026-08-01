@@ -1,172 +1,210 @@
+import { chordIdentityToneSpellings } from "./chordModel";
+import { formatChordIdentity } from "./chords";
 import {
-  VOICE_CONFIG,
-  VOICE_ORDER,
-  getTrack,
-  type NoteEvent,
-  type ProjectDocument,
-  type VoiceId,
-} from "./model";
+  analysisChordAtTick,
+  analysisKeyAtTick,
+  type AnalysisChord,
+  type AnalysisNote,
+  type HarmonyAnalysis,
+  type MelodyTransition,
+} from "./harmonyAnalysis";
 import {
-  QUALITY_INTERVALS,
-  chordAtTick,
-  chordFunction,
-  chordIdentityPitchClasses,
-  formatChordRegion,
-} from "./chords";
+  RuleScheduler,
+  runRulesSynchronously,
+  type DiagnosticEvidence,
+  type HarmonyCheckResult,
+  type HarmonyDiagnostic,
+  type RuleDefinition,
+  type RuleDiagnostic,
+  type RuleEvaluation,
+  type RuleConfig,
+} from "./harmonyRuntime";
 import {
-  formatPitchClass,
-  pitchClassEquals,
-  pitchClassValue,
-  toMidi,
-} from "./pitch";
-import { keyAtTick } from "./time";
-import {
-  chordDependentRuleIds,
+  HARMONY_RULE_DEFINITIONS,
   defaultHarmonyRuleSeverities,
   type DiagnosticSeverity,
   type HarmonyRuleId,
   type HarmonyRuleSeverities,
 } from "./harmonyRules";
+import {
+  VOICE_CONFIG,
+  VOICE_ORDER,
+  type ProjectDocument,
+  type VoiceId,
+} from "./model";
+import {
+  formatPitchClass,
+  formatSpelledPitch,
+  pitchClassEquals,
+  scaleDegreePitchClass,
+  toMidi,
+  type SpelledPitchClass,
+  type WrittenInterval,
+} from "./pitch";
 
+export type {
+  DiagnosticEvidence,
+  HarmonyCheckResult,
+  HarmonyDiagnostic,
+  RuleDefinition,
+} from "./harmonyRuntime";
 export type { DiagnosticSeverity } from "./harmonyRules";
 
-export interface HarmonyDiagnostic {
-  id: string;
-  ruleId: HarmonyRuleId;
-  severity: DiagnosticSeverity;
-  tick: number;
-  endTick: number;
-  voiceIds: VoiceId[];
-  noteIds: string[];
-  chordIds: string[];
-  title: string;
-  message: string;
+function evaluation(diagnostics: RuleDiagnostic[]): RuleEvaluation {
+  return { diagnostics };
 }
 
-export interface HarmonyCheckResult {
-  diagnostics: HarmonyDiagnostic[];
-  skippedRuleIds: string[];
+function diagnostic(
+  ruleId: HarmonyRuleId,
+  tick: number,
+  endTick: number,
+  voiceIds: VoiceId[],
+  notes: readonly AnalysisNote[],
+  title: string,
+  message: string,
+  options: {
+    chordIds?: string[];
+    messageKey?: string;
+    params?: Record<string, string | number | boolean>;
+    evidence?: DiagnosticEvidence[];
+    confidence?: number;
+  } = {},
+): RuleDiagnostic {
+  return {
+    ruleId,
+    source: "builtin",
+    tick,
+    endTick,
+    voiceIds,
+    noteIds: notes.map((note) => note.id),
+    chordIds: options.chordIds ?? [],
+    title,
+    message,
+    messageKey: options.messageKey ?? ruleId,
+    params: options.params ?? {},
+    evidence: options.evidence ?? [],
+    confidence: options.confidence ?? 1,
+  };
 }
 
-interface Slice {
-  tick: number;
-  endTick: number;
-  notes: Partial<Record<VoiceId, NoteEvent>>;
-}
-
-const CHORD_RULE_IDS = chordDependentRuleIds();
-
-function pitchClass(note: number) {
-  return ((note % 12) + 12) % 12;
-}
-
-function sameHarmonyAtTransition(
-  project: ProjectDocument,
-  previousTick: number,
-  currentTick: number,
-) {
-  const previousChord = chordAtTick(project, previousTick);
-  const currentChord = chordAtTick(project, currentTick);
-  if (!previousChord || !currentChord) return false;
-
-  const previousKey = keyAtTick(project.keyEvents, previousTick);
-  const currentKey = keyAtTick(project.keyEvents, currentTick);
-  if (
-    !pitchClassEquals(previousKey.tonic, currentKey.tonic) ||
-    previousKey.mode !== currentKey.mode
-  )
-    return false;
-
-  const previous = previousChord.function;
-  const current = currentChord.function;
-  if (!previous || !current) return false;
-  // 同和弦转换允许改变转位；根音拼写、性质、级数和副属目标仍须一致。
-  return (
-    pitchClassEquals(previousChord.identity.root, currentChord.identity.root) &&
-    previousChord.identity.quality === currentChord.identity.quality &&
-    previous.degree === current.degree &&
-    previous.degreeAlteration === current.degreeAlteration &&
-    previous.quality === current.quality &&
-    previous.applied?.targetDegree === current.applied?.targetDegree
-  );
+function pitchClass(value: number) {
+  return ((value % 12) + 12) % 12;
 }
 
 function direction(from: number, to: number) {
   return Math.sign(to - from);
 }
 
-function diagnostic(
-  ruleId: HarmonyRuleId,
-  severity: DiagnosticSeverity,
-  tick: number,
-  endTick: number,
-  voiceIds: VoiceId[],
-  notes: NoteEvent[],
-  title: string,
-  message: string,
-  chordIds: string[] = [],
-): HarmonyDiagnostic {
-  const noteIds = notes.map((note) => note.id);
+function chordLabel(chord: AnalysisChord) {
+  return formatChordIdentity(
+    chord.identity as Parameters<typeof formatChordIdentity>[0],
+    chord.function as Parameters<typeof formatChordIdentity>[1],
+  ).roman;
+}
+
+function voiceName(analysis: HarmonyAnalysis, voiceId: VoiceId) {
+  return (
+    analysis.project.satbTracks.find((track) => track.id === voiceId)?.name ??
+    VOICE_CONFIG[voiceId].name
+  );
+}
+
+function noteEvidence(note: AnalysisNote, label = "音符"): DiagnosticEvidence {
   return {
-    id: `${ruleId}:${tick}:${[...noteIds].sort().join(",")}:${[...chordIds].sort().join(",")}`,
-    ruleId,
-    severity,
-    tick,
-    endTick,
-    voiceIds,
-    noteIds,
-    chordIds,
-    title,
-    message,
+    kind: "note",
+    id: note.id,
+    label,
+    value: formatSpelledPitch(note.pitch),
   };
 }
 
-function buildSlices(project: ProjectDocument): Slice[] {
-  const boundaries = new Set<number>([0, project.lengthTicks]);
-  project.satbTracks.forEach((track) =>
-    track.notes.forEach((note) => {
-      boundaries.add(note.startTick);
-      boundaries.add(note.startTick + note.durationTicks);
-    }),
-  );
-  project.chordTrack.regions.forEach((chord) => {
-    boundaries.add(chord.startTick);
-    boundaries.add(chord.startTick + chord.durationTicks);
-  });
-  project.keyEvents.forEach((event) => boundaries.add(event.tick));
-
-  const ordered = [...boundaries]
-    .filter((tick) => tick >= 0 && tick <= project.lengthTicks)
-    .sort((a, b) => a - b);
-  return ordered.slice(0, -1).map((tick, index) => {
-    const notes: Slice["notes"] = {};
-    project.satbTracks.forEach((track) => {
-      notes[track.id] = track.notes.find(
-        (note) =>
-          note.startTick <= tick && note.startTick + note.durationTicks > tick,
-      );
-    });
-    return { tick, endTick: ordered[index + 1], notes };
-  });
+function chordEvidence(chord: AnalysisChord): DiagnosticEvidence {
+  return {
+    kind: "chord",
+    id: chord.id,
+    label: "和弦",
+    value: chordLabel(chord),
+  };
 }
 
-function checkRanges(project: ProjectDocument) {
-  const diagnostics: HarmonyDiagnostic[] = [];
-  project.satbTracks.forEach((track) =>
-    track.notes.forEach((note) => {
-      const range = VOICE_CONFIG[track.id];
-      const midiNote = toMidi(note.pitch);
-      if (midiNote < range.min || midiNote > range.max) {
+function intervalName(interval: WrittenInterval) {
+  const diatonic = Math.abs(interval.diatonicSteps);
+  const semitones = Math.abs(interval.semitones);
+  const simpleIndex = diatonic % 7;
+  const octaveCount = Math.floor(diatonic / 7);
+  const number = diatonic + 1;
+  const baseSemitones = [0, 2, 4, 5, 7, 9, 11][simpleIndex] + octaveCount * 12;
+  const difference = semitones - baseSemitones;
+  const perfectClass = [0, 3, 4].includes(simpleIndex);
+  const quality = perfectClass
+    ? difference === 0
+      ? "纯"
+      : difference > 0
+        ? "增"
+        : "减"
+    : difference === 0
+      ? "大"
+      : difference === -1
+        ? "小"
+        : difference > 0
+          ? "增"
+          : "减";
+  return {
+    number,
+    quality,
+    label: `${quality}${number}度`,
+    altered: quality === "增" || quality === "减",
+  };
+}
+
+function hasExactPitch(
+  note: AnalysisNote,
+  spellings: readonly SpelledPitchClass[],
+) {
+  return spellings.some((tone) => pitchClassEquals(note.pitch, tone));
+}
+
+function finalSameHarmonySlice(analysis: HarmonyAnalysis, sliceIndex: number) {
+  const current = analysis.slices[sliceIndex];
+  const next = analysis.slices[sliceIndex + 1];
+  return Boolean(
+    next &&
+      current.chord &&
+      next.chord &&
+      analysis.sliceTransitions[sliceIndex]?.sameHarmony,
+  );
+}
+
+function activeNotes(slice: HarmonyAnalysis["slices"][number]) {
+  return VOICE_ORDER.map((voiceId) => ({
+    voiceId,
+    note: slice.notes[voiceId],
+  })).filter(
+    (item): item is { voiceId: VoiceId; note: AnalysisNote } =>
+      Boolean(item.note),
+  );
+}
+
+function voiceRangeRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  VOICE_ORDER.forEach((voiceId) =>
+    analysis.notesByVoice[voiceId].forEach((note) => {
+      const range = VOICE_CONFIG[voiceId];
+      const midi = toMidi(note.pitch);
+      if (midi < range.min || midi > range.max) {
         diagnostics.push(
           diagnostic(
             "voice-range",
-            "warning",
             note.startTick,
             note.startTick + note.durationTicks,
-            [track.id],
+            [voiceId],
             [note],
             "超出建议音域",
-            `${track.name}建议使用 MIDI ${range.min}-${range.max}，当前音高为 ${midiNote}。`,
+            `${voiceName(analysis, voiceId)}建议使用 MIDI ${range.min}-${range.max}，当前音高为 ${formatSpelledPitch(note.pitch)}（MIDI ${midi}）。`,
+            {
+              params: { midi, minimum: range.min, maximum: range.max },
+              evidence: [noteEvidence(note)],
+            },
           ),
         );
       }
@@ -175,257 +213,313 @@ function checkRanges(project: ProjectDocument) {
   return diagnostics;
 }
 
-function checkMelodicMotion(project: ProjectDocument) {
-  const diagnostics: HarmonyDiagnostic[] = [];
-  project.satbTracks.forEach((track) => {
-    const notes = [...track.notes].sort((a, b) => a.startTick - b.startTick);
-    for (let index = 1; index < notes.length; index += 1) {
-      const previous = notes[index - 1];
-      const current = notes[index];
-
-      // 同一声部按单旋律处理；重叠后无法可靠判定前后进行，因此只报告结构错误。
-      if (current.startTick < previous.startTick + previous.durationTicks) {
-        diagnostics.push(
+function noteOverlapRule(analysis: HarmonyAnalysis) {
+  return analysis.melodyTransitions.flatMap((transition) =>
+    transition.current.startTick <
+    transition.previous.startTick + transition.previous.durationTicks
+      ? [
           diagnostic(
             "voice-note-overlap",
-            "error",
-            current.startTick,
-            current.startTick + current.durationTicks,
-            [track.id],
-            [previous, current],
+            transition.current.startTick,
+            transition.current.startTick + transition.current.durationTicks,
+            [transition.voiceId],
+            [transition.previous, transition.current],
             "同声部音符重叠",
-            `${track.name}中存在时间上互相重叠的音符。`,
+            `${voiceName(analysis, transition.voiceId)}中存在时间上互相重叠的音符。`,
+            {
+              evidence: [
+                noteEvidence(transition.previous, "前一音"),
+                noteEvidence(transition.current, "当前音"),
+              ],
+            },
           ),
-        );
-        continue;
-      }
+        ]
+      : [],
+  );
+}
 
-      const previousMidi = toMidi(previous.pitch);
-      const currentMidi = toMidi(current.pitch);
-      const interval = Math.abs(currentMidi - previousMidi);
-      const sameHarmony = sameHarmonyAtTransition(
-        project,
-        previous.startTick,
-        current.startTick,
-      );
-      if (interval > 12) {
-        diagnostics.push(
-          diagnostic(
-            "melodic-leap-over-octave",
-            "error",
-            current.startTick,
-            current.startTick + current.durationTicks,
-            [track.id],
-            [previous, current],
-            "旋律跳进过大",
-            `${track.name}出现超过八度的跳进（${interval} 个半音）。`,
-          ),
-        );
-      } else if (interval > 7 && !sameHarmony) {
-        diagnostics.push(
-          diagnostic(
-            "melodic-large-leap",
-            "warning",
-            current.startTick,
-            current.startTick + current.durationTicks,
-            [track.id],
-            [previous, current],
-            "较大旋律跳进",
-            `${track.name}出现大于纯五度的跳进，需检查前后旋律方向。`,
-          ),
-        );
-      } else if (interval === 6 && !sameHarmony) {
-        diagnostics.push(
-          diagnostic(
-            "melodic-tritone",
-            "warning",
-            current.startTick,
-            current.startTick + current.durationTicks,
-            [track.id],
-            [previous, current],
-            "旋律三全音",
-            `${track.name}出现三全音跳进。`,
-          ),
-        );
-      }
+function validMelodyTransitions(analysis: HarmonyAnalysis) {
+  return analysis.melodyTransitions.filter(
+    (transition) =>
+      transition.current.startTick >=
+      transition.previous.startTick + transition.previous.durationTicks,
+  );
+}
 
-      const previousKey = keyAtTick(project.keyEvents, previous.startTick);
-      const currentKey = keyAtTick(project.keyEvents, current.startTick);
-      const sameKeyContext =
-        pitchClassEquals(previousKey.tonic, currentKey.tonic) &&
-        previousKey.mode === currentKey.mode;
-      const previousDegree = pitchClass(
-        previousMidi - pitchClassValue(previousKey.tonic),
-      );
-      const contiguous =
-        current.startTick === previous.startTick + previous.durationTicks;
-
-      // 只在连续两音处检查，并避开换调边界；小调的导音指升高的第七级（主音下方半音）。
-      if (
-        sameKeyContext &&
-        previousDegree === 11 &&
-        contiguous &&
-        !sameHarmony
-      ) {
-        if (
-          pitchClass(currentMidi) !== pitchClassValue(previousKey.tonic) ||
-          currentMidi <= previousMidi
-        ) {
-          diagnostics.push(
-            diagnostic(
-              "leading-tone-resolution",
-              "warning",
-              current.startTick,
-              current.startTick + current.durationTicks,
-              [track.id],
-              [previous, current],
-              "导音未上行解决",
-              `${formatPitchClass(previousKey.tonic)} ${previousKey.mode === "major" ? "大调" : "小调"}中的导音通常应上行解决到主音。`,
-            ),
-          );
-        }
-      }
-    }
+function melodicLeapRule(
+  analysis: HarmonyAnalysis,
+  ruleId:
+    | "melodic-leap-over-octave"
+    | "melodic-large-leap"
+    | "melodic-tritone",
+) {
+  const diagnostics: RuleDiagnostic[] = [];
+  validMelodyTransitions(analysis).forEach((transition) => {
+    const interval = Math.abs(transition.writtenInterval.semitones);
+    const matches =
+      ruleId === "melodic-leap-over-octave"
+        ? interval > 12
+        : ruleId === "melodic-large-leap"
+          ? interval > 7 && interval <= 12 && !transition.sameHarmony
+          : interval === 6 && !transition.sameHarmony;
+    if (!matches) return;
+    const title =
+      ruleId === "melodic-leap-over-octave"
+        ? "旋律跳进过大"
+        : ruleId === "melodic-large-leap"
+          ? "较大旋律跳进"
+          : "旋律三全音";
+    const message =
+      ruleId === "melodic-leap-over-octave"
+        ? `${voiceName(analysis, transition.voiceId)}出现超过八度的跳进（${interval} 个半音）。`
+        : ruleId === "melodic-large-leap"
+          ? `${voiceName(analysis, transition.voiceId)}出现大于纯五度的跳进，需检查前后旋律方向。`
+          : `${voiceName(analysis, transition.voiceId)}出现三全音跳进。`;
+    diagnostics.push(
+      diagnostic(
+        ruleId,
+        transition.current.startTick,
+        transition.current.startTick + transition.current.durationTicks,
+        [transition.voiceId],
+        [transition.previous, transition.current],
+        title,
+        message,
+        {
+          params: { semitones: interval },
+          evidence: [
+            noteEvidence(transition.previous, "前一音"),
+            noteEvidence(transition.current, "当前音"),
+            {
+              kind: "interval",
+              label: "音程",
+              value: `${interval} 个半音`,
+            },
+          ],
+        },
+      ),
+    );
   });
   return diagnostics;
 }
 
-function checkChordToneResolution(project: ProjectDocument) {
-  const diagnostics: HarmonyDiagnostic[] = [];
+function augmentedDiminishedIntervalRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  validMelodyTransitions(analysis).forEach((transition) => {
+    if (transition.sameHarmony) return;
+    const named = intervalName(transition.writtenInterval);
+    if (!named.altered || Math.abs(transition.writtenInterval.semitones) === 0)
+      return;
+    diagnostics.push(
+      diagnostic(
+        "augmented-diminished-interval",
+        transition.current.startTick,
+        transition.current.startTick + transition.current.durationTicks,
+        [transition.voiceId],
+        [transition.previous, transition.current],
+        "旋律出现增减音程",
+        `${voiceName(analysis, transition.voiceId)}的 ${formatSpelledPitch(transition.previous.pitch)} 到 ${formatSpelledPitch(transition.current.pitch)} 构成${named.label}。`,
+        {
+          messageKey: `augmented-diminished-interval.${named.quality}`,
+          params: {
+            intervalNumber: named.number,
+            quality: named.quality,
+            semitones: Math.abs(transition.writtenInterval.semitones),
+          },
+          evidence: [
+            noteEvidence(transition.previous, "前一音"),
+            noteEvidence(transition.current, "当前音"),
+            { kind: "interval", label: "书写音程", value: named.label },
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
 
-  project.satbTracks.forEach((track) => {
-    const notes = [...track.notes].sort((a, b) => a.startTick - b.startTick);
-    for (let index = 1; index < notes.length; index += 1) {
-      const previous = notes[index - 1];
-      const current = notes[index];
-      if (current.startTick !== previous.startTick + previous.durationTicks)
-        continue;
+function leadingToneResolutionRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  validMelodyTransitions(analysis).forEach((transition) => {
+    if (!transition.contiguous || !transition.sameKey || transition.sameHarmony)
+      return;
+    const key = analysisKeyAtTick(analysis, transition.previous.startTick);
+    const leadingTone = scaleDegreePitchClass(
+      key,
+      7,
+      key.mode === "minor" ? 1 : 0,
+    );
+    if (!pitchClassEquals(transition.previous.pitch, leadingTone)) return;
+    const resolves =
+      pitchClassEquals(transition.current.pitch, key.tonic) &&
+      toMidi(transition.current.pitch) - toMidi(transition.previous.pitch) === 1;
+    if (resolves) return;
+    diagnostics.push(
+      diagnostic(
+        "leading-tone-resolution",
+        transition.current.startTick,
+        transition.current.startTick + transition.current.durationTicks,
+        [transition.voiceId],
+        [transition.previous, transition.current],
+        "导音未上行解决",
+        `${formatPitchClass(key.tonic)} ${key.mode === "major" ? "大调" : "小调"}中的书写导音 ${formatPitchClass(leadingTone)} 通常应上行半音解决到主音。`,
+        {
+          params: {
+            key: `${formatPitchClass(key.tonic)} ${key.mode}`,
+            leadingTone: formatPitchClass(leadingTone),
+          },
+          evidence: [
+            noteEvidence(transition.previous, "导音"),
+            noteEvidence(transition.current, "后继音"),
+            {
+              kind: "key",
+              id: key.id,
+              label: "局部调性",
+              value: `${formatPitchClass(key.tonic)} ${key.mode}`,
+            },
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+function crossRelationRule(analysis: HarmonyAnalysis, config: RuleConfig) {
+  const configuredWindow = Number(config.windowTicks ?? analysis.project.ppq);
+  const windowTicks = Number.isFinite(configuredWindow)
+    ? Math.max(0, Math.min(analysis.project.ppq * 4, configuredWindow))
+    : analysis.project.ppq;
+  const notes = VOICE_ORDER.flatMap((voiceId) =>
+    analysis.notesByVoice[voiceId].map((note) => ({ voiceId, note })),
+  ).sort(
+    (left, right) =>
+      left.note.startTick - right.note.startTick ||
+      left.voiceId.localeCompare(right.voiceId),
+  );
+  const diagnostics: RuleDiagnostic[] = [];
+
+  for (let leftIndex = 0; leftIndex < notes.length; leftIndex += 1) {
+    const left = notes[leftIndex];
+    for (let rightIndex = leftIndex + 1; rightIndex < notes.length; rightIndex += 1) {
+      const right = notes[rightIndex];
+      if (right.note.startTick - (left.note.startTick + left.note.durationTicks) > windowTicks)
+        break;
+      if (left.voiceId === right.voiceId) continue;
       if (
-        sameHarmonyAtTransition(
-          project,
-          previous.startTick,
-          current.startTick,
-        )
+        left.note.pitch.step !== right.note.pitch.step ||
+        left.note.pitch.alter === right.note.pitch.alter
+      )
+        continue;
+      const leftEnd = left.note.startTick + left.note.durationTicks;
+      const rightEnd = right.note.startTick + right.note.durationTicks;
+      const overlapStart = Math.max(left.note.startTick, right.note.startTick);
+      const overlapEnd = Math.min(leftEnd, rightEnd);
+      const simultaneous = overlapStart < overlapEnd;
+      const gap = simultaneous ? 0 : right.note.startTick - leftEnd;
+      if (!simultaneous && (gap < 0 || gap > windowTicks)) continue;
+      const leftKey = analysisKeyAtTick(analysis, left.note.startTick);
+      const rightKey = analysisKeyAtTick(analysis, right.note.startTick);
+      if (
+        leftKey.mode !== rightKey.mode ||
+        !pitchClassEquals(leftKey.tonic, rightKey.tonic)
       )
         continue;
 
-      const chord = chordAtTick(project, previous.startTick);
-      if (!chord) continue;
-      const intervals = QUALITY_INTERVALS[chord.identity.quality];
-      if (intervals.length !== 4) continue;
-
-      const seventh = pitchClass(
-        pitchClassValue(chord.identity.root) + intervals[3],
+      const kind = simultaneous ? "simultaneous" : "successive";
+      diagnostics.push(
+        diagnostic(
+          "cross-relation",
+          simultaneous ? overlapStart : right.note.startTick,
+          simultaneous ? overlapEnd : rightEnd,
+          [left.voiceId, right.voiceId],
+          [left.note, right.note],
+          simultaneous ? "同时对斜" : "先后对斜",
+          `${voiceName(analysis, left.voiceId)}的 ${formatSpelledPitch(left.note.pitch)} 与${voiceName(analysis, right.voiceId)}的 ${formatSpelledPitch(right.note.pitch)} 使用同一字母音名但不同升降号。`,
+          {
+            messageKey: `cross-relation.${kind}`,
+            params: { kind, windowTicks },
+            evidence: [
+              noteEvidence(left.note, voiceName(analysis, left.voiceId)),
+              noteEvidence(right.note, voiceName(analysis, right.voiceId)),
+            ],
+            confidence: simultaneous ? 1 : 0.9,
+          },
+        ),
       );
-      if (pitchClass(toMidi(previous.pitch)) !== seventh) continue;
-
-      // 标注七和弦的七音以半音或全音下行解决；跨休止与无和弦标注处不作推断。
-      const resolution = toMidi(current.pitch) - toMidi(previous.pitch);
-      if (resolution !== -1 && resolution !== -2) {
-        diagnostics.push(
-          diagnostic(
-            "chord-seventh-resolution",
-            "warning",
-            current.startTick,
-            current.startTick + current.durationTicks,
-            [track.id],
-            [previous, current],
-            "七音未级进下行解决",
-            `${formatChordRegion(project, chord).roman} 的七音通常应以半音或全音级进下行解决。`,
-            [chord.id],
-          ),
-        );
-      }
     }
-  });
-
+  }
   return diagnostics;
 }
 
-function checkVerticalSlices(slices: Slice[]) {
-  const diagnostics: HarmonyDiagnostic[] = [];
-  const seen = new Set<string>();
-
-  slices.forEach((slice) => {
-    const notes = slice.notes;
-    const adjacent: Array<[VoiceId, VoiceId]> = [
-      ["soprano", "alto"],
-      ["alto", "tenor"],
-      ["tenor", "bass"],
-    ];
-    adjacent.forEach(([upperId, lowerId], pairIndex) => {
-      const upper = notes[upperId];
-      const lower = notes[lowerId];
+function verticalRule(
+  analysis: HarmonyAnalysis,
+  ruleId: "voice-crossing" | "upper-spacing",
+) {
+  const diagnostics: RuleDiagnostic[] = [];
+  const adjacent: Array<[VoiceId, VoiceId]> = [
+    ["soprano", "alto"],
+    ["alto", "tenor"],
+    ["tenor", "bass"],
+  ];
+  analysis.slices.forEach((slice) => {
+    adjacent.forEach(([upperId, lowerId], index) => {
+      const upper = slice.notes[upperId];
+      const lower = slice.notes[lowerId];
       if (!upper || !lower) return;
-
-      const upperMidi = toMidi(upper.pitch);
-      const lowerMidi = toMidi(lower.pitch);
-      if (upperMidi < lowerMidi) {
-        const item = diagnostic(
-          "voice-crossing",
-          "error",
+      const distance = toMidi(upper.pitch) - toMidi(lower.pitch);
+      const matches =
+        ruleId === "voice-crossing" ? distance < 0 : index < 2 && distance > 12;
+      if (!matches) return;
+      diagnostics.push(
+        diagnostic(
+          ruleId,
           slice.tick,
           slice.endTick,
           [upperId, lowerId],
           [upper, lower],
-          "声部交叉",
-          "较高声部低于相邻的较低声部。",
-        );
-        if (!seen.has(item.id)) diagnostics.push(item);
-        seen.add(item.id);
-      }
-
-      if (pairIndex < 2 && upperMidi - lowerMidi > 12) {
-        const item = diagnostic(
-          "upper-spacing",
-          "warning",
-          slice.tick,
-          slice.endTick,
-          [upperId, lowerId],
-          [upper, lower],
-          "上三声部间距过宽",
-          "S-A 与 A-T 的相邻声部间距通常不应超过八度。",
-        );
-        if (!seen.has(item.id)) diagnostics.push(item);
-        seen.add(item.id);
-      }
+          ruleId === "voice-crossing" ? "声部交叉" : "上三声部间距过宽",
+          ruleId === "voice-crossing"
+            ? "较高声部低于相邻的较低声部。"
+            : "S-A 与 A-T 的相邻声部间距通常不应超过八度。",
+          {
+            params: { semitones: Math.abs(distance) },
+            evidence: [
+              noteEvidence(upper, voiceName(analysis, upperId)),
+              noteEvidence(lower, voiceName(analysis, lowerId)),
+              {
+                kind: "interval",
+                label: "垂直间距",
+                value: `${Math.abs(distance)} 个半音`,
+              },
+            ],
+          },
+        ),
+      );
     });
   });
   return diagnostics;
 }
 
-function checkVoiceLeading(project: ProjectDocument, slices: Slice[]) {
-  const diagnostics: HarmonyDiagnostic[] = [];
-  const seen = new Set<string>();
-
-  for (let index = 1; index < slices.length; index += 1) {
-    const previous = slices[index - 1];
-    const current = slices[index];
-    const sameHarmony = sameHarmonyAtTransition(
-      project,
-      previous.tick,
-      current.tick,
-    );
-
-    for (
-      let upperIndex = 0;
-      upperIndex < VOICE_ORDER.length - 1;
-      upperIndex += 1
-    ) {
-      for (
-        let lowerIndex = upperIndex + 1;
-        lowerIndex < VOICE_ORDER.length;
-        lowerIndex += 1
-      ) {
+function voiceLeadingRule(
+  analysis: HarmonyAnalysis,
+  ruleId:
+    | "parallel-fifths"
+    | "parallel-octaves"
+    | "hidden-perfect-interval"
+    | "voice-overlap",
+) {
+  const diagnostics: RuleDiagnostic[] = [];
+  analysis.sliceTransitions.forEach((transition) => {
+    for (let upperIndex = 0; upperIndex < VOICE_ORDER.length - 1; upperIndex += 1) {
+      for (let lowerIndex = upperIndex + 1; lowerIndex < VOICE_ORDER.length; lowerIndex += 1) {
         const upperId = VOICE_ORDER[upperIndex];
         const lowerId = VOICE_ORDER[lowerIndex];
-        const previousUpper = previous.notes[upperId];
-        const previousLower = previous.notes[lowerId];
-        const currentUpper = current.notes[upperId];
-        const currentLower = current.notes[lowerId];
+        const previousUpper = transition.previous.notes[upperId];
+        const previousLower = transition.previous.notes[lowerId];
+        const currentUpper = transition.current.notes[upperId];
+        const currentLower = transition.current.notes[lowerId];
         if (!previousUpper || !previousLower || !currentUpper || !currentLower)
           continue;
-
         const upperDirection = direction(
           toMidi(previousUpper.pitch),
           toMidi(currentUpper.pitch),
@@ -442,323 +536,407 @@ function checkVoiceLeading(project: ProjectDocument, slices: Slice[]) {
         );
         const similarMotion =
           upperDirection !== 0 && upperDirection === lowerDirection;
-
-        if (
-          similarMotion &&
-          previousInterval === currentInterval &&
-          (currentInterval === 0 || currentInterval === 7)
-        ) {
-          const ruleId =
-            currentInterval === 7 ? "parallel-fifths" : "parallel-octaves";
-          const item = diagnostic(
+        let matches = false;
+        if (ruleId === "parallel-fifths" || ruleId === "parallel-octaves") {
+          const target = ruleId === "parallel-fifths" ? 7 : 0;
+          matches =
+            similarMotion &&
+            previousInterval === target &&
+            currentInterval === target;
+        } else if (ruleId === "hidden-perfect-interval") {
+          matches =
+            upperId === "soprano" &&
+            lowerId === "bass" &&
+            !transition.sameHarmony &&
+            similarMotion &&
+            (currentInterval === 0 || currentInterval === 7) &&
+            previousInterval !== currentInterval &&
+            Math.abs(toMidi(currentUpper.pitch) - toMidi(previousUpper.pitch)) > 2;
+        } else {
+          const adjacent = lowerIndex === upperIndex + 1;
+          matches =
+            adjacent &&
+            !transition.sameHarmony &&
+            (toMidi(currentUpper.pitch) < toMidi(previousLower.pitch) ||
+              toMidi(currentLower.pitch) > toMidi(previousUpper.pitch));
+        }
+        if (!matches) continue;
+        const title =
+          ruleId === "parallel-fifths"
+            ? "平行纯五度"
+            : ruleId === "parallel-octaves"
+              ? "平行八度或同度"
+              : ruleId === "hidden-perfect-interval"
+                ? "外声部隐伏完全协和音程"
+                : "声部重叠";
+        const message =
+          ruleId === "parallel-fifths" || ruleId === "parallel-octaves"
+            ? "两个声部同向移动，并连续形成相同类型的完全协和音程。"
+            : ruleId === "hidden-perfect-interval"
+              ? "外声部同向进入纯五度或八度，且高声部发生跳进。"
+              : "当前声部进入了相邻声部上一位置所占据的音域。";
+        diagnostics.push(
+          diagnostic(
             ruleId,
-            "error",
-            current.tick,
-            current.endTick,
+            transition.current.tick,
+            transition.current.endTick,
             [upperId, lowerId],
             [previousUpper, previousLower, currentUpper, currentLower],
-            currentInterval === 7 ? "平行纯五度" : "平行八度或同度",
-            "两个声部同向移动，并连续形成相同类型的完全协和音程。",
-          );
-          if (!seen.has(item.id)) diagnostics.push(item);
-          seen.add(item.id);
-        }
-
-        if (
-          upperId === "soprano" &&
-          lowerId === "bass" &&
-          !sameHarmony &&
-          similarMotion &&
-          (currentInterval === 0 || currentInterval === 7)
-        ) {
-          if (
-            Math.abs(toMidi(currentUpper.pitch) - toMidi(previousUpper.pitch)) >
-              2 &&
-            previousInterval !== currentInterval
-          ) {
-            const item = diagnostic(
-              "hidden-perfect-interval",
-              "warning",
-              current.tick,
-              current.endTick,
-              [upperId, lowerId],
-              [previousUpper, previousLower, currentUpper, currentLower],
-              "外声部隐伏完全协和音程",
-              "外声部同向进入纯五度或八度，且高声部发生跳进。",
-            );
-            if (!seen.has(item.id)) diagnostics.push(item);
-            seen.add(item.id);
-          }
-        }
-      }
-    }
-
-    const adjacent: Array<[VoiceId, VoiceId]> = [
-      ["soprano", "alto"],
-      ["alto", "tenor"],
-      ["tenor", "bass"],
-    ];
-    adjacent.forEach(([upperId, lowerId]) => {
-      if (sameHarmony) return;
-      const previousUpper = previous.notes[upperId];
-      const previousLower = previous.notes[lowerId];
-      const currentUpper = current.notes[upperId];
-      const currentLower = current.notes[lowerId];
-      if (!previousUpper || !previousLower || !currentUpper || !currentLower)
-        return;
-      if (
-        toMidi(currentUpper.pitch) < toMidi(previousLower.pitch) ||
-        toMidi(currentLower.pitch) > toMidi(previousUpper.pitch)
-      ) {
-        const item = diagnostic(
-          "voice-overlap",
-          "warning",
-          current.tick,
-          current.endTick,
-          [upperId, lowerId],
-          [previousUpper, previousLower, currentUpper, currentLower],
-          "声部重叠",
-          "当前声部进入了相邻声部上一位置所占据的音域。",
+            title,
+            message,
+            {
+              evidence: [
+                noteEvidence(previousUpper, `${voiceName(analysis, upperId)}前一音`),
+                noteEvidence(previousLower, `${voiceName(analysis, lowerId)}前一音`),
+                noteEvidence(currentUpper, `${voiceName(analysis, upperId)}当前音`),
+                noteEvidence(currentLower, `${voiceName(analysis, lowerId)}当前音`),
+              ],
+            },
+          ),
         );
-        if (!seen.has(item.id)) diagnostics.push(item);
-        seen.add(item.id);
       }
-    });
-  }
-
-  return diagnostics;
-}
-
-function checkChordRules(project: ProjectDocument, slices: Slice[]) {
-  const diagnostics: HarmonyDiagnostic[] = [];
-
-  const appendMerged = (item: HarmonyDiagnostic) => {
-    const previous = [...diagnostics]
-      .reverse()
-      .find(
-        (candidate) =>
-          candidate.ruleId === item.ruleId &&
-          candidate.endTick === item.tick &&
-          candidate.noteIds.join(",") === item.noteIds.join(",") &&
-          candidate.chordIds.join(",") === item.chordIds.join(","),
-      );
-    if (previous) {
-      previous.endTick = item.endTick;
-      return;
-    }
-    diagnostics.push(item);
-  };
-
-  slices.forEach((slice, sliceIndex) => {
-    const chord = chordAtTick(project, slice.tick);
-    if (!chord) return;
-    const nextSlice = slices[sliceIndex + 1];
-    const isIntermediateSameHarmony = Boolean(
-      nextSlice &&
-        sameHarmonyAtTransition(project, slice.tick, nextSlice.tick),
-    );
-    const active = VOICE_ORDER.map((voiceId) => ({
-      voiceId,
-      note: slice.notes[voiceId],
-    })).filter((item): item is { voiceId: VoiceId; note: NoteEvent } =>
-      Boolean(item.note),
-    );
-    const key = keyAtTick(project.keyEvents, slice.tick);
-    const chordTones = chordIdentityPitchClasses(chord.identity);
-    const chordName = formatChordRegion(project, chord).roman;
-    const outside = active.filter(
-      ({ note }) =>
-        !note.nonChordToneRole &&
-        !chordTones.includes(pitchClass(toMidi(note.pitch))),
-    );
-    if (outside.length > 0) {
-      appendMerged(
-        diagnostic(
-          "chord-membership",
-          "warning",
-          slice.tick,
-          slice.endTick,
-          outside.map((item) => item.voiceId),
-          outside.map((item) => item.note),
-          "和弦外音需要确认",
-          `标注和弦 ${chordName} 中存在未识别为和弦构成音的音符；可在音符属性中人工标注其非和弦音角色。`,
-          [chord.id],
-        ),
-      );
-    }
-
-    if (active.length < 4) return;
-
-    const present = new Set(
-      active.map(({ note }) => pitchClass(toMidi(note.pitch))),
-    );
-    const missing = chordTones.filter((tone) => !present.has(tone));
-    if (missing.length > 0 && !isIntermediateSameHarmony) {
-      appendMerged(
-        diagnostic(
-          "chord-completeness",
-          "warning",
-          slice.tick,
-          slice.endTick,
-          // 构成音完整性描述的是整个和弦区域，不应把同一条提示重复挂到四个音符上。
-          [],
-          [],
-          "和弦构成音不完整",
-          `${chordName} 缺少 ${missing.length} 个标注和弦的构成音。`,
-          [chord.id],
-        ),
-      );
-    }
-
-    const bass = active.find((item) => item.voiceId === "bass");
-    const expectedBass = pitchClassValue(chord.identity.bass);
-    if (bass && pitchClass(toMidi(bass.note.pitch)) !== expectedBass) {
-      appendMerged(
-        diagnostic(
-          "chord-inversion",
-          "error",
-          slice.tick,
-          slice.endTick,
-          ["bass"],
-          [bass.note],
-          "低音与转位不一致",
-          `${chordName} 的低音不符合当前转位标记。`,
-          [chord.id],
-        ),
-      );
-    }
-
-    const leadingTone = pitchClass(pitchClassValue(key.tonic) + 11);
-    const leadingNotes = active.filter(
-      ({ note }) => pitchClass(toMidi(note.pitch)) === leadingTone,
-    );
-    if (leadingNotes.length > 1 && !isIntermediateSameHarmony) {
-      appendMerged(
-        diagnostic(
-          "leading-tone-doubling",
-          "error",
-          slice.tick,
-          slice.endTick,
-          leadingNotes.map((item) => item.voiceId),
-          leadingNotes.map((item) => item.note),
-          "重复导音",
-          "四部和声中通常不应重复调内导音。",
-          [chord.id],
-        ),
-      );
     }
   });
-
   return diagnostics;
 }
 
-function checkChordProgressions(project: ProjectDocument) {
-  const diagnostics: HarmonyDiagnostic[] = [];
-  const regions = project.chordTrack.regions;
-  for (let index = 1; index < regions.length; index += 1) {
-    const previous = regions[index - 1];
-    const current = regions[index];
-    if (previous.startTick + previous.durationTicks !== current.startTick)
-      continue;
-    const previousKey = keyAtTick(project.keyEvents, previous.startTick);
-    const currentKey = keyAtTick(project.keyEvents, current.startTick);
-    if (
-      !pitchClassEquals(previousKey.tonic, currentKey.tonic) ||
-      previousKey.mode !== currentKey.mode
-    )
-      continue;
-    // 同和弦的重复、换位或转位属于一次和声延续，功能目标留到离开该和弦时判断。
-    if (
-      sameHarmonyAtTransition(
-        project,
-        previous.startTick,
-        current.startTick,
-      )
-    )
-      continue;
+function chordSliceRule(
+  analysis: HarmonyAnalysis,
+  ruleId:
+    | "chord-membership"
+    | "chord-completeness"
+    | "chord-inversion"
+    | "leading-tone-doubling"
+    | "chord-seventh-doubling",
+) {
+  const diagnostics: RuleDiagnostic[] = [];
+  analysis.slices.forEach((slice, sliceIndex) => {
+    const chord = slice.chord;
+    if (!chord) return;
+    const active = activeNotes(slice);
+    const tones = chordIdentityToneSpellings(chord.identity);
+    const intermediate = finalSameHarmonySlice(analysis, sliceIndex);
 
-    // 斯波索宾基础功能序进中，属功能回到下属功能属于典型逆功能进行；先作为教学警告。
-    if (
-      previous.function &&
-      current.function &&
-      chordFunction(previous.function) === "dominant" &&
-      chordFunction(current.function) === "subdominant"
-    ) {
-      diagnostics.push(
-        diagnostic(
-          "functional-retrogression",
-          "warning",
-          current.startTick,
-          current.startTick,
-          [],
-          [],
-          "逆功能进行",
-          `${formatChordRegion(project, previous).roman} 到 ${formatChordRegion(project, current).roman} 形成属功能到下属功能的逆向进行。`,
-          [previous.id, current.id],
-        ),
+    if (ruleId === "chord-membership") {
+      const outside = active.filter(
+        ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
       );
+      if (outside.length > 0) {
+        diagnostics.push(
+          diagnostic(
+            ruleId,
+            slice.tick,
+            slice.endTick,
+            outside.map((item) => item.voiceId),
+            outside.map((item) => item.note),
+            "和弦外音需要确认",
+            `标注和弦 ${chordLabel(chord)} 中存在拼写不属于和弦构成音、且未人工标注角色的音符。`,
+            {
+              chordIds: [chord.id],
+              evidence: [
+                chordEvidence(chord),
+                ...outside.map((item) => noteEvidence(item.note)),
+              ],
+            },
+          ),
+        );
+      }
+      return;
     }
-    if (
-      previous.function?.applied &&
-      current.function &&
-      current.function.degree !== previous.function.applied.targetDegree
-    ) {
-      diagnostics.push(
-        diagnostic(
-          "secondary-dominant-resolution",
-          "warning",
-          current.startTick,
-          current.startTick,
-          [],
-          [],
-          "副属和弦未进入目标",
-          `${formatChordRegion(project, previous).roman} 通常应进入其指向的 ${previous.function.applied.targetDegree} 级和弦。`,
-          [previous.id, current.id],
-        ),
+
+    if (ruleId === "chord-inversion") {
+      const bass = active.find((item) => item.voiceId === "bass");
+      if (bass && !pitchClassEquals(bass.note.pitch, chord.identity.bass)) {
+        diagnostics.push(
+          diagnostic(
+            ruleId,
+            slice.tick,
+            slice.endTick,
+            ["bass"],
+            [bass.note],
+            "低音与转位不一致",
+            `${chordLabel(chord)} 要求低音写作 ${formatPitchClass(chord.identity.bass)}，当前为 ${formatPitchClass(bass.note.pitch)}。`,
+            {
+              chordIds: [chord.id],
+              evidence: [chordEvidence(chord), noteEvidence(bass.note, "男低音")],
+            },
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!slice.completeSatb || intermediate) return;
+    if (ruleId === "chord-completeness") {
+      const missing = tones.filter(
+        (tone) => !active.some(({ note }) => pitchClassEquals(note.pitch, tone)),
       );
+      if (missing.length > 0) {
+        diagnostics.push(
+          diagnostic(
+            ruleId,
+            slice.tick,
+            slice.endTick,
+            [],
+            [],
+            "和弦构成音不完整",
+            `${chordLabel(chord)} 缺少 ${missing.map(formatPitchClass).join("、")}。`,
+            {
+              chordIds: [chord.id],
+              params: { missing: missing.map(formatPitchClass).join(",") },
+              evidence: [
+                chordEvidence(chord),
+                {
+                  kind: "chord",
+                  id: chord.id,
+                  label: "缺少构成音",
+                  value: missing.map(formatPitchClass).join("、"),
+                },
+              ],
+            },
+          ),
+        );
+      }
+      return;
     }
-  }
+
+    const target =
+      ruleId === "leading-tone-doubling"
+        ? scaleDegreePitchClass(
+            slice.key,
+            7,
+            slice.key.mode === "minor" ? 1 : 0,
+          )
+        : tones.length === 4
+          ? tones[3]
+          : undefined;
+    if (!target) return;
+    const repeated = active.filter(({ note }) => pitchClassEquals(note.pitch, target));
+    if (repeated.length <= 1) return;
+    diagnostics.push(
+      diagnostic(
+        ruleId,
+        slice.tick,
+        slice.endTick,
+        repeated.map((item) => item.voiceId),
+        repeated.map((item) => item.note),
+        ruleId === "leading-tone-doubling" ? "重复导音" : "重复和弦七音",
+        ruleId === "leading-tone-doubling"
+          ? `四部和声中通常不应重复局部调性内的书写导音 ${formatPitchClass(target)}。`
+          : `${chordLabel(chord)} 的七音 ${formatPitchClass(target)} 不应重复。`,
+        {
+          chordIds: [chord.id],
+          evidence: [
+            chordEvidence(chord),
+            ...repeated.map((item) => noteEvidence(item.note)),
+          ],
+        },
+      ),
+    );
+  });
   return diagnostics;
+}
+
+function chordSeventhResolutionRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  validMelodyTransitions(analysis).forEach((transition) => {
+    if (!transition.contiguous || transition.sameHarmony) return;
+    const chord = analysisChordAtTick(analysis, transition.previous.startTick);
+    if (!chord) return;
+    const tones = chordIdentityToneSpellings(chord.identity);
+    if (tones.length !== 4 || !pitchClassEquals(transition.previous.pitch, tones[3]))
+      return;
+    const resolution =
+      toMidi(transition.current.pitch) - toMidi(transition.previous.pitch);
+    if (resolution === -1 || resolution === -2) return;
+    diagnostics.push(
+      diagnostic(
+        "chord-seventh-resolution",
+        transition.current.startTick,
+        transition.current.startTick + transition.current.durationTicks,
+        [transition.voiceId],
+        [transition.previous, transition.current],
+        "七音未级进下行解决",
+        `${chordLabel(chord)} 的书写七音 ${formatPitchClass(tones[3])} 通常应以半音或全音级进下行解决。`,
+        {
+          chordIds: [chord.id],
+          evidence: [
+            chordEvidence(chord),
+            noteEvidence(transition.previous, "和弦七音"),
+            noteEvidence(transition.current, "后继音"),
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+function progressionRule(
+  analysis: HarmonyAnalysis,
+  ruleId:
+    | "functional-retrogression"
+    | "secondary-dominant-resolution",
+) {
+  const diagnostics: RuleDiagnostic[] = [];
+  analysis.chordProgressions.forEach((progression) => {
+    if (!progression.contiguous || !progression.sameKey || progression.sameHarmony)
+      return;
+    const previousFunction = progression.previous.function;
+    const currentFunction = progression.current.function;
+    if (!previousFunction || !currentFunction) return;
+    let matches = false;
+    if (ruleId === "functional-retrogression") {
+      matches =
+        progression.previousClass === "dominant" &&
+        progression.currentClass === "predominant";
+    } else if (ruleId === "secondary-dominant-resolution") {
+      matches = Boolean(
+        previousFunction.applied &&
+          currentFunction.degree !== previousFunction.applied.targetDegree,
+      );
+    }
+    if (!matches) return;
+    const title =
+      ruleId === "functional-retrogression"
+        ? "逆功能进行"
+        : "副属和弦未进入目标";
+    const message =
+      ruleId === "functional-retrogression"
+        ? `${chordLabel(progression.previous)} 到 ${chordLabel(progression.current)} 形成属功能到下属功能的逆向进行。`
+        : `${chordLabel(progression.previous)} 通常应进入其指向的 ${previousFunction.applied!.targetDegree} 级和弦。`;
+    diagnostics.push(
+      diagnostic(
+        ruleId,
+        progression.current.startTick,
+        progression.current.startTick,
+        [],
+        [],
+        title,
+        message,
+        {
+          chordIds: [progression.previous.id, progression.current.id],
+          evidence: [
+            chordEvidence(progression.previous),
+            chordEvidence(progression.current),
+            {
+              kind: "function",
+              label: "功能连接",
+              value: `${progression.previousClass} → ${progression.currentClass}`,
+            },
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  const regions = [...analysis.project.chordTrack.regions].sort(
+    (left, right) => left.startTick - right.startTick,
+  );
+  regions.forEach((previous, index) => {
+    if (previous.function?.cadenceRole !== "cadential64") return;
+    const current = regions[index + 1];
+    const progression = analysis.chordProgressions[index];
+    const resolves = Boolean(
+      current &&
+        progression?.contiguous &&
+        progression.sameKey &&
+        progression.currentClass === "dominant",
+    );
+    if (resolves) return;
+    diagnostics.push(
+      diagnostic(
+        "cadential64-resolution",
+        Math.min(
+          analysis.project.lengthTicks,
+          previous.startTick + previous.durationTicks,
+        ),
+        Math.min(
+          analysis.project.lengthTicks,
+          previous.startTick + previous.durationTicks,
+        ),
+        [],
+        [],
+        "终止四六未进入属和弦",
+        `${chordLabel(previous)} 已标记为终止四六，通常应连续进入属功能和弦。`,
+        {
+          chordIds: current ? [previous.id, current.id] : [previous.id],
+          evidence: [
+            chordEvidence(previous),
+            ...(current ? [chordEvidence(current)] : []),
+            {
+              kind: "function",
+              label: "预期连接",
+              value: "终止四六 → 属功能",
+            },
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+const evaluators: Record<
+  HarmonyRuleId,
+  (analysis: HarmonyAnalysis, config: RuleConfig) => RuleDiagnostic[]
+> = {
+  "voice-range": (analysis) => voiceRangeRule(analysis),
+  "voice-note-overlap": (analysis) => noteOverlapRule(analysis),
+  "voice-crossing": (analysis) => verticalRule(analysis, "voice-crossing"),
+  "upper-spacing": (analysis) => verticalRule(analysis, "upper-spacing"),
+  "voice-overlap": (analysis) => voiceLeadingRule(analysis, "voice-overlap"),
+  "melodic-leap-over-octave": (analysis) =>
+    melodicLeapRule(analysis, "melodic-leap-over-octave"),
+  "melodic-large-leap": (analysis) =>
+    melodicLeapRule(analysis, "melodic-large-leap"),
+  "melodic-tritone": (analysis) => melodicLeapRule(analysis, "melodic-tritone"),
+  "leading-tone-resolution": (analysis) => leadingToneResolutionRule(analysis),
+  "augmented-diminished-interval": (analysis) =>
+    augmentedDiminishedIntervalRule(analysis),
+  "cross-relation": (analysis, config) => crossRelationRule(analysis, config),
+  "parallel-fifths": (analysis) => voiceLeadingRule(analysis, "parallel-fifths"),
+  "parallel-octaves": (analysis) => voiceLeadingRule(analysis, "parallel-octaves"),
+  "hidden-perfect-interval": (analysis) =>
+    voiceLeadingRule(analysis, "hidden-perfect-interval"),
+  "chord-membership": (analysis) => chordSliceRule(analysis, "chord-membership"),
+  "chord-completeness": (analysis) =>
+    chordSliceRule(analysis, "chord-completeness"),
+  "chord-inversion": (analysis) => chordSliceRule(analysis, "chord-inversion"),
+  "leading-tone-doubling": (analysis) =>
+    chordSliceRule(analysis, "leading-tone-doubling"),
+  "chord-seventh-resolution": (analysis) => chordSeventhResolutionRule(analysis),
+  "chord-seventh-doubling": (analysis) =>
+    chordSliceRule(analysis, "chord-seventh-doubling"),
+  "functional-retrogression": (analysis) =>
+    progressionRule(analysis, "functional-retrogression"),
+  "secondary-dominant-resolution": (analysis) =>
+    progressionRule(analysis, "secondary-dominant-resolution"),
+  "cadential64-resolution": (analysis) => cadential64ResolutionRule(analysis),
+};
+
+export const BUILTIN_HARMONY_RULES: readonly RuleDefinition[] =
+  HARMONY_RULE_DEFINITIONS.map((definition) => ({
+    ...definition,
+    evaluate: ({ analysis }, config) =>
+      evaluation(evaluators[definition.id](analysis, config)),
+  }));
+
+export function createHarmonyRuleScheduler() {
+  return new RuleScheduler(BUILTIN_HARMONY_RULES);
 }
 
 export function checkHarmony(
   project: ProjectDocument,
   ruleSeverities: HarmonyRuleSeverities = defaultHarmonyRuleSeverities(),
 ): HarmonyCheckResult {
-  const slices = buildSlices(project);
-  const diagnostics = [
-    ...checkRanges(project),
-    ...checkMelodicMotion(project),
-    ...checkVerticalSlices(slices),
-    ...checkVoiceLeading(project, slices),
-  ];
-  const skippedRuleIds =
-    project.chordTrack.regions.length === 0
-      ? CHORD_RULE_IDS.filter((ruleId) => ruleSeverities[ruleId] !== "off")
-      : [];
-  if (project.chordTrack.regions.length > 0) {
-    diagnostics.push(...checkChordRules(project, slices));
-    diagnostics.push(...checkChordToneResolution(project));
-    diagnostics.push(...checkChordProgressions(project));
-  }
-
-  // 规则先产生可定位的诊断，最后统一应用用户严重度；“无”不进入结果或跳过统计。
-  const configuredDiagnostics = diagnostics.flatMap((item) => {
-    const severity = ruleSeverities[item.ruleId];
-    return severity === "off" ? [] : [{ ...item, severity }];
-  });
-  const unique = new Map(configuredDiagnostics.map((item) => [item.id, item]));
-  const severityOrder: Record<DiagnosticSeverity, number> = {
-    error: 0,
-    warning: 1,
-    suggestion: 2,
-  };
-  return {
-    diagnostics: [...unique.values()].sort(
-      (a, b) =>
-        a.tick - b.tick ||
-        severityOrder[a.severity] - severityOrder[b.severity],
-    ),
-    skippedRuleIds,
-  };
+  return runRulesSynchronously(
+    BUILTIN_HARMONY_RULES,
+    project,
+    ruleSeverities,
+  );
 }

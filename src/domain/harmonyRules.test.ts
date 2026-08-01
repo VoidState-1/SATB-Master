@@ -12,6 +12,11 @@ describe("和声检查规则注册表", () => {
     expect(Object.keys(defaultHarmonyRuleSeverities()).sort()).toEqual(
       [...ids].sort(),
     );
+    expect(
+      HARMONY_RULE_DEFINITIONS.every(
+        (rule) => rule.requires.length > 0 && Boolean(rule.dependencyScope),
+      ),
+    ).toBe(true);
   });
 
   it("从注册表推导需要和弦标注的规则", () => {
@@ -21,8 +26,10 @@ describe("和声检查规则注册表", () => {
       "chord-inversion",
       "leading-tone-doubling",
       "chord-seventh-resolution",
+      "chord-seventh-doubling",
       "functional-retrogression",
       "secondary-dominant-resolution",
+      "cadential64-resolution",
     ]);
   });
 });

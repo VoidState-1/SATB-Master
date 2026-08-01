@@ -29,6 +29,10 @@ export function DiagnosticsPanel({
   const suggestions = result.diagnostics.filter(
     (item) => item.severity === "suggestion",
   ).length;
+  const fullySkipped = result.skippedRules.filter((item) => !item.partial);
+  const partiallySkipped = result.skippedRules.filter((item) => item.partial);
+  const skippedSummary = [...new Set(result.skippedRules.map((item) => item.message))]
+    .join("\n");
 
   return (
     <section className="diagnostics-panel" aria-label="和声检查结果">
@@ -44,10 +48,18 @@ export function DiagnosticsPanel({
             <CheckCircle2 /> 当前范围未发现问题
           </span>
         ) : null}
-        {result.skippedRuleIds.length > 0 ? (
-          <span className="skipped-rules">
-            <Info /> 和弦轨为空，已跳过 {result.skippedRuleIds.length}{" "}
-            组和弦规则
+        {result.skippedRules.length > 0 ? (
+          <span className="skipped-rules" title={skippedSummary}>
+            <Info />
+            {fullySkipped.length > 0
+              ? ` 已跳过 ${fullySkipped.length} 条规则`
+              : ""}
+            {fullySkipped.length > 0 && partiallySkipped.length > 0
+              ? " · "
+              : ""}
+            {partiallySkipped.length > 0
+              ? `${partiallySkipped.length} 条规则仅检查了上下文完整的部分`
+              : ""}
           </span>
         ) : null}
       </header>

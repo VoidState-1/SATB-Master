@@ -57,7 +57,11 @@ import {
   updateNote,
   type ChordRegionPatch,
 } from "./domain/editing";
-import { checkHarmony, type HarmonyDiagnostic } from "./domain/harmony";
+import {
+  checkHarmony,
+  createHarmonyRuleScheduler,
+  type HarmonyDiagnostic,
+} from "./domain/harmony";
 import { buildMidi, midiFileName } from "./domain/midi";
 import {
   createEmptyProject,
@@ -262,6 +266,8 @@ function App() {
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
   const harmonyRuleSettings = useHarmonyRuleSettings();
+  const harmonySchedulerRef = useRef(createHarmonyRuleScheduler());
+  const harmonyRevisionRef = useRef(0);
   const effectiveTool: EditorTool =
     tool === "select"
       ? toolModifiers.alt
@@ -271,10 +277,26 @@ function App() {
           : "select"
       : tool;
 
-  const harmonyResult = useMemo(
-    () => checkHarmony(project, harmonyRuleSettings.severities),
-    [harmonyRuleSettings.severities, project],
+  const [harmonyResult, setHarmonyResult] = useState(() =>
+    checkHarmony(project, harmonyRuleSettings.severities),
   );
+  useEffect(() => {
+    const controller = new AbortController();
+    const revision = ++harmonyRevisionRef.current;
+    void harmonySchedulerRef.current
+      .run({
+        project,
+        severities: harmonyRuleSettings.severities,
+        revision,
+        signal: controller.signal,
+      })
+      .then((result) => {
+        // 编辑动作可能连续触发多个 revision；被取消的旧结果绝不能覆盖较新的诊断。
+        if (!result.superseded && !controller.signal.aborted)
+          setHarmonyResult(result);
+      });
+    return () => controller.abort();
+  }, [harmonyRuleSettings.severities, project]);
   const selectedNote = useMemo(() => {
     const id = selectedNoteIds.values().next().value as string | undefined;
     if (!id) return undefined;
