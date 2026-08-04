@@ -9,7 +9,7 @@ import {
 } from './rule-library-policy'
 
 const manifest = {
-  apiVersion: 1,
+  apiVersion: 2,
   packageId: 'org.example.rules',
   version: '1.0.0',
   rules: [

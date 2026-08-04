@@ -18,6 +18,10 @@ import {
   type RuleDiagnostic,
   type RuleEvaluation,
   type RuleConfig,
+  type JsonValue,
+  type RuleStateEnvelope,
+  type RuleStepContext,
+  type RuleStepResult,
 } from "./harmonyRuntime";
 import {
   HARMONY_RULE_DEFINITIONS,
@@ -98,7 +102,7 @@ function direction(from: number, to: number) {
 function chordLabel(chord: AnalysisChord) {
   return formatChordIdentity(
     chord.identity as Parameters<typeof formatChordIdentity>[0],
-    chord.function as Parameters<typeof formatChordIdentity>[1],
+    chord.semantics as Parameters<typeof formatChordIdentity>[1],
   ).roman;
 }
 
@@ -333,54 +337,328 @@ function augmentedDiminishedIntervalRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-function leadingToneResolutionRule(analysis: HarmonyAnalysis) {
+type LeadingToneState = {
+  voiceId: VoiceId;
+  sourceNoteId: string;
+  sourceKeyId: string;
+  sourceSpanId?: string;
+  leadingMidi: number;
+};
+
+type SeventhState = {
+  voiceId: VoiceId;
+  sourceNoteId: string;
+  sourceChordId: string;
+  sourceSpanId?: string;
+  seventhMidi: number;
+};
+
+type SecondaryDominantState = {
+  sourceSpanId: string;
+  sourceChordId: string;
+  sourceToTick: number;
+  targetDegree: number;
+};
+
+function makeRuleState<T extends JsonValue>(
+  ruleId: HarmonyRuleId,
+  context: RuleStepContext,
+  id: string,
+  payload: T,
+  refs: RuleStateEnvelope["subjectRefs"],
+): RuleStateEnvelope<T> {
+  return {
+    id,
+    ownerRuleId: ruleId,
+    createdAt: { tick: context.slice.tick, sliceIndex: context.sliceIndex },
+    subjectRefs: refs,
+    payload,
+  };
+}
+
+function stateStep(
+  diagnostics: RuleDiagnostic[],
+  outgoing: readonly RuleStateEnvelope[],
+): RuleStepResult {
+  return { diagnostics, outgoing };
+}
+
+function leadingToneStateStep(
+  context: RuleStepContext,
+  incoming: readonly RuleStateEnvelope[],
+): RuleStepResult {
   const diagnostics: RuleDiagnostic[] = [];
-  validMelodyTransitions(analysis).forEach((transition) => {
-    if (!transition.contiguous || !transition.sameKey || transition.sameHarmony)
-      return;
-    const key = analysisKeyAtTick(analysis, transition.previous.startTick);
-    const leadingTone = scaleDegreePitchClass(
-      key,
-      7,
-      key.mode === "minor" ? 1 : 0,
+  const outgoing: RuleStateEnvelope[] = [];
+  const currentSpanId = context.analysis.sliceSpanIds.get(context.sliceIndex);
+  incoming.forEach((state) => {
+    const payload = state.payload as LeadingToneState;
+    if (payload.sourceKeyId !== context.slice.key.id) return;
+    const active = context.slice.notes[payload.voiceId];
+    // 声部进入休止后，后续起音已不再是可直接归属本次导音的解决音。
+    // 证据链在此中断并静默消费，避免跨休止关联到无关音符。
+    if (context.previous?.notes[payload.voiceId] && !active) return;
+    const current =
+      context.slice.attackVoiceIds.includes(payload.voiceId) ||
+      (payload.sourceSpanId !== undefined &&
+        payload.sourceSpanId !== currentSpanId)
+        ? active
+        : undefined;
+    const sameSpan = Boolean(
+      payload.sourceSpanId &&
+        currentSpanId &&
+        payload.sourceSpanId === currentSpanId,
     );
-    if (!pitchClassEquals(transition.previous.pitch, leadingTone)) return;
+    if (!current || sameSpan) {
+      outgoing.push(state);
+      return;
+    }
     const resolves =
-      pitchClassEquals(transition.current.pitch, key.tonic) &&
-      toMidi(transition.current.pitch) - toMidi(transition.previous.pitch) ===
-        1;
-    if (resolves) return;
-    diagnostics.push(
-      diagnostic(
-        "leading-tone-resolution",
-        transition.current.startTick,
-        transition.current.startTick + transition.current.durationTicks,
-        [transition.voiceId],
-        [transition.previous, transition.current],
-        "导音未上行解决",
-        `${formatPitchClass(key.tonic)} ${key.mode === "major" ? "大调" : "小调"}中的书写导音 ${formatPitchClass(leadingTone)} 通常应上行半音解决到主音。`,
-        {
-          params: {
-            key: `${formatPitchClass(key.tonic)} ${key.mode}`,
-            leadingTone: formatPitchClass(leadingTone),
-          },
-          evidence: [
-            noteEvidence(transition.previous, "导音"),
-            noteEvidence(transition.current, "后继音"),
+      pitchClassEquals(current.pitch, context.slice.key.tonic) &&
+      toMidi(current.pitch) - payload.leadingMidi === 1;
+    if (!resolves) {
+      const source = context.analysis.noteById.get(payload.sourceNoteId);
+      if (source) {
+        const leadingTone = scaleDegreePitchClass(
+          context.slice.key,
+          7,
+          context.slice.key.mode === "minor" ? 1 : 0,
+        );
+        diagnostics.push(
+          diagnostic(
+            "leading-tone-resolution",
+            current.startTick,
+            current.startTick + current.durationTicks,
+            [payload.voiceId],
+            [source, current],
+            "导音未上行解决",
+            "书写导音 " +
+              formatPitchClass(leadingTone) +
+              " 通常应上行半音解决到主音。",
             {
-              kind: "key",
-              id: key.id,
-              label: "局部调性",
-              value: `${formatPitchClass(key.tonic)} ${key.mode}`,
+              params: {
+                key:
+                  formatPitchClass(context.slice.key.tonic) +
+                  " " +
+                  context.slice.key.mode,
+                leadingTone: formatPitchClass(leadingTone),
+              },
+              evidence: [
+                noteEvidence(source, "导音"),
+                noteEvidence(current, "后继音"),
+                {
+                  kind: "key",
+                  id: context.slice.key.id,
+                  label: "局部调性",
+                  value:
+                    formatPitchClass(context.slice.key.tonic) +
+                    " " +
+                    context.slice.key.mode,
+                },
+              ],
             },
-          ],
+          ),
+        );
+      }
+    }
+  });
+  context.slice.attackVoiceIds.forEach((voiceId) => {
+    const note = context.slice.notes[voiceId];
+    if (!note) return;
+    const alreadyPending = outgoing.some(
+      (state) => (state.payload as LeadingToneState).voiceId === voiceId,
+    );
+    const leadingTone = scaleDegreePitchClass(
+      context.slice.key,
+      7,
+      context.slice.key.mode === "minor" ? 1 : 0,
+    );
+    if (!alreadyPending && pitchClassEquals(note.pitch, leadingTone)) {
+      outgoing.push(
+        makeRuleState(
+          "leading-tone-resolution",
+          context,
+          "leading-tone:" + voiceId + ":" + note.id,
+          {
+            voiceId,
+            sourceNoteId: note.id,
+            sourceKeyId: context.slice.key.id,
+            ...(currentSpanId ? { sourceSpanId: currentSpanId } : {}),
+            leadingMidi: toMidi(note.pitch),
+          } as unknown as JsonValue,
+          {
+            voiceIds: [voiceId],
+            noteIds: [note.id],
+            spanIds: currentSpanId ? [currentSpanId] : [],
+          },
+        ),
+      );
+    }
+  });
+  return stateStep(diagnostics, outgoing);
+}
+
+function seventhStateStep(
+  context: RuleStepContext,
+  incoming: readonly RuleStateEnvelope[],
+): RuleStepResult {
+  const diagnostics: RuleDiagnostic[] = [];
+  const outgoing: RuleStateEnvelope[] = [];
+  const currentSpanId = context.analysis.sliceSpanIds.get(context.sliceIndex);
+  incoming.forEach((state) => {
+    const payload = state.payload as SeventhState;
+    const active = context.slice.notes[payload.voiceId];
+    // 七音解决同样要求连续的声部线条；休止会终止本次待判定状态。
+    if (context.previous?.notes[payload.voiceId] && !active) return;
+    const current =
+      context.slice.attackVoiceIds.includes(payload.voiceId) ||
+      (payload.sourceSpanId !== undefined &&
+        payload.sourceSpanId !== currentSpanId)
+        ? active
+        : undefined;
+    const sameSpan = Boolean(
+      payload.sourceSpanId &&
+        currentSpanId &&
+        payload.sourceSpanId === currentSpanId,
+    );
+    if (!current || sameSpan) {
+      outgoing.push(state);
+      return;
+    }
+    const resolution = toMidi(current.pitch) - payload.seventhMidi;
+    if (resolution !== -1 && resolution !== -2) {
+      const source = context.analysis.noteById.get(payload.sourceNoteId);
+      const chord = context.analysis.chordById.get(payload.sourceChordId);
+      if (source && chord) {
+        const tones = chordIdentityToneSpellings(chord.identity);
+        diagnostics.push(
+          diagnostic(
+            "chord-seventh-resolution",
+            current.startTick,
+            current.startTick + current.durationTicks,
+            [payload.voiceId],
+            [source, current],
+            "七音未级进下行解决",
+            "书写七音 " +
+              formatPitchClass(tones[3]) +
+              " 通常应以半音或全音级进下行解决。",
+            {
+              chordIds: [chord.id],
+              evidence: [
+                chordEvidence(chord),
+                noteEvidence(source, "和弦七音"),
+                noteEvidence(current, "后继音"),
+              ],
+            },
+          ),
+        );
+      }
+    }
+  });
+  context.slice.attackVoiceIds.forEach((voiceId) => {
+    const note = context.slice.notes[voiceId];
+    const chord = context.slice.chord;
+    if (!note || !chord) return;
+    const tones = chordIdentityToneSpellings(chord.identity);
+    if (tones.length !== 4 || !pitchClassEquals(note.pitch, tones[3])) return;
+    const alreadyPending = outgoing.some(
+      (state) => (state.payload as SeventhState).voiceId === voiceId,
+    );
+    if (alreadyPending) return;
+    outgoing.push(
+      makeRuleState(
+        "chord-seventh-resolution",
+        context,
+        "chord-seventh:" + voiceId + ":" + note.id,
+        {
+          voiceId,
+          sourceNoteId: note.id,
+          sourceChordId: chord.id,
+          ...(currentSpanId ? { sourceSpanId: currentSpanId } : {}),
+          seventhMidi: toMidi(note.pitch),
+        } as unknown as JsonValue,
+        {
+          voiceIds: [voiceId],
+          noteIds: [note.id],
+          chordIds: [chord.id],
+          spanIds: currentSpanId ? [currentSpanId] : [],
         },
       ),
     );
   });
-  return diagnostics;
+  return stateStep(diagnostics, outgoing);
 }
 
+function secondaryDominantStateStep(
+  context: RuleStepContext,
+  incoming: readonly RuleStateEnvelope[],
+): RuleStepResult {
+  const diagnostics: RuleDiagnostic[] = [];
+  const outgoing: RuleStateEnvelope[] = [];
+  if (context.isSpanStart && context.span) {
+    incoming.forEach((state) => {
+      const payload = state.payload as SecondaryDominantState;
+      const transition = context.transitionFromPrevious;
+      const adjacent = context.span?.fromTick === payload.sourceToTick;
+      const resolves =
+        adjacent &&
+        Boolean(transition?.contiguous && transition.sameKey) &&
+        context.span?.semantics?.degree === payload.targetDegree;
+      if (!resolves) {
+        const previous = context.analysis.chordById.get(payload.sourceChordId);
+        const current = context.span?.regionIds
+          .map((id) => context.analysis.chordById.get(id))
+          .find(Boolean);
+        if (
+          previous &&
+          current &&
+          adjacent &&
+          transition?.contiguous &&
+          transition.sameKey
+        ) {
+          diagnostics.push(
+            diagnostic(
+              "secondary-dominant-resolution",
+              current.startTick,
+              current.startTick,
+              [],
+              [],
+              "副属和弦未进入目标",
+              "副属和弦通常应进入其指向的第 " +
+                payload.targetDegree +
+                " 级和弦。",
+              {
+                chordIds: [previous.id, current.id],
+                evidence: [chordEvidence(previous), chordEvidence(current)],
+              },
+            ),
+          );
+        }
+      }
+    });
+  } else {
+    outgoing.push(...incoming);
+  }
+  if (context.isSpanStart && context.span?.semantics?.appliedTarget) {
+    const chord = context.slice.chord;
+    if (chord) {
+      outgoing.push(
+        makeRuleState(
+          "secondary-dominant-resolution",
+          context,
+          "secondary-dominant:" + context.span.id,
+          {
+            sourceSpanId: context.span.id,
+            sourceChordId: chord.id,
+            sourceToTick: context.span.toTick,
+            targetDegree: context.span.semantics.appliedTarget,
+          } as unknown as JsonValue,
+          { chordIds: [chord.id], spanIds: [context.span.id] },
+        ),
+      );
+    }
+  }
+  return stateStep(diagnostics, outgoing);
+}
 function crossRelationRule(analysis: HarmonyAnalysis, config: RuleConfig) {
   const configuredWindow = Number(config.windowTicks ?? analysis.project.ppq);
   const windowTicks = Number.isFinite(configuredWindow)
@@ -768,48 +1046,7 @@ function chordSliceRule(
   return diagnostics;
 }
 
-function chordSeventhResolutionRule(analysis: HarmonyAnalysis) {
-  const diagnostics: RuleDiagnostic[] = [];
-  validMelodyTransitions(analysis).forEach((transition) => {
-    if (!transition.contiguous || transition.sameHarmony) return;
-    const chord = analysisChordAtTick(analysis, transition.previous.startTick);
-    if (!chord) return;
-    const tones = chordIdentityToneSpellings(chord.identity);
-    if (
-      tones.length !== 4 ||
-      !pitchClassEquals(transition.previous.pitch, tones[3])
-    )
-      return;
-    const resolution =
-      toMidi(transition.current.pitch) - toMidi(transition.previous.pitch);
-    if (resolution === -1 || resolution === -2) return;
-    diagnostics.push(
-      diagnostic(
-        "chord-seventh-resolution",
-        transition.current.startTick,
-        transition.current.startTick + transition.current.durationTicks,
-        [transition.voiceId],
-        [transition.previous, transition.current],
-        "七音未级进下行解决",
-        `${chordLabel(chord)} 的书写七音 ${formatPitchClass(tones[3])} 通常应以半音或全音级进下行解决。`,
-        {
-          chordIds: [chord.id],
-          evidence: [
-            chordEvidence(chord),
-            noteEvidence(transition.previous, "和弦七音"),
-            noteEvidence(transition.current, "后继音"),
-          ],
-        },
-      ),
-    );
-  });
-  return diagnostics;
-}
-
-function progressionRule(
-  analysis: HarmonyAnalysis,
-  ruleId: "functional-retrogression" | "secondary-dominant-resolution",
-) {
+function functionalRetrogressionRule(analysis: HarmonyAnalysis) {
   const diagnostics: RuleDiagnostic[] = [];
   analysis.chordProgressions.forEach((progression) => {
     if (
@@ -818,38 +1055,22 @@ function progressionRule(
       progression.sameHarmony
     )
       return;
-    const previousFunction = progression.previous.function;
-    const currentFunction = progression.current.function;
-    if (!previousFunction || !currentFunction) return;
-    let matches = false;
-    if (ruleId === "functional-retrogression") {
-      matches =
-        progression.previousClass === "dominant" &&
-        progression.currentClass === "predominant";
-    } else if (ruleId === "secondary-dominant-resolution") {
-      matches = Boolean(
-        previousFunction.applied &&
-        currentFunction.degree !== previousFunction.applied.targetDegree,
-      );
-    }
-    if (!matches) return;
-    const title =
-      ruleId === "functional-retrogression"
-        ? "逆功能进行"
-        : "副属和弦未进入目标";
-    const message =
-      ruleId === "functional-retrogression"
-        ? `${chordLabel(progression.previous)} 到 ${chordLabel(progression.current)} 形成属功能到下属功能的逆向进行。`
-        : `${chordLabel(progression.previous)} 通常应进入其指向的 ${previousFunction.applied!.targetDegree} 级和弦。`;
+    if (!progression.previous.semantics || !progression.current.semantics)
+      return;
+    if (
+      progression.previousClass !== "dominant" ||
+      progression.currentClass !== "predominant"
+    )
+      return;
     diagnostics.push(
       diagnostic(
-        ruleId,
+        "functional-retrogression",
         progression.current.startTick,
         progression.current.startTick,
         [],
         [],
-        title,
-        message,
+        "逆功能进行",
+        `${chordLabel(progression.previous)} 到 ${chordLabel(progression.current)} 形成属功能到下属功能的逆向进行。`,
         {
           chordIds: [progression.previous.id, progression.current.id],
           evidence: [
@@ -874,7 +1095,7 @@ function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
     (left, right) => left.startTick - right.startTick,
   );
   regions.forEach((previous, index) => {
-    if (previous.function?.cadenceRole !== "cadential64") return;
+    if (previous.semantics?.cadenceRole !== "cadential64") return;
     const current = regions[index + 1];
     const progression = analysis.chordProgressions[index];
     const resolves = Boolean(
@@ -917,8 +1138,14 @@ function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
+type StatefulHarmonyRuleId =
+  | "leading-tone-resolution"
+  | "chord-seventh-resolution"
+  | "secondary-dominant-resolution";
+type StatelessHarmonyRuleId = Exclude<HarmonyRuleId, StatefulHarmonyRuleId>;
+
 const evaluators: Record<
-  HarmonyRuleId,
+  StatelessHarmonyRuleId,
   (analysis: HarmonyAnalysis, config: RuleConfig) => RuleDiagnostic[]
 > = {
   "voice-range": (analysis) => voiceRangeRule(analysis),
@@ -931,7 +1158,6 @@ const evaluators: Record<
   "melodic-large-leap": (analysis) =>
     melodicLeapRule(analysis, "melodic-large-leap"),
   "melodic-tritone": (analysis) => melodicLeapRule(analysis, "melodic-tritone"),
-  "leading-tone-resolution": (analysis) => leadingToneResolutionRule(analysis),
   "augmented-diminished-interval": (analysis) =>
     augmentedDiminishedIntervalRule(analysis),
   "cross-relation": (analysis, config) => crossRelationRule(analysis, config),
@@ -948,23 +1174,48 @@ const evaluators: Record<
   "chord-inversion": (analysis) => chordSliceRule(analysis, "chord-inversion"),
   "leading-tone-doubling": (analysis) =>
     chordSliceRule(analysis, "leading-tone-doubling"),
-  "chord-seventh-resolution": (analysis) =>
-    chordSeventhResolutionRule(analysis),
   "chord-seventh-doubling": (analysis) =>
     chordSliceRule(analysis, "chord-seventh-doubling"),
   "functional-retrogression": (analysis) =>
-    progressionRule(analysis, "functional-retrogression"),
-  "secondary-dominant-resolution": (analysis) =>
-    progressionRule(analysis, "secondary-dominant-resolution"),
+    functionalRetrogressionRule(analysis),
   "cadential64-resolution": (analysis) => cadential64ResolutionRule(analysis),
 };
 
 export const BUILTIN_HARMONY_RULES: readonly RuleDefinition[] =
-  HARMONY_RULE_DEFINITIONS.map((definition) => ({
-    ...definition,
-    evaluate: ({ analysis }, config) =>
-      evaluation(evaluators[definition.id](analysis, config)),
-  }));
+  HARMONY_RULE_DEFINITIONS.map((definition) => {
+    if (definition.id === "leading-tone-resolution") {
+      return {
+        ...definition,
+        process: (
+          context: RuleStepContext,
+          incoming: readonly RuleStateEnvelope[],
+        ) => leadingToneStateStep(context, incoming),
+      };
+    }
+    if (definition.id === "chord-seventh-resolution") {
+      return {
+        ...definition,
+        process: (
+          context: RuleStepContext,
+          incoming: readonly RuleStateEnvelope[],
+        ) => seventhStateStep(context, incoming),
+      };
+    }
+    if (definition.id === "secondary-dominant-resolution") {
+      return {
+        ...definition,
+        process: (
+          context: RuleStepContext,
+          incoming: readonly RuleStateEnvelope[],
+        ) => secondaryDominantStateStep(context, incoming),
+      };
+    }
+    return {
+      ...definition,
+      evaluate: ({ analysis }: { analysis: HarmonyAnalysis }, config: RuleConfig) =>
+        evaluation(evaluators[definition.id](analysis, config)),
+    };
+  });
 
 export function createHarmonyRuleScheduler() {
   return new RuleScheduler(BUILTIN_HARMONY_RULES);

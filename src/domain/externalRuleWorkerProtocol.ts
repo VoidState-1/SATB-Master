@@ -33,6 +33,7 @@ export type ExternalRuleWorkerResponse =
       inspection: {
         manifest: unknown;
         executableRuleIds: string[];
+        statefulRuleIds: string[];
       };
     }
   | {

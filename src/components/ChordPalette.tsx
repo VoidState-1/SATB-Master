@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { formatChord, isSeventhChord } from "../domain/chords";
-import type { ChordAnalysis, KeyEvent } from "../domain/model";
+import type { ChordDraft, KeyEvent } from "../domain/model";
 import {
   CHORD_ACCIDENTAL_OPTIONS,
   CHORD_APPLIED_OPTIONS,
@@ -12,15 +12,15 @@ import {
 } from "./chordAnalysisOptions";
 
 interface ChordPaletteProps {
-  analysis: ChordAnalysis;
+  draft: ChordDraft;
   keyEvent: KeyEvent;
   anchor: { x: number; y: number };
-  onChange(patch: Partial<ChordAnalysis>): void;
+  onChange(patch: Partial<ChordDraft>): void;
   onClose(): void;
 }
 
 export function ChordPalette({
-  analysis,
+  draft,
   keyEvent,
   anchor,
   onChange,
@@ -28,8 +28,8 @@ export function ChordPalette({
 }: ChordPaletteProps) {
   const paletteRef = useRef<HTMLElement>(null);
   const [position, setPosition] = useState(anchor);
-  const formatted = formatChord(analysis, keyEvent);
-  const seventhChord = isSeventhChord(analysis.quality);
+  const formatted = formatChord(draft, keyEvent);
+  const seventhChord = isSeventhChord(draft.quality);
 
   useLayoutEffect(() => {
     const updatePosition = () => {
@@ -114,8 +114,8 @@ export function ChordPalette({
             <button
               key={option.value}
               type="button"
-              className={analysis.degree === option.value ? "is-selected" : ""}
-              aria-pressed={analysis.degree === option.value}
+              className={draft.degree === option.value ? "is-selected" : ""}
+              aria-pressed={draft.degree === option.value}
               onClick={() => onChange({ degree: option.value })}
             >
               {option.label}
@@ -134,9 +134,9 @@ export function ChordPalette({
               type="button"
               title={option.title}
               className={
-                analysis.degreeAlteration === option.value ? "is-selected" : ""
+                draft.degreeAlteration === option.value ? "is-selected" : ""
               }
-              aria-pressed={analysis.degreeAlteration === option.value}
+              aria-pressed={draft.degreeAlteration === option.value}
               onClick={() => onChange({ degreeAlteration: option.value })}
             >
               {option.label}
@@ -154,15 +154,15 @@ export function ChordPalette({
               key={option.value}
               type="button"
               title={option.label}
-              className={analysis.quality === option.value ? "is-selected" : ""}
-              aria-pressed={analysis.quality === option.value}
+              className={draft.quality === option.value ? "is-selected" : ""}
+              aria-pressed={draft.quality === option.value}
               onClick={() =>
                 onChange({
                   quality: option.value,
                   inversion: Math.min(
-                    analysis.inversion,
+                    draft.inversion,
                     isSeventhChord(option.value) ? 3 : 2,
-                  ) as ChordAnalysis["inversion"],
+                  ) as ChordDraft["inversion"],
                 })
               }
             >
@@ -184,9 +184,9 @@ export function ChordPalette({
                 type="button"
                 disabled={unavailable}
                 className={
-                  analysis.inversion === option.value ? "is-selected" : ""
+                  draft.inversion === option.value ? "is-selected" : ""
                 }
-                aria-pressed={analysis.inversion === option.value}
+                aria-pressed={draft.inversion === option.value}
                 onClick={() => onChange({ inversion: option.value })}
               >
                 {option.label}
@@ -205,17 +205,14 @@ export function ChordPalette({
               key={option.value ?? "none"}
               type="button"
               className={
-                analysis.applied?.targetDegree === option.value
+                draft.appliedTarget === option.value
                   ? "is-selected"
                   : ""
               }
-              aria-pressed={analysis.applied?.targetDegree === option.value}
+              aria-pressed={draft.appliedTarget === option.value}
               onClick={() =>
                 onChange({
-                  applied:
-                    option.value === undefined
-                      ? undefined
-                      : { targetDegree: option.value },
+                  appliedTarget: option.value,
                 })
               }
             >

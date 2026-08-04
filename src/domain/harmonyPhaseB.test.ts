@@ -6,7 +6,10 @@ import {
   createHarmonyRuleScheduler,
 } from "./harmony";
 import { RuleScheduler, type RuleDefinition } from "./harmonyRuntime";
-import { defaultHarmonyRuleSeverities } from "./harmonyRules";
+import {
+  HARMONY_RULE_DEFINITIONS,
+  defaultHarmonyRuleSeverities,
+} from "./harmonyRules";
 import {
   createEmptyProject,
   PPQ,
@@ -54,13 +57,12 @@ function fSharpMajorRegion(functionAnalysis = false): ChordRegion {
       alterations: [],
       bass: { step: "F", alter: 1 },
     },
-    function: functionAnalysis
+    semantics: functionAnalysis
       ? {
           degree: 4,
           degreeAlteration: 1,
-          quality: "major",
-          inversion: 0,
           source: "manual",
+          confidence: "certain",
         }
       : undefined,
     locked: false,
@@ -246,12 +248,11 @@ describe("Phase B v1 书写与和弦金样本", () => {
           alterations: [],
           bass: { step: "G", alter: 0 },
         },
-        function: {
+        semantics: {
           degree: 5,
           degreeAlteration: 0,
-          quality: "dominant7",
-          inversion: 0,
           source: "manual",
+          confidence: "certain",
         },
         locked: false,
       },
@@ -283,12 +284,11 @@ describe("Phase B v1 书写与和弦金样本", () => {
           alterations: [],
           bass: { step: "G", alter: 0 },
         },
-        function: {
+        semantics: {
           degree: 5,
           degreeAlteration: 0,
-          quality: "dominant7",
-          inversion: 0,
           source: "manual",
+          confidence: "certain",
         },
         locked: false,
       },
@@ -314,7 +314,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
     expect(result?.evidence.some((item) => item.label === "和弦")).toBe(true);
   });
 
-  it("结构化区分无和弦与缺少功能分析的跳过原因", () => {
+  it("结构化区分无和弦与缺少和声语义的跳过原因", () => {
     const noChord = checkHarmony(createEmptyProject());
     expect(noChord.skippedRules).toEqual(
       expect.arrayContaining([
@@ -330,7 +330,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
       expect.arrayContaining([
         expect.objectContaining({
           ruleId: "functional-retrogression",
-          reason: "missing-function",
+          reason: "missing-semantics",
         }),
       ]),
     );
@@ -340,10 +340,10 @@ describe("Phase B v1 书写与和弦金样本", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ;
     const ambiguous = fSharpMajorRegion(true);
-    ambiguous.function = {
-      ...ambiguous.function!,
+    ambiguous.semantics = {
+      ...ambiguous.semantics!,
       degree: 2,
-      applied: { targetDegree: 5 },
+      appliedTarget: 5,
     };
     project.chordTrack.regions = [ambiguous];
 
@@ -351,7 +351,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
       expect.arrayContaining([
         expect.objectContaining({
           ruleId: "functional-retrogression",
-          reason: "ambiguous-function",
+          reason: "ambiguous-semantics",
           partial: false,
         }),
       ]),
@@ -373,13 +373,12 @@ describe("Phase B v1 书写与和弦金样本", () => {
           alterations: [],
           bass: { step: "G", alter: 0 },
         },
-        function: {
+        semantics: {
           degree: 1,
           degreeAlteration: 0,
-          quality: "major",
-          inversion: 2,
           cadenceRole: "cadential64",
           source: "manual",
+          confidence: "certain",
         },
         locked: false,
       },
@@ -394,12 +393,11 @@ describe("Phase B v1 书写与和弦金样本", () => {
           alterations: [],
           bass: { step: "C", alter: 0 },
         },
-        function: {
+        semantics: {
           degree: 1,
           degreeAlteration: 0,
-          quality: "major",
-          inversion: 0,
           source: "manual",
+          confidence: "certain",
         },
         locked: false,
       },
@@ -445,6 +443,49 @@ describe("Phase B v1 书写与和弦金样本", () => {
 });
 
 describe("Phase B RuleScheduler", () => {
+  it("不同有状态规则之间不共享信封", async () => {
+    const firstMetadata = HARMONY_RULE_DEFINITIONS.find(
+      (definition) => definition.id === "voice-range",
+    )!;
+    const secondMetadata = HARMONY_RULE_DEFINITIONS.find(
+      (definition) => definition.id === "voice-note-overlap",
+    )!;
+    const first: RuleDefinition = {
+      ...firstMetadata,
+      process: (context, incoming) => ({
+        diagnostics: [],
+        outgoing:
+          incoming.length > 0
+            ? incoming
+            : [
+                {
+                  id: "private-state",
+                  ownerRuleId: "voice-range",
+                  createdAt: {
+                    tick: context.slice.tick,
+                    sliceIndex: context.sliceIndex,
+                  },
+                  payload: { marker: "first-rule" },
+                },
+              ],
+      }),
+    };
+    const second: RuleDefinition = {
+      ...secondMetadata,
+      process: (_context, incoming) => {
+        if (incoming.length > 0) throw new Error("state leaked between rules");
+        return { diagnostics: [], outgoing: [] };
+      },
+    };
+    const result = await new RuleScheduler([first, second]).run({
+      project: createEmptyProject(),
+      severities: defaultHarmonyRuleSeverities(),
+      revision: 1,
+    });
+
+    expect(result.skippedRules).toEqual([]);
+  });
+
   it("较旧 revision 的异步结果不会覆盖新结果", async () => {
     let releaseFirst!: () => void;
     const firstGate = new Promise<void>((resolve) => {

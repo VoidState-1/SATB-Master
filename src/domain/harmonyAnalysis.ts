@@ -2,7 +2,7 @@ import { chordIdentityToneSpellings } from "./chordModel";
 import {
   VOICE_ORDER,
   type ChordRegion,
-  type FunctionalAnalysis,
+  type HarmonySemantics,
   type KeyEvent,
   type NoteEvent,
   type ProjectDocument,
@@ -38,6 +38,7 @@ export type FunctionalClass =
   | "ambiguous";
 
 export interface AnalysisSlice {
+  readonly index: number;
   readonly tick: number;
   readonly endTick: number;
   readonly notes: Readonly<Partial<Record<VoiceId, AnalysisNote>>>;
@@ -45,6 +46,7 @@ export interface AnalysisSlice {
   readonly key: AnalysisKey;
   readonly chord?: AnalysisChord;
   readonly completeSatb: boolean;
+  readonly continuity: "continuous" | "project-start";
 }
 
 export interface MelodyTransition {
@@ -58,9 +60,14 @@ export interface MelodyTransition {
 }
 
 export interface SliceTransition {
+  readonly previousIndex: number;
+  readonly currentIndex: number;
   readonly previous: AnalysisSlice;
   readonly current: AnalysisSlice;
+  readonly contiguous: boolean;
+  readonly sameKey: boolean;
   readonly sameHarmony: boolean;
+  readonly changedVoiceIds: readonly VoiceId[];
 }
 
 export interface ChordProgression {
@@ -73,6 +80,20 @@ export interface ChordProgression {
   readonly currentClass: FunctionalClass;
 }
 
+export interface HarmonySpan {
+  readonly id: string;
+  readonly fromTick: number;
+  readonly toTick: number;
+  readonly regionIds: readonly string[];
+  readonly sliceIndices: readonly number[];
+  readonly identityKey: string;
+  readonly semantics?: DeepReadonly<HarmonySemantics>;
+  readonly functionalClass: FunctionalClass;
+  readonly status: "complete" | "ambiguous";
+  readonly entryTransitionIndex?: number;
+  readonly exitTransitionIndex?: number;
+}
+
 export interface AnalysisInvalidationRange {
   readonly fromTick: number;
   readonly toTick: number;
@@ -83,6 +104,9 @@ export interface HarmonyAnalysis {
   readonly revision: number;
   readonly project: ProjectSnapshot;
   readonly slices: readonly AnalysisSlice[];
+  readonly harmonySpans: readonly HarmonySpan[];
+  readonly sliceSpanIds: ReadonlyMap<number, string>;
+  readonly chordSpanIds: ReadonlyMap<string, string>;
   readonly melodyTransitions: readonly MelodyTransition[];
   readonly sliceTransitions: readonly SliceTransition[];
   readonly chordProgressions: readonly ChordProgression[];
@@ -138,25 +162,25 @@ function sameKey(left: AnalysisKey, right: AnalysisKey) {
 }
 
 function sameOptionalKey(
-  left: FunctionalAnalysis["localKey"],
-  right: FunctionalAnalysis["localKey"],
+  left: HarmonySemantics["localKey"],
+  right: HarmonySemantics["localKey"],
 ) {
   if (!left || !right) return left === right;
   return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
-function sameFunctionalContext(
-  left: DeepReadonly<FunctionalAnalysis> | undefined,
-  right: DeepReadonly<FunctionalAnalysis> | undefined,
+function sameSemanticContext(
+  left: DeepReadonly<HarmonySemantics> | undefined,
+  right: DeepReadonly<HarmonySemantics> | undefined,
 ) {
-  if (!left || !right) return false;
+  if (!left || !right) return left === right;
   return (
     left.degree === right.degree &&
     left.degreeAlteration === right.degreeAlteration &&
-    left.quality === right.quality &&
-    left.applied?.targetDegree === right.applied?.targetDegree &&
+    left.appliedTarget === right.appliedTarget &&
     left.mixture === right.mixture &&
     left.cadenceRole === right.cadenceRole &&
+    left.confidence === right.confidence &&
     sameOptionalKey(left.localKey, right.localKey)
   );
 }
@@ -183,11 +207,13 @@ function sameChordIdentityWithoutBass(
 }
 
 export function functionalClassOf(
-  analysis: DeepReadonly<FunctionalAnalysis> | undefined,
+  analysis: DeepReadonly<HarmonySemantics> | undefined,
 ): FunctionalClass {
   if (!analysis) return "ambiguous";
+  if (["ambiguous", "unknown"].includes(analysis.confidence))
+    return "ambiguous";
   if (analysis.mixture) return "mixture";
-  if (analysis.applied) {
+  if (analysis.appliedTarget) {
     return [5, 7].includes(analysis.degree)
       ? "secondary-dominant"
       : "ambiguous";
@@ -225,7 +251,7 @@ export function sameHarmonyAtTicks(
       previousChord.identity,
       currentChord.identity,
     ) &&
-    sameFunctionalContext(previousChord.function, currentChord.function)
+    sameSemanticContext(previousChord.semantics, currentChord.semantics)
   );
 }
 
@@ -305,6 +331,7 @@ function buildSlices(project: ProjectSnapshot) {
 
     const chord = chords[chordIndex];
     slices.push({
+      index,
       tick,
       endTick: ordered[index + 1],
       notes: Object.freeze(notes),
@@ -317,10 +344,115 @@ function buildSlices(project: ProjectSnapshot) {
           ? chord
           : undefined,
       completeSatb: VOICE_ORDER.every((voiceId) => Boolean(notes[voiceId])),
+      continuity: index === 0 ? "project-start" : "continuous",
     });
   }
 
   return { slices: Object.freeze(slices), notesByVoice };
+}
+
+function chordIdentityKey(region: AnalysisChord) {
+  const identity = region.identity;
+  return JSON.stringify({
+    root: identity.root,
+    quality: identity.quality,
+    extensions: identity.extensions,
+    alterations: identity.alterations,
+    tones: chordIdentityToneSpellings(identity),
+  });
+}
+
+function buildHarmonySpans(
+  project: ProjectSnapshot,
+  slices: readonly AnalysisSlice[],
+) {
+  const regions = [...project.chordTrack.regions].sort(
+    (left, right) => left.startTick - right.startTick,
+  );
+  const groups: AnalysisChord[][] = [];
+  regions.forEach((region) => {
+    const previous = groups.at(-1)?.at(-1);
+    const canJoin = Boolean(
+      previous &&
+        previous.startTick + previous.durationTicks === region.startTick &&
+        sameKey(
+          keyAtTick(project.keyEvents, previous.startTick),
+          keyAtTick(project.keyEvents, region.startTick),
+        ) &&
+        sameChordIdentityWithoutBass(previous.identity, region.identity) &&
+        sameSemanticContext(previous.semantics, region.semantics),
+    );
+    if (canJoin) groups.at(-1)!.push(region);
+    else groups.push([region]);
+  });
+
+  const sliceSpanIds = new Map<number, string>();
+  const chordSpanIds = new Map<string, string>();
+  const harmonySpans = groups.map((group, groupIndex) => {
+    const id = `harmony-span-${groupIndex + 1}`;
+    const regionIds = group.map((region) => region.id);
+    const regionIdSet = new Set(regionIds);
+    const sliceIndices = slices
+      .filter((slice) => slice.chord && regionIdSet.has(slice.chord.id))
+      .map((slice) => slice.index);
+    sliceIndices.forEach((index) => sliceSpanIds.set(index, id));
+    regionIds.forEach((regionId) => chordSpanIds.set(regionId, id));
+    const first = group[0];
+    const last = group.at(-1)!;
+    const semantics = first.semantics;
+    const functionalClass = functionalClassOf(semantics);
+    return {
+      id,
+      fromTick: first.startTick,
+      toTick: last.startTick + last.durationTicks,
+      regionIds: Object.freeze(regionIds),
+      sliceIndices: Object.freeze(sliceIndices),
+      identityKey: chordIdentityKey(first),
+      semantics,
+      functionalClass,
+      status: functionalClass === "ambiguous" ? "ambiguous" : "complete",
+      entryTransitionIndex:
+        sliceIndices.length > 0 && sliceIndices[0] > 0
+          ? sliceIndices[0] - 1
+          : undefined,
+      exitTransitionIndex:
+        sliceIndices.length > 0 && sliceIndices.at(-1)! < slices.length - 1
+          ? sliceIndices.at(-1)
+          : undefined,
+    } satisfies HarmonySpan;
+  });
+
+  return {
+    harmonySpans: Object.freeze(harmonySpans),
+    sliceSpanIds,
+    chordSpanIds,
+  };
+}
+
+function buildSliceTransitions(
+  slices: readonly AnalysisSlice[],
+  sliceSpanIds: ReadonlyMap<number, string>,
+) {
+  return Object.freeze(
+    slices.slice(1).map((current, index) => {
+      const previous = slices[index];
+      const changedVoiceIds = VOICE_ORDER.filter(
+        (voiceId) => previous.notes[voiceId]?.id !== current.notes[voiceId]?.id,
+      );
+      return {
+        previousIndex: index,
+        currentIndex: current.index,
+        previous,
+        current,
+        contiguous: previous.endTick === current.tick,
+        sameKey: sameKey(previous.key, current.key),
+        sameHarmony:
+          Boolean(sliceSpanIds.get(previous.index)) &&
+          sliceSpanIds.get(previous.index) === sliceSpanIds.get(current.index),
+        changedVoiceIds: Object.freeze(changedVoiceIds),
+      } satisfies SliceTransition;
+    }),
+  );
 }
 
 function buildMelodyTransitions(
@@ -384,8 +516,8 @@ function buildChordProgressions(analysis: Pick<HarmonyAnalysis, "project">) {
         previous.startTick,
         current.startTick,
       ),
-      previousClass: functionalClassOf(previous.function),
-      currentClass: functionalClassOf(current.function),
+      previousClass: functionalClassOf(previous.semantics),
+      currentClass: functionalClassOf(current.semantics),
     });
   }
   return Object.freeze(progressions);
@@ -577,6 +709,10 @@ export function buildHarmonyAnalysis(
     "project"
   >;
   const { slices, notesByVoice } = buildSlices(snapshot);
+  const { harmonySpans, sliceSpanIds, chordSpanIds } = buildHarmonySpans(
+    snapshot,
+    slices,
+  );
   const noteById = new Map<string, AnalysisNote>();
   const noteVoiceById = new Map<string, VoiceId>();
   VOICE_ORDER.forEach((voiceId) =>
@@ -588,22 +724,15 @@ export function buildHarmonyAnalysis(
   const chordById = new Map(
     snapshot.chordTrack.regions.map((chord) => [chord.id, chord] as const),
   );
-  const sliceTransitions = Object.freeze(
-    slices.slice(1).map((current, index) => ({
-      previous: slices[index],
-      current,
-      sameHarmony: sameHarmonyAtTicks(
-        analysisShell,
-        slices[index].tick,
-        current.tick,
-      ),
-    })),
-  );
+  const sliceTransitions = buildSliceTransitions(slices, sliceSpanIds);
 
   return Object.freeze({
     revision,
     project: snapshot,
     slices,
+    harmonySpans,
+    sliceSpanIds,
+    chordSpanIds,
     melodyTransitions: buildMelodyTransitions(analysisShell, notesByVoice),
     sliceTransitions,
     chordProgressions: buildChordProgressions(analysisShell),
@@ -622,4 +751,108 @@ export function buildHarmonyAnalysis(
       ),
     }),
   });
+}
+
+export function previousSlice(
+  analysis: HarmonyAnalysis,
+  index: number,
+  options: { contiguous?: boolean } = {},
+) {
+  const current = analysis.slices[index];
+  if (!current) return undefined;
+  const previous = analysis.slices[index - 1];
+  if (!previous) return undefined;
+  if (options.contiguous && previous.endTick !== current.tick)
+    return undefined;
+  return previous;
+}
+
+export function nextSlice(
+  analysis: HarmonyAnalysis,
+  index: number,
+  options: { contiguous?: boolean } = {},
+) {
+  const current = analysis.slices[index];
+  if (!current) return undefined;
+  const next = analysis.slices[index + 1];
+  if (!next) return undefined;
+  if (options.contiguous && current.endTick !== next.tick)
+    return undefined;
+  return next;
+}
+
+export function walkSlices(
+  analysis: HarmonyAnalysis,
+  index: number,
+  direction: "forward" | "backward",
+  predicate?: (slice: AnalysisSlice) => boolean,
+) {
+  const result: AnalysisSlice[] = [];
+  const step = direction === "forward" ? 1 : -1;
+  for (
+    let cursor = index + step;
+    cursor >= 0 && cursor < analysis.slices.length;
+    cursor += step
+  ) {
+    const slice = analysis.slices[cursor];
+    result.push(slice);
+    if (predicate?.(slice)) break;
+  }
+  return Object.freeze(result);
+}
+
+export function harmonySpanAtTick(analysis: HarmonyAnalysis, tick: number) {
+  return analysis.harmonySpans.find(
+    (span) => span.fromTick <= tick && span.toTick > tick,
+  );
+}
+
+export function harmonySpanAtSlice(
+  analysis: HarmonyAnalysis,
+  sliceIndex: number,
+) {
+  const spanId = analysis.sliceSpanIds.get(sliceIndex);
+  return spanId
+    ? analysis.harmonySpans.find((span) => span.id === spanId)
+    : undefined;
+}
+
+export function walkSpans(
+  analysis: HarmonyAnalysis,
+  spanIndex: number,
+  direction: "forward" | "backward",
+  predicate?: (span: HarmonySpan) => boolean,
+) {
+  const result: HarmonySpan[] = [];
+  const step = direction === "forward" ? 1 : -1;
+  for (
+    let cursor = spanIndex + step;
+    cursor >= 0 && cursor < analysis.harmonySpans.length;
+    cursor += step
+  ) {
+    const span = analysis.harmonySpans[cursor];
+    result.push(span);
+    if (predicate?.(span)) break;
+  }
+  return Object.freeze(result);
+}
+
+export function previousAttack(
+  analysis: HarmonyAnalysis,
+  voiceId: VoiceId,
+  tick: number,
+) {
+  return analysis.notesByVoice[voiceId]
+    .filter((note) => note.startTick < tick)
+    .at(-1);
+}
+
+export function nextAttack(
+  analysis: HarmonyAnalysis,
+  voiceId: VoiceId,
+  tick: number,
+) {
+  return analysis.notesByVoice[voiceId].find(
+    (note) => note.startTick >= tick,
+  );
 }

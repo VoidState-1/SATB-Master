@@ -38,7 +38,11 @@ import { PanelResizeHandle } from "./components/PanelResizeHandle";
 import { PianoRoll, type EditorTool } from "./components/PianoRoll";
 import { ShortcutSettings } from "./components/ShortcutSettings";
 import { TrackSidebar } from "./components/TrackSidebar";
-import { createChordRegion, defaultChordAnalysisAtTick } from "./domain/chords";
+import {
+  chordDraftFromRegion,
+  createChordRegion,
+  defaultChordDraftAtTick,
+} from "./domain/chords";
 import {
   addChordRegion,
   addNote,
@@ -73,7 +77,7 @@ import {
   getTrack,
   normalizeProject,
   reconcileChordIdentities,
-  type ChordAnalysis,
+  type ChordDraft,
   type ChordRegion,
   type EditableRange,
   type NoteEvent,
@@ -250,8 +254,8 @@ function App() {
   const [selectedChordIds, setSelectedChordIds] = useState<Set<string>>(
     new Set(),
   );
-  const [chordBrush, setChordBrush] = useState<ChordAnalysis>(() =>
-    defaultChordAnalysisAtTick(initialProject, 0),
+  const [chordBrush, setChordBrush] = useState<ChordDraft>(() =>
+    defaultChordDraftAtTick(initialProject, 0),
   );
   const [playheadTick, setPlayheadTick] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -667,7 +671,8 @@ function App() {
       const chord = project.chordTrack.regions.find(
         (candidate) => candidate.id === chordIds.values().next().value,
       );
-      if (chord?.function) setChordBrush(chord.function);
+      const draft = chord ? chordDraftFromRegion(chord) : undefined;
+      if (draft) setChordBrush(draft);
     },
     [project.chordTrack.regions],
   );
@@ -845,7 +850,10 @@ function App() {
       const updated = result.project.chordTrack.regions.find(
         (region) => region.id === chordId,
       );
-      if (updated?.function && patch.function) setChordBrush(updated.function);
+      if (updated?.semantics && patch.draft) {
+        const draft = chordDraftFromRegion(updated);
+        if (draft) setChordBrush(draft);
+      }
     },
     [commitResult, project],
   );
@@ -878,7 +886,7 @@ function App() {
   );
 
   const handleUpdateChordBrush = useCallback(
-    (patch: Partial<ChordAnalysis>) => {
+    (patch: Partial<ChordDraft>) => {
       setChordBrush((current) => ({ ...current, ...patch }));
     },
     [],
@@ -1093,7 +1101,7 @@ function App() {
     setMigrationBackupSourcePath(undefined);
     setSelectedNoteIds(new Set());
     setSelectedChordIds(new Set());
-    setChordBrush(defaultChordAnalysisAtTick(initialProject, 0));
+    setChordBrush(defaultChordDraftAtTick(initialProject, 0));
     setPlayheadTick(0);
   }, [history, initialProject, requestConfirmation]);
 
@@ -1119,7 +1127,7 @@ function App() {
       );
       setSelectedNoteIds(new Set());
       setSelectedChordIds(new Set());
-      setChordBrush(defaultChordAnalysisAtTick(result.project, 0));
+      setChordBrush(defaultChordDraftAtTick(result.project, 0));
       setPlayheadTick(0);
       showNotice("工程已打开");
     } catch (error) {

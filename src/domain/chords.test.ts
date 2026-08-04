@@ -29,6 +29,7 @@ function region(
       quality: "major",
       inversion: 0,
       source: "manual",
+      confidence: "certain",
     },
     id,
   );
@@ -51,13 +52,14 @@ describe("和弦命名", () => {
           quality: "minor",
           inversion: 1,
           source: "manual",
+      confidence: "certain",
         },
         cMajor,
       ),
     ).toMatchObject({
       roman: "ii6",
       absolute: "Dm/F",
-      functionLabel: "下属功能",
+      functionalClassLabel: "下属功能",
     });
     expect(
       formatChord(
@@ -67,6 +69,7 @@ describe("和弦命名", () => {
           quality: "dominant7",
           inversion: 2,
           source: "manual",
+      confidence: "certain",
         },
         cMajor,
       ),
@@ -84,8 +87,9 @@ describe("和弦命名", () => {
           degreeAlteration: 0,
           quality: "dominant7",
           inversion: 0,
-          applied: { targetDegree: 5 },
+          appliedTarget: 5,
           source: "manual",
+      confidence: "certain",
         },
         cMajor,
       ),
@@ -98,6 +102,7 @@ describe("和弦命名", () => {
           quality: "major",
           inversion: 0,
           source: "manual",
+      confidence: "certain",
         },
         cMajor,
       ),
@@ -166,7 +171,7 @@ describe("和弦范围命令", () => {
       region(createEmptyProject(), "first", 0),
     ).project;
     expect(
-      updateChordRegion(project, "first", { function: { inversion: 3 } }).error,
+      updateChordRegion(project, "first", { draft: { inversion: 3 } }).error,
     ).toContain("无效");
     project = updateChordRegion(project, "first", { locked: true }).project;
     expect(

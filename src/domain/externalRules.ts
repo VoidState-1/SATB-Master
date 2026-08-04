@@ -16,7 +16,7 @@ import type {
   RuleDependencyScope,
 } from "./harmonyRules";
 
-export const EXTERNAL_RULE_API_VERSION = 1;
+export const EXTERNAL_RULE_API_VERSION = 2;
 export const MAX_EXTERNAL_RULE_BYTES = 512 * 1024;
 export const EXTERNAL_RULE_TIMEOUT_MS = 100;
 export const EXTERNAL_RULE_MEMORY_BYTES = 32 * 1024 * 1024;
@@ -98,6 +98,8 @@ export interface ExternalRuleContext {
     | "chordTrack"
   >;
   slices: Array<{
+    index: number;
+    spanId?: string;
     tick: number;
     endTick: number;
     notes: HarmonyAnalysis["slices"][number]["notes"];
@@ -105,7 +107,9 @@ export interface ExternalRuleContext {
     key: HarmonyAnalysis["slices"][number]["key"];
     chord?: HarmonyAnalysis["slices"][number]["chord"];
     completeSatb: boolean;
+    continuity: HarmonyAnalysis["slices"][number]["continuity"];
   }>;
+  harmonySpans: HarmonyAnalysis["harmonySpans"];
   melodyTransitions: HarmonyAnalysis["melodyTransitions"];
   sliceTransitions: HarmonyAnalysis["sliceTransitions"];
   chordProgressions: HarmonyAnalysis["chordProgressions"];
@@ -275,6 +279,8 @@ export function buildExternalRuleContext(
       chordTrack: analysis.project.chordTrack,
     },
     slices: analysis.slices.map((slice) => ({
+      index: slice.index,
+      spanId: analysis.sliceSpanIds.get(slice.index),
       tick: slice.tick,
       endTick: slice.endTick,
       notes: slice.notes,
@@ -282,7 +288,9 @@ export function buildExternalRuleContext(
       key: slice.key,
       chord: slice.chord,
       completeSatb: slice.completeSatb,
+      continuity: slice.continuity,
     })),
+    harmonySpans: analysis.harmonySpans,
     melodyTransitions: analysis.melodyTransitions,
     sliceTransitions: analysis.sliceTransitions,
     chordProgressions: analysis.chordProgressions,
@@ -340,6 +348,58 @@ function evidenceItems(value: unknown) {
   });
 }
 
+function validateExternalRuleStates(
+  value: unknown,
+  project: ProjectDocument,
+  rule: ExternalRuleManifestRule,
+) {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length > 512)
+    throw new Error("规则状态最多允许 512 项");
+  const stateIds = new Set<string>();
+  const noteIds = new Set(
+    project.satbTracks.flatMap((track) => track.notes.map((note) => note.id)),
+  );
+  const chordIds = new Set(project.chordTrack.regions.map((chord) => chord.id));
+  value.forEach((entry, index) => {
+    if (!isRecord(entry)) throw new Error(`第 ${index + 1} 项规则状态无效`);
+    const id = requiredString(entry.id, "规则状态 id", 128);
+    if (stateIds.has(id)) throw new Error(`规则状态 id“${id}”重复`);
+    stateIds.add(id);
+    if (entry.ownerRuleId !== rule.id)
+      throw new Error(`规则状态“${id}”不属于当前规则`);
+    if (!isRecord(entry.createdAt)) throw new Error(`规则状态“${id}”缺少创建位置`);
+    if (
+      !Number.isInteger(entry.createdAt.tick) ||
+      !Number.isInteger(entry.createdAt.sliceIndex) ||
+      (entry.createdAt.tick as number) < 0 ||
+      (entry.createdAt.tick as number) > project.lengthTicks ||
+      (entry.createdAt.sliceIndex as number) < 0
+    )
+      throw new Error(`规则状态“${id}”的创建位置无效`);
+    if (entry.subjectRefs !== undefined) {
+      if (!isRecord(entry.subjectRefs)) throw new Error(`规则状态“${id}”的引用无效`);
+      const voiceIds = stringArray(entry.subjectRefs.voiceIds ?? [], "规则状态 voiceIds");
+      const referencedNotes = stringArray(entry.subjectRefs.noteIds ?? [], "规则状态 noteIds");
+      const referencedChords = stringArray(entry.subjectRefs.chordIds ?? [], "规则状态 chordIds");
+      if (voiceIds.some((voiceId) => !VOICE_ORDER.includes(voiceId as (typeof VOICE_ORDER)[number])))
+        throw new Error(`规则状态“${id}”引用了不存在的声部`);
+      if (referencedNotes.some((noteId) => !noteIds.has(noteId)))
+        throw new Error(`规则状态“${id}”引用了不存在的音符`);
+      if (referencedChords.some((chordId) => !chordIds.has(chordId)))
+        throw new Error(`规则状态“${id}”引用了不存在的和弦`);
+    }
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(entry.payload);
+    } catch {
+      throw new Error(`规则状态“${id}”的 payload 不是 JSON 数据`);
+    }
+    if (serialized === undefined || serialized.length > 16 * 1024)
+      throw new Error(`规则状态“${id}”的 payload 无效或超过 16 KiB`);
+  });
+}
+
 export function normalizeExternalRuleDiagnostics(options: {
   value: unknown;
   project: ProjectDocument;
@@ -348,8 +408,15 @@ export function normalizeExternalRuleDiagnostics(options: {
   severity: Exclude<HarmonyRuleSeverity, "off">;
 }): HarmonyDiagnostic[] {
   const { value, project, package: installedPackage, rule, severity } = options;
-  if (!Array.isArray(value)) throw new Error("规则 evaluate 必须返回诊断数组");
-  if (value.length > MAX_EXTERNAL_DIAGNOSTICS_PER_RULE)
+  const diagnosticsValue = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.diagnostics)
+      ? value.diagnostics
+      : undefined;
+  if (!diagnosticsValue)
+    throw new Error("规则必须返回诊断数组，或包含 diagnostics 的结果对象");
+  if (isRecord(value)) validateExternalRuleStates(value.states, project, rule);
+  if (diagnosticsValue.length > MAX_EXTERNAL_DIAGNOSTICS_PER_RULE)
     throw new Error(
       `单条规则最多返回 ${MAX_EXTERNAL_DIAGNOSTICS_PER_RULE} 项诊断`,
     );
@@ -358,7 +425,7 @@ export function normalizeExternalRuleDiagnostics(options: {
   );
   const chordIds = new Set(project.chordTrack.regions.map((chord) => chord.id));
 
-  return value.map((entry, index) => {
+  return diagnosticsValue.map((entry, index) => {
     if (!isRecord(entry)) throw new Error(`第 ${index + 1} 项诊断不是对象`);
     if (entry.ruleId !== undefined && entry.ruleId !== rule.id)
       throw new Error(`第 ${index + 1} 项诊断引用了未授权的规则 ID`);

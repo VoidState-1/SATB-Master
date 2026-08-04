@@ -33,20 +33,23 @@ export interface KeyReference {
   mode: KeyMode;
 }
 
-export interface AppliedFunction {
-  targetDegree: 1 | 2 | 3 | 4 | 5 | 6 | 7;
-}
+export type ScaleDegree = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-export interface FunctionalAnalysis {
+export type SemanticConfidence =
+  | "certain"
+  | "probable"
+  | "ambiguous"
+  | "unknown";
+
+export interface HarmonySemantics {
   localKey?: KeyReference;
-  degree: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  degree: ScaleDegree;
   degreeAlteration: Alteration;
-  quality: ChordQuality;
-  inversion: 0 | 1 | 2 | 3;
-  applied?: AppliedFunction;
+  appliedTarget?: ScaleDegree;
   mixture?: "parallel-major" | "parallel-minor" | "modal";
   cadenceRole?: "cadential64" | "passing64" | "pedal64";
   source: "manual" | "inferred" | "confirmed";
+  confidence: SemanticConfidence;
 }
 
 export interface ChordIdentity {
@@ -55,6 +58,12 @@ export interface ChordIdentity {
   extensions: ChordExtension[];
   alterations: ChordToneAlteration[];
   bass: SpelledPitchClass;
+}
+
+// 编辑器草稿同时携带实体参数和语义；持久化时必须拆回 identity + semantics。
+export interface ChordDraft extends HarmonySemantics {
+  quality: ChordQuality;
+  inversion: 0 | 1 | 2 | 3;
 }
 
 export const QUALITY_INTERVALS: Record<ChordQuality, readonly number[]> = {
@@ -69,11 +78,11 @@ export const QUALITY_INTERVALS: Record<ChordQuality, readonly number[]> = {
   diminished7: [0, 3, 6, 9],
 };
 
-function appliedContext(analysis: FunctionalAnalysis, key: KeyLike): KeyLike {
-  const baseKey = analysis.localKey ?? key;
-  if (!analysis.applied) return baseKey;
+function appliedContext(semantics: HarmonySemantics, key: KeyLike): KeyLike {
+  const baseKey = semantics.localKey ?? key;
+  if (!semantics.appliedTarget) return baseKey;
   return {
-    tonic: scaleDegreePitchClass(baseKey, analysis.applied.targetDegree),
+    tonic: scaleDegreePitchClass(baseKey, semantics.appliedTarget),
     mode: "major",
   };
 }
@@ -148,22 +157,56 @@ export function chordIdentityToneSpellings(
 }
 
 export function resolveChordIdentity(
-  analysis: FunctionalAnalysis,
+  draft: ChordDraft,
   key: KeyLike,
 ): ChordIdentity {
-  const context = appliedContext(analysis, key);
+  const context = appliedContext(draft, key);
   const root = scaleDegreePitchClass(
     context,
-    analysis.degree,
-    analysis.degreeAlteration,
+    draft.degree,
+    draft.degreeAlteration,
   );
-  const tones = chordToneSpellings(root, analysis.quality);
+  const tones = chordToneSpellings(root, draft.quality);
   return {
     root,
-    quality: analysis.quality,
+    quality: draft.quality,
     extensions: [],
     alterations: [],
-    bass: tones[Math.min(analysis.inversion, tones.length - 1)],
+    bass: tones[Math.min(draft.inversion, tones.length - 1)],
+  };
+}
+
+export function semanticsFromChordDraft(draft: ChordDraft): HarmonySemantics {
+  return {
+    localKey: draft.localKey,
+    degree: draft.degree,
+    degreeAlteration: draft.degreeAlteration,
+    appliedTarget: draft.appliedTarget,
+    mixture: draft.mixture,
+    cadenceRole: draft.cadenceRole,
+    source: draft.source,
+    confidence: draft.confidence,
+  };
+}
+
+export function chordIdentityInversion(identity: ChordIdentity) {
+  const tones = chordToneSpellings(identity.root, identity.quality);
+  const index = tones.findIndex((tone) => pitchClassEquals(tone, identity.bass));
+  return Math.max(0, Math.min(index < 0 ? 0 : index, tones.length - 1)) as
+    | 0
+    | 1
+    | 2
+    | 3;
+}
+
+export function chordDraftFromIdentity(
+  identity: ChordIdentity,
+  semantics: HarmonySemantics,
+): ChordDraft {
+  return {
+    ...semantics,
+    quality: identity.quality,
+    inversion: chordIdentityInversion(identity),
   };
 }
 

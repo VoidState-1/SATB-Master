@@ -1,22 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { createChordRegion } from "./chords";
 import { checkHarmony } from "./harmony";
+import { buildHarmonyAnalysis, walkSpans } from "./harmonyAnalysis";
 import { defaultHarmonyRuleSeverities } from "./harmonyRules";
 import {
   createEmptyProject,
   PPQ,
-  type ChordAnalysis,
+  type ChordDraft,
   type NoteEvent,
   type VoiceId,
 } from "./model";
 import { spellMidi } from "./pitch";
 
-type TestChordAnalysis = Omit<ChordAnalysis, "source"> & {
-  source?: ChordAnalysis["source"];
+type TestChordDraft = Omit<ChordDraft, "source" | "confidence"> & {
+  source?: ChordDraft["source"];
+  confidence?: ChordDraft["confidence"];
 };
 
-function testChordAnalysis(analysis: TestChordAnalysis): ChordAnalysis {
-  return { ...analysis, source: analysis.source ?? "manual" };
+function testChordDraft(analysis: TestChordDraft): ChordDraft {
+  return {
+    ...analysis,
+    source: analysis.source ?? "manual",
+    confidence: analysis.confidence ?? "certain",
+  };
 }
 
 function chordRegion(
@@ -24,13 +30,13 @@ function chordRegion(
   id: string,
   startTick: number,
   durationTicks: number,
-  analysis: TestChordAnalysis,
+  analysis: TestChordDraft,
 ) {
   return createChordRegion(
     project,
     startTick,
     durationTicks,
-    testChordAnalysis(analysis),
+    testChordDraft(analysis),
     id,
   );
 }
@@ -61,7 +67,7 @@ function addChord(
   project: ReturnType<typeof createEmptyProject>,
   id: string,
   index: number,
-  analysis: TestChordAnalysis,
+  analysis: TestChordDraft,
 ) {
   project.chordTrack.regions.push(
     chordRegion(project, id, index * PPQ, PPQ, analysis),
@@ -107,7 +113,7 @@ describe("斯波索宾基础规则检查", () => {
   it("同和弦转换仍检查平行八度", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
-    const tonic: TestChordAnalysis = {
+    const tonic: TestChordDraft = {
       degree: 1,
       degreeAlteration: 0,
       quality: "major",
@@ -127,7 +133,7 @@ describe("斯波索宾基础规则检查", () => {
   it("同和弦转换仍检查声部交叉", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
-    const tonic: TestChordAnalysis = {
+    const tonic: TestChordDraft = {
       degree: 1,
       degreeAlteration: 0,
       quality: "major",
@@ -144,7 +150,7 @@ describe("斯波索宾基础规则检查", () => {
   it("同和弦转换放宽八度内大跳与声部超越", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
-    const tonic: TestChordAnalysis = {
+    const tonic: TestChordDraft = {
       degree: 1,
       degreeAlteration: 0,
       quality: "major",
@@ -163,7 +169,7 @@ describe("斯波索宾基础规则检查", () => {
   it("同和弦转换放宽外声部隐伏完全协和音程", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
-    const tonic: TestChordAnalysis = {
+    const tonic: TestChordDraft = {
       degree: 1,
       degreeAlteration: 0,
       quality: "major",
@@ -183,7 +189,7 @@ describe("斯波索宾基础规则检查", () => {
   it("同一七和弦内的三全音分解不触发旋律警告", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
-    const dominantSeventh: TestChordAnalysis = {
+    const dominantSeventh: TestChordDraft = {
       degree: 5,
       degreeAlteration: 0,
       quality: "dominant7",
@@ -337,7 +343,7 @@ describe("斯波索宾基础规则检查", () => {
   it("同和弦连续转换后再检查导音解决", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 3;
-    const dominant: TestChordAnalysis = {
+    const dominant: TestChordDraft = {
       degree: 5,
       degreeAlteration: 0,
       quality: "major",
@@ -356,10 +362,106 @@ describe("斯波索宾基础规则检查", () => {
     expect(ruleIds(project)).not.toContain("leading-tone-resolution");
   });
 
+  it("任意长度的同和弦转换链只在离开 span 后判定导音", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 4;
+    const dominant: TestChordDraft = {
+      degree: 5,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+    };
+    addChord(project, "dominant-root", 0, dominant);
+    addChord(project, "dominant-first", 1, { ...dominant, inversion: 1 });
+    addChord(project, "dominant-second", 2, { ...dominant, inversion: 2 });
+    addChord(project, "tonic", 3, {
+      degree: 1,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+    });
+    addLine(project, "tenor", [59, 55, 59, 60]);
+
+    const analysis = buildHarmonyAnalysis(project);
+    const spans = analysis.harmonySpans;
+    expect(spans).toHaveLength(2);
+    expect(spans[0].regionIds).toEqual([
+      "dominant-root",
+      "dominant-first",
+      "dominant-second",
+    ]);
+    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+  });
+
+  it("置信度变化会切断 HarmonySpan，避免确定语义覆盖歧义语义", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    const tonic: TestChordDraft = {
+      degree: 1,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+      confidence: "certain",
+    };
+    addChord(project, "certain-tonic", 0, tonic);
+    addChord(project, "ambiguous-tonic", 1, {
+      ...tonic,
+      confidence: "ambiguous",
+    });
+
+    const analysis = buildHarmonyAnalysis(project);
+    const spans = analysis.harmonySpans;
+    expect(spans).toHaveLength(2);
+    expect(spans.map((span) => span.status)).toEqual([
+      "complete",
+      "ambiguous",
+    ]);
+    expect(walkSpans(analysis, 0, "forward")).toEqual([spans[1]]);
+  });
+
+  it("导音状态不会跨过休止错误关联到更晚的音符", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    addChord(project, "dominant", 0, {
+      degree: 5,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+    });
+    addChord(project, "tonic", 2, {
+      degree: 1,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+    });
+    project.satbTracks
+      .find((track) => track.voice === "tenor")!
+      .notes.push(
+        note("leading-tone", 0, PPQ, 59),
+        note("later-note", PPQ * 2, PPQ, 57),
+      );
+
+    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+  });
+
+  it("工程结束时没有后继音不会凭空生成解决错误", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ;
+    addChord(project, "dominant", 0, {
+      degree: 5,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+    });
+    addLine(project, "tenor", [59]);
+
+    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+  });
+
   it("离开同和弦后导音仍未解决时给出提示", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 3;
-    const dominant: TestChordAnalysis = {
+    const dominant: TestChordDraft = {
       degree: 5,
       degreeAlteration: 0,
       quality: "major",
@@ -436,7 +538,7 @@ describe("斯波索宾基础规则检查", () => {
   it("同一七和弦转换结束后再检查七音解决", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 3;
-    const dominantSeventh: TestChordAnalysis = {
+    const dominantSeventh: TestChordDraft = {
       degree: 5,
       degreeAlteration: 0,
       quality: "dominant7",
@@ -599,12 +701,12 @@ describe("斯波索宾基础规则检查", () => {
   it("副属和弦重复转换后再检查目标解决", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 3;
-    const secondaryDominant: TestChordAnalysis = {
+    const secondaryDominant: TestChordDraft = {
       degree: 5,
       degreeAlteration: 0,
       quality: "major",
       inversion: 0,
-      applied: { targetDegree: 2 },
+      appliedTarget: 2,
     };
     addChord(project, "secondary-dominant-1", 0, secondaryDominant);
     addChord(project, "secondary-dominant-2", 1, {

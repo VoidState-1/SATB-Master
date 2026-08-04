@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  defaultChordAnalysisAtTick,
+  chordDraftFromRegion,
+  defaultChordDraftAtTick,
   formatChord,
   formatChordRegion,
 } from "../domain/chords";
@@ -14,7 +15,7 @@ import {
 import {
   VOICE_CONFIG,
   type ChordRegion,
-  type ChordAnalysis,
+  type ChordDraft,
   type NoteEvent,
   type ProjectDocument,
   type VoiceId,
@@ -46,7 +47,7 @@ interface PianoRollProps {
   pixelsPerBeat: number;
   selectedNoteIds: Set<string>;
   selectedChordIds: Set<string>;
-  chordBrush: ChordAnalysis;
+  chordBrush: ChordDraft;
   diagnostics: HarmonyDiagnostic[];
   playheadTick: number;
   loopEnabled: boolean;
@@ -1835,18 +1836,18 @@ export function PianoRoll({
 
         {chordPalette && paletteChord ? (
           <ChordPalette
-            analysis={
-              paletteChord.function ??
-              defaultChordAnalysisAtTick(project, paletteChord.startTick)
+            draft={
+              chordDraftFromRegion(paletteChord) ??
+              defaultChordDraftAtTick(project, paletteChord.startTick)
             }
             keyEvent={keyAtTick(project.keyEvents, paletteChord.startTick)}
             anchor={chordPalette.anchor}
             onChange={(patch) =>
               onUpdateChord(paletteChord.id, {
-                function: paletteChord.function
+                draft: paletteChord.semantics
                   ? patch
                   : {
-                      ...defaultChordAnalysisAtTick(
+                      ...defaultChordDraftAtTick(
                         project,
                         paletteChord.startTick,
                       ),

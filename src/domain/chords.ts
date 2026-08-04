@@ -1,13 +1,16 @@
 import {
   QUALITY_INTERVALS,
+  chordDraftFromIdentity,
   isSeventhChord,
   resolveChordIdentity,
+  semanticsFromChordDraft,
 } from "./chordModel";
 import {
-  type ChordAnalysis,
+  type ChordDraft,
   type ChordIdentity,
   type ChordQuality,
   type ChordRegion,
+  type HarmonySemantics,
   type KeyEvent,
   type ProjectDocument,
 } from "./model";
@@ -23,16 +26,16 @@ export type ChordFunction = "tonic" | "subdominant" | "dominant" | "other";
 export interface FormattedChordName {
   roman: string;
   absolute: string;
-  functionLabel: string;
+  functionalClassLabel: string;
   spokenDescription: string;
 }
 
-export function chordRootPitchClass(analysis: ChordAnalysis, key: KeyEvent) {
-  return pitchClassValue(resolveChordIdentity(analysis, key).root);
+export function chordRootPitchClass(draft: ChordDraft, key: KeyEvent) {
+  return pitchClassValue(resolveChordIdentity(draft, key).root);
 }
 
-export function chordPitchClasses(analysis: ChordAnalysis, key: KeyEvent) {
-  const identity = resolveChordIdentity(analysis, key);
+export function chordPitchClasses(draft: ChordDraft, key: KeyEvent) {
+  const identity = resolveChordIdentity(draft, key);
   const root = pitchClassValue(identity.root);
   return QUALITY_INTERVALS[identity.quality].map(
     (interval) => (((root + interval) % 12) + 12) % 12,
@@ -46,36 +49,39 @@ export function chordIdentityPitchClasses(identity: ChordIdentity) {
   );
 }
 
-export function chordFunction(analysis: ChordAnalysis): ChordFunction {
-  if (analysis.applied && [5, 7].includes(analysis.degree)) return "dominant";
-  if ([1, 3, 6].includes(analysis.degree)) return "tonic";
-  if ([2, 4].includes(analysis.degree)) return "subdominant";
-  if ([5, 7].includes(analysis.degree)) return "dominant";
+export function chordFunction(semantics: HarmonySemantics): ChordFunction {
+  if (semantics.appliedTarget && [5, 7].includes(semantics.degree))
+    return "dominant";
+  if ([1, 3, 6].includes(semantics.degree)) return "tonic";
+  if ([2, 4].includes(semantics.degree)) return "subdominant";
+  if ([5, 7].includes(semantics.degree)) return "dominant";
   return "other";
 }
 
-function romanName(analysis: ChordAnalysis) {
+function romanName(identity: ChordIdentity, semantics: HarmonySemantics) {
   const uppercase = ["major", "augmented", "dominant7", "major7"].includes(
-    analysis.quality,
+    identity.quality,
   );
   const numeral = uppercase
-    ? ROMAN_DEGREES[analysis.degree - 1]
-    : ROMAN_DEGREES[analysis.degree - 1].toLowerCase();
+    ? ROMAN_DEGREES[semantics.degree - 1]
+    : ROMAN_DEGREES[semantics.degree - 1].toLowerCase();
   const qualityMark =
-    analysis.quality === "augmented"
+    identity.quality === "augmented"
       ? "+"
-      : analysis.quality === "diminished" || analysis.quality === "diminished7"
+      : identity.quality === "diminished" ||
+          identity.quality === "diminished7"
         ? "°"
-        : analysis.quality === "halfDiminished7"
+        : identity.quality === "halfDiminished7"
           ? "ø"
           : "";
-  const figures = isSeventhChord(analysis.quality)
-    ? ["7", "6/5", "4/3", "4/2"][analysis.inversion]
-    : ["", "6", "6/4"][analysis.inversion];
-  const target = analysis.applied
-    ? `/${ROMAN_DEGREES[analysis.applied.targetDegree - 1]}`
+  const inversion = chordDraftFromIdentity(identity, semantics).inversion;
+  const figures = isSeventhChord(identity.quality)
+    ? ["7", "6/5", "4/3", "4/2"][inversion]
+    : ["", "6", "6/4"][inversion];
+  const target = semantics.appliedTarget
+    ? `/${ROMAN_DEGREES[semantics.appliedTarget - 1]}`
     : "";
-  return `${accidentalSymbol(analysis.degreeAlteration)}${numeral}${qualityMark}${figures}${target}`;
+  return `${accidentalSymbol(semantics.degreeAlteration)}${numeral}${qualityMark}${figures}${target}`;
 }
 
 function absoluteName(identity: ChordIdentity) {
@@ -100,21 +106,24 @@ function absoluteName(identity: ChordIdentity) {
 }
 
 export function formatChord(
-  analysis: ChordAnalysis,
+  draft: ChordDraft,
   key: KeyEvent,
 ): FormattedChordName {
-  return formatChordIdentity(resolveChordIdentity(analysis, key), analysis);
+  return formatChordIdentity(
+    resolveChordIdentity(draft, key),
+    semanticsFromChordDraft(draft),
+  );
 }
 
 export function formatChordIdentity(
   identity: ChordIdentity,
-  analysis?: ChordAnalysis,
+  semantics?: HarmonySemantics,
 ): FormattedChordName {
-  const roman = analysis ? romanName(analysis) : "?";
+  const roman = semantics ? romanName(identity, semantics) : "?";
   const absolute = absoluteName(identity);
-  const functionName = analysis ? chordFunction(analysis) : "other";
-  const baseLabel = !analysis
-    ? "未分析"
+  const functionName = semantics ? chordFunction(semantics) : "other";
+  const baseLabel = !semantics
+    ? "未解释"
     : functionName === "tonic"
       ? "主功能"
       : functionName === "subdominant"
@@ -122,14 +131,14 @@ export function formatChordIdentity(
         : functionName === "dominant"
           ? "属功能"
           : "其他功能";
-  const functionLabel = analysis?.applied
-    ? `${baseLabel} · 指向 ${ROMAN_DEGREES[analysis.applied.targetDegree - 1]} 级`
+  const functionalClassLabel = semantics?.appliedTarget
+    ? `${baseLabel} · 指向 ${ROMAN_DEGREES[semantics.appliedTarget - 1]} 级`
     : baseLabel;
   return {
     roman,
     absolute,
-    functionLabel,
-    spokenDescription: `${roman}，${absolute}，${functionLabel}`,
+    functionalClassLabel,
+    spokenDescription: `${roman}，${absolute}，${functionalClassLabel}`,
   };
 }
 
@@ -137,7 +146,7 @@ export function formatChordRegion(
   _project: ProjectDocument,
   region: ChordRegion,
 ) {
-  return formatChordIdentity(region.identity, region.function);
+  return formatChordIdentity(region.identity, region.semantics);
 }
 
 export function chordAtTick(project: ProjectDocument, tick: number) {
@@ -148,10 +157,10 @@ export function chordAtTick(project: ProjectDocument, tick: number) {
   );
 }
 
-export function defaultChordAnalysisAtTick(
+export function defaultChordDraftAtTick(
   project: ProjectDocument,
   tick: number,
-): ChordAnalysis {
+): ChordDraft {
   const key = keyAtTick(project.keyEvents, tick);
   return {
     degree: 1,
@@ -159,14 +168,21 @@ export function defaultChordAnalysisAtTick(
     quality: key.mode === "major" ? "major" : "minor",
     inversion: 0,
     source: "manual",
+    confidence: "certain",
   };
+}
+
+export function chordDraftFromRegion(region: ChordRegion): ChordDraft | undefined {
+  return region.semantics
+    ? chordDraftFromIdentity(region.identity, region.semantics)
+    : undefined;
 }
 
 export function createChordRegion(
   project: ProjectDocument,
   startTick: number,
   durationTicks: number,
-  analysis: ChordAnalysis,
+  draft: ChordDraft,
   id: string,
 ): ChordRegion {
   const key = keyAtTick(project.keyEvents, startTick);
@@ -174,22 +190,22 @@ export function createChordRegion(
     id,
     startTick,
     durationTicks,
-    identity: resolveChordIdentity(analysis, key),
-    function: analysis,
+    identity: resolveChordIdentity(draft, key),
+    semantics: semanticsFromChordDraft(draft),
     locked: false,
   };
 }
 
-export function updateChordFunctionIdentity(
+export function updateChordDraftIdentity(
   project: ProjectDocument,
   region: ChordRegion,
-  analysis: ChordAnalysis,
+  draft: ChordDraft,
 ) {
   return {
     ...region,
-    function: analysis,
+    semantics: semanticsFromChordDraft(draft),
     identity: resolveChordIdentity(
-      analysis,
+      draft,
       keyAtTick(project.keyEvents, region.startTick),
     ),
   };

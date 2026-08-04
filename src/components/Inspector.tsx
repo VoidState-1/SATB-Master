@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type InputHTMLAttributes } from "react";
 import { FolderOpen, Lock, LockOpen, Plus, Trash2 } from "lucide-react";
 import {
-  defaultChordAnalysisAtTick,
+  chordDraftFromRegion,
+  defaultChordDraftAtTick,
   formatChord,
   formatChordRegion,
   isSeventhChord,
@@ -9,7 +10,7 @@ import {
 import {
   VOICE_CONFIG,
   type Alteration,
-  type ChordAnalysis,
+  type ChordDraft,
   type ChordRegion,
   type DiatonicStep,
   type EditableRange,
@@ -79,7 +80,7 @@ interface InspectorProps {
   selectedChordIds: Set<string>;
   selectedChordCount: number;
   developerMode: boolean;
-  chordBrush: ChordAnalysis;
+  chordBrush: ChordDraft;
   playheadTick: number;
   audioStatus: string;
   soundFontSize?: string;
@@ -100,7 +101,7 @@ interface InspectorProps {
   ): void;
   onUpdateChord(chordId: string, patch: ChordRegionPatch): void;
   onDeleteChords(chordIds: Set<string>): void;
-  onUpdateChordBrush(patch: Partial<ChordAnalysis>): void;
+  onUpdateChordBrush(patch: Partial<ChordDraft>): void;
   onUpdateChordTrack(
     patch: Partial<
       Pick<ProjectDocument["chordTrack"], "visible" | "locked" | "displayMode">
@@ -130,23 +131,23 @@ const nonChordToneOptions = [
   ["other", "其他"],
 ] as const;
 
-function ChordAnalysisEditor({
-  analysis,
+function ChordSemanticsEditor({
+  draft,
   onChange,
 }: {
-  analysis: ChordAnalysis;
-  onChange(patch: Partial<ChordAnalysis>): void;
+  draft: ChordDraft;
+  onChange(patch: Partial<ChordDraft>): void;
 }) {
-  const maximumInversion = isSeventhChord(analysis.quality) ? 3 : 2;
+  const maximumInversion = isSeventhChord(draft.quality) ? 3 : 2;
   return (
     <>
       <label>
         <span>级数</span>
         <select
-          value={analysis.degree}
+          value={draft.degree}
           onChange={(event) =>
             onChange({
-              degree: Number(event.target.value) as ChordAnalysis["degree"],
+              degree: Number(event.target.value) as ChordDraft["degree"],
             })
           }
         >
@@ -160,12 +161,12 @@ function ChordAnalysisEditor({
       <label>
         <span>变化音</span>
         <select
-          value={analysis.degreeAlteration}
+          value={draft.degreeAlteration}
           onChange={(event) =>
             onChange({
               degreeAlteration: Number(
                 event.target.value,
-              ) as ChordAnalysis["degreeAlteration"],
+              ) as ChordDraft["degreeAlteration"],
             })
           }
         >
@@ -179,15 +180,15 @@ function ChordAnalysisEditor({
       <label>
         <span>性质</span>
         <select
-          value={analysis.quality}
+          value={draft.quality}
           onChange={(event) => {
-            const quality = event.target.value as ChordAnalysis["quality"];
+            const quality = event.target.value as ChordDraft["quality"];
             onChange({
               quality,
               inversion: Math.min(
-                analysis.inversion,
+                draft.inversion,
                 isSeventhChord(quality) ? 3 : 2,
-              ) as ChordAnalysis["inversion"],
+              ) as ChordDraft["inversion"],
             });
           }}
         >
@@ -201,12 +202,12 @@ function ChordAnalysisEditor({
       <label>
         <span>转位</span>
         <select
-          value={analysis.inversion}
+          value={draft.inversion}
           onChange={(event) =>
             onChange({
               inversion: Number(
                 event.target.value,
-              ) as ChordAnalysis["inversion"],
+              ) as ChordDraft["inversion"],
             })
           }
         >
@@ -219,15 +220,11 @@ function ChordAnalysisEditor({
       <label>
         <span>副属目标</span>
         <select
-          value={analysis.applied?.targetDegree ?? ""}
+          value={draft.appliedTarget ?? ""}
           onChange={(event) =>
             onChange({
-              applied: event.target.value
-                ? {
-                    targetDegree: Number(
-                      event.target.value,
-                    ) as ChordAnalysis["degree"],
-                  }
+              appliedTarget: event.target.value
+                ? (Number(event.target.value) as ChordDraft["degree"])
                 : undefined,
             })
           }
@@ -500,20 +497,20 @@ export function Inspector({
               <strong>{formatChordRegion(project, selectedChord).roman}</strong>
               <span>{formatChordRegion(project, selectedChord).absolute}</span>
               <small>
-                {formatChordRegion(project, selectedChord).functionLabel}
+                {formatChordRegion(project, selectedChord).functionalClassLabel}
               </small>
             </div>
-            <ChordAnalysisEditor
-              analysis={
-                selectedChord.function ??
-                defaultChordAnalysisAtTick(project, selectedChord.startTick)
+            <ChordSemanticsEditor
+              draft={
+                chordDraftFromRegion(selectedChord) ??
+                defaultChordDraftAtTick(project, selectedChord.startTick)
               }
               onChange={(patch) =>
                 onUpdateChord(selectedChord.id, {
-                  function: selectedChord.function
+                  draft: selectedChord.semantics
                     ? patch
                     : {
-                        ...defaultChordAnalysisAtTick(
+                        ...defaultChordDraftAtTick(
                           project,
                           selectedChord.startTick,
                         ),
@@ -620,8 +617,8 @@ export function Inspector({
                 }
               </span>
             </div>
-            <ChordAnalysisEditor
-              analysis={chordBrush}
+            <ChordSemanticsEditor
+              draft={chordBrush}
               onChange={onUpdateChordBrush}
             />
             <p className="property-hint">铅笔工具将在和弦轨中使用这组结构。</p>

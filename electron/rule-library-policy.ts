@@ -18,7 +18,7 @@ export interface RuleManifestEntry {
 }
 
 export interface RuleManifest {
-  apiVersion: 1
+  apiVersion: 2
   packageId: string
   version: string
   rules: RuleManifestEntry[]
@@ -47,7 +47,7 @@ function requiredString(value: unknown, label: string, max: number, pattern?: Re
 }
 
 export function validateRuleManifest(value: unknown): RuleManifest {
-  if (!isRecord(value) || value.apiVersion !== 1) throw new Error('规则包 manifest 无效')
+  if (!isRecord(value) || value.apiVersion !== 2) throw new Error('规则包 manifest 无效')
   const packageId = requiredString(value.packageId, 'packageId', 128, ID_PATTERN)
   const version = requiredString(value.version, 'version', 64, VERSION_PATTERN)
   if (!Array.isArray(value.rules) || value.rules.length < 1 || value.rules.length > 64) {
@@ -74,7 +74,7 @@ export function validateRuleManifest(value: unknown): RuleManifest {
       dependencyScope,
     }
   })
-  return { apiVersion: 1, packageId, version, rules }
+  return { apiVersion: 2, packageId, version, rules }
 }
 
 export function validateInstalledRuleMetadata(value: unknown): InstalledRulePackage {

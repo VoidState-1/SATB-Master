@@ -1,6 +1,6 @@
-# SATB Master 外置规则 API v1
+# SATB Master 外置规则 API v2
 
-> 对应 v2.0 开发计划 Phase C。首版只允许读取只读和声上下文并返回诊断，不提供自动修复、第三方界面、模块加载或宿主 API。
+> 对应 V2 开发计划 Phase C 与和声语义流水线。API v2 直接替代未发布的 v1，不提供兼容层。规则只能读取只读上下文、传递自己的 JSON 状态并返回诊断，不提供自动修复、第三方界面、模块加载或宿主 API。
 
 ## 1. 文件与注册格式
 
@@ -9,7 +9,7 @@
 ```js
 SATB_RULE.register({
   manifest: {
-    apiVersion: 1,
+    apiVersion: 2,
     packageId: "org.example.rules",
     version: "1.0.0",
     rules: [
@@ -69,10 +69,11 @@ SATB_RULE.register({
 
 ```ts
 interface ExternalRuleContext {
-  apiVersion: 1;
+  apiVersion: 2;
   revision: number;
   project: ReadonlyMusicalProjectSnapshot;
   slices: AnalysisSlice[];
+  harmonySpans: HarmonySpan[];
   melodyTransitions: MelodyTransition[];
   sliceTransitions: SliceTransition[];
   chordProgressions: ChordProgression[];
@@ -80,11 +81,11 @@ interface ExternalRuleContext {
 }
 ```
 
-其中 `project` 只包含记谱所需的工程标识、PPQ、总时长、速度/拍号/调号、SATB 轨和和弦轨；作者备注、音频设置、规则配置及辅助轨明细不会进入沙箱。辅助轨只通过 `auxiliarySummary` 暴露轨道数和音符数。外置规则不能修改编辑器工程；对沙箱内副本的修改也不会返回宿主。
+其中 `project` 只包含记谱所需的工程标识、PPQ、总时长、速度/拍号/调号、SATB 轨和和弦轨；作者备注、音频设置、规则配置及辅助轨明细不会进入沙箱。辅助轨只通过 `auxiliarySummary` 暴露轨道数和音符数。`slices` 带稳定索引、`spanId` 和连续性，`harmonySpans` 聚合连续同和弦转换。外置规则不能修改编辑器工程；对沙箱内副本的修改也不会返回宿主。
 
-## 4. 诊断返回值
+## 4. 无状态规则
 
-`evaluate` 必须同步返回诊断数组：
+无状态规则使用 `evaluate(context, config)`，必须同步返回诊断数组：
 
 ```ts
 interface ExternalDiagnostic {
@@ -110,7 +111,44 @@ interface ExternalDiagnostic {
 
 限制：单条规则最多返回 512 项诊断，消息最长 600 字符，证据最多 16 项。所有音符、和弦、声部 ID 和 tick 范围必须存在于当前工程，否则整条规则的本次结果作废。
 
-## 5. 沙箱边界
+## 5. 有状态规则
+
+需要横跨多个切片判断的规则使用 `process`，不能同时依赖其他规则的状态：
+
+```js
+{
+  id: "example-stateful-rule",
+  process(step, incoming, config) {
+    const outgoing = [...incoming];
+    // 规则自行决定创建、延续、消费状态，以及何时返回诊断。
+    return { outgoing, diagnostics: [] };
+  },
+  finalize(_step, remaining, config) {
+    return { diagnostics: [] };
+  },
+}
+```
+
+`step` 包含当前 `slice`、索引、前一切片、前一条 transition、当前 `HarmonySpan` 以及 `isSpanStart/isSpanEnd`。`incoming` 只包含当前规则上一步返回的状态。状态结构为：
+
+```ts
+interface RuleStateEnvelope<T extends JsonValue = JsonValue> {
+  id: string;
+  ownerRuleId: string; // 必须等于当前规则 ID
+  createdAt: { tick: number; sliceIndex: number };
+  subjectRefs?: {
+    voiceIds?: string[];
+    noteIds?: string[];
+    chordIds?: string[];
+    spanIds?: string[];
+  };
+  payload: T; // 仅由当前规则解释
+}
+```
+
+规则不再返回某个信封即表示消费该状态。宿主不理解 `payload` 的音乐学意义，只校验所有权、创建位置、实体引用和 JSON 限制。每条规则最多保留 512 个信封，单个 payload 不超过 16 KiB。`process` 与 `finalize` 都必须同步执行。
+
+## 6. 沙箱边界
 
 每条规则在独立 QuickJS runtime 中运行：
 
@@ -121,6 +159,8 @@ interface ExternalDiagnostic {
 - 新工程 revision 会终止旧 Worker，旧结果不能覆盖新诊断；
 - 超时、内存超限、异常、manifest 漂移和非法返回只停用本次规则，内置规则继续工作。
 
-## 6. 示例
+## 7. 版本策略与示例
+
+V3 工程格式和外置规则 API 均未正式发布，因此本阶段采用直接破坏性更新：只接受 `apiVersion: 2`，不会加载或适配 v1 包。后续正式发布后再建立稳定的兼容和弃用策略。
 
 仓库提供可直接导入的无害示例：[phase-c-example.satb-rule.js](../Examples/phase-c-example.satb-rule.js)。它只检查女高音超长持续音，用于验证规则包导入、配置、沙箱执行和诊断显示链路。

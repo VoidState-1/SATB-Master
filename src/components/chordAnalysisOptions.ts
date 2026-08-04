@@ -1,7 +1,7 @@
-import type { ChordAnalysis, ChordQuality } from "../domain/model";
+import type { ChordDraft, ChordQuality } from "../domain/model";
 
 export const CHORD_DEGREE_OPTIONS: ReadonlyArray<{
-  value: ChordAnalysis["degree"];
+  value: ChordDraft["degree"];
   label: string;
 }> = [
   { value: 1, label: "I" },
@@ -14,7 +14,7 @@ export const CHORD_DEGREE_OPTIONS: ReadonlyArray<{
 ];
 
 export const CHORD_ACCIDENTAL_OPTIONS: ReadonlyArray<{
-  value: ChordAnalysis["degreeAlteration"];
+  value: ChordDraft["degreeAlteration"];
   label: string;
   title: string;
 }> = [
@@ -42,7 +42,7 @@ export const CHORD_QUALITY_OPTIONS: ReadonlyArray<{
 ];
 
 export const CHORD_INVERSION_OPTIONS: ReadonlyArray<{
-  value: ChordAnalysis["inversion"];
+  value: ChordDraft["inversion"];
   label: string;
 }> = [
   { value: 0, label: "原位" },
@@ -52,7 +52,7 @@ export const CHORD_INVERSION_OPTIONS: ReadonlyArray<{
 ];
 
 export const CHORD_APPLIED_OPTIONS: ReadonlyArray<{
-  value: ChordAnalysis["degree"] | undefined;
+  value: ChordDraft["degree"] | undefined;
   label: string;
 }> = [
   { value: undefined, label: "无" },

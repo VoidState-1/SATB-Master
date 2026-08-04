@@ -17,7 +17,7 @@ import { checkHarmony } from "./harmony";
 const EXAMPLE_SOURCE = `
 SATB_RULE.register({
   manifest: {
-    apiVersion: 1,
+    apiVersion: 2,
     packageId: "org.example.safe",
     version: "1.0.0",
     rules: [{ id: "safe-rule", label: "安全示例", group: "custom" }],
@@ -40,7 +40,7 @@ SATB_RULE.register({
 function installedPackage(): InstalledExternalRulePackage {
   return {
     manifest: parseExternalRuleManifest({
-      apiVersion: 1,
+      apiVersion: 2,
       packageId: "org.example.safe",
       version: "1.0.0",
       rules: [{ id: "safe-rule", label: "安全示例", group: "custom" }],
@@ -55,7 +55,7 @@ function installedPackage(): InstalledExternalRulePackage {
 describe("Phase C 外置规则 manifest", () => {
   it("补齐可选元数据并拒绝重复规则 ID", () => {
     const manifest = parseExternalRuleManifest({
-      apiVersion: 1,
+      apiVersion: 2,
       packageId: "org.example.rules",
       version: "1.2.0",
       rules: [{ id: "example", label: "示例", group: "custom" }],
@@ -71,6 +71,17 @@ describe("Phase C 外置规则 manifest", () => {
         rules: [manifest.rules[0], manifest.rules[0]],
       }),
     ).toThrow("重复");
+  });
+
+  it("直接拒绝未发布的 API v1 规则包", () => {
+    expect(() =>
+      parseExternalRuleManifest({
+        apiVersion: 1,
+        packageId: "org.example.legacy",
+        version: "1.0.0",
+        rules: [{ id: "legacy", label: "旧规则", group: "custom" }],
+      }),
+    ).toThrow("API v2");
   });
 });
 
@@ -97,7 +108,7 @@ describe("Phase C QuickJS 沙箱", () => {
 
   it("中断超过 CPU 预算的死循环", async () => {
     const source = `SATB_RULE.register({
-      manifest: { apiVersion: 1, packageId: "org.example.loop", version: "1", rules: [{ id: "loop", label: "循环", group: "custom" }] },
+      manifest: { apiVersion: 2, packageId: "org.example.loop", version: "1", rules: [{ id: "loop", label: "循环", group: "custom" }] },
       rules: [{ id: "loop", evaluate() { while (true) {} } }],
     });`;
     const context = buildExternalRuleContext(
@@ -118,7 +129,7 @@ describe("Phase C QuickJS 沙箱", () => {
 
   it("隔离超过堆限制的规则", async () => {
     const source = `SATB_RULE.register({
-      manifest: { apiVersion: 1, packageId: "org.example.memory", version: "1", rules: [{ id: "memory", label: "内存", group: "custom" }] },
+      manifest: { apiVersion: 2, packageId: "org.example.memory", version: "1", rules: [{ id: "memory", label: "内存", group: "custom" }] },
       rules: [{ id: "memory", evaluate() { return [new Array(8000000).fill("xxxxxxxx")]; } }],
     });`;
     const context = buildExternalRuleContext(
@@ -134,6 +145,60 @@ describe("Phase C QuickJS 沙箱", () => {
     ).rejects.toMatchObject({
       code: "memory-limit",
     });
+  });
+
+  it("按切片传递规则私有状态并返回统一结果对象", async () => {
+    const source = `SATB_RULE.register({
+      manifest: {
+        apiVersion: 2,
+        packageId: "org.example.safe",
+        version: "1.0.0",
+        rules: [{ id: "safe-rule", label: "状态示例", group: "custom" }],
+      },
+      rules: [{
+        id: "safe-rule",
+        process(step, incoming) {
+          const previous = incoming[0];
+          const state = previous
+            ? { ...previous, payload: { visited: previous.payload.visited + 1 } }
+            : {
+                id: "state-1",
+                ownerRuleId: "safe-rule",
+                createdAt: { tick: step.slice.tick, sliceIndex: step.sliceIndex },
+                payload: { visited: 1 },
+              };
+          return {
+            outgoing: [state],
+            diagnostics: [{
+              tick: step.slice.tick,
+              title: "状态规则",
+              message: "已处理切片",
+              noteIds: [], chordIds: [], voiceIds: [],
+            }],
+          };
+        },
+      }],
+    });`;
+    const project = createEmptyProject();
+    const context = buildExternalRuleContext(buildHarmonyAnalysis(project, 7));
+    const inspection = await inspectExternalRuleSource(source);
+    expect(inspection.statefulRuleIds).toEqual(["safe-rule"]);
+    const evaluation = await evaluateExternalRuleSource({
+      source,
+      ruleId: "safe-rule",
+      context,
+      config: {},
+    });
+    const packageMetadata = installedPackage();
+    expect(
+      normalizeExternalRuleDiagnostics({
+        value: evaluation.value,
+        project,
+        package: packageMetadata,
+        rule: packageMetadata.manifest.rules[0],
+        severity: "suggestion",
+      }),
+    ).toHaveLength(context.slices.length);
   });
 });
 

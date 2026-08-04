@@ -1,6 +1,6 @@
 SATB_RULE.register({
   manifest: {
-    apiVersion: 1,
+    apiVersion: 2,
     packageId: "org.satbmaster.example",
     version: "1.0.0",
     rules: [

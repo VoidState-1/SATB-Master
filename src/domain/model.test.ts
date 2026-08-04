@@ -58,6 +58,7 @@ function createV2Fixture() {
         quality: "major",
         inversion: 0,
         source: "manual",
+      confidence: "certain",
       },
       "legacy-chord",
     ),
@@ -114,10 +115,10 @@ function createV2Fixture() {
       startTick: region.startTick,
       durationTicks: region.durationTicks,
       analysis: {
-        degree: region.function!.degree,
-        accidental: region.function!.degreeAlteration,
-        quality: region.function!.quality,
-        inversion: region.function!.inversion,
+        degree: region.semantics!.degree,
+        accidental: region.semantics!.degreeAlteration,
+        quality: region.identity.quality,
+        inversion: 0,
       },
       locked: region.locked,
     })),
@@ -223,6 +224,7 @@ describe("工程文件校验", () => {
         quality: "major",
         inversion: 0,
         source: "manual",
+      confidence: "certain",
       },
       "bad-chord",
     );
@@ -245,6 +247,7 @@ describe("工程文件校验", () => {
           quality: "major",
           inversion: 0,
           source: "manual",
+      confidence: "certain",
         },
         "tonic",
       ),
@@ -317,10 +320,11 @@ describe("schema v2 -> v3 迁移", () => {
         root: { step: "C", alter: 0 },
         quality: "major",
       },
-      function: {
+      semantics: {
         degree: 1,
         degreeAlteration: 0,
         source: "manual",
+      confidence: "certain",
       },
     });
   });

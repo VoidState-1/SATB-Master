@@ -1,11 +1,15 @@
 import { isSeventhChord } from "./chords";
-import { resolveChordIdentity } from "./chordModel";
+import {
+  chordDraftFromIdentity,
+  resolveChordIdentity,
+  semanticsFromChordDraft,
+} from "./chordModel";
 import {
   cloneProject,
   createId,
   getAllPlayableTracks,
   getMusicalTrack,
-  type ChordAnalysis,
+  type ChordDraft,
   type ChordRegion,
   type ChordTrack,
   type NoteEvent,
@@ -272,22 +276,22 @@ function chordRegionsOverlap(a: ChordRegion, b: ChordRegion) {
   );
 }
 
-function hasValidChordAnalysis(analysis: ChordAnalysis) {
-  const maximumInversion = isSeventhChord(analysis.quality) ? 3 : 2;
+function hasValidChordDraft(draft: ChordDraft) {
+  const maximumInversion = isSeventhChord(draft.quality) ? 3 : 2;
   return (
-    Number.isInteger(analysis.degree) &&
-    analysis.degree >= 1 &&
-    analysis.degree <= 7 &&
-    Number.isInteger(analysis.degreeAlteration) &&
-    analysis.degreeAlteration >= -2 &&
-    analysis.degreeAlteration <= 2 &&
-    Number.isInteger(analysis.inversion) &&
-    analysis.inversion >= 0 &&
-    analysis.inversion <= maximumInversion &&
-    (analysis.applied === undefined ||
-      (Number.isInteger(analysis.applied.targetDegree) &&
-        analysis.applied.targetDegree >= 1 &&
-        analysis.applied.targetDegree <= 7))
+    Number.isInteger(draft.degree) &&
+    draft.degree >= 1 &&
+    draft.degree <= 7 &&
+    Number.isInteger(draft.degreeAlteration) &&
+    draft.degreeAlteration >= -2 &&
+    draft.degreeAlteration <= 2 &&
+    Number.isInteger(draft.inversion) &&
+    draft.inversion >= 0 &&
+    draft.inversion <= maximumInversion &&
+    (draft.appliedTarget === undefined ||
+      (Number.isInteger(draft.appliedTarget) &&
+        draft.appliedTarget >= 1 &&
+        draft.appliedTarget <= 7))
   );
 }
 
@@ -307,8 +311,13 @@ function chordRegionError(
     region.startTick + region.durationTicks > project.lengthTicks
   )
     return "和弦超出工程时间范围";
-  if (region.function && !hasValidChordAnalysis(region.function))
-    return "和弦分析参数无效";
+  if (
+    region.semantics &&
+    !hasValidChordDraft(
+      chordDraftFromIdentity(region.identity, region.semantics),
+    )
+  )
+    return "和弦语义参数无效";
   if (
     project.keyEvents.some(
       (event) =>
@@ -335,11 +344,11 @@ export function addChordRegion(
   region: ChordRegion,
 ): EditResult {
   if (project.chordTrack.locked) return { project, error: "和弦轨已锁定" };
-  const normalizedRegion = region.function
+  const normalizedRegion = region.semantics
     ? {
         ...region,
         identity: resolveChordIdentity(
-          region.function,
+          chordDraftFromIdentity(region.identity, region.semantics),
           keyAtTick(project.keyEvents, region.startTick),
         ),
       }
@@ -356,7 +365,7 @@ export function addChordRegion(
 export type ChordRegionPatch = Partial<
   Pick<ChordRegion, "startTick" | "durationTicks" | "locked">
 > & {
-  function?: Partial<ChordAnalysis>;
+  draft?: Partial<ChordDraft>;
 };
 
 export function updateChordRegion(
@@ -371,22 +380,26 @@ export function updateChordRegion(
   if (project.chordTrack.locked) return { project, error: "和弦轨已锁定" };
   if (current.locked && patch.locked !== false)
     return { project, error: "该和弦已锁定" };
-  const { function: functionPatch, ...directPatch } = patch;
+  const { draft: draftPatch, ...directPatch } = patch;
   let updated: ChordRegion = {
     ...current,
     ...directPatch,
   };
-  if (current.function || functionPatch) {
-    const analysis = {
-      ...current.function,
-      ...functionPatch,
-    } as ChordAnalysis;
+  if (current.semantics || draftPatch) {
+    if (!current.semantics)
+      return { project, error: "和弦缺少可编辑的语义" };
+    const draft = {
+      ...chordDraftFromIdentity(current.identity, current.semantics),
+      ...draftPatch,
+    } as ChordDraft;
+    if (!hasValidChordDraft(draft))
+      return { project, error: "和弦语义参数无效" };
     updated = {
       ...updated,
-      function: analysis,
+      semantics: semanticsFromChordDraft(draft),
       // 和弦移动跨过调性边界时，实体拼写必须跟随新位置重新解析。
       identity: resolveChordIdentity(
-        analysis,
+        draft,
         keyAtTick(project.keyEvents, updated.startTick),
       ),
     };
@@ -416,12 +429,12 @@ export function transformChordRegions(
 
   const transformed = selected.map((region) => {
     const updated = transform(region);
-    return updated.function
+    return updated.semantics
       ? {
           ...updated,
-          // 批量移动也必须按新位置调性重算实体拼写，避免 function 与 identity 分叉。
+          // 批量移动也必须按新位置调性重算实体拼写，避免语义与实体分叉。
           identity: resolveChordIdentity(
-            updated.function,
+            chordDraftFromIdentity(updated.identity, updated.semantics),
             keyAtTick(project.keyEvents, updated.startTick),
           ),
         }

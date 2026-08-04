@@ -51,6 +51,7 @@ describe("MIDI Type 1 导出", () => {
           quality: "major",
           inversion: 0,
           source: "manual",
+      confidence: "certain",
         },
         "chord-1",
       ),

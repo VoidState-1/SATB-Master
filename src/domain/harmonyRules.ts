@@ -2,7 +2,7 @@ export type DiagnosticSeverity = "error" | "warning" | "suggestion";
 export type HarmonyRuleSeverity = DiagnosticSeverity | "off";
 export type HarmonyRuleGroupId = "voice" | "melody" | "voiceLeading" | "chord";
 export type RuleRequirement =
-  "written-pitches" | "chords" | "functions" | "complete-satb";
+  "written-pitches" | "chords" | "semantics" | "complete-satb";
 export type RuleDependencyScope =
   "note" | "slice" | "chord" | "phrase" | "project";
 
@@ -215,7 +215,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     label: "逆功能进行",
     group: "chord",
     defaultSeverity: "warning",
-    requires: ["chords", "functions"],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     description: "检查相邻和弦是否出现斯波索宾基础序进中的属功能到下属功能。",
   },
@@ -224,7 +224,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     label: "副属和弦未进入目标",
     group: "chord",
     defaultSeverity: "warning",
-    requires: ["chords", "functions"],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     description: "检查副属和弦是否进入其标注指向的目标级和弦。",
   },
@@ -233,7 +233,7 @@ export const HARMONY_RULE_DEFINITIONS = [
     label: "终止四六未进入属和弦",
     group: "chord",
     defaultSeverity: "warning",
-    requires: ["chords", "functions"],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     description: "检查标记为终止四六的和弦是否连续进入属功能和弦。",
   },

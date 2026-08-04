@@ -50,7 +50,7 @@ describe("开发者事件检查投影", () => {
     expect(result.rawJson).toContain('"id": "note-debug"');
   });
 
-  it("和弦即使没有功能分析也会列出全部可选功能字段", () => {
+  it("和弦即使没有语义标注也会列出全部可选语义字段", () => {
     const chord = {
       id: "chord-debug",
       startTick: 0,
@@ -72,14 +72,14 @@ describe("开发者事件检查投影", () => {
         "identity.extensions[0]",
         "identity.alterations[0].degree",
         "identity.alterations[0].alter",
-        "function.localKey.tonic.step",
-        "function.applied.targetDegree",
-        "function.cadenceRole",
-        "function.source",
+        "semantics.localKey.tonic.step",
+        "semantics.appliedTarget",
+        "semantics.cadenceRole",
+        "semantics.source",
       ]),
     );
     expect(
-      result.rows.find((item) => item.path === "function")?.value,
+      result.rows.find((item) => item.path === "semantics")?.value,
     ).toBeUndefined();
   });
 

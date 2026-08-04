@@ -1,12 +1,15 @@
 import {
   chordIdentityEquals,
+  chordDraftFromIdentity,
   isSeventhChord,
   resolveChordIdentity,
+  semanticsFromChordDraft,
+  type ChordDraft,
   type ChordExtension,
   type ChordIdentity,
   type ChordQuality,
   type ChordToneAlteration,
-  type FunctionalAnalysis,
+  type HarmonySemantics,
 } from "./chordModel";
 import {
   formatPitchClass,
@@ -23,11 +26,12 @@ import {
 } from "./pitch";
 
 export type {
+  ChordDraft,
   ChordExtension,
   ChordIdentity,
   ChordQuality,
   ChordToneAlteration,
-  FunctionalAnalysis,
+  HarmonySemantics,
 } from "./chordModel";
 export type {
   Alteration,
@@ -41,7 +45,6 @@ export const PROJECT_SCHEMA_VERSION = 3;
 export const PPQ = 960;
 
 export type VoiceId = "soprano" | "alto" | "tenor" | "bass";
-export type ChordAnalysis = FunctionalAnalysis;
 export type TrackId = VoiceId | string;
 export type NonChordToneRole =
   | "passing"
@@ -132,7 +135,7 @@ export interface ChordRegion {
   startTick: number;
   durationTicks: number;
   identity: ChordIdentity;
-  function?: FunctionalAnalysis;
+  semantics?: HarmonySemantics;
   locked: boolean;
 }
 
@@ -365,13 +368,19 @@ export function getMusicalTrack(project: ProjectDocument, trackId: string) {
 
 export function reconcileChordIdentities(project: ProjectDocument) {
   project.chordTrack.regions = project.chordTrack.regions.map((region) => {
-    if (!region.function) return region;
+    if (!region.semantics) return region;
     const key = [...project.keyEvents]
       .sort((left, right) => left.tick - right.tick)
       .filter((event) => event.tick <= region.startTick)
       .at(-1);
     return key
-      ? { ...region, identity: resolveChordIdentity(region.function, key) }
+      ? {
+          ...region,
+          identity: resolveChordIdentity(
+            chordDraftFromIdentity(region.identity, region.semantics),
+            key,
+          ),
+        }
       : region;
   });
   return project;
@@ -551,24 +560,21 @@ function validateAuxiliaryTrack(value: unknown, projectLength: number) {
   );
 }
 
-function validateFunctionalAnalysis(
-  value: unknown,
-): value is FunctionalAnalysis {
+function validateHarmonySemantics(value: unknown): value is HarmonySemantics {
   if (!isRecord(value)) return false;
-  const inversionLimit = isSeventhChord(value.quality as ChordQuality) ? 3 : 2;
   return (
     isInteger(value.degree, 1, 7) &&
     isInteger(value.degreeAlteration, -2, 2) &&
-    chordQualities.has(value.quality as ChordQuality) &&
-    isInteger(value.inversion, 0, inversionLimit) &&
     ["manual", "inferred", "confirmed"].includes(value.source as string) &&
+    ["certain", "probable", "ambiguous", "unknown"].includes(
+      value.confidence as string,
+    ) &&
     (value.localKey === undefined ||
       (isRecord(value.localKey) &&
         validatePitchClass(value.localKey.tonic) &&
         ["major", "minor"].includes(value.localKey.mode as string))) &&
-    (value.applied === undefined ||
-      (isRecord(value.applied) &&
-        isInteger(value.applied.targetDegree, 1, 7))) &&
+    (value.appliedTarget === undefined ||
+      isInteger(value.appliedTarget, 1, 7)) &&
     (value.mixture === undefined ||
       ["parallel-major", "parallel-minor", "modal"].includes(
         value.mixture as string,
@@ -609,8 +615,8 @@ function validateChordRegion(value: unknown, projectLength: number) {
     (value.startTick as number) + (value.durationTicks as number) <=
       projectLength &&
     validateChordIdentity(value.identity) &&
-    (value.function === undefined ||
-      validateFunctionalAnalysis(value.function)) &&
+    (value.semantics === undefined ||
+      validateHarmonySemantics(value.semantics)) &&
     typeof value.locked === "boolean"
   );
 }
@@ -770,7 +776,7 @@ export function validateProject(value: unknown): value is ProjectDocument {
   )
     return false;
   for (const region of orderedChords) {
-    if (!region.function) continue;
+    if (!region.semantics) continue;
     const key = [...(project.keyEvents as KeyEvent[])]
       .sort((a, b) => a.tick - b.tick)
       .filter((event) => event.tick <= region.startTick)
@@ -779,7 +785,10 @@ export function validateProject(value: unknown): value is ProjectDocument {
       !key ||
       !chordIdentityEquals(
         region.identity,
-        resolveChordIdentity(region.function, key),
+        resolveChordIdentity(
+          chordDraftFromIdentity(region.identity, region.semantics),
+          key,
+        ),
       )
     )
       return false;
@@ -842,7 +851,7 @@ function legacyKeyAtTick(events: KeyEvent[], tick: number) {
   );
 }
 
-function migrateLegacyFunction(value: unknown): FunctionalAnalysis | undefined {
+function migrateLegacyChordDraft(value: unknown): ChordDraft | undefined {
   if (!isRecord(value)) return undefined;
   if (
     !isInteger(value.degree, 1, 7) ||
@@ -860,15 +869,13 @@ function migrateLegacyFunction(value: unknown): FunctionalAnalysis | undefined {
   )
     return undefined;
   return {
-    degree: value.degree as FunctionalAnalysis["degree"],
+    degree: value.degree as ChordDraft["degree"],
     degreeAlteration: value.accidental as Alteration,
     quality: value.quality as ChordQuality,
-    inversion: value.inversion as FunctionalAnalysis["inversion"],
-    applied:
-      value.appliedToDegree === undefined
-        ? undefined
-        : { targetDegree: value.appliedToDegree as 1 | 2 | 3 | 4 | 5 | 6 | 7 },
+    inversion: value.inversion as ChordDraft["inversion"],
+    appliedTarget: value.appliedToDegree as ChordDraft["appliedTarget"],
     source: "manual",
+    confidence: "certain",
   };
 }
 
@@ -945,15 +952,15 @@ function migrateV2Project(value: Record<string, unknown>) {
   ) {
     migrated.chordTrack.regions = migrated.chordTrack.regions.map((region) => {
       if (!isRecord(region)) return region;
-      const analysis = migrateLegacyFunction(region.analysis);
-      if (!analysis || !isInteger(region.startTick, 0)) return region;
+      const draft = migrateLegacyChordDraft(region.analysis);
+      if (!draft || !isInteger(region.startTick, 0)) return region;
       const key = legacyKeyAtTick(typedKeyEvents, region.startTick as number);
       const next = { ...region };
       delete next.analysis;
       return {
         ...next,
-        identity: resolveChordIdentity(analysis, key),
-        function: analysis,
+        identity: resolveChordIdentity(draft, key),
+        semantics: semanticsFromChordDraft(draft),
       };
     });
   }

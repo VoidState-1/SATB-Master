@@ -91,8 +91,9 @@ describe("和弦实体拼写", () => {
         degreeAlteration: 0,
         quality: "dominant7",
         inversion: 1,
-        applied: { targetDegree: 5 },
+        appliedTarget: 5,
         source: "manual",
+      confidence: "certain",
       },
       cMajor,
     );
@@ -108,8 +109,9 @@ describe("和弦实体拼写", () => {
         quality: "major",
         inversion: 0,
         localKey: { tonic: { step: "D", alter: 0 }, mode: "major" },
-        applied: { targetDegree: 5 },
+        appliedTarget: 5,
         source: "confirmed",
+        confidence: "certain",
       },
       cMajor,
     );

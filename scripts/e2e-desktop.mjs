@@ -50,7 +50,7 @@ await writeFile(path.join(e2eDirectory, 'user-data', 'recovery.json'), JSON.stri
 }, null, 2), 'utf8')
 const externalRuleSource = `SATB_RULE.register({
   manifest: {
-    apiVersion: 1,
+    apiVersion: 2,
     packageId: "org.satbmaster.e2e",
     version: "1.0.0",
     rules: [{
