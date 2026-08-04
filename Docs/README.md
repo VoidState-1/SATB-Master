@@ -1,0 +1,142 @@
+# SATB Master 开发者文档
+
+本目录是 SATB Master 的开发者入口，描述当前代码已经实现的结构、稳定约束、调试方式与交付流程。它面向接手项目、实现功能、维护规则或排查桌面端问题的开发者。
+
+> `Docs` 与 `DesignDocs` 的职责不同：`Docs` 记录当前实现和长期维护约定，随代码一起更新并纳入 Git；`DesignDocs` 保存开发过程中的方案讨论、阶段设计和未定结论。若设计文档与代码不一致，以代码和本目录中经过同步的说明为准。
+
+## 1. 项目定位
+
+SATB Master 是一款离线优先的四部和声学习与编辑软件。主要交互是钢琴卷帘式 SATB 编辑器，并在同一个工程中维护和弦区域、调号、拍号、速度、循环和规则配置。桌面版本使用 Electron，浏览器模式主要承担开发预览和有限降级。
+
+当前主技术栈：
+
+| 层级 | 技术 | 用途 |
+| --- | --- | --- |
+| 界面 | React 19、TypeScript、Vite | 编辑器、设置、诊断和属性检查器 |
+| 桌面壳 | Electron | 文件、窗口、安装包和本地资源访问 |
+| 音频 | SpessaSynth Worklet、Web Audio | SF2/SF3 合成、预听、播放和回退音色 |
+| MIDI | `midi-file` | MIDI Type 1 导出 |
+| 规则沙箱 | QuickJS WASM、Web Worker | 隔离执行外置和声规则 |
+| 测试 | Vitest、自有 Electron CDP 脚本 | 领域测试、策略测试和桌面端流程 |
+
+桌面端以 Windows 10/11 x64 为主要目标。工程不依赖后端服务，作品、恢复数据、规则包和用户 SoundFont 都保存在本地。
+
+## 2. 当前能力
+
+已经实现：
+
+- 四个固定 SATB 声部的钢琴卷帘编辑、批量选择、拖绘、擦除、切分、移动、时值修改和预听。
+- 允许重叠且不参与和声检查的辅助轨数据模型，以及辅助轨播放和 MIDI 导出。
+- 范围型和弦轨、和弦调色板、罗马数字显示、调号/拍号/速度事件、标尺和循环区域。
+- 工程撤销/重做、练习可编辑区间、事件锁定、可调整工作区和键盘快捷键。
+- 基于书写音高的内置和声检查、跨切片语义状态、严重程度配置和诊断悬停信息。
+- QuickJS 隔离的外置规则 API v2、本机规则库和工程级规则引用。
+- 默认及本地 SF2/SF3、播放/暂停/循环/节拍器、MIDI Type 1 导出。
+- `.satb` 工程文件、自动恢复、v2 到 v3 迁移、最近对话框目录和开发者属性检查器。
+
+尚未实现或仍需完善：
+
+- MIDI 导入及“解析为四声部/全部放入辅助轨”两种导入模式。
+- VexFlow 五线谱实时预览。
+- 辅助轨的完整编辑 UI；现阶段模型、播放和导出能力先于交互界面。
+- 每次发布前的 Windows 安装后端到端验证；该结果依赖具体机器环境，不能由一次历史通过长期替代。
+- 更完整的传统和声特例。规则引擎已提供上下文和规则私有状态，但规则知识仍需持续补全。
+
+当前需要区分三个版本号：
+
+| 项目 | 当前值 | 说明 |
+| --- | --- | --- |
+| 产品版本 | `1.1.0` | 来自 [`package.json`](../package.json)，大版本开发分支上可能暂未更新 |
+| 工程 schema | `3` | 来自 [`src/domain/model.ts`](../src/domain/model.ts)，决定 `.satb` 兼容性 |
+| 外置规则 API | `2` | 来自 [`src/domain/externalRules.ts`](../src/domain/externalRules.ts)，决定规则脚本兼容性 |
+
+工程 schema 和外置规则 API 是数据契约，不能用产品版本号替代。
+
+## 3. 快速开始
+
+准备与仓库锁文件匹配的 Node.js/npm 环境，然后在仓库根目录执行：
+
+```powershell
+npm install
+npm run dev
+```
+
+常用命令：
+
+```powershell
+npm run dev:tools          # 启动 Electron 并打开开发者工具
+npm test                   # 运行 Vitest 测试
+npm run typecheck          # 检查 renderer 和 Electron 两套 TS 配置
+npm run build              # 类型检查、Vite 构建、Electron 编译
+npm run e2e:desktop:local  # 构建后运行本机 Electron 桌面流程
+npm run pack:win           # 生成 Windows 免安装目录
+npm run dist:win           # 生成 Windows NSIS 安装包
+```
+
+`npm run dev` 会同时启动 Vite 与 Electron。只打开 Vite 页面时可以使用浏览器降级实现，但它不能完整验证本地路径、原子保存、资源协议、窗口焦点和安装后行为。
+
+默认 SoundFont 与应用图标由脚本生成。发布脚本会先运行 `generate:assets`；单独更新资源时执行：
+
+```powershell
+npm run generate:assets
+```
+
+## 4. 推荐阅读顺序
+
+1. [architecture.md](./architecture.md)：运行时分层、目录职责和依赖方向。
+2. [data-model.md](./data-model.md)：工程 schema、音高、轨道、和弦与迁移约束。
+3. [editor-and-state.md](./editor-and-state.md)：编辑命令、历史记录、交互与 Canvas 性能模型。
+4. [harmony-engine.md](./harmony-engine.md)：切片、语义跨度、规则状态和内置规则。
+5. [external-rules.md](./external-rules.md)：规则包契约、QuickJS 沙箱与本机规则库。
+6. [audio-midi-and-time.md](./audio-midi-and-time.md)：统一时间轴、播放、SoundFont 和 MIDI。
+7. [desktop-and-persistence.md](./desktop-and-persistence.md)：Electron 安全边界、IPC、工程保存和恢复。
+8. [testing-build-release.md](./testing-build-release.md)：验证矩阵、桌面 E2E、打包和发布检查。
+
+按任务也可以直接定位：
+
+| 要做的工作 | 先读 |
+| --- | --- |
+| 修改音符、和弦、锁定或撤销 | [data-model.md](./data-model.md)、[editor-and-state.md](./editor-and-state.md) |
+| 新增或修正规则 | [harmony-engine.md](./harmony-engine.md) |
+| 开发外置规则 | [external-rules.md](./external-rules.md) |
+| 排查播放、循环、节拍器或 MIDI | [audio-midi-and-time.md](./audio-midi-and-time.md) |
+| 修改文件对话框、恢复、窗口或本地资源 | [desktop-and-persistence.md](./desktop-and-persistence.md) |
+| 打包正式版本 | [testing-build-release.md](./testing-build-release.md) |
+
+## 5. 源码入口
+
+```text
+src/
+  App.tsx                  应用编排和会话状态
+  components/              工作区、轨道、弹窗与设置界面
+  domain/                  纯数据模型、编辑命令、时间、MIDI、和声分析
+  hooks/                   React 状态适配、历史、快捷键、布局和设置
+  services/                Electron/浏览器服务适配与外置规则运行时
+  audio/                   合成器、SoundFont 生命周期和播放辅助
+  workers/                 外置规则 QuickJS Worker
+  shortcuts/               快捷键注册表
+electron/                  主进程、preload、安全策略和 IPC
+scripts/                   资源生成、清理、桌面 E2E
+public/soundfonts/         默认 SoundFont、哈希、许可证和来源说明
+```
+
+领域层是维护项目正确性的核心。UI 可以表达意图，但不能成为音符不重叠、锁定区间、和弦范围或时间换算的唯一实现位置。
+
+## 6. 开发原则
+
+- **先维护领域不变量。** 用户编辑必须调用 [`src/domain/editing.ts`](../src/domain/editing.ts) 的纯命令，而不是在组件内直接拼装工程对象。
+- **统一时间来源。** tick、秒、小节、吸附、循环和变速转换统一使用 [`src/domain/time.ts`](../src/domain/time.ts)。
+- **保留书写音高。** MIDI 音高相同不代表和声含义相同；不要丢弃 `step/alter/octave`。
+- **批量动作只提交一次历史。** 多选移动、删除、粘贴等必须先完整验证，再一次产生新工程。
+- **主进程只暴露窄接口。** renderer 不应直接获得 Node、任意文件路径或通用 IPC 能力。
+- **规则失败不能破坏编辑。** 缺少上下文应形成结构化 skip；外置规则异常应隔离并保留内置结果。
+- **性能以视口为边界。** 长工程的逻辑坐标可以很大，但 Canvas 位图、绘制和命中候选应限制在可见区域附近。
+- **文档随契约更新。** schema、外置 API、IPC、规则清单、脚本或发布流程变化时，同一提交更新 `Docs`。
+
+## 7. 文档维护规则
+
+- 本目录描述“现在是什么”；未确定的方案留在 `DesignDocs`，稳定落地后再同步到这里。
+- 文档链接优先指向源码入口，而不是复制整段实现。短小接口示例用于解释契约，不构成第二份类型定义。
+- 不写死测试数量、构建产物哈希或包体大小等频繁变化的数据。
+- 新增跨模块能力时，先更新对应专题文档，再检查本入口的能力清单和阅读索引。
+- 删除或重命名源码入口时，运行本地 Markdown 链接检查，避免留下失效链接。
