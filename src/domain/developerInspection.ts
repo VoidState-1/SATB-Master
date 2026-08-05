@@ -1,4 +1,10 @@
-import type { ChordRegion, NoteEvent, VoiceId } from "./model";
+import { chordVoicingPolicy } from "./chordModel";
+import type {
+  ChordRegion,
+  HarmonyInterpretation,
+  NoteEvent,
+  VoiceId,
+} from "./model";
 
 export type DeveloperFieldValue = string | number | boolean | undefined;
 
@@ -94,73 +100,93 @@ export function inspectChordRegion(
     row("durationTicks", "number", chord.durationTicks),
     row("identity.root.step", "DiatonicStep", chord.identity.root.step),
     row("identity.root.alter", "Alteration", chord.identity.root.alter),
-    row("identity.quality", "ChordQuality", chord.identity.quality),
-    row(
-      "identity.extensions",
-      "ChordExtension[]",
-      JSON.stringify(chord.identity.extensions),
-    ),
-    row(
-      "identity.alterations",
-      "ChordToneAlteration[]",
-      JSON.stringify(chord.identity.alterations),
-    ),
+    row("identity.structure.kind", "ChordStructure.kind", chord.identity.structure.kind),
   ];
 
-  chord.identity.extensions.forEach((extension, index) => {
+  if (chord.identity.structure.kind === "tertian") {
     rows.push(
-      row(`identity.extensions[${index}]`, "ChordExtension", extension),
-    );
-  });
-  chord.identity.alterations.forEach((alteration, index) => {
-    rows.push(
-      row(`identity.alterations[${index}].degree`, "number", alteration.degree),
       row(
-        `identity.alterations[${index}].alter`,
-        "Alteration",
-        alteration.alter,
+        "identity.structure.quality",
+        "ChordQuality",
+        chord.identity.structure.quality,
+      ),
+      row(
+        "identity.structure.extensions",
+        "readonly ChordExtension[]",
+        JSON.stringify(chord.identity.structure.extensions),
+      ),
+      row(
+        "identity.structure.alterations",
+        "readonly ChordToneAlteration[]",
+        JSON.stringify(chord.identity.structure.alterations),
       ),
     );
-  });
+    chord.identity.structure.extensions.forEach((extension, index) => {
+      rows.push(
+        row(
+          `identity.structure.extensions[${index}]`,
+          "ChordExtension",
+          extension,
+        ),
+      );
+    });
+    chord.identity.structure.alterations.forEach((alteration, index) => {
+      rows.push(
+        row(
+          `identity.structure.alterations[${index}].degree`,
+          "ChordToneDegree",
+          alteration.degree,
+        ),
+        row(
+          `identity.structure.alterations[${index}].alter`,
+          "Alteration",
+          alteration.alter,
+        ),
+      );
+    });
+  } else {
+    rows.push(
+      row(
+        "identity.structure.variant",
+        "AugmentedSixthVariant",
+        chord.identity.structure.variant,
+      ),
+    );
+  }
 
+  const policy = chordVoicingPolicy(chord.identity);
   rows.push(
     row("identity.bass.step", "DiatonicStep", chord.identity.bass.step),
     row("identity.bass.alter", "Alteration", chord.identity.bass.alter),
+    row(
+      "voicingPolicy.requiredDegrees",
+      "readonly ChordToneDegree[]",
+      JSON.stringify(policy.requiredDegrees),
+    ),
+    row(
+      "voicingPolicy.permittedDegrees",
+      "readonly ChordToneDegree[]",
+      JSON.stringify(policy.permittedDegrees),
+    ),
+    row(
+      "voicingPolicy.forbiddenDegrees",
+      "readonly ChordToneDegree[]",
+      JSON.stringify(policy.forbiddenDegrees),
+    ),
+    row(
+      "voicingPolicy.doublingHints",
+      "readonly ChordDoublingHint[]",
+      JSON.stringify(policy.doublingHints),
+    ),
     row(
       "semantics",
       "HarmonySemantics | undefined",
       chord.semantics ? "{…}" : undefined,
     ),
     row(
-      "semantics.localKey",
-      "KeyReference | undefined",
-      chord.semantics?.localKey ? "{…}" : undefined,
-    ),
-    row(
-      "semantics.localKey.tonic.step",
-      "DiatonicStep | undefined",
-      chord.semantics?.localKey?.tonic.step,
-    ),
-    row(
-      "semantics.localKey.tonic.alter",
-      "Alteration | undefined",
-      chord.semantics?.localKey?.tonic.alter,
-    ),
-    row(
-      "semantics.localKey.mode",
-      "KeyMode | undefined",
-      chord.semantics?.localKey?.mode,
-    ),
-    row("semantics.degree", "number | undefined", chord.semantics?.degree),
-    row(
-      "semantics.degreeAlteration",
-      "Alteration | undefined",
-      chord.semantics?.degreeAlteration,
-    ),
-    row(
-      "semantics.appliedTarget",
-      "number | undefined",
-      chord.semantics?.appliedTarget,
+      "semantics.primaryInterpretationId",
+      "string | undefined",
+      chord.semantics?.primaryInterpretationId,
     ),
     row("semantics.mixture", "string | undefined", chord.semantics?.mixture),
     row(
@@ -168,13 +194,115 @@ export function inspectChordRegion(
       "string | undefined",
       chord.semantics?.cadenceRole,
     ),
-    row("semantics.source", "string | undefined", chord.semantics?.source),
     row(
-      "semantics.confidence",
-      "SemanticConfidence | undefined",
-      chord.semantics?.confidence,
+      "semantics.pedalContext",
+      "PedalContext | undefined",
+      chord.semantics?.pedalContext ? "{…}" : undefined,
+    ),
+    row(
+      "semantics.pedalContext.pitch.step",
+      "DiatonicStep | undefined",
+      chord.semantics?.pedalContext?.pitch.step,
+    ),
+    row(
+      "semantics.pedalContext.pitch.alter",
+      "Alteration | undefined",
+      chord.semantics?.pedalContext?.pitch.alter,
+    ),
+    row(
+      "semantics.pedalContext.role",
+      "string | undefined",
+      chord.semantics?.pedalContext?.role,
     ),
     row("locked", "boolean", chord.locked),
+  );
+
+  const pushInterpretation = (
+    prefix: string,
+    interpretation: HarmonyInterpretation,
+  ) => {
+    rows.push(
+      row(`${prefix}.id`, "string", interpretation.id),
+      row(
+        `${prefix}.localKey`,
+        "KeyReference | undefined",
+        interpretation.localKey ? "{…}" : undefined,
+      ),
+      row(
+        `${prefix}.localKey.tonic.step`,
+        "DiatonicStep | undefined",
+        interpretation.localKey?.tonic.step,
+      ),
+      row(
+        `${prefix}.localKey.tonic.alter`,
+        "Alteration | undefined",
+        interpretation.localKey?.tonic.alter,
+      ),
+      row(
+        `${prefix}.localKey.mode`,
+        "KeyMode | undefined",
+        interpretation.localKey?.mode,
+      ),
+      row(`${prefix}.degree`, "ScaleDegree", interpretation.degree),
+      row(
+        `${prefix}.degreeAlteration`,
+        "Alteration",
+        interpretation.degreeAlteration,
+      ),
+      row(
+        `${prefix}.appliedTarget.degree`,
+        "ScaleDegree | undefined",
+        interpretation.appliedTarget?.degree,
+      ),
+      row(
+        `${prefix}.appliedTarget.primaryFunction`,
+        "FunctionalFamily | undefined",
+        interpretation.appliedTarget?.primaryFunction,
+      ),
+      row(
+        `${prefix}.appliedTarget.secondaryFunction`,
+        "FunctionalFamily | undefined",
+        interpretation.appliedTarget?.secondaryFunction,
+      ),
+      row(
+        `${prefix}.designation.notationSystem`,
+        '"spasobin" | undefined',
+        interpretation.designation?.notationSystem,
+      ),
+      row(
+        `${prefix}.designation.kind`,
+        "FunctionalDesignationKind | undefined",
+        interpretation.designation?.kind,
+      ),
+      row(
+        `${prefix}.designation.primaryFunction`,
+        "FunctionalFamily | undefined",
+        interpretation.designation?.primaryFunction,
+      ),
+      row(
+        `${prefix}.designation.secondaryFunction`,
+        "FunctionalFamily | undefined",
+        interpretation.designation?.secondaryFunction,
+      ),
+      row(
+        `${prefix}.designation.specialRole`,
+        "string | undefined",
+        interpretation.designation?.specialRole,
+      ),
+      row(`${prefix}.source`, "string", interpretation.source),
+      row(
+        `${prefix}.confidence`,
+        "SemanticConfidence",
+        interpretation.confidence,
+      ),
+    );
+  };
+
+  chord.semantics?.interpretations.forEach((interpretation, index) =>
+    pushInterpretation(`semantics.interpretations[${index}]`, interpretation),
+  );
+  chord.semantics?.alternatives?.forEach((interpretation, index) =>
+    pushInterpretation(`semantics.alternatives[${index}]`, interpretation),
   );
 
   return {

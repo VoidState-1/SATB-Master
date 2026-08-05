@@ -1186,7 +1186,7 @@ body.is-resizing-rows * {
 .chord-palette {
   position: fixed;
   z-index: 80;
-  width: min(472px, calc(100vw - 16px));
+  width: min(560px, calc(100vw - 16px));
   max-height: calc(100vh - 16px);
   overflow: auto;
   border: 1px solid #9ea199;
@@ -1270,6 +1270,90 @@ body.is-resizing-rows * {
   grid-template-columns: 56px 64px minmax(92px, 1fr) 70px 74px;
   gap: 7px;
   padding: 10px;
+}
+
+.chord-palette-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  padding: 7px 10px 0;
+}
+
+.chord-palette-modes button {
+  height: 28px;
+  border: 1px solid #c1c4bd;
+  border-radius: 0;
+  background: #e5e6e0;
+  color: #555950;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chord-palette-modes button:first-child {
+  border-radius: 3px 0 0 3px;
+}
+
+.chord-palette-modes button:last-child {
+  border-radius: 0 3px 3px 0;
+}
+
+.chord-palette-modes button.is-selected {
+  border-color: #286b59;
+  background: #2f7764;
+  color: #fff;
+}
+
+.chord-palette-columns.is-functional {
+  grid-template-columns: 132px 74px 70px 86px minmax(76px, 1fr);
+}
+
+.chord-palette-column.functional-base {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 1px;
+}
+
+.chord-palette-column.functional-base h3 {
+  grid-column: 1 / -1;
+}
+
+.chord-palette-column.functional-base button {
+  border: 1px solid #c7c9c2;
+  border-radius: 2px;
+}
+
+.chord-palette-context {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px 10px;
+  padding: 9px 10px 10px;
+  border-top: 1px solid #c7c9c2;
+  background: #e9eae5;
+}
+
+.chord-palette-context label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(58px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: #5f625b;
+  font-size: 10px;
+}
+
+.chord-palette-context select {
+  min-width: 0;
+  height: 27px;
+  border: 1px solid #bfc2ba;
+  border-radius: 3px;
+  background: #f8f8f5;
+  color: #343730;
+  font-size: 11px;
+}
+
+.chord-palette-context .toggle-row.compact {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .chord-palette-column {

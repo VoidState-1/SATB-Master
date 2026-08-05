@@ -7,9 +7,15 @@ import {
   updateChordRegion,
 } from "./editing";
 import {
+  applyFunctionalDefinition,
+  applyFunctionalForm,
+  functionalDefinition,
+} from "./functionalHarmonyCatalog";
+import {
   createEmptyProject,
   PPQ,
   validateProject,
+  type ChordDraft,
   type ChordRegion,
 } from "./model";
 
@@ -59,7 +65,8 @@ describe("和弦命名", () => {
     ).toMatchObject({
       roman: "ii6",
       absolute: "Dm/F",
-      functionalClassLabel: "下属功能",
+      functional: "SII6",
+      semanticSummary: "未指定功能",
     });
     expect(
       formatChord(
@@ -180,6 +187,43 @@ describe("和弦范围命令", () => {
         startTick: PPQ,
       })).error,
     ).toContain("锁定");
+  });
+
+  it("K46、N6、D9 与增六和弦的固定转位在命令层生效", () => {
+    const base: ChordDraft = {
+      degree: 1,
+      degreeAlteration: 0,
+      quality: "major",
+      extensions: [],
+      alterations: [],
+      inversion: 0,
+      source: "manual",
+      confidence: "certain",
+    };
+    const cases = [
+      applyFunctionalDefinition(base, functionalDefinition("K46"), "major"),
+      applyFunctionalDefinition(base, functionalDefinition("N6"), "major"),
+      applyFunctionalDefinition(base, functionalDefinition("Ger+6"), "major"),
+      applyFunctionalForm(
+        applyFunctionalDefinition(base, functionalDefinition("D"), "major"),
+        functionalDefinition("D"),
+        "ninth",
+        "major",
+      ),
+    ];
+    for (const [index, draft] of cases.entries()) {
+      let project = createEmptyProject();
+      project = addChordRegion(
+        project,
+        createChordRegion(project, 0, PPQ, draft, `fixed-${index}`),
+      ).project;
+      const illegal = draft.inversion === 0 ? 1 : 0;
+      expect(
+        updateChordRegion(project, `fixed-${index}`, {
+          draft: { inversion: illegal },
+        }).error,
+      ).toContain("无效");
+    }
   });
 
   it("批量移动跨到新调性后重算和弦实体拼写", () => {

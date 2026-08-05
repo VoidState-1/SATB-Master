@@ -47,7 +47,9 @@ flowchart LR
 | --- | --- |
 | [`model.ts`](../src/domain/model.ts) | 工程 schema、轨道和事件、默认工程、验证与 v2 -> v3 迁移 |
 | [`pitch.ts`](../src/domain/pitch.ts) | 书写音高、MIDI 转换、音程与调号相关计算 |
-| [`chordModel.ts`](../src/domain/chordModel.ts) | 和弦实体、语义、草稿解析与显示 |
+| [`chordModel.ts`](../src/domain/chordModel.ts) | 和弦实体、结构联合、语义解释、草稿解析与配器策略 |
+| [`functionalHarmonyCatalog.ts`](../src/domain/functionalHarmonyCatalog.ts) | 斯波索宾 A/B/C 功能词汇、组合约束与共同和弦候选 |
+| [`chords.ts`](../src/domain/chords.ts) | 功能、罗马与绝对名称投影 |
 | [`editing.ts`](../src/domain/editing.ts) | 新增、移动、调整、删除、锁定检查和批量命令 |
 | [`time.ts`](../src/domain/time.ts) | tick、秒、小节、变拍号、变速与双向吸附 |
 | [`midi.ts`](../src/domain/midi.ts) | MIDI Type 1 事件与轨道构造 |
@@ -198,7 +200,7 @@ sequenceDiagram
 | 是否允许某次编辑 | `src/domain/editing.ts` |
 | 工程要永久保存什么 | `src/domain/model.ts` 并升级/迁移 schema |
 | tick 如何解释 | `src/domain/time.ts` |
-| 和弦/音高如何解释 | `src/domain/chordModel.ts`、`pitch.ts` |
+| 和弦/音高如何解释 | `src/domain/chordModel.ts`、`functionalHarmonyCatalog.ts`、`pitch.ts` |
 | 规则如何取上下文和发诊断 | 和声 analysis/runtime/rules |
 | 用户如何触发 | component/hook/shortcut registry |
 | 文件、路径或系统能力 | service + preload + Electron main |

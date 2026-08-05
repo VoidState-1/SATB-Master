@@ -1,4 +1,7 @@
-import { chordIdentityToneSpellings } from "./chordModel";
+import {
+  chordIdentityToneSpellings,
+  legacyHarmonyProjection,
+} from "./chordModel";
 import { formatChordIdentity } from "./chords";
 import {
   analysisChordAtTick,
@@ -104,6 +107,29 @@ function chordLabel(chord: AnalysisChord) {
     chord.identity as Parameters<typeof formatChordIdentity>[0],
     chord.semantics as Parameters<typeof formatChordIdentity>[1],
   ).roman;
+}
+
+function supportsLegacyHarmonyRules(chord: AnalysisChord | undefined) {
+  if (!chord) return true;
+  return (
+    chord.identity.structure.kind === "tertian" &&
+    !chord.identity.structure.extensions.some((extension) => extension >= 9) &&
+    (!chord.semantics ||
+      (chord.semantics.interpretations.length === 1 &&
+        !chord.semantics.pedalContext))
+  );
+}
+
+function legacySemantics(
+  semantics: AnalysisChord["semantics"],
+) {
+  if (
+    !semantics ||
+    semantics.interpretations.length !== 1 ||
+    semantics.pedalContext
+  )
+    return undefined;
+  return legacyHarmonyProjection(semantics);
 }
 
 function voiceName(analysis: HarmonyAnalysis, voiceId: VoiceId) {
@@ -391,6 +417,7 @@ function leadingToneStateStep(
   const outgoing: RuleStateEnvelope[] = [];
   const currentSpanId = context.analysis.sliceSpanIds.get(context.sliceIndex);
   incoming.forEach((state) => {
+    if (!supportsLegacyHarmonyRules(context.slice.chord)) return;
     const payload = state.payload as LeadingToneState;
     if (payload.sourceKeyId !== context.slice.key.id) return;
     const active = context.slice.notes[payload.voiceId];
@@ -464,6 +491,7 @@ function leadingToneStateStep(
   context.slice.attackVoiceIds.forEach((voiceId) => {
     const note = context.slice.notes[voiceId];
     if (!note) return;
+    if (!supportsLegacyHarmonyRules(context.slice.chord)) return;
     const alreadyPending = outgoing.some(
       (state) => (state.payload as LeadingToneState).voiceId === voiceId,
     );
@@ -505,6 +533,7 @@ function seventhStateStep(
   const outgoing: RuleStateEnvelope[] = [];
   const currentSpanId = context.analysis.sliceSpanIds.get(context.sliceIndex);
   incoming.forEach((state) => {
+    if (!supportsLegacyHarmonyRules(context.slice.chord)) return;
     const payload = state.payload as SeventhState;
     const active = context.slice.notes[payload.voiceId];
     // 七音解决同样要求连续的声部线条；休止会终止本次待判定状态。
@@ -557,7 +586,7 @@ function seventhStateStep(
   context.slice.attackVoiceIds.forEach((voiceId) => {
     const note = context.slice.notes[voiceId];
     const chord = context.slice.chord;
-    if (!note || !chord) return;
+    if (!note || !chord || !supportsLegacyHarmonyRules(chord)) return;
     const tones = chordIdentityToneSpellings(chord.identity);
     if (tones.length !== 4 || !pitchClassEquals(note.pitch, tones[3])) return;
     const alreadyPending = outgoing.some(
@@ -595,6 +624,7 @@ function secondaryDominantStateStep(
   const diagnostics: RuleDiagnostic[] = [];
   const outgoing: RuleStateEnvelope[] = [];
   if (context.isSpanStart && context.span) {
+    const currentProjection = legacySemantics(context.span.semantics);
     incoming.forEach((state) => {
       const payload = state.payload as SecondaryDominantState;
       const transition = context.transitionFromPrevious;
@@ -602,7 +632,7 @@ function secondaryDominantStateStep(
       const resolves =
         adjacent &&
         Boolean(transition?.contiguous && transition.sameKey) &&
-        context.span?.semantics?.degree === payload.targetDegree;
+        currentProjection?.degree === payload.targetDegree;
       if (!resolves) {
         const previous = context.analysis.chordById.get(payload.sourceChordId);
         const current = context.span?.regionIds
@@ -638,7 +668,8 @@ function secondaryDominantStateStep(
   } else {
     outgoing.push(...incoming);
   }
-  if (context.isSpanStart && context.span?.semantics?.appliedTarget) {
+  const sourceProjection = legacySemantics(context.span?.semantics);
+  if (context.isSpanStart && context.span && sourceProjection?.appliedTarget) {
     const chord = context.slice.chord;
     if (chord) {
       outgoing.push(
@@ -650,7 +681,7 @@ function secondaryDominantStateStep(
             sourceSpanId: context.span.id,
             sourceChordId: chord.id,
             sourceToTick: context.span.toTick,
-            targetDegree: context.span.semantics.appliedTarget,
+            targetDegree: sourceProjection.appliedTarget,
           } as unknown as JsonValue,
           { chordIds: [chord.id], spanIds: [context.span.id] },
         ),
@@ -915,7 +946,7 @@ function chordSliceRule(
   const diagnostics: RuleDiagnostic[] = [];
   analysis.slices.forEach((slice, sliceIndex) => {
     const chord = slice.chord;
-    if (!chord) return;
+    if (!chord || !supportsLegacyHarmonyRules(chord)) return;
     const active = activeNotes(slice);
     const tones = chordIdentityToneSpellings(chord.identity);
     const intermediate = finalSameHarmonySlice(analysis, sliceIndex);

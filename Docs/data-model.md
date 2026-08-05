@@ -152,17 +152,18 @@ ChordRegion
 
 ### 6.1 `ChordIdentity`
 
-`ChordIdentity` 表示可由根音、和弦类别、转位等推导的和弦实体。它回答“由哪些音构成”和“低音应是什么”，而不是“在当前语句里扮演什么角色”。
+`ChordIdentity` 表示可由根音、结构和低音推导的和弦实体。`structure` 是 `tertian | augmented-sixth` 判别联合：普通三度叠置结构保存性质、扩展与构成音变化；意/法/德增六保存独立 variant。它回答“由哪些音构成”和“低音应是什么”，而不是“在当前语句里扮演什么角色”。
 
 ### 6.2 `HarmonySemantics`
 
-`HarmonySemantics` 表示调性语境中的解释，例如调内级数、T/S/D 功能类别、副属目标、终止四六或人工标注。它可以包含置信度和歧义信息。
+`HarmonySemantics` 保存一个或两个 `HarmonyInterpretation`，并用 `primaryInterpretationId` 指定主要解释。单项解释包含局部调性、级数、变化音、结构化目标、斯波索宾 `FunctionalDesignation`、来源和置信度；外层保存借用、四六角色和持续低音上下文。共同和弦的两个确认解释必须都能解析为同一实体，不能只复制不同 ID。
 
 代码中避免再使用宽泛的 `FunctionalAnalysis` 名称：中文“功能”既可能指 T/S/D，又可能泛指用途。当前约定是：
 
 - `identity`：和弦实体。
 - `semantics`：和声语义。
-- `functionClass`：仅指 T/S/D 等和声功能类别。
+- `FunctionalDesignation`：斯波索宾 T/S/D 功能标记及主次亲缘。
+- `FunctionalClass`：仅供旧检查器使用的粗粒度兼容分类，新功能代码不得依赖。
 
 ### 6.3 `ChordDraft`
 
@@ -174,9 +175,11 @@ ChordRegion
 - 和弦区域之间不能重叠。
 - 区域不能跨越调号事件；调性变化点必须切分区域。
 - 区域移动、调号改变或草稿提交后要重新解析 identity/semantics。
+- 每个确认解释都必须与同一 identity、低音和转位一致；重复事实或冲突解释会被拒绝。
+- `K46` 固定第二转位，`N6` 固定第一转位，`D9` 与增六和弦固定原位。
 - 显示名称由模型推导；除专门的人工语义字段外，不保存可与模型矛盾的自由文本名称。
 
-和弦类型和推导逻辑位于 [`src/domain/chordModel.ts`](../src/domain/chordModel.ts)，命令约束位于 [`src/domain/editing.ts`](../src/domain/editing.ts)。
+和弦类型和推导逻辑位于 [`src/domain/chordModel.ts`](../src/domain/chordModel.ts)，功能词汇位于 [`src/domain/functionalHarmonyCatalog.ts`](../src/domain/functionalHarmonyCatalog.ts)，命令约束位于 [`src/domain/editing.ts`](../src/domain/editing.ts)。完整说明见 [functional-harmony.md](./functional-harmony.md)。
 
 ## 7. 循环、练习锁定和规则配置
 

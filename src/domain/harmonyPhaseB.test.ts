@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HARMONY_PHASE_B_GOLDEN } from "./fixtures/harmonyPhaseB.v1";
+import { functionalTargetForDegree } from "./chordModel";
 import {
   BUILTIN_HARMONY_RULES,
   checkHarmony,
@@ -13,10 +14,14 @@ import {
 import {
   createEmptyProject,
   PPQ,
+  type ChordIdentity,
+  type ChordQuality,
   type ChordRegion,
+  type HarmonySemantics,
   type NoteEvent,
   type ProjectDocument,
   type SpelledPitch,
+  type SpelledPitchClass,
   type VoiceId,
 } from "./model";
 
@@ -45,26 +50,55 @@ function setNotes(
   project.satbTracks.find((track) => track.id === voiceId)!.notes = notes;
 }
 
+function tertianIdentity(
+  root: SpelledPitchClass,
+  quality: ChordQuality,
+  bass: SpelledPitchClass,
+): ChordIdentity {
+  return {
+    root,
+    structure: { kind: "tertian", quality, extensions: [], alterations: [] },
+    bass,
+  };
+}
+
+function semantics(
+  degree: 1 | 2 | 3 | 4 | 5 | 6 | 7,
+  options: {
+    degreeAlteration?: -2 | -1 | 0 | 1 | 2;
+    appliedTarget?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+    cadenceRole?: HarmonySemantics["cadenceRole"];
+  } = {},
+): HarmonySemantics {
+  return {
+    interpretations: [
+      {
+        id: "primary",
+        degree,
+        degreeAlteration: options.degreeAlteration ?? 0,
+        appliedTarget: options.appliedTarget
+          ? functionalTargetForDegree(options.appliedTarget)
+          : undefined,
+        source: "manual",
+        confidence: "certain",
+      },
+    ],
+    primaryInterpretationId: "primary",
+    cadenceRole: options.cadenceRole,
+  };
+}
+
 function fSharpMajorRegion(functionAnalysis = false): ChordRegion {
   return {
     id: "f-sharp-major",
     startTick: 0,
     durationTicks: PPQ,
-    identity: {
-      root: { ...HARMONY_PHASE_B_GOLDEN.enharmonicChordTone.chordRoot },
-      quality: "major",
-      extensions: [],
-      alterations: [],
-      bass: { step: "F", alter: 1 },
-    },
-    semantics: functionAnalysis
-      ? {
-          degree: 4,
-          degreeAlteration: 1,
-          source: "manual",
-          confidence: "certain",
-        }
-      : undefined,
+    identity: tertianIdentity(
+      { ...HARMONY_PHASE_B_GOLDEN.enharmonicChordTone.chordRoot },
+      "major",
+      { step: "F", alter: 1 },
+    ),
+    semantics: functionAnalysis ? semantics(4, { degreeAlteration: 1 }) : undefined,
     locked: false,
   };
 }
@@ -241,19 +275,12 @@ describe("Phase B v1 书写与和弦金样本", () => {
         id: "g7",
         startTick: 0,
         durationTicks: PPQ,
-        identity: {
-          root: { step: "G", alter: 0 },
-          quality: "dominant7",
-          extensions: [],
-          alterations: [],
-          bass: { step: "G", alter: 0 },
-        },
-        semantics: {
-          degree: 5,
-          degreeAlteration: 0,
-          source: "manual",
-          confidence: "certain",
-        },
+        identity: tertianIdentity(
+          { step: "G", alter: 0 },
+          "dominant7",
+          { step: "G", alter: 0 },
+        ),
+        semantics: semantics(5),
         locked: false,
       },
     ];
@@ -277,19 +304,12 @@ describe("Phase B v1 书写与和弦金样本", () => {
         id: "g7",
         startTick: 0,
         durationTicks: PPQ,
-        identity: {
-          root: { step: "G", alter: 0 },
-          quality: "dominant7",
-          extensions: [],
-          alterations: [],
-          bass: { step: "G", alter: 0 },
-        },
-        semantics: {
-          degree: 5,
-          degreeAlteration: 0,
-          source: "manual",
-          confidence: "certain",
-        },
+        identity: tertianIdentity(
+          { step: "G", alter: 0 },
+          "dominant7",
+          { step: "G", alter: 0 },
+        ),
+        semantics: semantics(5),
         locked: false,
       },
     ];
@@ -340,11 +360,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ;
     const ambiguous = fSharpMajorRegion(true);
-    ambiguous.semantics = {
-      ...ambiguous.semantics!,
-      degree: 2,
-      appliedTarget: 5,
-    };
+    ambiguous.semantics = semantics(2, { appliedTarget: 5 });
     project.chordTrack.regions = [ambiguous];
 
     expect(checkHarmony(project).skippedRules).toEqual(
@@ -366,39 +382,24 @@ describe("Phase B v1 书写与和弦金样本", () => {
         id: "cadential-64",
         startTick: 0,
         durationTicks: PPQ,
-        identity: {
-          root: { step: "C", alter: 0 },
-          quality: "major",
-          extensions: [],
-          alterations: [],
-          bass: { step: "G", alter: 0 },
-        },
-        semantics: {
-          degree: 1,
-          degreeAlteration: 0,
-          cadenceRole: "cadential64",
-          source: "manual",
-          confidence: "certain",
-        },
+        identity: tertianIdentity(
+          { step: "C", alter: 0 },
+          "major",
+          { step: "G", alter: 0 },
+        ),
+        semantics: semantics(1, { cadenceRole: "cadential64" }),
         locked: false,
       },
       {
         id: "tonic",
         startTick: PPQ,
         durationTicks: PPQ,
-        identity: {
-          root: { step: "C", alter: 0 },
-          quality: "major",
-          extensions: [],
-          alterations: [],
-          bass: { step: "C", alter: 0 },
-        },
-        semantics: {
-          degree: 1,
-          degreeAlteration: 0,
-          source: "manual",
-          confidence: "certain",
-        },
+        identity: tertianIdentity(
+          { step: "C", alter: 0 },
+          "major",
+          { step: "C", alter: 0 },
+        ),
+        semantics: semantics(1),
         locked: false,
       },
     ];

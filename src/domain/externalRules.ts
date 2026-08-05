@@ -1,4 +1,8 @@
-import type { HarmonyAnalysis } from "./harmonyAnalysis";
+import { legacyHarmonyProjection } from "./chordModel";
+import type {
+  AnalysisChord,
+  HarmonyAnalysis,
+} from "./harmonyAnalysis";
 import type {
   HarmonyCheckResult,
   HarmonyDiagnostic,
@@ -81,38 +85,89 @@ export interface ExternalRuleRunResult {
   superseded: boolean;
 }
 
+// API v2 继续暴露旧和弦字段。新功能语义在下一版规则 API 统一升级前不会穿透沙箱边界。
+export interface ExternalRuleChordRegionV2 {
+  id: string;
+  startTick: number;
+  durationTicks: number;
+  identity: {
+    root: AnalysisChord["identity"]["root"];
+    quality: Exclude<
+      AnalysisChord["identity"]["structure"],
+      { kind: "augmented-sixth" }
+    >["quality"];
+    extensions: readonly number[];
+    alterations: readonly { degree: number; alter: number }[];
+    bass: AnalysisChord["identity"]["bass"];
+  };
+  semantics?: ReturnType<typeof legacyHarmonyProjection>;
+  locked: boolean;
+}
+
+export interface ExternalRuleSliceV2 {
+  index: number;
+  spanId?: string;
+  tick: number;
+  endTick: number;
+  notes: HarmonyAnalysis["slices"][number]["notes"];
+  attackVoiceIds: HarmonyAnalysis["slices"][number]["attackVoiceIds"];
+  key: HarmonyAnalysis["slices"][number]["key"];
+  chord?: ExternalRuleChordRegionV2;
+  completeSatb: boolean;
+  continuity: HarmonyAnalysis["slices"][number]["continuity"];
+}
+
 export interface ExternalRuleContext {
   apiVersion: typeof EXTERNAL_RULE_API_VERSION;
   revision: number;
-  project: Pick<
-    HarmonyAnalysis["project"],
-    | "schemaVersion"
-    | "id"
-    | "title"
-    | "ppq"
-    | "lengthTicks"
-    | "tempoEvents"
-    | "meterEvents"
-    | "keyEvents"
-    | "satbTracks"
-    | "chordTrack"
+  project: Omit<
+    Pick<
+      HarmonyAnalysis["project"],
+      | "schemaVersion"
+      | "id"
+      | "title"
+      | "ppq"
+      | "lengthTicks"
+      | "tempoEvents"
+      | "meterEvents"
+      | "keyEvents"
+      | "satbTracks"
+      | "chordTrack"
+    >,
+    "chordTrack"
+  > & {
+    chordTrack: {
+      visible: boolean;
+      locked: boolean;
+      displayMode: "roman" | "absolute" | "both";
+      regions: ExternalRuleChordRegionV2[];
+    };
+  };
+  slices: ExternalRuleSliceV2[];
+  harmonySpans: Array<
+    Omit<HarmonyAnalysis["harmonySpans"][number], "semantics"> & {
+      semantics?: ReturnType<typeof legacyHarmonyProjection>;
+    }
   >;
-  slices: Array<{
-    index: number;
-    spanId?: string;
-    tick: number;
-    endTick: number;
-    notes: HarmonyAnalysis["slices"][number]["notes"];
-    attackVoiceIds: HarmonyAnalysis["slices"][number]["attackVoiceIds"];
-    key: HarmonyAnalysis["slices"][number]["key"];
-    chord?: HarmonyAnalysis["slices"][number]["chord"];
-    completeSatb: boolean;
-    continuity: HarmonyAnalysis["slices"][number]["continuity"];
-  }>;
-  harmonySpans: HarmonyAnalysis["harmonySpans"];
   melodyTransitions: HarmonyAnalysis["melodyTransitions"];
-  sliceTransitions: HarmonyAnalysis["sliceTransitions"];
-  chordProgressions: HarmonyAnalysis["chordProgressions"];
+  sliceTransitions: Array<
+    Omit<
+      HarmonyAnalysis["sliceTransitions"][number],
+      "previous" | "current"
+    > & {
+      previous: ExternalRuleSliceV2;
+      current: ExternalRuleSliceV2;
+    }
+  >;
+  chordProgressions: Array<
+    Omit<
+      HarmonyAnalysis["chordProgressions"][number],
+      "previous" | "current"
+    > & {
+      previous: ExternalRuleChordRegionV2;
+      current: ExternalRuleChordRegionV2;
+    }
+  >;
   auxiliarySummary: HarmonyAnalysis["auxiliarySummary"];
 }
 
@@ -262,6 +317,49 @@ export function externalRuleReferenceKey(
 export function buildExternalRuleContext(
   analysis: HarmonyAnalysis,
 ): ExternalRuleContext {
+  const chordMap = new Map<string, ExternalRuleChordRegionV2>();
+  analysis.project.chordTrack.regions.forEach((chord) => {
+    if (
+      chord.identity.structure.kind !== "tertian" ||
+      chord.identity.structure.extensions.some((extension) => extension >= 9) ||
+      (chord.semantics &&
+        (chord.semantics.interpretations.length !== 1 ||
+          chord.semantics.pedalContext))
+    )
+      return;
+    chordMap.set(chord.id, {
+      id: chord.id,
+      startTick: chord.startTick,
+      durationTicks: chord.durationTicks,
+      identity: {
+        root: chord.identity.root,
+        quality: chord.identity.structure.quality,
+        extensions: chord.identity.structure.extensions,
+        alterations: chord.identity.structure.alterations,
+        bass: chord.identity.bass,
+      },
+      semantics: chord.semantics
+        ? legacyHarmonyProjection(chord.semantics)
+        : undefined,
+      locked: chord.locked,
+    });
+  });
+  const slices = analysis.slices.map(
+    (slice): ExternalRuleSliceV2 => ({
+      index: slice.index,
+      spanId: analysis.sliceSpanIds.get(slice.index),
+      tick: slice.tick,
+      endTick: slice.endTick,
+      notes: slice.notes,
+      attackVoiceIds: slice.attackVoiceIds,
+      key: slice.key,
+      chord: slice.chord ? chordMap.get(slice.chord.id) : undefined,
+      completeSatb: slice.completeSatb,
+      continuity: slice.continuity,
+    }),
+  );
+  const sliceMap = new Map(slices.map((slice) => [slice.index, slice]));
+  const displayMode = analysis.project.chordTrack.displayMode;
   // Map 和宿主查询函数不跨越 Worker/QuickJS 边界；只发送冻结快照可重建的 plain data。
   return {
     apiVersion: EXTERNAL_RULE_API_VERSION,
@@ -276,24 +374,45 @@ export function buildExternalRuleContext(
       meterEvents: analysis.project.meterEvents,
       keyEvents: analysis.project.keyEvents,
       satbTracks: analysis.project.satbTracks,
-      chordTrack: analysis.project.chordTrack,
+      chordTrack: {
+        visible: analysis.project.chordTrack.visible,
+        locked: analysis.project.chordTrack.locked,
+        displayMode:
+          displayMode === "absolute"
+            ? "absolute"
+            : displayMode === "functional-absolute" ||
+                displayMode === "roman-absolute"
+              ? "both"
+              : "roman",
+        regions: [...chordMap.values()],
+      },
     },
-    slices: analysis.slices.map((slice) => ({
-      index: slice.index,
-      spanId: analysis.sliceSpanIds.get(slice.index),
-      tick: slice.tick,
-      endTick: slice.endTick,
-      notes: slice.notes,
-      attackVoiceIds: slice.attackVoiceIds,
-      key: slice.key,
-      chord: slice.chord,
-      completeSatb: slice.completeSatb,
-      continuity: slice.continuity,
-    })),
-    harmonySpans: analysis.harmonySpans,
+    slices,
+    harmonySpans: analysis.harmonySpans
+      .filter((span) => span.regionIds.every((id) => chordMap.has(id)))
+      .map((span) => ({
+        ...span,
+        semantics: span.semantics
+          ? legacyHarmonyProjection(span.semantics)
+          : undefined,
+      })),
     melodyTransitions: analysis.melodyTransitions,
-    sliceTransitions: analysis.sliceTransitions,
-    chordProgressions: analysis.chordProgressions,
+    sliceTransitions: analysis.sliceTransitions.map((transition) => ({
+      ...transition,
+      previous: sliceMap.get(transition.previous.index)!,
+      current: sliceMap.get(transition.current.index)!,
+    })),
+    chordProgressions: analysis.chordProgressions
+      .filter(
+        (progression) =>
+          chordMap.has(progression.previous.id) &&
+          chordMap.has(progression.current.id),
+      )
+      .map((progression) => ({
+        ...progression,
+        previous: chordMap.get(progression.previous.id)!,
+        current: chordMap.get(progression.current.id)!,
+      })),
     auxiliarySummary: analysis.auxiliarySummary,
   };
 }

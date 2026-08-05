@@ -1752,11 +1752,16 @@ export function PianoRoll({
               const chordDiagnostics = diagnosticsByChord.get(chord.id) ?? [];
               const issue = primaryDiagnostic(chordDiagnostics);
               const display =
-                project.chordTrack.displayMode === "roman"
-                  ? formatted.roman
-                  : project.chordTrack.displayMode === "absolute"
-                    ? formatted.absolute
-                    : `${formatted.roman}  ${formatted.absolute}`;
+                project.chordTrack.displayMode === "functional"
+                  ? formatted.functional
+                  : project.chordTrack.displayMode === "roman"
+                    ? formatted.roman
+                    : project.chordTrack.displayMode === "absolute"
+                      ? formatted.absolute
+                      : project.chordTrack.displayMode === "functional-absolute"
+                        ? `${formatted.functional}  ${formatted.absolute}`
+                        : `${formatted.roman}  ${formatted.absolute}`;
+              const fullLabel = `${formatted.functional} · ${formatted.roman} · ${formatted.absolute}`;
               return (
                 <button
                   type="button"
@@ -1769,14 +1774,14 @@ export function PianoRoll({
                   }}
                   title={
                     chordDiagnostics.length === 0
-                      ? `${formatted.roman} · ${formatted.absolute}${chord.locked ? "（已锁定）" : ""}`
+                      ? `${fullLabel}${chord.locked ? "（已锁定）" : ""}`
                       : undefined
                   }
                   onPointerEnter={(event) =>
                     showDiagnosticTooltip(
                       event,
                       `chord:${chord.id}`,
-                      `${formatted.roman} · ${formatted.absolute}`,
+                      fullLabel,
                       chordDiagnostics,
                     )
                   }

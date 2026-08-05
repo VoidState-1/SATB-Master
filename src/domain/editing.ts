@@ -1,6 +1,7 @@
 import { isSeventhChord } from "./chords";
 import {
   chordDraftFromIdentity,
+  harmonySemanticsCompatibleWithIdentity,
   resolveChordIdentity,
   semanticsFromChordDraft,
 } from "./chordModel";
@@ -277,7 +278,22 @@ function chordRegionsOverlap(a: ChordRegion, b: ChordRegion) {
 }
 
 function hasValidChordDraft(draft: ChordDraft) {
-  const maximumInversion = isSeventhChord(draft.quality) ? 3 : 2;
+  const requiredInversion = draft.augmentedSixthVariant
+    ? 0
+    : draft.extensions?.includes(9)
+      ? 0
+      : draft.designation?.kind === "cadential64"
+        ? 2
+        : draft.designation?.kind === "neapolitan"
+          ? 1
+          : undefined;
+  const maximumInversion = draft.augmentedSixthVariant
+    ? 0
+    : draft.extensions?.includes(9)
+      ? 0
+      : isSeventhChord(draft.quality)
+        ? 3
+        : 2;
   return (
     Number.isInteger(draft.degree) &&
     draft.degree >= 1 &&
@@ -288,6 +304,7 @@ function hasValidChordDraft(draft: ChordDraft) {
     Number.isInteger(draft.inversion) &&
     draft.inversion >= 0 &&
     draft.inversion <= maximumInversion &&
+    (requiredInversion === undefined || draft.inversion === requiredInversion) &&
     (draft.appliedTarget === undefined ||
       (Number.isInteger(draft.appliedTarget) &&
         draft.appliedTarget >= 1 &&
@@ -318,6 +335,15 @@ function chordRegionError(
     )
   )
     return "和弦语义参数无效";
+  if (
+    region.semantics &&
+    !harmonySemanticsCompatibleWithIdentity(
+      region.identity,
+      region.semantics,
+      keyAtTick(project.keyEvents, region.startTick),
+    )
+  )
+    return "和弦的多重解释与实际构成不一致";
   if (
     project.keyEvents.some(
       (event) =>

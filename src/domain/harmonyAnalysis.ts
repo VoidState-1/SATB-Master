@@ -1,4 +1,7 @@
-import { chordIdentityToneSpellings } from "./chordModel";
+import {
+  chordIdentityToneSpellings,
+  legacyHarmonyProjection,
+} from "./chordModel";
 import {
   VOICE_ORDER,
   type ChordRegion,
@@ -161,28 +164,19 @@ function sameKey(left: AnalysisKey, right: AnalysisKey) {
   return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
-function sameOptionalKey(
-  left: HarmonySemantics["localKey"],
-  right: HarmonySemantics["localKey"],
-) {
-  if (!left || !right) return left === right;
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
-
 function sameSemanticContext(
   left: DeepReadonly<HarmonySemantics> | undefined,
   right: DeepReadonly<HarmonySemantics> | undefined,
 ) {
   if (!left || !right) return left === right;
-  return (
-    left.degree === right.degree &&
-    left.degreeAlteration === right.degreeAlteration &&
-    left.appliedTarget === right.appliedTarget &&
-    left.mixture === right.mixture &&
-    left.cadenceRole === right.cadenceRole &&
-    left.confidence === right.confidence &&
-    sameOptionalKey(left.localKey, right.localKey)
-  );
+  if (
+    left.primaryInterpretationId !== right.primaryInterpretationId ||
+    left.interpretations.length !== right.interpretations.length ||
+    (left.alternatives?.length ?? 0) !== (right.alternatives?.length ?? 0)
+  )
+    return false;
+  // Span 合并依赖完整语义而非粗粒度功能类别，目标、双重解释和持续低音变化都会切断 span。
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function sameChordIdentityWithoutBass(
@@ -190,7 +184,7 @@ function sameChordIdentityWithoutBass(
   right: AnalysisChord["identity"],
 ) {
   if (
-    left.quality !== right.quality ||
+    JSON.stringify(left.structure) !== JSON.stringify(right.structure) ||
     !pitchClassEquals(left.root, right.root)
   )
     return false;
@@ -210,19 +204,22 @@ export function functionalClassOf(
   analysis: DeepReadonly<HarmonySemantics> | undefined,
 ): FunctionalClass {
   if (!analysis) return "ambiguous";
-  if (["ambiguous", "unknown"].includes(analysis.confidence))
+  if (analysis.interpretations.length !== 1 || analysis.pedalContext)
     return "ambiguous";
-  if (analysis.mixture) return "mixture";
-  if (analysis.appliedTarget) {
-    return [5, 7].includes(analysis.degree)
+  const legacy = legacyHarmonyProjection(analysis);
+  if (["ambiguous", "unknown"].includes(legacy.confidence))
+    return "ambiguous";
+  if (legacy.mixture) return "mixture";
+  if (legacy.appliedTarget) {
+    return [5, 7].includes(legacy.degree)
       ? "secondary-dominant"
       : "ambiguous";
   }
-  if (analysis.degreeAlteration !== 0 && [2, 4].includes(analysis.degree))
+  if (legacy.degreeAlteration !== 0 && [2, 4].includes(legacy.degree))
     return "chromatic-predominant";
-  if ([1, 3, 6].includes(analysis.degree)) return "tonic";
-  if ([2, 4].includes(analysis.degree)) return "predominant";
-  if ([5, 7].includes(analysis.degree)) return "dominant";
+  if ([1, 3, 6].includes(legacy.degree)) return "tonic";
+  if ([2, 4].includes(legacy.degree)) return "predominant";
+  if ([5, 7].includes(legacy.degree)) return "dominant";
   return "ambiguous";
 }
 
@@ -355,9 +352,7 @@ function chordIdentityKey(region: AnalysisChord) {
   const identity = region.identity;
   return JSON.stringify({
     root: identity.root,
-    quality: identity.quality,
-    extensions: identity.extensions,
-    alterations: identity.alterations,
+    structure: identity.structure,
     tones: chordIdentityToneSpellings(identity),
   });
 }

@@ -27,7 +27,7 @@ SATB Master 是一款离线优先的四部和声学习与编辑软件。主要�
 
 - 四个固定 SATB 声部的钢琴卷帘编辑、批量选择、拖绘、擦除、切分、移动、时值修改和预听。
 - 允许重叠且不参与和声检查的辅助轨数据模型，以及辅助轨播放和 MIDI 导出。
-- 范围型和弦轨、和弦调色板、罗马数字显示、调号/拍号/速度事件、标尺和循环区域。
+- 范围型和弦轨、功能/级数/绝对三体系调色板、斯波索宾 A/B/C 功能标记、调号/拍号/速度事件、标尺和循环区域。
 - 工程撤销/重做、练习可编辑区间、事件锁定、可调整工作区和键盘快捷键。
 - 基于书写音高的内置和声检查、跨切片语义状态、严重程度配置和诊断悬停信息。
 - QuickJS 隔离的外置规则 API v2、本机规则库和工程级规则引用。
@@ -86,8 +86,9 @@ npm run generate:assets
 1. [architecture.md](./architecture.md)：运行时分层、目录职责和依赖方向。
 2. [data-model.md](./data-model.md)：工程 schema、音高、轨道、和弦与迁移约束。
 3. [editor-and-state.md](./editor-and-state.md)：编辑命令、历史记录、交互与 Canvas 性能模型。
-4. [harmony-engine.md](./harmony-engine.md)：切片、语义跨度、规则状态和内置规则。
-5. [external-rules.md](./external-rules.md)：规则包契约、QuickJS 沙箱与本机规则库。
+4. [functional-harmony.md](./functional-harmony.md)：斯波索宾功能和弦模型、注册表、调色盘与兼容边界。
+5. [harmony-engine.md](./harmony-engine.md)：切片、语义跨度、规则状态和内置规则。
+6. [external-rules.md](./external-rules.md)：规则包契约、QuickJS 沙箱与本机规则库。
 6. [audio-midi-and-time.md](./audio-midi-and-time.md)：统一时间轴、播放、SoundFont 和 MIDI。
 7. [desktop-and-persistence.md](./desktop-and-persistence.md)：Electron 安全边界、IPC、工程保存和恢复。
 8. [testing-build-release.md](./testing-build-release.md)：验证矩阵、桌面 E2E、打包和发布检查。

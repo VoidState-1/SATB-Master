@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildHarmonyAnalysis } from "./harmonyAnalysis";
+import { createChordRegion } from "./chords";
 import {
   buildExternalRuleContext,
   mergeExternalRuleResult,
@@ -11,7 +12,7 @@ import {
   evaluateExternalRuleSource,
   inspectExternalRuleSource,
 } from "./externalRuleSandbox";
-import { createEmptyProject } from "./model";
+import { createEmptyProject, PPQ } from "./model";
 import { checkHarmony } from "./harmony";
 
 const EXAMPLE_SOURCE = `
@@ -86,6 +87,61 @@ describe("Phase C 外置规则 manifest", () => {
 });
 
 describe("Phase C QuickJS 沙箱", () => {
+  it("API v2 只暴露旧和弦投影，并过滤无法可靠解释的新结构", () => {
+    const project = createEmptyProject();
+    project.chordTrack.regions = [
+      createChordRegion(
+        project,
+        0,
+        PPQ,
+        {
+          degree: 1,
+          degreeAlteration: 0,
+          quality: "major",
+          inversion: 0,
+          source: "manual",
+          confidence: "certain",
+        },
+        "legacy-compatible",
+      ),
+      createChordRegion(
+        project,
+        PPQ,
+        PPQ,
+        {
+          degree: 5,
+          degreeAlteration: 0,
+          quality: "dominant7",
+          extensions: [9],
+          inversion: 0,
+          source: "manual",
+          confidence: "certain",
+        },
+        "d9-new-structure",
+      ),
+    ];
+    const context = buildExternalRuleContext(buildHarmonyAnalysis(project, 2));
+
+    expect(context.project.chordTrack.regions).toHaveLength(1);
+    expect(context.project.chordTrack.regions[0].identity).toMatchObject({
+      quality: "major",
+      extensions: [],
+    });
+    expect(context.project.chordTrack.regions[0].identity).not.toHaveProperty(
+      "structure",
+    );
+    expect(context.project.chordTrack.regions[0].semantics).toMatchObject({
+      degree: 1,
+      degreeAlteration: 0,
+    });
+    expect(context.project.chordTrack.regions[0].semantics).not.toHaveProperty(
+      "interpretations",
+    );
+    expect(
+      context.slices.some((slice) => slice.chord?.id === "d9-new-structure"),
+    ).toBe(false);
+  });
+
   it("通过受控注册读取 manifest，并且不暴露宿主 API", async () => {
     const inspection = await inspectExternalRuleSource(EXAMPLE_SOURCE);
     expect(inspection.executableRuleIds).toEqual(["safe-rule"]);

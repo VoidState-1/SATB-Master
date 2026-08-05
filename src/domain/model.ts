@@ -1,6 +1,6 @@
 import {
-  chordIdentityEquals,
   chordDraftFromIdentity,
+  harmonySemanticsCompatibleWithIdentity,
   isSeventhChord,
   resolveChordIdentity,
   semanticsFromChordDraft,
@@ -9,7 +9,16 @@ import {
   type ChordIdentity,
   type ChordQuality,
   type ChordToneAlteration,
+  type ChordStructure,
+  type ChordVoicingPolicy,
+  type FunctionalDesignation,
+  type FunctionalFamily,
+  type FunctionalTarget,
+  type HarmonyInterpretation,
   type HarmonySemantics,
+  type KeyReference,
+  type ScaleDegree,
+  type SemanticConfidence,
 } from "./chordModel";
 import {
   formatPitchClass,
@@ -30,8 +39,17 @@ export type {
   ChordExtension,
   ChordIdentity,
   ChordQuality,
+  ChordStructure,
   ChordToneAlteration,
+  ChordVoicingPolicy,
+  FunctionalDesignation,
+  FunctionalFamily,
+  FunctionalTarget,
+  HarmonyInterpretation,
   HarmonySemantics,
+  KeyReference,
+  ScaleDegree,
+  SemanticConfidence,
 } from "./chordModel";
 export type {
   Alteration,
@@ -142,7 +160,12 @@ export interface ChordRegion {
 export interface ChordTrack {
   visible: boolean;
   locked: boolean;
-  displayMode: "roman" | "absolute" | "both";
+  displayMode:
+    | "functional"
+    | "roman"
+    | "absolute"
+    | "functional-absolute"
+    | "roman-absolute";
   regions: ChordRegion[];
 }
 
@@ -560,21 +583,114 @@ function validateAuxiliaryTrack(value: unknown, projectLength: number) {
   );
 }
 
-function validateHarmonySemantics(value: unknown): value is HarmonySemantics {
+function validateKeyReference(value: unknown): value is KeyReference {
+  return (
+    isRecord(value) &&
+    validatePitchClass(value.tonic) &&
+    ["major", "minor"].includes(value.mode as string)
+  );
+}
+
+const functionalFamilies = new Set<FunctionalFamily>([
+  "tonic",
+  "subdominant",
+  "dominant",
+]);
+
+function validateFunctionalTarget(value: unknown): value is FunctionalTarget {
+  return (
+    isRecord(value) &&
+    isInteger(value.degree, 1, 7) &&
+    functionalFamilies.has(value.primaryFunction as FunctionalFamily) &&
+    (value.secondaryFunction === undefined ||
+      functionalFamilies.has(value.secondaryFunction as FunctionalFamily))
+  );
+}
+
+function validateFunctionalDesignation(
+  value: unknown,
+): value is FunctionalDesignation {
+  return (
+    isRecord(value) &&
+    value.notationSystem === "spasobin" &&
+    [
+      "primary",
+      "side-degree",
+      "applied-dominant",
+      "applied-leading-tone",
+      "double-dominant",
+      "double-dominant-leading-tone",
+      "cadential64",
+      "neapolitan",
+      "augmented-sixth",
+      "altered-dominant",
+    ].includes(value.kind as string) &&
+    (value.primaryFunction === undefined ||
+      functionalFamilies.has(value.primaryFunction as FunctionalFamily)) &&
+    (value.secondaryFunction === undefined ||
+      functionalFamilies.has(value.secondaryFunction as FunctionalFamily)) &&
+    (value.specialRole === undefined ||
+      ["neapolitan", "italian6", "french6", "german6"].includes(
+        value.specialRole as string,
+      ))
+  );
+}
+
+function validateHarmonyInterpretation(
+  value: unknown,
+): value is HarmonyInterpretation {
   if (!isRecord(value)) return false;
   return (
+    hasString(value, "id") &&
+    (value.id as string).length > 0 &&
     isInteger(value.degree, 1, 7) &&
     isInteger(value.degreeAlteration, -2, 2) &&
     ["manual", "inferred", "confirmed"].includes(value.source as string) &&
     ["certain", "probable", "ambiguous", "unknown"].includes(
       value.confidence as string,
     ) &&
-    (value.localKey === undefined ||
-      (isRecord(value.localKey) &&
-        validatePitchClass(value.localKey.tonic) &&
-        ["major", "minor"].includes(value.localKey.mode as string))) &&
+    (value.localKey === undefined || validateKeyReference(value.localKey)) &&
     (value.appliedTarget === undefined ||
-      isInteger(value.appliedTarget, 1, 7)) &&
+      validateFunctionalTarget(value.appliedTarget)) &&
+    (value.designation === undefined ||
+      validateFunctionalDesignation(value.designation))
+  );
+}
+
+function validateHarmonySemantics(value: unknown): value is HarmonySemantics {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.interpretations) ||
+    value.interpretations.length === 0 ||
+    !value.interpretations.every(validateHarmonyInterpretation) ||
+    typeof value.primaryInterpretationId !== "string"
+  )
+    return false;
+
+  const alternatives = value.alternatives;
+  if (
+    alternatives !== undefined &&
+    (!Array.isArray(alternatives) ||
+      !alternatives.every(validateHarmonyInterpretation))
+  )
+    return false;
+
+  const interpretations = value.interpretations as HarmonyInterpretation[];
+  const allInterpretations = [
+    ...interpretations,
+    ...((alternatives ?? []) as HarmonyInterpretation[]),
+  ];
+  const ids = allInterpretations.map((item) => item.id);
+  if (
+    new Set(ids).size !== ids.length ||
+    !interpretations.some(
+      (item) => item.id === value.primaryInterpretationId,
+    ) ||
+    interpretations.filter((item) => item.source === "confirmed").length > 2
+  )
+    return false;
+
+  return (
     (value.mixture === undefined ||
       ["parallel-major", "parallel-minor", "modal"].includes(
         value.mixture as string,
@@ -582,27 +698,49 @@ function validateHarmonySemantics(value: unknown): value is HarmonySemantics {
     (value.cadenceRole === undefined ||
       ["cadential64", "passing64", "pedal64"].includes(
         value.cadenceRole as string,
-      ))
+      )) &&
+    (value.pedalContext === undefined ||
+      (isRecord(value.pedalContext) &&
+        validatePitchClass(value.pedalContext.pitch) &&
+        ["start", "continue", "end"].includes(
+          value.pedalContext.role as string,
+        )))
   );
 }
 
 function validateChordIdentity(value: unknown): value is ChordIdentity {
-  if (!isRecord(value)) return false;
+  if (
+    !isRecord(value) ||
+    !validatePitchClass(value.root) ||
+    !validatePitchClass(value.bass) ||
+    !isRecord(value.structure)
+  )
+    return false;
+  if (value.structure.kind === "augmented-sixth")
+    return ["italian", "french", "german"].includes(
+      value.structure.variant as string,
+    );
+  if (value.structure.kind !== "tertian") return false;
   return (
-    validatePitchClass(value.root) &&
-    chordQualities.has(value.quality as ChordQuality) &&
-    Array.isArray(value.extensions) &&
-    value.extensions.every((extension) =>
+    chordQualities.has(value.structure.quality as ChordQuality) &&
+    Array.isArray(value.structure.extensions) &&
+    value.structure.extensions.every((extension) =>
       [6, 7, 9, 11, 13].includes(extension),
     ) &&
-    Array.isArray(value.alterations) &&
-    value.alterations.every(
+    new Set(value.structure.extensions).size ===
+      value.structure.extensions.length &&
+    Array.isArray(value.structure.alterations) &&
+    value.structure.alterations.every(
       (alteration) =>
         isRecord(alteration) &&
         [5, 9, 11, 13].includes(alteration.degree as number) &&
         isInteger(alteration.alter, -2, 2),
     ) &&
-    validatePitchClass(value.bass)
+    new Set(
+      value.structure.alterations.map(
+        (alteration) => (alteration as ChordToneAlteration).degree,
+      ),
+    ).size === value.structure.alterations.length
   );
 }
 
@@ -752,7 +890,13 @@ export function validateProject(value: unknown): value is ProjectDocument {
     !isRecord(project.chordTrack) ||
     typeof project.chordTrack.visible !== "boolean" ||
     typeof project.chordTrack.locked !== "boolean" ||
-    !["roman", "absolute", "both"].includes(
+    ![
+      "functional",
+      "roman",
+      "absolute",
+      "functional-absolute",
+      "roman-absolute",
+    ].includes(
       project.chordTrack.displayMode as string,
     ) ||
     !Array.isArray(project.chordTrack.regions) ||
@@ -783,12 +927,10 @@ export function validateProject(value: unknown): value is ProjectDocument {
       .at(-1);
     if (
       !key ||
-      !chordIdentityEquals(
+      !harmonySemanticsCompatibleWithIdentity(
         region.identity,
-        resolveChordIdentity(
-          chordDraftFromIdentity(region.identity, region.semantics),
-          key,
-        ),
+        region.semantics,
+        key,
       )
     )
       return false;
@@ -939,6 +1081,12 @@ function migrateV2Project(value: Record<string, unknown>) {
   migrated.auxiliaryTracks = [];
   delete migrated.tracks;
   migrated.ruleProfile = { builtin: {}, external: [] };
+  if (isRecord(migrated.chordTrack)) {
+    migrated.chordTrack.displayMode =
+      migrated.chordTrack.displayMode === "both"
+        ? "roman-absolute"
+        : migrated.chordTrack.displayMode;
+  }
   if (!isRecord(migrated.loop) && isInteger(migrated.lengthTicks, 1)) {
     migrated.loop = {
       enabled: false,

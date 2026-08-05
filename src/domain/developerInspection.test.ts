@@ -4,7 +4,8 @@ import {
   inspectChordRegion,
   inspectNoteEvent,
 } from "./developerInspection";
-import { createEmptyProject, type NoteEvent } from "./model";
+import { createChordRegion } from "./chords";
+import { createEmptyProject, PPQ, type NoteEvent } from "./model";
 import { spellMidi } from "./pitch";
 
 function paths(rows: ReturnType<typeof inspectNoteEvent>["rows"]) {
@@ -57,9 +58,12 @@ describe("开发者事件检查投影", () => {
       durationTicks: 960,
       identity: {
         root: { step: "C" as const, alter: 0 as const },
-        quality: "major" as const,
-        extensions: [9 as const],
-        alterations: [{ degree: 9 as const, alter: 1 as const }],
+        structure: {
+          kind: "tertian" as const,
+          quality: "dominant7" as const,
+          extensions: [9 as const],
+          alterations: [{ degree: 9 as const, alter: 1 as const }],
+        },
         bass: { step: "E" as const, alter: 0 as const },
       },
       locked: false,
@@ -69,13 +73,14 @@ describe("开发者事件检查投影", () => {
 
     expect(resultPaths).toEqual(
       expect.arrayContaining([
-        "identity.extensions[0]",
-        "identity.alterations[0].degree",
-        "identity.alterations[0].alter",
-        "semantics.localKey.tonic.step",
-        "semantics.appliedTarget",
+        "identity.structure.kind",
+        "identity.structure.extensions[0]",
+        "identity.structure.alterations[0].degree",
+        "identity.structure.alterations[0].alter",
+        "voicingPolicy.forbiddenDegrees",
+        "semantics.primaryInterpretationId",
         "semantics.cadenceRole",
-        "semantics.source",
+        "semantics.pedalContext.role",
       ]),
     );
     expect(
@@ -88,6 +93,46 @@ describe("开发者事件检查投影", () => {
     expect(formatDeveloperFieldValue(false)).toBe("false");
   });
 
+  it("和弦检查会展开功能解释、目标、持续低音和 D9 配器策略", () => {
+    const project = createEmptyProject();
+    const chord = createChordRegion(
+      project,
+      0,
+      PPQ,
+      {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "dominant7",
+        extensions: [9],
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "applied-dominant",
+          primaryFunction: "dominant",
+        },
+        appliedTarget: 2,
+        pedalContext: {
+          pitch: { step: "G", alter: 0 },
+          role: "start",
+        },
+        source: "manual",
+        confidence: "certain",
+      },
+      "d9-debug",
+    );
+    const resultPaths = paths(inspectChordRegion(chord).rows);
+    expect(resultPaths).toEqual(
+      expect.arrayContaining([
+        "identity.structure.quality",
+        "voicingPolicy.forbiddenDegrees",
+        "semantics.interpretations[0].designation.kind",
+        "semantics.interpretations[0].appliedTarget.degree",
+        "semantics.pedalContext.pitch.step",
+        "semantics.pedalContext.role",
+      ]),
+    );
+  });
+
   it("投影不会修改工程事件", () => {
     const project = createEmptyProject();
     const chord = {
@@ -96,9 +141,12 @@ describe("开发者事件检查投影", () => {
       durationTicks: 960,
       identity: {
         root: { step: "C" as const, alter: 0 as const },
-        quality: "major" as const,
-        extensions: [],
-        alterations: [],
+        structure: {
+          kind: "tertian" as const,
+          quality: "major" as const,
+          extensions: [],
+          alterations: [],
+        },
         bass: { step: "C" as const, alter: 0 as const },
       },
       locked: false,

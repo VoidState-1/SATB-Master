@@ -191,6 +191,14 @@ Ctrl+滚轮横向缩放以鼠标所指 tick 为锚点：缩放前后该 tick 应
 
 修复对齐问题时应查共同的坐标原点和裁剪边界，而不是对单个图层添加 1px 偏移补丁。
 
+### 8.1 和弦调色盘
+
+和弦浮窗使用“功能 / 级数 / 绝对”分段视图。功能视图直接读取领域注册表，组合选择基础功能、三/七/九和弦形态、合法转位、离调目标和构成音变化；级数与绝对视图继续使用结构化选项，不提供自由名称输入。
+
+借用、持续低音和共同和弦属于语义上下文，放在调色盘底部及 Inspector。共同和弦选项必须来自 `compatibleFunctionalInterpretations`，没有同实体候选时禁用，不能让 UI 临时制造两个互相矛盾的解释。
+
+和弦轨显示模式为 `functional`、`roman`、`absolute`、`functional-absolute`、`roman-absolute`。标签只显示当前模式，悬停提示同时显示三种投影。
+
 ## 9. 快捷键注册表
 
 [`src/shortcuts/shortcutRegistry.ts`](../src/shortcuts/shortcutRegistry.ts) 是命令 ID、默认绑定、分组和是否允许重复的唯一来源。设置页和执行逻辑应从注册表生成，文档不维护一份容易漂移的完整副本。
@@ -223,6 +231,7 @@ Ctrl+滚轮横向缩放以鼠标所指 tick 为锚点：缩放前后该 tick 应
 
 - 书写音高是否保留。
 - identity 与 semantics 是否按预期解析。
+- `identity.structure`、全部 interpretations、designation、目标、pedal 和 voicing policy 是否完整。
 - MIDI 导入来源、非和弦音角色和锁定字段。
 - 拖拽/迁移后 tick、duration 和 ID 是否稳定。
 

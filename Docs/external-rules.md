@@ -179,7 +179,18 @@ SATB_RULE.register({
 
 宿主不会解释 payload 或代替规则判断何时解决。规则必须在 `process` 中显式保留/删除状态，在工程结尾使用 `finalize` 决定剩余状态的结果。
 
-## 5. 可见上下文
+## 5. 功能和弦兼容边界
+
+外置规则 API 当前仍为 v2，不暴露 schema v3 新增的 `ChordStructure`、多重 `HarmonyInterpretation`、`FunctionalDesignation` 或持续低音字段。`buildExternalRuleContext` 在沙箱边界生成旧投影：
+
+- 普通可兼容和弦继续暴露 `identity.quality/extensions/alterations`。
+- 单解释语义继续暴露 `degree/degreeAlteration/appliedTarget` 等 v2 字段。
+- D9、增六和弦、双解释和持续低音等不能可靠投影的和弦，从 v2 chord/span/progression 上下文中过滤。
+- 新和弦不会被伪装成普通三和弦或确定功能。
+
+这是一层临时兼容隔离，不是新规则 API。下一次升级外置契约时应提升 API 版本并一次性提供精确结构，不能在 v2 中静默增加字段。
+
+## 6. 可见上下文
 
 `context` 被深度冻结，结构大致为：
 
@@ -207,7 +218,7 @@ auxiliarySummary { trackCount, noteCount }
 
 规则应优先使用预计算 `slices`、transitions 和 spans，而不是在每次调用内从原始音符重建一套不同的切片算法。
 
-## 6. 诊断输出
+## 7. 诊断输出
 
 每个原始诊断需要提供：
 
@@ -232,7 +243,7 @@ auxiliarySummary { trackCount, noteCount }
 - 两声部进行同时引用两组声部和音符。
 - 没有具体对象的 project 级诊断可以使用空引用，但范围和证据仍要清楚。
 
-## 7. 同步执行与能力限制
+## 8. 同步执行与能力限制
 
 `evaluate`、`process` 和 `finalize` 必须同步返回。返回 Promise 会被拒绝。沙箱没有事件循环和异步 I/O，因此不要声明 `async`。
 
@@ -255,7 +266,7 @@ auxiliarySummary { trackCount, noteCount }
 
 Web Worker 防止运行阻塞 renderer；QuickJS runtime 限制脚本能看到什么以及消耗多少资源。两层都不能移除。
 
-## 8. 导入、安装与工程引用
+## 9. 导入、安装与工程引用
 
 桌面端规则库使用内容寻址：
 
@@ -288,7 +299,7 @@ packageId + version + contentHash + ruleId
 
 浏览器模式用 localStorage 保存规则源码和元数据，仅用于预览，不代表桌面内容寻址文件行为已经验证。
 
-## 9. 失败模型
+## 10. 失败模型
 
 外置运行报告以下失败代码：
 
@@ -304,7 +315,7 @@ packageId + version + contentHash + ruleId
 
 失败按 package/rule 记录。一个外置规则失败不能丢弃其他外置规则结果，更不能清空内置诊断。较旧 revision 的整批结果标记 `superseded`，不进入当前 UI。
 
-## 10. 规则开发建议
+## 11. 规则开发建议
 
 - 使用稳定、命名空间清晰的 package/rule ID；发布后不要复用 ID 表示完全不同语义。
 - 把可调阈值放入 `config`，对类型错误提供保守默认值。
@@ -314,7 +325,7 @@ packageId + version + contentHash + ruleId
 - `confidence` 表示判断依据的确定程度，不是严重程度。
 - 有状态规则显式处理休止、换调、span 退出和工程结尾。
 
-## 11. 宿主 API 变更检查表
+## 12. 宿主 API 变更检查表
 
 - 新上下文是否确实是音乐规则所需，是否会泄露辅助素材或本地路径？
 - 数据是否可 JSON 序列化、深度冻结并受大小限制？

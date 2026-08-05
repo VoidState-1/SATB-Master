@@ -22,11 +22,29 @@ export type ChordQuality =
   | "diminished7";
 
 export type ChordExtension = 6 | 7 | 9 | 11 | 13;
+export type ChordToneDegree = 1 | 3 | 5 | 7 | 9 | 11 | 13;
+export type AugmentedSixthVariant = "italian" | "french" | "german";
 
 export interface ChordToneAlteration {
   degree: 5 | 9 | 11 | 13;
   alter: Alteration;
 }
+
+export interface TertianChordStructure {
+  kind: "tertian";
+  quality: ChordQuality;
+  extensions: readonly ChordExtension[];
+  alterations: readonly ChordToneAlteration[];
+}
+
+export interface AugmentedSixthChordStructure {
+  kind: "augmented-sixth";
+  variant: AugmentedSixthVariant;
+}
+
+export type ChordStructure =
+  | TertianChordStructure
+  | AugmentedSixthChordStructure;
 
 export interface KeyReference {
   tonic: SpelledPitchClass;
@@ -41,29 +59,108 @@ export type SemanticConfidence =
   | "ambiguous"
   | "unknown";
 
-export interface HarmonySemantics {
+export type FunctionalFamily = "tonic" | "subdominant" | "dominant";
+
+export type FunctionalDesignationKind =
+  | "primary"
+  | "side-degree"
+  | "applied-dominant"
+  | "applied-leading-tone"
+  | "double-dominant"
+  | "double-dominant-leading-tone"
+  | "cadential64"
+  | "neapolitan"
+  | "augmented-sixth"
+  | "altered-dominant";
+
+export interface FunctionalTarget {
+  degree: ScaleDegree;
+  primaryFunction: FunctionalFamily;
+  secondaryFunction?: FunctionalFamily;
+}
+
+export interface FunctionalDesignation {
+  notationSystem: "spasobin";
+  kind: FunctionalDesignationKind;
+  primaryFunction?: FunctionalFamily;
+  secondaryFunction?: FunctionalFamily;
+  specialRole?: "neapolitan" | "italian6" | "french6" | "german6";
+}
+
+export interface HarmonyInterpretation {
+  id: string;
   localKey?: KeyReference;
   degree: ScaleDegree;
   degreeAlteration: Alteration;
-  appliedTarget?: ScaleDegree;
-  mixture?: "parallel-major" | "parallel-minor" | "modal";
-  cadenceRole?: "cadential64" | "passing64" | "pedal64";
+  appliedTarget?: FunctionalTarget;
+  designation?: FunctionalDesignation;
   source: "manual" | "inferred" | "confirmed";
   confidence: SemanticConfidence;
 }
 
+export interface HarmonySemantics {
+  interpretations: readonly HarmonyInterpretation[];
+  primaryInterpretationId: string;
+  alternatives?: readonly HarmonyInterpretation[];
+  mixture?: "parallel-major" | "parallel-minor" | "modal";
+  cadenceRole?: "cadential64" | "passing64" | "pedal64";
+  pedalContext?: {
+    pitch: SpelledPitchClass;
+    role: "start" | "continue" | "end";
+  };
+}
+
 export interface ChordIdentity {
   root: SpelledPitchClass;
-  quality: ChordQuality;
-  extensions: ChordExtension[];
-  alterations: ChordToneAlteration[];
+  structure: ChordStructure;
   bass: SpelledPitchClass;
 }
 
-// 编辑器草稿同时携带实体参数和语义；持久化时必须拆回 identity + semantics。
-export interface ChordDraft extends HarmonySemantics {
+// 调色盘草稿是编辑态配方；持久化时必须拆为 identity + semantics。
+export interface ChordDraft {
+  degree: ScaleDegree;
+  degreeAlteration: Alteration;
   quality: ChordQuality;
+  extensions?: ChordExtension[];
+  alterations?: ChordToneAlteration[];
+  augmentedSixthVariant?: AugmentedSixthVariant;
   inversion: 0 | 1 | 2 | 3;
+  appliedTarget?: ScaleDegree;
+  appliedTargetFunction?: Pick<
+    FunctionalTarget,
+    "primaryFunction" | "secondaryFunction"
+  >;
+  designation?: FunctionalDesignation;
+  interpretationId?: string;
+  localKey?: KeyReference;
+  secondaryInterpretation?: HarmonyInterpretation;
+  alternatives?: readonly HarmonyInterpretation[];
+  mixture?: HarmonySemantics["mixture"];
+  cadenceRole?: HarmonySemantics["cadenceRole"];
+  pedalContext?: HarmonySemantics["pedalContext"];
+  source: HarmonyInterpretation["source"];
+  confidence: SemanticConfidence;
+}
+
+export interface LegacyHarmonyProjection {
+  localKey?: KeyReference;
+  degree: ScaleDegree;
+  degreeAlteration: Alteration;
+  appliedTarget?: ScaleDegree;
+  mixture?: HarmonySemantics["mixture"];
+  cadenceRole?: HarmonySemantics["cadenceRole"];
+  source: HarmonyInterpretation["source"];
+  confidence: SemanticConfidence;
+}
+
+export interface ChordVoicingPolicy {
+  requiredDegrees: ChordToneDegree[];
+  permittedDegrees: ChordToneDegree[];
+  forbiddenDegrees: ChordToneDegree[];
+  doublingHints: Array<{
+    degree: ChordToneDegree;
+    policy: "allowed" | "avoid" | "required";
+  }>;
 }
 
 export const QUALITY_INTERVALS: Record<ChordQuality, readonly number[]> = {
@@ -78,17 +175,85 @@ export const QUALITY_INTERVALS: Record<ChordQuality, readonly number[]> = {
   diminished7: [0, 3, 6, 9],
 };
 
-function appliedContext(semantics: HarmonySemantics, key: KeyLike): KeyLike {
-  const baseKey = semantics.localKey ?? key;
-  if (!semantics.appliedTarget) return baseKey;
+const EXTENSION_INTERVALS: Record<ChordExtension, number> = {
+  6: 9,
+  7: 10,
+  9: 14,
+  11: 17,
+  13: 21,
+};
+
+const DEFAULT_TARGET_FUNCTIONS: Record<
+  ScaleDegree,
+  Pick<FunctionalTarget, "primaryFunction" | "secondaryFunction">
+> = {
+  1: { primaryFunction: "tonic" },
+  2: { primaryFunction: "subdominant" },
+  3: { primaryFunction: "dominant", secondaryFunction: "tonic" },
+  4: { primaryFunction: "subdominant" },
+  5: { primaryFunction: "dominant" },
+  6: { primaryFunction: "tonic", secondaryFunction: "subdominant" },
+  7: { primaryFunction: "dominant" },
+};
+
+export function functionalTargetForDegree(
+  degree: ScaleDegree,
+  override?: ChordDraft["appliedTargetFunction"],
+): FunctionalTarget {
+  return { degree, ...(override ?? DEFAULT_TARGET_FUNCTIONS[degree]) };
+}
+
+export function primaryHarmonyInterpretation(
+  semantics: HarmonySemantics,
+): HarmonyInterpretation {
+  return (
+    semantics.interpretations.find(
+      (candidate) => candidate.id === semantics.primaryInterpretationId,
+    ) ?? semantics.interpretations[0]
+  );
+}
+
+export function legacyHarmonyProjection(
+  semantics: HarmonySemantics,
+): LegacyHarmonyProjection {
+  const primary = primaryHarmonyInterpretation(semantics);
   return {
-    tonic: scaleDegreePitchClass(baseKey, semantics.appliedTarget),
+    localKey: primary.localKey,
+    degree: primary.degree,
+    degreeAlteration: primary.degreeAlteration,
+    appliedTarget: primary.appliedTarget?.degree,
+    mixture: semantics.mixture,
+    cadenceRole: semantics.cadenceRole,
+    source: primary.source,
+    confidence: primary.confidence,
+  };
+}
+
+function draftTarget(draft: ChordDraft) {
+  return draft.appliedTarget
+    ? functionalTargetForDegree(
+        draft.appliedTarget,
+        draft.appliedTargetFunction,
+      )
+    : undefined;
+}
+
+function appliedContext(draft: ChordDraft, key: KeyLike): KeyLike {
+  const baseKey = draft.localKey ?? key;
+  const target = draftTarget(draft);
+  if (!target) return baseKey;
+  return {
+    tonic: scaleDegreePitchClass(baseKey, target.degree),
     mode: "major",
   };
 }
 
 export function isSeventhChord(quality: ChordQuality) {
   return QUALITY_INTERVALS[quality].length === 4;
+}
+
+export function isSeventhStructure(structure: ChordStructure) {
+  return structure.kind === "tertian" && isSeventhChord(structure.quality);
 }
 
 export function chordToneSpellings(
@@ -102,29 +267,17 @@ export function chordToneSpellings(
   );
 }
 
-const EXTENSION_INTERVALS: Record<ChordExtension, number> = {
-  6: 9,
-  7: 10,
-  9: 14,
-  11: 17,
-  13: 21,
-};
-
-export function chordIdentityToneSpellings(
-  identity: Readonly<Omit<ChordIdentity, "extensions" | "alterations">> & {
-    readonly extensions: readonly ChordExtension[];
-    readonly alterations: readonly ChordToneAlteration[];
-  },
+function tertianToneSpellings(
+  root: SpelledPitchClass,
+  structure: TertianChordStructure,
 ) {
-  const rootPitchClass = pitchClassValue(identity.root);
-  const rootStep = stepIndex(identity.root.step);
-  const tones = chordToneSpellings(identity.root, identity.quality);
+  const rootPitchClass = pitchClassValue(root);
+  const rootStep = stepIndex(root.step);
+  const tones = chordToneSpellings(root, structure.quality);
   const degreeByToneIndex = [1, 3, 5, 7] as const;
-
-  // 和弦拼写必须保留字母级数；不能把 F♯ 与 G♭ 仅因 MIDI 音级相同而视作同一构成音。
   const alteredBase = tones.map((tone, index) => {
     const degree = degreeByToneIndex[index];
-    const alteration = identity.alterations.find(
+    const alteration = structure.alterations.find(
       (candidate) => candidate.degree === degree,
     );
     if (!alteration) return tone;
@@ -134,10 +287,13 @@ export function chordIdentityToneSpellings(
     );
   });
 
-  for (const extension of identity.extensions) {
-    const degree = extension;
-    const alteration = identity.alterations.find(
-      (candidate) => candidate.degree === degree,
+  for (const extension of structure.extensions) {
+    const existingIndex = degreeByToneIndex.indexOf(
+      extension as (typeof degreeByToneIndex)[number],
+    );
+    if (existingIndex >= 0) continue;
+    const alteration = structure.alterations.find(
+      (candidate) => candidate.degree === extension,
     );
     alteredBase.push(
       spellPitchClassForStep(
@@ -156,41 +312,159 @@ export function chordIdentityToneSpellings(
   );
 }
 
+function augmentedSixthToneSpellings(
+  root: SpelledPitchClass,
+  variant: AugmentedSixthVariant,
+) {
+  const rootPitchClass = pitchClassValue(root);
+  const rootStep = stepIndex(root.step);
+  const specifications =
+    variant === "italian"
+      ? [
+          { semitones: 0, steps: 0 },
+          { semitones: 4, steps: 2 },
+          { semitones: 10, steps: 5 },
+        ]
+      : variant === "french"
+        ? [
+            { semitones: 0, steps: 0 },
+            { semitones: 4, steps: 2 },
+            { semitones: 6, steps: 3 },
+            { semitones: 10, steps: 5 },
+          ]
+        : [
+            { semitones: 0, steps: 0 },
+            { semitones: 4, steps: 2 },
+            { semitones: 7, steps: 4 },
+            { semitones: 10, steps: 5 },
+          ];
+  return specifications.map((item) =>
+    spellPitchClassForStep(
+      rootPitchClass + item.semitones,
+      rootStep + item.steps,
+    ),
+  );
+}
+
+export function chordIdentityToneSpellings(identity: ChordIdentity) {
+  return identity.structure.kind === "tertian"
+    ? tertianToneSpellings(identity.root, identity.structure)
+    : augmentedSixthToneSpellings(
+        identity.root,
+        identity.structure.variant,
+      );
+}
+
+export function chordStructureQuality(
+  identity: ChordIdentity,
+): ChordQuality | undefined {
+  return identity.structure.kind === "tertian"
+    ? identity.structure.quality
+    : undefined;
+}
+
+export function chordVoicingPolicy(identity: ChordIdentity): ChordVoicingPolicy {
+  if (
+    identity.structure.kind === "tertian" &&
+    identity.structure.quality === "dominant7" &&
+    identity.structure.extensions.includes(9)
+  ) {
+    return {
+      requiredDegrees: [1, 3, 7, 9],
+      permittedDegrees: [1, 3, 7, 9],
+      forbiddenDegrees: [5],
+      doublingHints: [],
+    };
+  }
+  if (identity.structure.kind === "augmented-sixth") {
+    return {
+      requiredDegrees: [],
+      permittedDegrees: [],
+      forbiddenDegrees: [],
+      doublingHints: [],
+    };
+  }
+  const degrees = [1, 3, 5] as ChordToneDegree[];
+  if (isSeventhChord(identity.structure.quality)) degrees.push(7);
+  for (const extension of identity.structure.extensions) {
+    if (extension !== 6 && !degrees.includes(extension))
+      degrees.push(extension);
+  }
+  return {
+    requiredDegrees: degrees,
+    permittedDegrees: degrees,
+    forbiddenDegrees: [],
+    doublingHints: [],
+  };
+}
+
 export function resolveChordIdentity(
   draft: ChordDraft,
   key: KeyLike,
 ): ChordIdentity {
+  if (draft.augmentedSixthVariant) {
+    const baseKey = draft.localKey ?? key;
+    const root = scaleDegreePitchClass(baseKey, 6, -1);
+    return {
+      root,
+      structure: {
+        kind: "augmented-sixth",
+        variant: draft.augmentedSixthVariant,
+      },
+      bass: root,
+    };
+  }
+
   const context = appliedContext(draft, key);
   const root = scaleDegreePitchClass(
     context,
     draft.degree,
     draft.degreeAlteration,
   );
-  const tones = chordToneSpellings(root, draft.quality);
+  const structure: TertianChordStructure = {
+    kind: "tertian",
+    quality: draft.quality,
+    extensions: [...(draft.extensions ?? [])],
+    alterations: [...(draft.alterations ?? [])],
+  };
+  const tones = tertianToneSpellings(root, structure);
   return {
     root,
-    quality: draft.quality,
-    extensions: [],
-    alterations: [],
+    structure,
     bass: tones[Math.min(draft.inversion, tones.length - 1)],
   };
 }
 
 export function semanticsFromChordDraft(draft: ChordDraft): HarmonySemantics {
-  return {
+  const primaryId = draft.interpretationId ?? "primary";
+  const primary: HarmonyInterpretation = {
+    id: primaryId,
     localKey: draft.localKey,
     degree: draft.degree,
     degreeAlteration: draft.degreeAlteration,
-    appliedTarget: draft.appliedTarget,
-    mixture: draft.mixture,
-    cadenceRole: draft.cadenceRole,
+    appliedTarget: draftTarget(draft),
+    designation: draft.designation,
     source: draft.source,
     confidence: draft.confidence,
+  };
+  return {
+    interpretations: [
+      primary,
+      ...(draft.secondaryInterpretation
+        ? [draft.secondaryInterpretation]
+        : []),
+    ],
+    primaryInterpretationId: primaryId,
+    alternatives: draft.alternatives,
+    mixture: draft.mixture,
+    cadenceRole: draft.cadenceRole,
+    pedalContext: draft.pedalContext,
   };
 }
 
 export function chordIdentityInversion(identity: ChordIdentity) {
-  const tones = chordToneSpellings(identity.root, identity.quality);
+  if (identity.structure.kind === "augmented-sixth") return 0;
+  const tones = chordIdentityToneSpellings(identity);
   const index = tones.findIndex((tone) => pitchClassEquals(tone, identity.bass));
   return Math.max(0, Math.min(index < 0 ? 0 : index, tones.length - 1)) as
     | 0
@@ -203,19 +477,98 @@ export function chordDraftFromIdentity(
   identity: ChordIdentity,
   semantics: HarmonySemantics,
 ): ChordDraft {
+  const primary = primaryHarmonyInterpretation(semantics);
+  const quality =
+    identity.structure.kind === "tertian"
+      ? identity.structure.quality
+      : "major";
   return {
-    ...semantics,
-    quality: identity.quality,
+    degree: primary.degree,
+    degreeAlteration: primary.degreeAlteration,
+    quality,
+    extensions:
+      identity.structure.kind === "tertian"
+        ? [...identity.structure.extensions]
+        : [],
+    alterations:
+      identity.structure.kind === "tertian"
+        ? [...identity.structure.alterations]
+        : [],
+    augmentedSixthVariant:
+      identity.structure.kind === "augmented-sixth"
+        ? identity.structure.variant
+        : undefined,
     inversion: chordIdentityInversion(identity),
+    appliedTarget: primary.appliedTarget?.degree,
+    appliedTargetFunction: primary.appliedTarget
+      ? {
+          primaryFunction: primary.appliedTarget.primaryFunction,
+          secondaryFunction: primary.appliedTarget.secondaryFunction,
+        }
+      : undefined,
+    designation: primary.designation,
+    interpretationId: primary.id,
+    localKey: primary.localKey,
+    secondaryInterpretation: semantics.interpretations.find(
+      (candidate) => candidate.id !== primary.id,
+    ),
+    alternatives: semantics.alternatives,
+    mixture: semantics.mixture,
+    cadenceRole: semantics.cadenceRole,
+    pedalContext: semantics.pedalContext,
+    source: primary.source,
+    confidence: primary.confidence,
   };
+}
+
+function structureEquals(left: ChordStructure, right: ChordStructure) {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "augmented-sixth")
+    return right.kind === "augmented-sixth" && left.variant === right.variant;
+  return (
+    right.kind === "tertian" &&
+    left.quality === right.quality &&
+    left.extensions.join(",") === right.extensions.join(",") &&
+    JSON.stringify(left.alterations) === JSON.stringify(right.alterations)
+  );
 }
 
 export function chordIdentityEquals(left: ChordIdentity, right: ChordIdentity) {
   return (
-    left.quality === right.quality &&
+    structureEquals(left.structure, right.structure) &&
     pitchClassEquals(left.root, right.root) &&
-    pitchClassEquals(left.bass, right.bass) &&
-    left.extensions.join(",") === right.extensions.join(",") &&
-    JSON.stringify(left.alterations) === JSON.stringify(right.alterations)
+    pitchClassEquals(left.bass, right.bass)
   );
+}
+
+export function harmonySemanticsCompatibleWithIdentity(
+  identity: ChordIdentity,
+  semantics: HarmonySemantics,
+  projectKey: KeyLike,
+) {
+  const signatures = new Set<string>();
+  for (const interpretation of semantics.interpretations) {
+    const single: HarmonySemantics = {
+      ...semantics,
+      interpretations: [interpretation],
+      primaryInterpretationId: interpretation.id,
+    };
+    const draft = chordDraftFromIdentity(identity, single);
+    if (!chordIdentityEquals(resolveChordIdentity(draft, projectKey), identity))
+      return false;
+    const localKey = interpretation.localKey ?? {
+      tonic: projectKey.tonic,
+      mode: projectKey.mode,
+    };
+    const signature = JSON.stringify({
+      localKey,
+      degree: interpretation.degree,
+      degreeAlteration: interpretation.degreeAlteration,
+      appliedTarget: interpretation.appliedTarget,
+      designation: interpretation.designation,
+    });
+    if (signatures.has(signature)) return false;
+    signatures.add(signature);
+  }
+  return true;
 }

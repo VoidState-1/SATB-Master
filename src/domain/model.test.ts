@@ -110,14 +110,18 @@ function createV2Fixture() {
   });
   legacy.chordTrack = {
     ...project.chordTrack,
+    displayMode: "both",
     regions: project.chordTrack.regions.map((region) => ({
       id: region.id,
       startTick: region.startTick,
       durationTicks: region.durationTicks,
       analysis: {
-        degree: region.semantics!.degree,
-        accidental: region.semantics!.degreeAlteration,
-        quality: region.identity.quality,
+        degree: region.semantics!.interpretations[0].degree,
+        accidental: region.semantics!.interpretations[0].degreeAlteration,
+        quality:
+          region.identity.structure.kind === "tertian"
+            ? region.identity.structure.quality
+            : "major",
         inversion: 0,
       },
       locked: region.locked,
@@ -234,6 +238,43 @@ describe("工程文件校验", () => {
     expect(validateProject(project)).toBe(false);
   });
 
+  it("拒绝重复解释 ID、缺失主解释和无效和弦结构", () => {
+    const project = createEmptyProject();
+    project.chordTrack.regions.push(
+      createChordRegion(
+        project,
+        0,
+        PPQ,
+        {
+          degree: 1,
+          degreeAlteration: 0,
+          quality: "major",
+          inversion: 0,
+          source: "manual",
+          confidence: "certain",
+        },
+        "semantic-validation",
+      ),
+    );
+    const duplicate = JSON.parse(JSON.stringify(project));
+    duplicate.chordTrack.regions[0].semantics.interpretations.push({
+      ...duplicate.chordTrack.regions[0].semantics.interpretations[0],
+    });
+    expect(validateProject(duplicate)).toBe(false);
+
+    const missingPrimary = JSON.parse(JSON.stringify(project));
+    missingPrimary.chordTrack.regions[0].semantics.primaryInterpretationId =
+      "missing";
+    expect(validateProject(missingPrimary)).toBe(false);
+
+    const invalidStructure = JSON.parse(JSON.stringify(project));
+    invalidStructure.chordTrack.regions[0].identity.structure = {
+      kind: "augmented-sixth",
+      variant: "unknown",
+    };
+    expect(validateProject(invalidStructure)).toBe(false);
+  });
+
   it("调号改变后可统一重算功能和弦实体", () => {
     const project = createEmptyProject();
     project.chordTrack.regions.push(
@@ -286,6 +327,7 @@ describe("schema v2 -> v3 迁移", () => {
     expect(validateProject(migrated)).toBe(true);
     expect(migrated?.auxiliaryTracks).toEqual([]);
     expect(migrated?.ruleProfile).toEqual({ builtin: {}, external: [] });
+    expect(migrated?.chordTrack.displayMode).toBe("roman-absolute");
     expect(migrated?.loop).toEqual(legacy.loop);
     expect(migrated?.exercise).toEqual(legacy.exercise);
     expect(migrated?.audio).toEqual(legacy.audio);
@@ -318,13 +360,21 @@ describe("schema v2 -> v3 迁移", () => {
       durationTicks: PPQ * 2,
       identity: {
         root: { step: "C", alter: 0 },
-        quality: "major",
+        structure: {
+          kind: "tertian",
+          quality: "major",
+        },
       },
       semantics: {
-        degree: 1,
-        degreeAlteration: 0,
-        source: "manual",
-      confidence: "certain",
+        primaryInterpretationId: "primary",
+        interpretations: [
+          {
+            degree: 1,
+            degreeAlteration: 0,
+            source: "manual",
+            confidence: "certain",
+          },
+        ],
       },
     });
   });
