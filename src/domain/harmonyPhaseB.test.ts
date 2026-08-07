@@ -118,7 +118,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
     ]);
 
     const diagnostic = checkHarmony(project).diagnostics.find(
-      (item) => item.ruleId === "chord-membership",
+      (item) => item.ruleId === "chord.unclassified-nonchord-tone",
     );
     expect(diagnostic?.noteIds).toEqual(["wrong-g-flat"]);
     expect(diagnostic?.evidence.some((item) => item.value.includes("G♭"))).toBe(
@@ -141,7 +141,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
 
     expect(
       checkHarmony(project).diagnostics.some(
-        (item) => item.ruleId === "chord-membership",
+        (item) => item.ruleId === "chord.unclassified-nonchord-tone",
       ),
     ).toBe(false);
   });
@@ -156,8 +156,13 @@ describe("Phase B v1 书写与和弦金样本", () => {
         note("to", PPQ, PPQ, to),
       ]);
 
+      const ruleId = ["增4度", "减5度"].includes(expectedLabel)
+        ? "melody.tritone"
+        : expectedLabel.startsWith("减")
+          ? "melody.diminished-interval"
+          : "melody.augmented-interval";
       const diagnostic = checkHarmony(project).diagnostics.find(
-        (item) => item.ruleId === "augmented-diminished-interval",
+        (item) => item.ruleId === ruleId,
       );
       expect(
         diagnostic?.evidence.find((item) => item.kind === "interval")?.value,
@@ -186,7 +191,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
 
     expect(
       checkHarmony(project).diagnostics.some(
-        (item) => item.ruleId === "augmented-diminished-interval",
+        (item) => item.ruleId === "melody.augmented-interval",
       ),
     ).toBe(false);
   });
@@ -202,9 +207,9 @@ describe("Phase B v1 书写与和弦金样本", () => {
     ]);
     expect(
       checkHarmony(simultaneous).diagnostics.find(
-        (item) => item.ruleId === "cross-relation",
+        (item) => item.ruleId === "voice-leading.cross-relation-simultaneous",
       )?.messageKey,
-    ).toBe("cross-relation.simultaneous");
+    ).toBe("voice-leading.cross-relation-simultaneous.simultaneous");
 
     const successive = createEmptyProject();
     successive.lengthTicks = PPQ * 2;
@@ -216,9 +221,9 @@ describe("Phase B v1 书写与和弦金样本", () => {
     ]);
     expect(
       checkHarmony(successive).diagnostics.find(
-        (item) => item.ruleId === "cross-relation",
+        (item) => item.ruleId === "voice-leading.cross-relation-successive",
       )?.messageKey,
-    ).toBe("cross-relation.successive");
+    ).toBe("voice-leading.cross-relation-successive.successive");
   });
 
   it("换调边界不报告先后对斜", () => {
@@ -239,7 +244,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
 
     expect(
       checkHarmony(project).diagnostics.some(
-        (item) => item.ruleId === "cross-relation",
+        (item) => item.ruleId === "voice-leading.cross-relation-successive",
       ),
     ).toBe(false);
   });
@@ -262,7 +267,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
 
     expect(
       checkHarmony(project).diagnostics.some(
-        (item) => item.ruleId === "leading-tone-resolution",
+        (item) => item.ruleId === "resolution.leading-tone",
       ),
     ).toBe(false);
   });
@@ -291,7 +296,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
 
     expect(
       checkHarmony(project).diagnostics.some(
-        (item) => item.ruleId === "chord-seventh-resolution",
+        (item) => item.ruleId === "resolution.chord-seventh",
       ),
     ).toBe(false);
   });
@@ -327,7 +332,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
     ]);
 
     const result = checkHarmony(project).diagnostics.find(
-      (item) => item.ruleId === "chord-seventh-doubling",
+      (item) => item.ruleId === "chord.doubled-seventh",
     );
     expect(result?.chordIds).toEqual(["g7"]);
     expect(result?.noteIds).toEqual(["a-f", "s-f"]);
@@ -349,29 +354,30 @@ describe("Phase B v1 书写与和弦金样本", () => {
     expect(result.skippedRules).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "functional-retrogression",
+          ruleId: "function.retrogression",
           reason: "missing-semantics",
         }),
       ]),
     );
   });
 
-  it("歧义功能不直接套用功能进行规则", () => {
+  it("精确 appliedTarget 不再被旧粗分类误判为歧义", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ;
     const ambiguous = fSharpMajorRegion(true);
     ambiguous.semantics = semantics(2, { appliedTarget: 5 });
     project.chordTrack.regions = [ambiguous];
 
-    expect(checkHarmony(project).skippedRules).toEqual(
+    const result = checkHarmony(project);
+    expect(result.skippedRules).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "functional-retrogression",
+          ruleId: "function.retrogression",
           reason: "ambiguous-semantics",
-          partial: false,
         }),
       ]),
     );
+    expect(result.diagnostics.some((item) => item.ruleId === "function.retrogression")).toBe(false);
   });
 
   it("终止四六必须连续进入属功能", () => {
@@ -406,7 +412,7 @@ describe("Phase B v1 书写与和弦金样本", () => {
 
     expect(
       checkHarmony(project).diagnostics.find(
-        (item) => item.ruleId === "cadential64-resolution",
+        (item) => item.ruleId === "function.cadential64-target",
       )?.chordIds,
     ).toEqual(["cadential-64", "tonic"]);
   });
@@ -429,12 +435,12 @@ describe("Phase B v1 书写与和弦金样本", () => {
     ]);
     const first = checkHarmony(project).diagnostics.filter(
       (item) =>
-        item.ruleId === "chord-membership" &&
+        item.ruleId === "chord.unclassified-nonchord-tone" &&
         item.noteIds.includes("held-g-flat"),
     );
     const second = checkHarmony(project).diagnostics.filter(
       (item) =>
-        item.ruleId === "chord-membership" &&
+        item.ruleId === "chord.unclassified-nonchord-tone" &&
         item.noteIds.includes("held-g-flat"),
     );
     expect(first).toHaveLength(1);
@@ -446,10 +452,10 @@ describe("Phase B v1 书写与和弦金样本", () => {
 describe("Phase B RuleScheduler", () => {
   it("不同有状态规则之间不共享信封", async () => {
     const firstMetadata = HARMONY_RULE_DEFINITIONS.find(
-      (definition) => definition.id === "voice-range",
+      (definition) => definition.id === "voice.range",
     )!;
     const secondMetadata = HARMONY_RULE_DEFINITIONS.find(
-      (definition) => definition.id === "voice-note-overlap",
+      (definition) => definition.id === "voice.polyphonic-overlap",
     )!;
     const first: RuleDefinition = {
       ...firstMetadata,
@@ -461,7 +467,7 @@ describe("Phase B RuleScheduler", () => {
             : [
                 {
                   id: "private-state",
-                  ownerRuleId: "voice-range",
+                  ownerRuleId: "voice.range",
                   createdAt: {
                     tick: context.slice.tick,
                     sliceIndex: context.sliceIndex,
@@ -493,7 +499,7 @@ describe("Phase B RuleScheduler", () => {
       releaseFirst = resolve;
     });
     const base = BUILTIN_HARMONY_RULES.find(
-      (definition) => definition.id === "voice-range",
+      (definition) => definition.id === "voice.range",
     )!;
     const delayed: RuleDefinition = {
       ...base,
@@ -553,7 +559,7 @@ describe("Phase B RuleScheduler", () => {
 
   it("单条规则异常不会中断其余规则", async () => {
     const base = BUILTIN_HARMONY_RULES.find(
-      (definition) => definition.id === "voice-range",
+      (definition) => definition.id === "voice.range",
     )!;
     const failing: RuleDefinition = {
       ...base,
@@ -571,7 +577,7 @@ describe("Phase B RuleScheduler", () => {
     expect(result).toMatchObject({ superseded: false, diagnostics: [] });
     expect(result.skippedRules).toEqual([
       expect.objectContaining({
-        ruleId: "voice-range",
+        ruleId: "voice.range",
         reason: "rule-error",
       }),
     ]);

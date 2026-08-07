@@ -1,18 +1,19 @@
 # 和声语义与规则引擎
 
-本文说明内置和声检查从工程快照到诊断的标准处理流程，以及切片、`HarmonySpan` 和规则私有状态的维护方式。音高与和弦持久模型见 [data-model.md](./data-model.md)，外置脚本契约见 [external-rules.md](./external-rules.md)。
+本文说明内置和声检查从工程快照到最终诊断的标准处理流程，以及切片、`HarmonySpan`、精确连接、规则私有状态、适用性和诊断仲裁的职责边界。音高与和弦持久化模型见 [data-model.md](./data-model.md)，外置脚本契约见 [external-rules.md](./external-rules.md)。
 
 ## 1. 术语边界
 
-项目曾用“功能分析”泛指和弦用途，但传统和声学中的“功能”本身通常特指 T/S/D 功能体系。为避免歧义，当前文档和代码按以下术语区分：
+传统和声中的“功能”特指 T/S/D 功能体系。代码中不再用“功能分析”泛指和弦用途，也不保留粗粒度 `FunctionalClass` 兼容层：
 
-- **和弦实体（identity）：** 根音、类别、转位和客观构成。
-- **和声语义（semantics）：** 调内级数、副属目标、混合、终止角色、人工解释和置信度。
-- **功能标记（functional designation）：** 斯波索宾 T/S/D 体系及主次功能亲缘。
-- **功能类别（functional class）：** tonic、predominant、dominant 等旧检查器使用的粗粒度兼容分类。
-- **语义分析流水线：** 从工程建立上下文并供规则查询的整体过程。
+- **和弦实体（identity）：** 根音、结构、构成音、低音与转位。
+- **和声语义（semantics）：** 局部调性、级数、离调目标、混合、终止角色、持续低音和一个或两个解释。
+- **功能标记（functional designation）：** 斯波索宾 T/S/D 体系的结构化标记。
+- **跨度（span）：** 连续且实体、调性和语义相同的一段和声。
+- **连接（connection）：** 相邻 span 之间基于精确解释得到的关系和证据。
+- **适用性（applicability）：** 某条规则面对本次上下文时应严格执行、降级、豁免或延后。
 
-语义字段提供证据，不应成为互相覆盖的单一“最终标签”。规则需要明确声明自己依赖哪些字段，在歧义时跳过或降低置信度。
+语义字段是证据，不是互相覆盖的单一最终标签。规则必须声明依赖，面对缺失或歧义时保守处理。
 
 ## 2. 总体流水线
 
@@ -20,35 +21,34 @@
 flowchart LR
   P["ProjectDocument"] --> F["冻结 ProjectSnapshot"]
   F --> S["AnalysisSlice"]
-  S --> T["MelodyTransition / SliceTransition"]
-  F --> C["ChordProgression"]
+  S --> T["旋律与切片转换"]
   S --> H["HarmonySpan"]
-  T --> R["RuleScheduler"]
-  C --> R
-  H --> R
-  R --> V["校验、稳定 ID、合并"]
-  V --> D["HarmonyDiagnostic + SkippedRule"]
+  H --> C["HarmonyConnectionAssessment"]
+  T --> X["共享事实"]
+  C --> R["规则运行时"]
+  X --> R
+  R --> A["RuleApplicabilityPlanner"]
+  A --> V["校验与严重程度"]
+  V --> D["DiagnosticArbiter"]
+  D --> O["HarmonyDiagnostic + SkippedRule"]
 ```
 
-源码入口：
+主要源码入口：
 
-- [`harmonyAnalysis.ts`](../src/domain/harmonyAnalysis.ts)：快照、切片、转换、跨度和查询。
-- [`harmonyRuntime.ts`](../src/domain/harmonyRuntime.ts)：规则定义、状态信封、调度和诊断收敛。
-- [`harmonyRules.ts`](../src/domain/harmonyRules.ts)：规则目录与内置实现。
-- [`externalRules.ts`](../src/domain/externalRules.ts)：裁剪后的外置上下文与边界验证。
+- [`harmonyAnalysis.ts`](../src/domain/harmonyAnalysis.ts)：冻结快照、切片、转换、span、索引和失效范围。
+- [`rules/sharedFacts.ts`](../src/domain/rules/sharedFacts.ts)：书写音程、声部对、低音运动和和弦成员事实。
+- [`rules/connector.ts`](../src/domain/rules/connector.ts)：精确 span 连接。
+- [`harmonyRuntime.ts`](../src/domain/harmonyRuntime.ts)：无状态/有状态规则调度与结果收敛。
+- [`rules/applicability.ts`](../src/domain/rules/applicability.ts)：特例上下文折叠。
+- [`rules/diagnosticArbiter.ts`](../src/domain/rules/diagnosticArbiter.ts)：稳定根因键、合并与父子覆盖。
+- [`harmonyRules.ts`](../src/domain/harmonyRules.ts)：当前规则实现入口。
+- [`rules/catalog.ts`](../src/domain/rules/catalog.ts)：81 条规则目录、配置声明和实现状态。
 
-分析输入是指定 revision 的不可变工程快照。规则不得修复、标注或修改工程，只能返回诊断或结构化跳过原因。
+分析输入是指定 revision 的不可变快照。规则不得修改工程，只能返回原始诊断或结构化 skip。
 
-## 3. `AnalysisSlice`
+## 3. 时间切片
 
-切片是“在一段连续时间内，SATB 活跃音符、调号和和弦上下文不变”的最小分析单位。边界通常来自：
-
-- 任一 SATB 音符开始或结束。
-- 和弦区域开始或结束。
-- 调号变化。
-- 工程起止。
-
-每个切片包含：
+`AnalysisSlice` 是一段 SATB 活跃音符、调号和和弦上下文均不变化的半开时间区间：
 
 ```ts
 interface AnalysisSlice {
@@ -56,7 +56,7 @@ interface AnalysisSlice {
   tick: number;
   endTick: number;
   notes: Partial<Record<VoiceId, AnalysisNote>>;
-  attackVoiceIds: VoiceId[];
+  attackVoiceIds: readonly VoiceId[];
   key: AnalysisKey;
   chord?: AnalysisChord;
   completeSatb: boolean;
@@ -64,313 +64,181 @@ interface AnalysisSlice {
 }
 ```
 
-`attackVoiceIds` 区分本切片真正起奏的声部和从前一切片延续的音符。这个区别对平行进行、延迟解决和声切分非常重要：切片变化不一定代表四个声部都产生了新动作。
+边界来自 SATB 音符起止、和弦区域起止、调号变化和工程起止。切片反映持续状态，`attackVoiceIds` 区分本 tick 新起奏与延音；规则不能把每个切片都当成新音。
 
-切片是有序数组，前后关系是链式可遍历的，不局限于只看相邻一项。查询 API 包括：
+`MelodyTransition` 连接同一声部的连续起奏音，包含休止连续性、调性/和声是否相同及书写音程。`SliceTransition` 连接相邻切片，记录变化声部、连续性和上下文关系。
 
-- `previousSlice` / `nextSlice`
-- `walkSlices`
-- `previousAttack` / `nextAttack`
+## 4. HarmonySpan
 
-需要跨多个切片寻找下一次真实起奏时，应调用 attack 查询，而不是简单使用 `sliceIndex + 1`。
+多个相邻和弦区域满足以下条件时聚合为一个 span：
 
-## 4. 转换视图
-
-为了避免每条规则重复拼接上下文，分析层预先建立三种转换。
-
-### 4.1 `MelodyTransition`
-
-按声部连接相邻音符，提供：
-
-- 前后音符和声部。
-- 时间是否连续。
-- 调号是否相同。
-- 是否仍属同一和声。
-- 使用书写拼写计算的音程。
-
-旋律跳进、增减音程、导音解决等规则优先使用它。
-
-### 4.2 `SliceTransition`
-
-连接相邻切片，记录连续性、调号、同和声判断和实际变化的声部。平行五/八度、隐伏进行、声部超越等需要同时观察多个声部的规则使用它。
-
-### 4.3 `ChordProgression`
-
-连接相邻和弦区域，提供前后和弦、连续性、调号、同和声判断和旧功能类别。当前逆功能进行、副属目标和终止四六仍使用该兼容视图；新斯波索宾 designation 尚未接入连接规则。
-
-转换对象不是新的持久化事实，只是从当前工程快照计算的索引。
-
-## 5. `HarmonySpan`
-
-连续同和弦转换不能把每个和弦区域都当成独立功能事件。例如同一主和弦在多个转位、旋律位置和排列中连续变化时，导音或七音可能在整个同和弦段结束后才解决。
-
-`HarmonySpan` 将满足以下条件的相邻和弦区域聚合：
-
-- 时间连续。
-- 调号相同。
-- 和弦实体构成相同；低音/转位变化不单独切断跨度。
-- 完整语义上下文相同，包括所有确认解释、目标、借用、四六角色与持续低音。
-
-主要字段：
+- 时间首尾相接；
+- 局部调性相同；
+- 忽略低音后仍为同一和弦实体；
+- 和声语义上下文一致。
 
 ```ts
 interface HarmonySpan {
   id: string;
   fromTick: number;
   toTick: number;
-  regionIds: string[];
-  sliceIndices: number[];
+  regionIds: readonly string[];
+  sliceIndices: readonly number[];
   identityKey: string;
   semantics?: HarmonySemantics;
-  functionalClass: FunctionalClass;
   status: "complete" | "ambiguous";
   entryTransitionIndex?: number;
   exitTransitionIndex?: number;
 }
 ```
 
-查询 API：
+这使一个、两个或任意多个连续同和弦转换拥有同一处理方式。休止、时间缺口、调性变化、实体变化或语义解释变化都会断开 span。`sliceSpanIds` 和 `chordSpanIds` 提供稳定查询，规则不应自行按显示名称重新聚合。
 
-- `harmonySpanAtTick`
-- `harmonySpanAtSlice`
-- `walkSpans`
+span 只表达区段事实，不承担“导音必须上行”等规则结论。解决要求属于具体规则的私有状态。
 
-由此，规则可以选择合适尺度：静态音域看一个切片，连续同和弦解决看一个 span，和声切分或长程目标可以跨多个 span。
+## 5. 精确和弦连接
 
-### 5.1 为什么不只比较显示名称
+`buildHarmonyConnections` 只连接时间顺序相邻的 span，并产生：
 
-罗马数字文本可能因本地调性、人工标注或显示模式不同而改变，也可能掩盖转位和拼写差异。跨度使用标准化 identity/semantics 键比较，不能用 UI 标签相等代替。
+```ts
+interface HarmonyConnectionAssessment {
+  previousSpanId: string;
+  currentSpanId: string;
+  previousInterpretationId?: string;
+  currentInterpretationId?: string;
+  relation:
+    | "same-harmony"
+    | "tonic-departure"
+    | "predominant-to-dominant"
+    | "dominant-to-tonic"
+    | "deceptive"
+    | "applied-target"
+    | "double-dominant-target"
+    | "cadential64-target"
+    | "retrogression"
+    | "pivot-reinterpretation"
+    | "unknown";
+  contiguous: boolean;
+  sameKey: boolean;
+  targetMatched?: boolean;
+  exceptionTags: readonly RuleExceptionContext[];
+  evidence: readonly ConnectionEvidence[];
+  confidence: "certain" | "probable" | "ambiguous" | "unknown";
+}
+```
 
-### 5.2 何时必须切断
+连接器读取主要 `HarmonyInterpretation`、`FunctionalDesignation`、离调目标、终止角色和持续低音上下文。它可以判断 D 到 T、S 到 D、离调属目标、重属目标、K46 目标、阻碍进行、逆功能进行和共同和弦重新解释。
 
-调号改变、实体构成改变、语义目标改变、时间不连续或语义从确定变为歧义时需要切断。若未来增加临时化和弦音，应明确它属于构成变化还是音符角色，不能为通过个别规则随意扩大 span。
+连接器提供“发生了什么”的结构化事实，不决定某一规则是否报警。不同教材口径通过规则严重程度、配置和特例策略表达，不能重新引入一个粗粒度枚举替代精确解释。
 
-### 5.3 当前功能体系兼容边界
+## 6. 共享事实
 
-本轮只升级数据、编辑与显示。旧检查器遇到 D9、增六和弦、双解释共同和弦或持续低音上下文时跳过其无法可靠理解的和弦规则，不把粗粒度 `FunctionalClass` 当成新语义。下一轮规则重构应直接消费精确 interpretation/designation/target，并删除临时 legacy projection。
+跨规则重复使用的低层事实集中计算：
 
-## 6. 规则私有状态 `RuleStateEnvelope`
+- `voicePairTransitionFacts`：六组声部对的前后书写音程、上下运动、同向性、外/内声部身份和低音运动。
+- `bassMotionFact`：按字母级数与实际方向区分上行级进、下行级进、保持和其他运动。
+- `chordMemberFacts`：每个活跃音符是否属于当前 `ChordIdentity`，以及对应构成音索引。
 
-有些判断在创建证据时还不能得出结果，例如导音、和弦七音、副属目标和挂留音。引擎提供一个规则私有、沿切片链传递的 JSON 容器：
+平行五八度、不等五度、隐伏进行和对斜等规则必须共享书写音高口径，避免各自按 MIDI 半音重新推导而产生互相矛盾的结果。
+
+## 7. 规则目录与实现
+
+设计清单由 [`harmony-rule-catalog.md`](../DesignDocs/harmony-rule-catalog.md) 维护，并通过 [`generate-rule-catalog.mjs`](../scripts/generate-rule-catalog.mjs) 生成静态目录。`HarmonyRuleDefinition` 包含稳定 ID、目录号、说明、理由、分组、默认严重程度、依赖、配置版本、声明式 options、特例 context、父规则和 `implemented` 状态。
+
+目录条目不等于可执行实现。设置页会显示所有 81 条规则，但 `implemented: false` 的条目明确标记“尚未实现”并禁用执行配置。只有同时存在规则定义和实现的条目进入调度。
+
+## 8. 规则私有状态
+
+跨切片规则使用通用 `RuleStateEnvelope`：
 
 ```ts
 interface RuleStateEnvelope<T extends JsonValue = JsonValue> {
   id: string;
   ownerRuleId: string;
-  createdAt: { tick: number; sliceIndex: number };
-  subjectRefs?: {
-    voiceIds?: VoiceId[];
-    noteIds?: string[];
-    chordIds?: string[];
-    spanIds?: string[];
+  createdAt: { tick: number; sliceIndex: number; spanId?: string };
+  subjectRefs: {
+    voiceIds: readonly VoiceId[];
+    noteIds: readonly string[];
+    chordIds: readonly string[];
+    spanIds: readonly string[];
   };
   payload: T;
 }
 ```
 
-核心只处理横向传递和安全约束：
+每条规则只能读取并返回自己的状态。`payload` 是规则私有 JSON；宿主只校验所有权、引用、时间、数量和大小，不解释“导音”“七音”“挂留”等类型，也不决定何时满足。典型流程是：
 
-- `ownerRuleId` 必须是当前规则，规则之间不能共享可变状态。
-- 创建位置和引用必须指向当前分析中存在的对象。
-- 每条规则最多保留 512 个状态。
-- 单个 payload JSON 序列化后最多 16 KiB。
-- payload 必须是 JSON 值，不能包含函数、循环引用或运行时对象。
-
-核心**不解释** payload 是导音、七音或什么“义务”，也不规定统一 deadline/status。具体规则决定：
-
-- 何时创建状态。
-- 同和弦转换时继续保留还是更新。
-- 哪个后续起奏满足条件。
-- 遇到休止、换调、span 退出或工程结束时如何结束。
-- 是发出诊断、结构化 skip，还是继续等待。
-
-这种设计让状态容器保持通用，避免一套僵硬的 `ResolutionObligation` 枚举限制未来规则，同时仍提供统一的隔离、引用和资源上限。
-
-## 7. 有状态规则调度
-
-有状态规则实现：
-
-```ts
-process(step, incoming, config) -> diagnostics + skipped + outgoing
-finalize?(lastStep, remaining, config) -> diagnostics + skipped
+```text
+process 当前 step
+-> 检查 incoming
+-> 满足、保留或报告后删除
+-> 根据当前证据创建 outgoing
+-> 工程末尾由 finalize 处理剩余状态
 ```
 
-每个 `RuleStepContext` 提供当前切片、前一切片、转换、当前 span，以及是否为 span 起止。标准流程：
+这种“包裹盒”允许导音、七音、延迟解决、和声切分等规则各自定义结束条件，同时共享相同横向传递协议。
 
-1. 调度器按切片顺序调用 `process`。
-2. 仅把该规则上一步输出作为下一步 `incoming`。
-3. 校验 outgoing 所有者、引用、数量与 payload 大小。
-4. 工程结束后调用 `finalize` 处理未决状态。
+## 9. 适用性计划
 
-当前使用状态信封的内置规则：
+规则在原始诊断上附加自己支持的 `exceptionContexts`。`planRuleApplicability` 将目录默认策略、工程覆盖和本次 context 折叠为：
 
-- `leading-tone-resolution`
-- `chord-seventh-resolution`
-- `secondary-dominant-resolution`
+- `strict`：正常报告；
+- `downgraded`：严重程度降低一级；
+- `skip`：按明确豁免不报告；
+- `deferred`：上下文不足或歧义无法形成可靠结论。
 
-导音和七音的证据链在声部休止时中断。不能穿过休止把更远的音误当成解决。同和弦 span 内的转换则可以延迟判定，直到真正离开该和声。
+未在规则定义中声明支持的 context 会被过滤。`same-harmony`、`voice-exchange`、`bass-step-up`、`pedal-point` 或 `modulation` 不会成为全局万能豁免，只有具体规则选择支持后才生效。
 
-## 8. 规则需求与结构化跳过
+## 10. 校验与诊断仲裁
 
-每条规则定义 `requires` 和 `dependencyScope`。
+原始诊断先验证范围、对象引用、消息、置信度和证据，再由宿主注入工程严重程度并生成稳定根因键。最终仲裁包含：
 
-可用需求包括书写音高、和弦、完整 SATB 和语义等。调度器和规则据此区分“没有错误”与“无法判断”。无法判断时返回：
+1. 同规则、同根因、同对象且时间相接的诊断合并为范围。
+2. 子规则与父规则命中同对象、同时间时只保留更具体的子规则。
+3. 结果按时间、严重程度和稳定 ID 排序，规则注册顺序不影响输出。
 
-```ts
-type RuleSkipReason =
-  | "no-chords"
-  | "missing-semantics"
-  | "ambiguous-semantics"
-  | "insufficient-context"
-  | "rule-error";
-```
+稳定根因键由规则 ID、规范对象范围、时间、证据 ID 与 `rootCauseKey/messageKey` 组成。自然语言消息不应承担去重身份。
 
-skip 的意义：
+和弦整体问题必须归属 `chordIds`，避免在四个音符上重复显示；旋律和声部进行问题才归属对应音符。UI 根据对象引用显示悬停诊断与证据。
 
-- 没有和弦轨时，依赖和弦的规则不是自动通过。
-- 人工/自动语义有歧义时，不能武断发出功能进行错误。
-- 工程结尾无法观察解决时，可以标为上下文不足或由规则明确决定。
-- 某条规则异常不应让全部检查失败。
+## 11. 工程 RuleProfile
 
-`partial` 表示规则只完成了部分范围的判断。UI 可以用它解释覆盖不足，不能把 skip 伪装成普通诊断。
-
-## 9. 诊断契约
-
-规则返回的诊断经 runtime 验证后形成：
+规则设置是工程数据，而不是应用 localStorage 中的运行时真相源：
 
 ```ts
-interface HarmonyDiagnostic {
-  id: string;
-  ruleId: string;
-  source: "builtin" | "external";
-  severity: "error" | "warning" | "suggestion";
-  tick: number;
-  endTick: number;
-  voiceIds: VoiceId[];
-  noteIds: string[];
-  chordIds: string[];
+interface RuleProfile {
+  profileVersion: 1;
   title: string;
-  message: string;
-  messageKey: string;
-  params: Record<string, string | number | boolean>;
-  evidence: DiagnosticEvidence[];
-  confidence: number;
+  shared: SharedHarmonySettings;
+  builtin: Record<string, RuleInstanceSettings>;
+  external: ExternalRuleReferenceV3[];
 }
 ```
 
-维护约束：
+每个规则实例保存 `severity`、`configVersion`、规范化配置和特例覆盖。`shared` 当前包含四声部建议音域及严格四声部织体开关。工程历史提交负责撤销/重做，保存与恢复直接持久化完整 profile。
 
-- 单规则最多 512 项诊断。
-- 消息最多 600 字，evidence 最多 16 项。
-- 所有 tick 范围和对象引用必须有效。
-- 稳定 ID 由 rule/messageKey/tick 和排序后的对象引用生成。
-- 同一根因的连续范围在收敛阶段合并。
-- 诊断严重程度来自工程规则配置，规则实现不应硬编码用户选择。
+应用级 localStorage 只保存“新建工程默认模板”，不会静默覆盖当前工程。`.satb-rule-profile.json` 用于便携导入导出：导出展开所有已知内置规则；导入报告新增、变化、移除、未知规则、缺失外置包和修复键，并通过一次历史提交应用。
 
-和弦整体错误应引用 `chordIds`，不要为了显示方便复制到范围内每个音符。例如“和弦构成音不完整”只标注和弦区域。真正涉及单个声部时才填写 note/voice 引用。悬停 UI 会按引用聚合一个对象上的全部诊断。
+## 12. 运行与并发
 
-## 10. 内置规则目录
+内置分析与外置规则请求都携带 revision。旧请求晚返回时标记为 superseded，不能覆盖新工程结果。外置脚本在 Worker + QuickJS 中隔离；其失败记录在独立 failure 列表，不能清空内置诊断。
 
-规则目录以 [`HARMONY_RULE_DEFINITIONS`](../src/domain/harmonyRules.ts) 为唯一来源。下表记录当前契约；默认严重程度可以在设置中改为 `off`。
+`AnalysisInvalidationRange` 已记录受影响 tick 与依赖 scope，为后续增量失效和缓存提供契约。当前不要假设完整的 5,000 音符性能目标已经完成，性能基准和桌面 E2E 仍属于收敛阶段。
 
-### 10.1 声部与音域
+## 13. 新增规则流程
 
-| ID | 默认 | 依赖 | 范围 | 作用 |
-| --- | --- | --- | --- | --- |
-| `voice-range` | warning | written-pitches | note | 检查各声部建议音域 |
-| `voice-note-overlap` | error | written-pitches | note | 检查同一 SATB 声部同时发出多个音高 |
-| `voice-crossing` | error | written-pitches | slice | 检查相邻声部的静态交叉 |
-| `upper-spacing` | warning | written-pitches | slice | 检查 S-A、A-T 是否超过八度 |
-| `voice-overlap` | warning | written-pitches | slice | 检查进入相邻声部前一位置；同和弦转换放宽 |
+1. 在设计清单中确定稳定目录号、ID、默认严重程度、规则口径和反例。
+2. 重新运行目录生成器，不手改 `catalog.generated.ts`。
+3. 在 `catalog.ts` 声明 options、依赖、父规则和支持的特例 context。
+4. 使用共享 facts、span 和 connection 实现规则；跨时间结论使用私有状态。
+5. 让诊断引用正确对象，提供稳定 messageKey/rootCauseKey 和结构化证据。
+6. 加入最小违规、合法邻例、同和弦、大小调、书写等音、歧义和配置测试。
+7. 只有实现与金样本完成后才把条目标记为 `implemented`。
 
-### 10.2 旋律进行
+## 14. 当前完成边界
 
-| ID | 默认 | 依赖 | 范围 | 作用 |
-| --- | --- | --- | --- | --- |
-| `melodic-leap-over-octave` | error | written-pitches | note | 检查超过八度的跳进 |
-| `melodic-large-leap` | warning | written-pitches | note | 检查不同和弦间大于纯五度且不超过八度的跳进 |
-| `melodic-tritone` | warning | written-pitches | note | 检查不同和弦间三全音跳进 |
-| `leading-tone-resolution` | warning | written-pitches | note | 越过同和弦延续跟踪导音是否上行解决 |
-| `augmented-diminished-interval` | warning | written-pitches | note | 按书写音程检查增减音程，并放宽同和弦分解跳进 |
+规则目录、工程 profile、共享事实、span、连接器、适用性、仲裁、设置页和外置 API v3 已落地。Phase E 当前已启用 D.10-D.13、E.3-E.5、G.5、H.9-H.12 与 K.4：包括 D9/增六配置、属九/方向性变音/增六解决、人工阻碍进行、三种增六连接和同主大小调借用来源。
 
-### 10.3 声部间进行
+G.6、H.1-H.8、J.1-J.2、K.2-K.3 仍保持 `implemented: false`。它们分别缺少“所有解释候选的合法性比较”、按转位校准的功能和弦连接金样本、变拍号重音层级，以及人工转调/进入侧/离开侧标记。不得用当前主要解释、`beatIndex === 0` 或局部调外音数量代替这些前置事实。
 
-| ID | 默认 | 依赖 | 范围 | 作用 |
-| --- | --- | --- | --- | --- |
-| `cross-relation` | suggestion | written-pitches | phrase | 检查相邻窗口的同时或先后对斜 |
-| `parallel-fifths` | error | written-pitches | slice | 检查同向连续纯五度 |
-| `parallel-octaves` | error | written-pitches | slice | 检查同向连续八度或同度 |
-| `hidden-perfect-interval` | warning | written-pitches | slice | 检查不同和弦间外声部同向跳到纯五/八度 |
-
-### 10.4 和弦与功能
-
-| ID | 默认 | 依赖 | 范围 | 作用 |
-| --- | --- | --- | --- | --- |
-| `chord-membership` | warning | written-pitches, chords | chord | 检查未人工标注角色的和弦外音 |
-| `chord-completeness` | warning | written-pitches, chords, complete-satb | chord | 在同和弦转换结束处检查构成音完整性 |
-| `chord-inversion` | error | written-pitches, chords | chord | 检查男低音与转位标记 |
-| `leading-tone-doubling` | error | written-pitches, chords, complete-satb | chord | 在 span 结束处检查重复调内导音 |
-| `chord-seventh-resolution` | warning | written-pitches, chords | phrase | 跟踪七音是否级进下行解决 |
-| `chord-seventh-doubling` | error | written-pitches, chords, complete-satb | chord | 在 span 结束处检查重复和弦七音 |
-| `functional-retrogression` | warning | chords, semantics | phrase | 检查斯波索宾基础序进中的 D -> S |
-| `secondary-dominant-resolution` | warning | chords, semantics | phrase | 跟踪副属和弦是否进入标注目标 |
-| `cadential64-resolution` | warning | chords, semantics | phrase | 检查终止四六是否连续进入属功能和弦 |
-
-## 11. 同和弦转换中的规则策略
-
-同和弦转换允许放宽部分不同和弦连接规则，但不是取消全部声部规范。当前规则体系按 `sameHarmony` 和 `HarmonySpan` 处理：
-
-通常放宽：
-
-- 较大旋律跳进和分解和弦式连续跳进。
-- 隐伏五度/八度。
-- 声部超越。
-- span 中间切片的构成音完整、导音/七音重复等暂时状态。
-- 导音、七音等解决义务延迟到真正离开 span 后判断。
-
-仍然检查：
-
-- 平行纯五度和八度/同度。
-- 同一切片的声部交叉。
-- 声部音域。
-- 上三声部静态间距。
-
-当规则新增“同和弦例外”时，应复用 `sameHarmony`/span，而不是在每条规则用罗马数字字符串做不同版本的比较。
-
-## 12. 增量分析与失效范围
-
-`HarmonyAnalysis` 带有 `invalidationRanges`，范围同时标记 note/slice/chord/phrase/project 等依赖尺度。它用于表达一次编辑可能影响哪些规则上下文。
-
-当前实现仍应优先保证完整结果正确；优化为真正局部重算时，需要考虑：
-
-- 音符边界变化会重建附近切片。
-- 和弦 identity/semantics 变化可能合并或拆分 span。
-- 有状态规则的影响可能从编辑点延伸到状态解决、失效或工程末尾。
-- 调号变化会影响之后的拼写解释和和弦语义。
-
-不能只重算几何重叠范围。跨切片状态必须从一个确定的无状态边界重新开始，或携带可验证的缓存快照。
-
-## 13. 新增内置规则流程
-
-1. 明确规则判断的是静态事实、相邻转换、span 还是长程链。
-2. 确定依赖：written-pitches、chords、complete-satb、semantics。
-3. 确定 `dependencyScope`，供跳过和未来增量调度使用。
-4. 在 `HARMONY_RULE_DEFINITIONS` 增加 ID、标签、默认严重度和说明。
-5. 无需跨步时实现 `evaluate`；需要等待后文时实现 `process/finalize` 和私有 payload。
-6. 对缺少和弦、语义歧义、休止、工程结尾和调号变化给出明确策略。
-7. 返回准确对象引用、稳定 `messageKey`、结构化 params/evidence 和置信度。
-8. 添加正例、反例、同和弦例外、边界和 revision 测试。
-9. 更新本规则表和设置页（设置页应从定义生成）。
-
-## 14. 常见误判来源
-
-- 把相邻切片当成相邻起奏，导致延续音被视为新进行。
-- 用 MIDI 半音数代替书写音程，无法区分增四与减五。
-- 用单个和弦区域判断解决，忽略连续同和弦转换。
-- 穿过休止继续寻找导音/七音解决。
-- 把语义缺失当成默认 T/S/D，制造逆功能误报。
-- 把一个和弦整体错误附到四个音符，导致 UI 重复报告。
-- 外置或异步旧 revision 返回后覆盖当前结果。
-- 为某个测试特例扩宽全局 span 定义，意外压制其他规则。
-
-修复规则时应先确认错误发生在模型、切片、语义、规则状态还是诊断归属层，不要只在最终消息生成处加例外。
+目录中的其余条目仍以“尚未实现”状态展示。开发者必须以 `HARMONY_RULE_DEFINITIONS[].implemented` 和对应测试为准，不能把“目录中存在”解释为“规则已完成”。

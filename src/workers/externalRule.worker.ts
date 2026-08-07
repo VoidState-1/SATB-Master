@@ -58,6 +58,7 @@ async function handleRequest(
         package: entry.package,
         rule: entry.rule,
         severity: entry.severity,
+        exceptionPolicy: entry.exceptionPolicy,
         manifest: evaluation.manifest,
         value: evaluation.value,
       });

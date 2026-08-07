@@ -59,12 +59,13 @@ const TONE_ALTERATIONS: ReadonlyArray<{
   label: string;
   degree?: 5 | 9;
   alter?: -1 | 1;
+  tendency?: "up" | "down";
 }> = [
   { label: "无" },
-  { label: "♭5", degree: 5, alter: -1 },
-  { label: "♯5", degree: 5, alter: 1 },
-  { label: "♭9", degree: 9, alter: -1 },
-  { label: "♯9", degree: 9, alter: 1 },
+  { label: "♭5", degree: 5, alter: -1, tendency: "down" },
+  { label: "♯5", degree: 5, alter: 1, tendency: "up" },
+  { label: "♭9", degree: 9, alter: -1, tendency: "down" },
+  { label: "♯9", degree: 9, alter: 1, tendency: "up" },
 ];
 
 function maximumInversion(draft: ChordDraft) {
@@ -503,6 +504,7 @@ export function ChordPalette({
                                 {
                                   degree: option.degree!,
                                   alter: option.alter!,
+                                  tendency: option.tendency!,
                                 },
                               ]
                             : [],

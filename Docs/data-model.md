@@ -154,16 +154,29 @@ ChordRegion
 
 `ChordIdentity` 表示可由根音、结构和低音推导的和弦实体。`structure` 是 `tertian | augmented-sixth` 判别联合：普通三度叠置结构保存性质、扩展与构成音变化；意/法/德增六保存独立 variant。它回答“由哪些音构成”和“低音应是什么”，而不是“在当前语句里扮演什么角色”。
 
+构成音变化可以显式声明横向解决方向：
+
+```ts
+interface ChordToneAlteration {
+  degree: 5 | 9 | 11 | 13;
+  alter: -2 | -1 | 0 | 1 | 2;
+  tendency?: "up" | "down";
+}
+```
+
+`alter` 决定实体拼写，`tendency` 是人工确认的语义证据。两者不能互相替代：旧 V3 数据可以没有 `tendency`，此时方向性规则必须跳过，不能仅凭升降号猜测。调色盘创建 `♭5/♯5/♭9/♯9` 时会写入默认方向，Inspector 允许明确修改或清除。
+
 ### 6.2 `HarmonySemantics`
 
-`HarmonySemantics` 保存一个或两个 `HarmonyInterpretation`，并用 `primaryInterpretationId` 指定主要解释。单项解释包含局部调性、级数、变化音、结构化目标、斯波索宾 `FunctionalDesignation`、来源和置信度；外层保存借用、四六角色和持续低音上下文。共同和弦的两个确认解释必须都能解析为同一实体，不能只复制不同 ID。
+`HarmonySemantics` 保存一个或两个 `HarmonyInterpretation`，并用 `primaryInterpretationId` 指定主要解释。单项解释包含局部调性、级数、变化音、结构化目标、斯波索宾 `FunctionalDesignation`、来源和置信度；外层保存借用、终止/四六角色和持续低音上下文。`cadenceRole: deceptive` 表示人工确认当前和弦是阻碍进行起点；普通 `D -> VI` 不会仅凭局部连接自动获得该角色。共同和弦的两个确认解释必须都能解析为同一实体，不能只复制不同 ID。
 
 代码中避免再使用宽泛的 `FunctionalAnalysis` 名称：中文“功能”既可能指 T/S/D，又可能泛指用途。当前约定是：
 
 - `identity`：和弦实体。
 - `semantics`：和声语义。
 - `FunctionalDesignation`：斯波索宾 T/S/D 功能标记及主次亲缘。
-- `FunctionalClass`：仅供旧检查器使用的粗粒度兼容分类，新功能代码不得依赖。
+
+规则引擎直接读取精确解释、功能标记和结构化目标，不再保存或计算 `FunctionalClass` 粗粒度兼容分类。需要判断 T/S/D 家族时，应从当前 `HarmonyInterpretation` 的 designation 或级数证据得出，并保留歧义状态。
 
 ### 6.3 `ChordDraft`
 
@@ -205,13 +218,29 @@ ChordRegion
 
 ### 7.3 `ruleProfile`
 
-规则配置同时保存内置规则严重程度和外置规则引用。严重程度为：
+规则配置是完整工程数据：
+
+```ts
+interface RuleProfile {
+  profileVersion: 1;
+  title: string;
+  shared: SharedHarmonySettings;
+  builtin: Record<string, RuleInstanceSettings>;
+  external: ExternalRuleReferenceV3[];
+}
+```
+
+`shared` 保存四声部建议音域和严格四声部织体开关。每个内置规则实例保存严重程度、`configVersion`、声明式配置和特例策略。严重程度为：
 
 ```text
 error | warning | suggestion | off
 ```
 
 `off` 表示不调度该规则，而不是产生一个隐藏诊断。外置规则引用只保存包 ID、版本、内容哈希、规则 ID、启用状态、严重程度和 JSON 配置；脚本正文保存在本机规则库。
+
+外置 v3 引用还保存 `configVersion` 和特例策略。运行时同时尊重旧字段 `enabled` 与严重程度；便携 `.satb-rule-profile.json` 不重复保存 `enabled`，而用 `severity: "off"` 表达禁用。缺失的外置包引用必须保留，以便安装相同 hash 后恢复。
+
+设置修改通过工程历史命令提交，因此随 `.satb` 保存、可撤销/重做，也不会被另一台机器的应用偏好静默覆盖。localStorage 只可保存“新建工程默认模板”。配置档案导入会规范化已知 schema、报告修复与未知 ID，并以一次历史提交替换当前 profile。
 
 ## 8. 音频引用
 

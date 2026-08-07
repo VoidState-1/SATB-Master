@@ -1,6 +1,7 @@
 import RELEASE_SYNC from "@jitl/quickjs-wasmfile-release-sync";
 import { newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core";
 import {
+  EXTERNAL_RULE_API_VERSION,
   EXTERNAL_RULE_MEMORY_BYTES,
   EXTERNAL_RULE_TIMEOUT_MS,
   type ExternalRuleContext,
@@ -152,6 +153,9 @@ export function inspectExternalRuleSource(
   return evaluateJson<ExternalRuleSandboxInspection>(
     source,
     `
+      if (!registration.manifest || registration.manifest.apiVersion !== ${EXTERNAL_RULE_API_VERSION}) {
+        throw new Error("仅支持外置规则 API v${EXTERNAL_RULE_API_VERSION}");
+      }
       const rules = Array.isArray(registration.rules) ? registration.rules : [];
       return JSON.stringify({
         manifest: registration.manifest,
@@ -171,7 +175,7 @@ export function evaluateExternalRuleSource(options: {
   source: string;
   ruleId: string;
   context: ExternalRuleContext;
-  config: Record<string, string | number | boolean>;
+  config: import("./harmonyRules").RuleConfig;
   timeoutMs?: number;
   memoryLimitBytes?: number;
 }): Promise<ExternalRuleSandboxEvaluation> {
@@ -181,6 +185,9 @@ export function evaluateExternalRuleSource(options: {
   return evaluateJson<ExternalRuleSandboxEvaluation>(
     options.source,
     `
+      if (!registration.manifest || registration.manifest.apiVersion !== ${EXTERNAL_RULE_API_VERSION}) {
+        throw new Error("仅支持外置规则 API v${EXTERNAL_RULE_API_VERSION}");
+      }
       const rules = Array.isArray(registration.rules) ? registration.rules : [];
       const rule = rules.find((candidate) => candidate && candidate.id === ${ruleIdJson});
       if (!rule || (typeof rule.evaluate !== "function" && typeof rule.process !== "function")) {

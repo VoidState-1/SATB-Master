@@ -28,6 +28,8 @@ export type AugmentedSixthVariant = "italian" | "french" | "german";
 export interface ChordToneAlteration {
   degree: 5 | 9 | 11 | 13;
   alter: Alteration;
+  /** 由编辑语义明确声明，规则检查器不得只根据升降号猜测解决方向。 */
+  tendency?: "up" | "down";
 }
 
 export interface TertianChordStructure {
@@ -103,7 +105,7 @@ export interface HarmonySemantics {
   primaryInterpretationId: string;
   alternatives?: readonly HarmonyInterpretation[];
   mixture?: "parallel-major" | "parallel-minor" | "modal";
-  cadenceRole?: "cadential64" | "passing64" | "pedal64";
+  cadenceRole?: "cadential64" | "passing64" | "pedal64" | "deceptive";
   pedalContext?: {
     pitch: SpelledPitchClass;
     role: "start" | "continue" | "end";
@@ -353,6 +355,17 @@ export function chordIdentityToneSpellings(identity: ChordIdentity) {
         identity.root,
         identity.structure.variant,
       );
+}
+
+export function chordIdentityToneSpellingForDegree(
+  identity: ChordIdentity,
+  degree: ChordToneDegree,
+) {
+  if (identity.structure.kind !== "tertian") return undefined;
+  const targetStep = (stepIndex(identity.root.step) + degree - 1) % 7;
+  return chordIdentityToneSpellings(identity).find(
+    (tone) => stepIndex(tone.step) === targetStep,
+  );
 }
 
 export function chordStructureQuality(

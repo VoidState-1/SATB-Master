@@ -321,6 +321,25 @@ function ChordSemanticsEditor({
         </select>
       </label>
       <label>
+        <span>终止 / 六四角色</span>
+        <select
+          value={draft.cadenceRole ?? ""}
+          onChange={(event) =>
+            onChange({
+              cadenceRole: (event.target.value || undefined) as
+                | NonNullable<ChordDraft["cadenceRole"]>
+                | undefined,
+            })
+          }
+        >
+          <option value="">无</option>
+          <option value="deceptive">阻碍进行起点</option>
+          <option value="cadential64">终止四六</option>
+          <option value="passing64">经过四六</option>
+          <option value="pedal64">辅助四六</option>
+        </select>
+      </label>
+      <label>
         <span>构成音变化</span>
         <select
           value={
@@ -340,6 +359,7 @@ function ChordSemanticsEditor({
                     {
                       degree: degree as 5 | 9,
                       alter: alter as -1 | 1,
+                      tendency: alter > 0 ? "up" : "down",
                     },
                   ]
                 : [],
@@ -363,6 +383,33 @@ function ChordSemanticsEditor({
           <option value="5:1">♯5</option>
           <option value="9:-1">♭9</option>
           <option value="9:1">♯9</option>
+        </select>
+      </label>
+      <label>
+        <span>解决方向</span>
+        <select
+          value={draft.alterations?.[0]?.tendency ?? ""}
+          disabled={!draft.alterations?.[0]}
+          onChange={(event) => {
+            const alteration = draft.alterations?.[0];
+            if (!alteration) return;
+            onChange({
+              alterations: [
+                {
+                  ...alteration,
+                  tendency: (event.target.value || undefined) as
+                    | "up"
+                    | "down"
+                    | undefined,
+                },
+              ],
+              secondaryInterpretation: undefined,
+            });
+          }}
+        >
+          <option value="">未指定（不检查）</option>
+          <option value="up">上行半音</option>
+          <option value="down">下行半音</option>
         </select>
       </label>
       <label>

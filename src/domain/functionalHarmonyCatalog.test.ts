@@ -241,7 +241,7 @@ describe("斯波索宾功能标记目录", () => {
       expect(
         checkHarmony(project).diagnostics.some(
           (diagnostic) =>
-            diagnostic.ruleId === "chord-membership" &&
+            diagnostic.ruleId === "chord.unclassified-nonchord-tone" &&
             diagnostic.chordIds.includes("unsupported-chord"),
         ),
       ).toBe(false);

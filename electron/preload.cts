@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('desktop', {
   midi: {
     export: (bytes: Uint8Array, defaultName: string) => ipcRenderer.invoke('midi:export', { bytes, defaultName }),
   },
+  ruleProfile: {
+    open: () => ipcRenderer.invoke('rule-profile:open'),
+    save: (request: unknown) => ipcRenderer.invoke('rule-profile:save', request),
+  },
   soundFont: {
     open: () => ipcRenderer.invoke('soundfont:open'),
     loadPath: (filePath: string) => ipcRenderer.invoke('soundfont:load-path', { filePath }),

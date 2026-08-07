@@ -1,4 +1,5 @@
 import { migrateProject, type ProjectDocument } from "../domain/model";
+import type { PortableRuleProfile } from "../domain/ruleProfile";
 
 const BROWSER_PROJECT_KEY = "satb-master-browser-project";
 export const MAX_SOUNDFONT_BYTES = 2 * 1024 * 1024 * 1024;
@@ -170,6 +171,59 @@ export async function exportMidi(bytes: Uint8Array, defaultName: string) {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = `${defaultName}.mid`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+  return { canceled: false };
+}
+
+function chooseBrowserJsonFile() {
+  return new Promise<File | undefined>((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,.satb-rule-profile.json";
+    let settled = false;
+    const finish = (file?: File) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("focus", handleWindowFocus);
+      resolve(file);
+    };
+    const handleWindowFocus = () => {
+      window.setTimeout(() => finish(input.files?.[0]), 0);
+    };
+    input.addEventListener("change", () => finish(input.files?.[0]), {
+      once: true,
+    });
+    window.addEventListener("focus", handleWindowFocus, { once: true });
+    input.click();
+  });
+}
+
+export async function openRuleProfileFile(): Promise<unknown | undefined> {
+  if (window.desktop) {
+    const result = await window.desktop.ruleProfile.open();
+    return result.canceled ? undefined : result.profile;
+  }
+  const file = await chooseBrowserJsonFile();
+  if (!file) return undefined;
+  if (file.size < 1 || file.size > 2 * 1024 * 1024)
+    throw new Error("规则配置档案必须小于等于 2 MB 且不能为空");
+  return JSON.parse(await file.text()) as unknown;
+}
+
+export async function saveRuleProfileFile(
+  profile: PortableRuleProfile,
+  defaultName: string,
+) {
+  if (window.desktop)
+    return window.desktop.ruleProfile.save({ profile, defaultName });
+  const blob = new Blob([JSON.stringify(profile, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${defaultName || "SATB Master 规则配置"}.satb-rule-profile.json`;
   anchor.click();
   URL.revokeObjectURL(url);
   return { canceled: false };

@@ -4,7 +4,11 @@ import type {
   ExternalRuleManifestRule,
   InstalledExternalRulePackage,
 } from "./externalRules";
-import type { HarmonyRuleSeverity } from "./harmonyRules";
+import type {
+  HarmonyRuleSeverity,
+  RuleConfig,
+  RuleExceptionPolicy,
+} from "./harmonyRules";
 
 export type ExternalRuleWorkerRequest =
   | {
@@ -21,7 +25,8 @@ export type ExternalRuleWorkerRequest =
         source: string;
         rule: ExternalRuleManifestRule;
         severity: Exclude<HarmonyRuleSeverity, "off">;
-        config: Record<string, string | number | boolean>;
+        config: RuleConfig;
+        exceptionPolicy: RuleExceptionPolicy;
       }>;
     };
 
@@ -44,6 +49,7 @@ export type ExternalRuleWorkerResponse =
         package: InstalledExternalRulePackage;
         rule: ExternalRuleManifestRule;
         severity: Exclude<HarmonyRuleSeverity, "off">;
+        exceptionPolicy: RuleExceptionPolicy;
         manifest: unknown;
         value: unknown;
       }>;

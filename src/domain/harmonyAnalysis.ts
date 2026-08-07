@@ -1,6 +1,6 @@
 import {
   chordIdentityToneSpellings,
-  legacyHarmonyProjection,
+  primaryHarmonyInterpretation,
 } from "./chordModel";
 import {
   VOICE_ORDER,
@@ -17,6 +17,10 @@ import {
   type WrittenInterval,
 } from "./pitch";
 import type { RuleDependencyScope } from "./harmonyRules";
+import {
+  buildHarmonyConnections,
+  type HarmonyConnectionAssessment,
+} from "./rules/connector";
 
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown
   ? T
@@ -30,15 +34,6 @@ export type ProjectSnapshot = DeepReadonly<ProjectDocument>;
 export type AnalysisNote = DeepReadonly<NoteEvent>;
 export type AnalysisChord = DeepReadonly<ChordRegion>;
 export type AnalysisKey = DeepReadonly<KeyEvent>;
-
-export type FunctionalClass =
-  | "tonic"
-  | "predominant"
-  | "dominant"
-  | "secondary-dominant"
-  | "chromatic-predominant"
-  | "mixture"
-  | "ambiguous";
 
 export interface AnalysisSlice {
   readonly index: number;
@@ -73,16 +68,6 @@ export interface SliceTransition {
   readonly changedVoiceIds: readonly VoiceId[];
 }
 
-export interface ChordProgression {
-  readonly previous: AnalysisChord;
-  readonly current: AnalysisChord;
-  readonly contiguous: boolean;
-  readonly sameKey: boolean;
-  readonly sameHarmony: boolean;
-  readonly previousClass: FunctionalClass;
-  readonly currentClass: FunctionalClass;
-}
-
 export interface HarmonySpan {
   readonly id: string;
   readonly fromTick: number;
@@ -91,7 +76,6 @@ export interface HarmonySpan {
   readonly sliceIndices: readonly number[];
   readonly identityKey: string;
   readonly semantics?: DeepReadonly<HarmonySemantics>;
-  readonly functionalClass: FunctionalClass;
   readonly status: "complete" | "ambiguous";
   readonly entryTransitionIndex?: number;
   readonly exitTransitionIndex?: number;
@@ -112,7 +96,7 @@ export interface HarmonyAnalysis {
   readonly chordSpanIds: ReadonlyMap<string, string>;
   readonly melodyTransitions: readonly MelodyTransition[];
   readonly sliceTransitions: readonly SliceTransition[];
-  readonly chordProgressions: readonly ChordProgression[];
+  readonly connections: readonly HarmonyConnectionAssessment[];
   readonly notesByVoice: Readonly<Record<VoiceId, readonly AnalysisNote[]>>;
   readonly noteById: ReadonlyMap<string, AnalysisNote>;
   readonly noteVoiceById: ReadonlyMap<string, VoiceId>;
@@ -198,29 +182,6 @@ function sameChordIdentityWithoutBass(
     leftTones.length === rightTones.length &&
     leftTones.every((tone, index) => tone === rightTones[index])
   );
-}
-
-export function functionalClassOf(
-  analysis: DeepReadonly<HarmonySemantics> | undefined,
-): FunctionalClass {
-  if (!analysis) return "ambiguous";
-  if (analysis.interpretations.length !== 1 || analysis.pedalContext)
-    return "ambiguous";
-  const legacy = legacyHarmonyProjection(analysis);
-  if (["ambiguous", "unknown"].includes(legacy.confidence))
-    return "ambiguous";
-  if (legacy.mixture) return "mixture";
-  if (legacy.appliedTarget) {
-    return [5, 7].includes(legacy.degree)
-      ? "secondary-dominant"
-      : "ambiguous";
-  }
-  if (legacy.degreeAlteration !== 0 && [2, 4].includes(legacy.degree))
-    return "chromatic-predominant";
-  if ([1, 3, 6].includes(legacy.degree)) return "tonic";
-  if ([2, 4].includes(legacy.degree)) return "predominant";
-  if ([5, 7].includes(legacy.degree)) return "dominant";
-  return "ambiguous";
 }
 
 function chordContinuity(previous: AnalysisChord, current: AnalysisChord) {
@@ -395,7 +356,9 @@ function buildHarmonySpans(
     const first = group[0];
     const last = group.at(-1)!;
     const semantics = first.semantics;
-    const functionalClass = functionalClassOf(semantics);
+    const confidence = semantics
+      ? primaryHarmonyInterpretation(semantics).confidence
+      : "unknown";
     return {
       id,
       fromTick: first.startTick,
@@ -404,8 +367,10 @@ function buildHarmonySpans(
       sliceIndices: Object.freeze(sliceIndices),
       identityKey: chordIdentityKey(first),
       semantics,
-      functionalClass,
-      status: functionalClass === "ambiguous" ? "ambiguous" : "complete",
+      status:
+        confidence === "ambiguous" || confidence === "unknown"
+          ? "ambiguous"
+          : "complete",
       entryTransitionIndex:
         sliceIndices.length > 0 && sliceIndices[0] > 0
           ? sliceIndices[0] - 1
@@ -485,37 +450,6 @@ function buildMelodyTransitions(
     }
   });
   return Object.freeze(transitions);
-}
-
-function buildChordProgressions(analysis: Pick<HarmonyAnalysis, "project">) {
-  const regions = [...analysis.project.chordTrack.regions].sort(
-    (left, right) => left.startTick - right.startTick,
-  );
-  const progressions: ChordProgression[] = [];
-  for (let index = 1; index < regions.length; index += 1) {
-    const previous = regions[index - 1];
-    const current = regions[index];
-    const previousKey = keyAtTick(
-      analysis.project.keyEvents,
-      previous.startTick,
-    );
-    const currentKey = keyAtTick(analysis.project.keyEvents, current.startTick);
-    progressions.push({
-      previous,
-      current,
-      contiguous:
-        previous.startTick + previous.durationTicks === current.startTick,
-      sameKey: sameKey(previousKey, currentKey),
-      sameHarmony: sameHarmonyAtTicks(
-        analysis,
-        previous.startTick,
-        current.startTick,
-      ),
-      previousClass: functionalClassOf(previous.semantics),
-      currentClass: functionalClassOf(current.semantics),
-    });
-  }
-  return Object.freeze(progressions);
 }
 
 function changeRange(
@@ -720,6 +654,11 @@ export function buildHarmonyAnalysis(
     snapshot.chordTrack.regions.map((chord) => [chord.id, chord] as const),
   );
   const sliceTransitions = buildSliceTransitions(slices, sliceSpanIds);
+  const connections = buildHarmonyConnections({
+    project: snapshot,
+    harmonySpans,
+    chordById,
+  });
 
   return Object.freeze({
     revision,
@@ -730,7 +669,7 @@ export function buildHarmonyAnalysis(
     chordSpanIds,
     melodyTransitions: buildMelodyTransitions(analysisShell, notesByVoice),
     sliceTransitions,
-    chordProgressions: buildChordProgressions(analysisShell),
+    connections,
     notesByVoice: Object.freeze(notesByVoice),
     noteById,
     noteVoiceById,

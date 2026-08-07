@@ -1,6 +1,5 @@
 import {
   buildHarmonyAnalysis,
-  functionalClassOf,
   type AnalysisInvalidationRange,
   type AnalysisSlice,
   type HarmonyAnalysis,
@@ -9,12 +8,22 @@ import {
   type SliceTransition,
 } from "./harmonyAnalysis";
 import { VOICE_ORDER, type ProjectDocument, type VoiceId } from "./model";
+import { planRuleApplicability } from "./rules/applicability";
+import {
+  arbitrateDiagnostics,
+  normalizeBuiltinDiagnostic,
+} from "./rules/diagnosticArbiter";
 import {
   type DiagnosticSeverity,
   type HarmonyRuleDefinition,
   type HarmonyRuleId,
   type HarmonyRuleSeverities,
+  type RuleConfig,
+  type RuleExceptionContext,
+  type RuleExceptionPolicy,
 } from "./harmonyRules";
+
+export type { RuleConfig } from "./harmonyRules";
 
 export type DiagnosticEvidenceKind =
   "note" | "chord" | "interval" | "key" | "function";
@@ -39,9 +48,12 @@ export interface HarmonyDiagnostic {
   title: string;
   message: string;
   messageKey: string;
+  /** 同一音乐学根因跨切片重复出现时使用的稳定键；省略时退回 messageKey。 */
+  rootCauseKey?: string;
   params: Record<string, string | number | boolean>;
   evidence: DiagnosticEvidence[];
   confidence: number;
+  exceptionContexts?: RuleExceptionContext[];
 }
 
 export type RuleDiagnostic = Omit<HarmonyDiagnostic, "id" | "severity">;
@@ -67,10 +79,6 @@ export interface HarmonyCheckResult {
   revision: number;
   superseded: boolean;
   invalidationRanges: readonly AnalysisInvalidationRange[];
-}
-
-export interface RuleConfig {
-  readonly [key: string]: string | number | boolean | undefined;
 }
 
 export interface ReadonlyRuleContext {
@@ -159,79 +167,10 @@ export interface RuleRunRequest {
   revision: number;
   signal?: AbortSignal;
   configs?: Partial<Record<HarmonyRuleId, RuleConfig>>;
+  exceptions?: Partial<Record<HarmonyRuleId, RuleExceptionPolicy>>;
 }
 
 const MAX_DIAGNOSTICS_PER_RULE = 512;
-const MAX_MESSAGE_LENGTH = 600;
-const MAX_EVIDENCE_ITEMS = 16;
-
-function stableObjects(items: readonly string[]) {
-  return [...new Set(items)].sort();
-}
-
-function diagnosticId(item: RuleDiagnostic) {
-  return [
-    item.ruleId,
-    item.messageKey,
-    item.tick,
-    stableObjects(item.noteIds).join(","),
-    stableObjects(item.chordIds).join(","),
-    stableObjects(item.voiceIds).join(","),
-  ].join(":");
-}
-
-function validateDiagnostic(
-  item: RuleDiagnostic,
-  definition: RuleDefinition,
-  analysis: HarmonyAnalysis,
-  severity: DiagnosticSeverity,
-) {
-  if (item.ruleId !== definition.id || item.source !== "builtin")
-    return undefined;
-  if (
-    !Number.isInteger(item.tick) ||
-    !Number.isInteger(item.endTick) ||
-    item.tick < 0 ||
-    item.endTick < item.tick ||
-    item.endTick > analysis.project.lengthTicks
-  )
-    return undefined;
-  if (
-    !item.title.trim() ||
-    !item.message.trim() ||
-    item.title.length > 120 ||
-    item.message.length > MAX_MESSAGE_LENGTH ||
-    !item.messageKey.trim() ||
-    item.messageKey.length > 120
-  )
-    return undefined;
-  if (
-    item.noteIds.some((id) => !analysis.noteById.has(id)) ||
-    item.chordIds.some((id) => !analysis.chordById.has(id)) ||
-    item.voiceIds.some((id) => !VOICE_ORDER.includes(id))
-  )
-    return undefined;
-  if (
-    !Number.isFinite(item.confidence) ||
-    item.confidence < 0 ||
-    item.confidence > 1 ||
-    item.evidence.length > MAX_EVIDENCE_ITEMS
-  )
-    return undefined;
-
-  const normalized: HarmonyDiagnostic = {
-    ...item,
-    id: diagnosticId(item),
-    severity,
-    voiceIds: stableObjects(item.voiceIds) as VoiceId[],
-    noteIds: stableObjects(item.noteIds),
-    chordIds: stableObjects(item.chordIds),
-    params: { ...item.params },
-    evidence: item.evidence.map((evidence) => ({ ...evidence })),
-  };
-  return normalized;
-}
-
 function requirementSkips(
   definition: RuleDefinition,
   analysis: HarmonyAnalysis,
@@ -264,8 +203,8 @@ function requirementSkips(
   }
 
   if (definition.requires.includes("semantics")) {
-    const regions = analysis.project.chordTrack.regions;
-    const withSemantics = regions.filter((region) => Boolean(region.semantics));
+    const spans = analysis.harmonySpans;
+    const withSemantics = spans.filter((span) => Boolean(span.semantics));
     if (withSemantics.length === 0) {
       skipped.push({
         ruleId: definition.id,
@@ -275,9 +214,7 @@ function requirementSkips(
       });
       return skipped;
     }
-    const analyzable = withSemantics.filter(
-      (region) => functionalClassOf(region.semantics) !== "ambiguous",
-    );
+    const analyzable = withSemantics.filter((span) => span.status === "complete");
     if (analyzable.length === 0) {
       skipped.push({
         ruleId: definition.id,
@@ -287,7 +224,7 @@ function requirementSkips(
       });
       return skipped;
     }
-    if (withSemantics.length < regions.length) {
+    if (withSemantics.length < spans.length) {
       skipped.push({
         ruleId: definition.id,
         reason: "missing-semantics",
@@ -307,63 +244,6 @@ function requirementSkips(
   return skipped;
 }
 
-function sameRootCause(left: HarmonyDiagnostic, right: HarmonyDiagnostic) {
-  return (
-    left.ruleId === right.ruleId &&
-    left.messageKey === right.messageKey &&
-    left.noteIds.join(",") === right.noteIds.join(",") &&
-    left.chordIds.join(",") === right.chordIds.join(",") &&
-    left.voiceIds.join(",") === right.voiceIds.join(",")
-  );
-}
-
-function mergeDiagnostics(source: HarmonyDiagnostic[]) {
-  const groups = new Map<string, HarmonyDiagnostic[]>();
-  source.forEach((item) => {
-    const key = [
-      item.ruleId,
-      item.messageKey,
-      item.noteIds.join(","),
-      item.chordIds.join(","),
-      item.voiceIds.join(","),
-    ].join(":");
-    const group = groups.get(key) ?? [];
-    group.push(item);
-    groups.set(key, group);
-  });
-  const merged = [...groups.values()].flatMap((group) => {
-    const ordered = group.sort(
-      (left, right) => left.tick - right.tick || left.endTick - right.endTick,
-    );
-    const result: HarmonyDiagnostic[] = [];
-    ordered.forEach((item) => {
-      const previous = result.at(-1);
-      if (
-        previous &&
-        sameRootCause(previous, item) &&
-        item.tick <= previous.endTick
-      ) {
-        previous.endTick = Math.max(previous.endTick, item.endTick);
-        return;
-      }
-      result.push({ ...item });
-    });
-    return result;
-  });
-
-  // 书写音程规则比旧的“六个半音”判断信息更精确，同一根因只保留前者，避免双重提示。
-  const specificIntervals = new Set(
-    merged
-      .filter((item) => item.ruleId === "augmented-diminished-interval")
-      .map((item) => `${item.tick}:${item.noteIds.join(",")}`),
-  );
-  return merged.filter(
-    (item) =>
-      item.ruleId !== "melodic-tritone" ||
-      !specificIntervals.has(`${item.tick}:${item.noteIds.join(",")}`),
-  );
-}
-
 function severityOrder(severity: DiagnosticSeverity) {
   return severity === "error" ? 0 : severity === "warning" ? 1 : 2;
 }
@@ -373,6 +253,7 @@ function completeResult(
   diagnostics: HarmonyDiagnostic[],
   skippedRules: SkippedRule[],
   superseded: boolean,
+  definitions: readonly RuleDefinition[],
 ): HarmonyCheckResult {
   const uniqueSkips = new Map(
     skippedRules.map((item) => [
@@ -381,7 +262,7 @@ function completeResult(
     ]),
   );
   return {
-    diagnostics: mergeDiagnostics(diagnostics).sort(
+    diagnostics: arbitrateDiagnostics(diagnostics, definitions).sort(
       (left, right) =>
         left.tick - right.tick ||
         severityOrder(left.severity) - severityOrder(right.severity) ||
@@ -402,10 +283,37 @@ function collectEvaluation(
   evaluation: RuleEvaluation,
   analysis: HarmonyAnalysis,
   severity: DiagnosticSeverity,
+  exceptionPolicy: RuleExceptionPolicy = {},
 ) {
+  const effectiveExceptionPolicy = {
+    ...exceptionPolicy,
+  };
   const diagnostics = evaluation.diagnostics
     .slice(0, MAX_DIAGNOSTICS_PER_RULE)
-    .map((item) => validateDiagnostic(item, definition, analysis, severity))
+    .map((item) => {
+      const applicability = planRuleApplicability(
+        definition,
+        item,
+        analysis,
+        effectiveExceptionPolicy,
+      );
+      if (
+        applicability.policy === "skip" ||
+        applicability.policy === "deferred"
+      )
+        return undefined;
+      const effectiveSeverity = applicability.policy === "downgraded"
+        ? severity === "error"
+          ? "warning"
+          : "suggestion"
+        : severity;
+      return normalizeBuiltinDiagnostic(
+        item,
+        definition,
+        analysis,
+        effectiveSeverity,
+      );
+    })
     .filter((item): item is HarmonyDiagnostic => Boolean(item));
   const skipped = (evaluation.skipped ?? []).map((item) => ({
     ...item,
@@ -587,6 +495,8 @@ export function runRulesSynchronously(
   project: ProjectDocument,
   severities: HarmonyRuleSeverities,
   revision = 0,
+  configs: Partial<Record<HarmonyRuleId, RuleConfig>> = {},
+  exceptions: Partial<Record<HarmonyRuleId, RuleExceptionPolicy>> = {},
 ) {
   const analysis = buildHarmonyAnalysis(project, revision);
   const diagnostics: HarmonyDiagnostic[] = [];
@@ -599,8 +509,12 @@ export function runRulesSynchronously(
     if (requirements.some((item) => !item.partial)) continue;
     try {
       const evaluation = isStatefulRule(definition)
-        ? runStatefulRuleSynchronously(definition, analysis, {})
-        : definition.evaluate({ analysis }, {});
+        ? runStatefulRuleSynchronously(
+            definition,
+            analysis,
+            configs[definition.id] ?? {},
+          )
+        : definition.evaluate({ analysis }, configs[definition.id] ?? {});
       if (evaluation instanceof Promise)
         throw new Error("同步兼容入口不支持异步规则");
       const collected = collectEvaluation(
@@ -608,6 +522,7 @@ export function runRulesSynchronously(
         evaluation,
         analysis,
         severity,
+        exceptions[definition.id],
       );
       diagnostics.push(...collected.diagnostics);
       skippedRules.push(...collected.skipped);
@@ -620,7 +535,7 @@ export function runRulesSynchronously(
       });
     }
   }
-  return completeResult(analysis, diagnostics, skippedRules, false);
+  return completeResult(analysis, diagnostics, skippedRules, false, definitions);
 }
 
 export class RuleScheduler {
@@ -646,7 +561,13 @@ export class RuleScheduler {
 
     for (const definition of this.definitions) {
       if (token !== this.runToken || request.signal?.aborted)
-        return completeResult(analysis, [], skippedRules, true);
+        return completeResult(
+          analysis,
+          [],
+          skippedRules,
+          true,
+          this.definitions,
+        );
       const severity = request.severities[definition.id];
       if (severity === "off") continue;
       const requirements = requirementSkips(definition, analysis);
@@ -669,18 +590,31 @@ export class RuleScheduler {
         continue;
       }
       if (token !== this.runToken || request.signal?.aborted)
-        return completeResult(analysis, [], skippedRules, true);
+        return completeResult(
+          analysis,
+          [],
+          skippedRules,
+          true,
+          this.definitions,
+        );
       const collected = collectEvaluation(
         definition,
         evaluation,
         analysis,
         severity,
+        request.exceptions?.[definition.id],
       );
       diagnostics.push(...collected.diagnostics);
       skippedRules.push(...collected.skipped);
     }
 
     this.previousSnapshot = analysis.project;
-    return completeResult(analysis, diagnostics, skippedRules, false);
+    return completeResult(
+      analysis,
+      diagnostics,
+      skippedRules,
+      false,
+      this.definitions,
+    );
   }
 }

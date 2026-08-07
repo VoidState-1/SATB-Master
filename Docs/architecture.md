@@ -54,9 +54,11 @@ flowchart LR
 | [`time.ts`](../src/domain/time.ts) | tick、秒、小节、变拍号、变速与双向吸附 |
 | [`midi.ts`](../src/domain/midi.ts) | MIDI Type 1 事件与轨道构造 |
 | [`harmonyAnalysis.ts`](../src/domain/harmonyAnalysis.ts) | 不可变快照、切片、转换、和声跨度与遍历查询 |
-| [`harmonyRuntime.ts`](../src/domain/harmonyRuntime.ts) | 规则接口、调度、私有状态、诊断验证与合并 |
-| [`harmonyRules.ts`](../src/domain/harmonyRules.ts) | 内置规则目录、默认严重程度与规则实现 |
-| [`externalRules.ts`](../src/domain/externalRules.ts) | 外置 API v2 的公开上下文和结果验证 |
+| [`harmonyRuntime.ts`](../src/domain/harmonyRuntime.ts) | 规则接口、调度、私有状态、适用性接入与诊断收敛 |
+| [`harmonyRules.ts`](../src/domain/harmonyRules.ts) | 当前内置规则实现与运行注册表 |
+| [`rules/`](../src/domain/rules) | 81 条目录、配置 schema、共享事实、连接器、适用性与仲裁 |
+| [`ruleProfile.ts`](../src/domain/ruleProfile.ts) | 工程规则设置命令、便携配置档案和新工程模板 |
+| [`externalRules.ts`](../src/domain/externalRules.ts) | 外置 API v3 manifest、公开上下文、配置和结果验证 |
 
 领域代码的关键约束是：给定同一输入，返回同一结果；不读取 DOM、磁盘、系统时钟或全局可变状态。创建 ID 和时间戳的边界代码应把结果传入领域对象，而不是让规则计算隐式依赖环境。
 
@@ -75,7 +77,8 @@ hooks 负责把独立状态机接入 React，例如：
 - [`useProjectHistory.ts`](../src/hooks/useProjectHistory.ts)：撤销、重做、revision 与 dirty。
 - [`useShortcutBindings.ts`](../src/hooks/useShortcutBindings.ts)：快捷键绑定和本地配置。
 - [`usePanelLayout.ts`](../src/hooks/usePanelLayout.ts)：面板尺寸及本地偏好。
-- [`useHarmonyRuleSettings.ts`](../src/hooks/useHarmonyRuleSettings.ts)：规则严重程度配置。
+
+规则设置不再由独立 hook/localStorage 维护。`App.tsx` 通过 `ruleProfile.ts` 的纯命令修改当前 `ProjectDocument.ruleProfile`，并把整个修改作为一次工程历史提交。
 
 ### 3.3 `src/services`
 
@@ -96,7 +99,7 @@ services 是环境适配层。桌面模式转发到 `window.desktop`，浏览器
 
 - [`main.ts`](../electron/main.ts)：窗口创建、协议注册、导航策略和 IPC 装配。
 - [`preload.cts`](../electron/preload.cts)：窄化后的 renderer API。
-- [`project-ipc.ts`](../electron/project-ipc.ts)：工程打开、保存、恢复、MIDI 与对话框目录。
+- [`project-ipc.ts`](../electron/project-ipc.ts)：工程打开、保存、恢复、MIDI、规则配置档案与分类型对话框目录。
 - [`soundfont-resource.ts`](../electron/soundfont-resource.ts)：大 SoundFont 的 token、哈希和流读取。
 - [`rule-library.ts`](../electron/rule-library.ts)：本机规则包内容寻址存储。
 
@@ -153,7 +156,7 @@ sequenceDiagram
 
 ### 5.2 和声检查
 
-工程快照先转换为时间切片、声部转换和和弦跨度，再由调度器执行内置与外置规则。每次请求携带 revision；旧请求即使晚返回，也不能覆盖新工程的结果。详见 [harmony-engine.md](./harmony-engine.md)。
+工程快照先转换为时间切片、声部转换、连续和弦跨度、精确和弦连接和共享事实。内置规则经过工程 profile、适用性计划、结果校验和诊断仲裁；外置 API v3 在 Worker 中读取同一裁剪语义快照。每次请求携带 revision，旧请求即使晚返回也不能覆盖新工程结果。详见 [harmony-engine.md](./harmony-engine.md)。
 
 ### 5.3 播放
 

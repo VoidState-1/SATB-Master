@@ -1,8 +1,4 @@
-import { legacyHarmonyProjection } from "./chordModel";
-import type {
-  AnalysisChord,
-  HarmonyAnalysis,
-} from "./harmonyAnalysis";
+import type { HarmonyAnalysis } from "./harmonyAnalysis";
 import type {
   HarmonyCheckResult,
   HarmonyDiagnostic,
@@ -11,16 +7,23 @@ import type {
 import {
   VOICE_ORDER,
   type ProjectDocument,
-  type RuleProfileRef,
+  type RuleProfile,
 } from "./model";
-import type {
-  DiagnosticSeverity,
-  HarmonyRuleGroupId,
-  HarmonyRuleSeverity,
-  RuleDependencyScope,
+import {
+  RULE_EXCEPTION_CONTEXTS,
+  type DiagnosticSeverity,
+  type HarmonyRuleGroupId,
+  type HarmonyRuleSeverity,
+  type RuleConfig,
+  type RuleDependencyScope,
+  type RuleExceptionContext,
+  type RuleExceptionMode,
+  type RuleExceptionPolicy,
+  type RuleOptionDefinition,
 } from "./harmonyRules";
+import { normalizeRuleConfig } from "./rules/configSchema";
 
-export const EXTERNAL_RULE_API_VERSION = 2;
+export const EXTERNAL_RULE_API_VERSION = 3;
 export const MAX_EXTERNAL_RULE_BYTES = 512 * 1024;
 export const EXTERNAL_RULE_TIMEOUT_MS = 100;
 export const EXTERNAL_RULE_MEMORY_BYTES = 32 * 1024 * 1024;
@@ -35,6 +38,10 @@ export interface ExternalRuleManifestRule {
   group: ExternalRuleGroupId;
   defaultSeverity: DiagnosticSeverity;
   dependencyScope: RuleDependencyScope;
+  configVersion: number;
+  options: readonly RuleOptionDefinition[];
+  supportedExceptionContexts: readonly RuleExceptionContext[];
+  defaultExceptionPolicies: RuleExceptionPolicy;
 }
 
 export interface ExternalRuleManifest {
@@ -85,26 +92,10 @@ export interface ExternalRuleRunResult {
   superseded: boolean;
 }
 
-// API v2 继续暴露旧和弦字段。新功能语义在下一版规则 API 统一升级前不会穿透沙箱边界。
-export interface ExternalRuleChordRegionV2 {
-  id: string;
-  startTick: number;
-  durationTicks: number;
-  identity: {
-    root: AnalysisChord["identity"]["root"];
-    quality: Exclude<
-      AnalysisChord["identity"]["structure"],
-      { kind: "augmented-sixth" }
-    >["quality"];
-    extensions: readonly number[];
-    alterations: readonly { degree: number; alter: number }[];
-    bass: AnalysisChord["identity"]["bass"];
-  };
-  semantics?: ReturnType<typeof legacyHarmonyProjection>;
-  locked: boolean;
-}
+export type ExternalRuleChordRegionV3 =
+  HarmonyAnalysis["project"]["chordTrack"]["regions"][number];
 
-export interface ExternalRuleSliceV2 {
+export interface ExternalRuleSliceV3 {
   index: number;
   spanId?: string;
   tick: number;
@@ -112,7 +103,7 @@ export interface ExternalRuleSliceV2 {
   notes: HarmonyAnalysis["slices"][number]["notes"];
   attackVoiceIds: HarmonyAnalysis["slices"][number]["attackVoiceIds"];
   key: HarmonyAnalysis["slices"][number]["key"];
-  chord?: ExternalRuleChordRegionV2;
+  chord?: ExternalRuleChordRegionV3;
   completeSatb: boolean;
   continuity: HarmonyAnalysis["slices"][number]["continuity"];
 }
@@ -139,35 +130,24 @@ export interface ExternalRuleContext {
     chordTrack: {
       visible: boolean;
       locked: boolean;
-      displayMode: "roman" | "absolute" | "both";
-      regions: ExternalRuleChordRegionV2[];
+      displayMode: HarmonyAnalysis["project"]["chordTrack"]["displayMode"];
+      regions: ExternalRuleChordRegionV3[];
     };
   };
-  slices: ExternalRuleSliceV2[];
-  harmonySpans: Array<
-    Omit<HarmonyAnalysis["harmonySpans"][number], "semantics"> & {
-      semantics?: ReturnType<typeof legacyHarmonyProjection>;
-    }
-  >;
+  sharedSettings: HarmonyAnalysis["project"]["ruleProfile"]["shared"];
+  slices: ExternalRuleSliceV3[];
+  harmonySpans: HarmonyAnalysis["harmonySpans"];
   melodyTransitions: HarmonyAnalysis["melodyTransitions"];
   sliceTransitions: Array<
     Omit<
       HarmonyAnalysis["sliceTransitions"][number],
       "previous" | "current"
     > & {
-      previous: ExternalRuleSliceV2;
-      current: ExternalRuleSliceV2;
+      previous: ExternalRuleSliceV3;
+      current: ExternalRuleSliceV3;
     }
   >;
-  chordProgressions: Array<
-    Omit<
-      HarmonyAnalysis["chordProgressions"][number],
-      "previous" | "current"
-    > & {
-      previous: ExternalRuleChordRegionV2;
-      current: ExternalRuleChordRegionV2;
-    }
-  >;
+  connections: HarmonyAnalysis["connections"];
   auxiliarySummary: HarmonyAnalysis["auxiliarySummary"];
 }
 
@@ -179,6 +159,13 @@ const VALID_GROUPS = new Set<ExternalRuleGroupId>([
   "melody",
   "voiceLeading",
   "chord",
+  "resolution",
+  "nonchord",
+  "function",
+  "connection",
+  "rhythm",
+  "cadence",
+  "tonality",
   "custom",
 ]);
 const VALID_SEVERITIES = new Set<DiagnosticSeverity>([
@@ -213,6 +200,212 @@ function requiredString(
     throw new Error(`${label} 无效`);
   }
   return value;
+}
+
+function optionalFiniteNumber(value: unknown, label: string) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value))
+    throw new Error(`${label} 必须是有限数值`);
+  return value;
+}
+
+function parseExternalRuleOptions(
+  value: unknown,
+  ruleId: string,
+): readonly RuleOptionDefinition[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 32)
+    throw new Error(`规则“${ruleId}”最多声明 32 个配置项`);
+  const keys = new Set<string>();
+  return value.map((candidate, index): RuleOptionDefinition => {
+    if (!isRecord(candidate))
+      throw new Error(`规则“${ruleId}”第 ${index + 1} 个配置项无效`);
+    const key = requiredString(candidate.key, "配置项 key", 64, ID_PATTERN);
+    if (keys.has(key)) throw new Error(`规则“${ruleId}”的配置项“${key}”重复`);
+    keys.add(key);
+    const kind = candidate.type ?? candidate.kind;
+    if (
+      ![
+        "boolean",
+        "integer",
+        "number",
+        "pitch",
+        "enum",
+        "pitch-range",
+        "duration",
+      ].includes(String(kind))
+    )
+      throw new Error(`配置项“${key}”的类型无效`);
+    const section = candidate.section ?? "general";
+    if (!["general", "threshold", "exceptions"].includes(String(section)))
+      throw new Error(`配置项“${key}”的分区无效`);
+    const base = {
+      key,
+      label: requiredString(candidate.label, `配置项“${key}”的名称`, 120),
+      description:
+        typeof candidate.description === "string" &&
+        candidate.description.length <= 400
+          ? candidate.description
+          : "外置规则配置项",
+      section: section as "general" | "threshold" | "exceptions",
+      required: candidate.required !== false,
+    };
+    if (kind === "boolean") {
+      if (typeof candidate.defaultValue !== "boolean")
+        throw new Error(`配置项“${key}”的默认值无效`);
+      return { ...base, kind, defaultValue: candidate.defaultValue };
+    }
+    if (kind === "enum") {
+      if (
+        !Array.isArray(candidate.values) ||
+        candidate.values.length < 1 ||
+        candidate.values.length > 32
+      )
+        throw new Error(`配置项“${key}”的枚举值无效`);
+      const values = candidate.values.map((entry) => {
+        if (!isRecord(entry)) throw new Error(`配置项“${key}”的枚举值无效`);
+        return {
+          value: requiredString(entry.value, "枚举值", 80),
+          label: requiredString(entry.label, "枚举名称", 120),
+        };
+      });
+      if (
+        typeof candidate.defaultValue !== "string" ||
+        !values.some((entry) => entry.value === candidate.defaultValue)
+      )
+        throw new Error(`配置项“${key}”的默认枚举值无效`);
+      return { ...base, kind, values, defaultValue: candidate.defaultValue };
+    }
+    if (kind === "pitch-range") {
+      const range = candidate.defaultValue;
+      if (
+        !isRecord(range) ||
+        !Number.isInteger(range.minMidi) ||
+        !Number.isInteger(range.maxMidi) ||
+        (range.minMidi as number) < 0 ||
+        (range.maxMidi as number) > 127 ||
+        (range.minMidi as number) > (range.maxMidi as number)
+      )
+        throw new Error(`配置项“${key}”的默认音域无效`);
+      return {
+        ...base,
+        kind,
+        defaultValue: {
+          minMidi: range.minMidi as number,
+          maxMidi: range.maxMidi as number,
+        },
+      };
+    }
+    if (kind === "duration") {
+      const duration = candidate.defaultValue;
+      const min = optionalFiniteNumber(candidate.min, `配置项“${key}”的 min`);
+      const max = optionalFiniteNumber(candidate.max, `配置项“${key}”的 max`);
+      const step = optionalFiniteNumber(candidate.step, `配置项“${key}”的 step`);
+      if (
+        !isRecord(duration) ||
+        typeof duration.value !== "number" ||
+        !Number.isFinite(duration.value) ||
+        !["ticks", "beats", "measures"].includes(String(duration.unit)) ||
+        (min !== undefined && duration.value < min) ||
+        (max !== undefined && duration.value > max) ||
+        (step !== undefined && step <= 0)
+      )
+        throw new Error(`配置项“${key}”的默认时值无效`);
+      return {
+        ...base,
+        kind,
+        defaultValue: {
+          value: duration.value,
+          unit: duration.unit as "ticks" | "beats" | "measures",
+        },
+        min,
+        max,
+        step,
+      };
+    }
+    const min =
+      kind === "pitch"
+        ? optionalFiniteNumber(candidate.min, `配置项“${key}”的 min`) ?? 0
+        : optionalFiniteNumber(candidate.min, `配置项“${key}”的 min`);
+    const max =
+      kind === "pitch"
+        ? optionalFiniteNumber(candidate.max, `配置项“${key}”的 max`) ?? 127
+        : optionalFiniteNumber(candidate.max, `配置项“${key}”的 max`);
+    const step = optionalFiniteNumber(candidate.step, `配置项“${key}”的 step`);
+    const defaultValue = candidate.defaultValue;
+    if (
+      typeof defaultValue !== "number" ||
+      !Number.isFinite(defaultValue) ||
+      ((kind === "integer" || kind === "pitch") &&
+        !Number.isInteger(defaultValue)) ||
+      (min !== undefined && defaultValue < min) ||
+      (max !== undefined && defaultValue > max) ||
+      (step !== undefined && step <= 0)
+    )
+      throw new Error(`配置项“${key}”的默认值无效`);
+    return {
+      ...base,
+      kind: kind as "integer" | "number" | "pitch",
+      defaultValue,
+      min,
+      max,
+      step,
+      unit: typeof candidate.unit === "string" ? candidate.unit.slice(0, 32) : undefined,
+    };
+  });
+}
+
+function parseExternalExceptionContexts(value: unknown, ruleId: string) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > RULE_EXCEPTION_CONTEXTS.length)
+    throw new Error(`规则“${ruleId}”的特例上下文无效`);
+  const contexts = value.map((context) => {
+    if (
+      typeof context !== "string" ||
+      !RULE_EXCEPTION_CONTEXTS.includes(context as RuleExceptionContext)
+    )
+      throw new Error(`规则“${ruleId}”包含未知特例上下文`);
+    return context as RuleExceptionContext;
+  });
+  if (new Set(contexts).size !== contexts.length)
+    throw new Error(`规则“${ruleId}”包含重复特例上下文`);
+  return contexts;
+}
+
+function parseExternalExceptionPolicies(
+  value: unknown,
+  ruleId: string,
+  supported: readonly RuleExceptionContext[],
+) {
+  if (value === undefined) return {};
+  if (!isRecord(value)) throw new Error(`规则“${ruleId}”的默认特例策略无效`);
+  const supportedSet = new Set(supported);
+  const modes = new Set<RuleExceptionMode>(["exempt", "downgrade", "strict"]);
+  const result: RuleExceptionPolicy = {};
+  for (const [context, mode] of Object.entries(value)) {
+    if (
+      !supportedSet.has(context as RuleExceptionContext) ||
+      !modes.has(mode as RuleExceptionMode)
+    )
+      throw new Error(`规则“${ruleId}”的默认特例策略无效`);
+    result[context as RuleExceptionContext] = mode as RuleExceptionMode;
+  }
+  return result;
+}
+
+export function normalizeExternalRuleConfig(
+  rule: ExternalRuleManifestRule,
+  input: RuleConfig | undefined,
+) {
+  return normalizeRuleConfig(
+    {
+      options: rule.options,
+      defaultConfig: Object.fromEntries(
+        rule.options.map((option) => [option.key, structuredClone(option.defaultValue)]),
+      ),
+    },
+    input,
+  );
 }
 
 export function parseExternalRuleManifest(
@@ -256,6 +449,16 @@ export function parseExternalRuleManifest(
       throw new Error(`规则“${id}”的默认严重程度无效`);
     if (!VALID_SCOPES.has(dependencyScope))
       throw new Error(`规则“${id}”的依赖范围无效`);
+    if (
+      !Number.isInteger(entry.configVersion) ||
+      (entry.configVersion as number) < 1 ||
+      (entry.configVersion as number) > 1_000_000
+    )
+      throw new Error(`规则“${id}”的 configVersion 无效`);
+    const supportedExceptionContexts = parseExternalExceptionContexts(
+      entry.supportedExceptionContexts,
+      id,
+    );
     return {
       id,
       label: requiredString(entry.label, `规则“${id}”的名称`, 120),
@@ -266,6 +469,14 @@ export function parseExternalRuleManifest(
       group,
       defaultSeverity,
       dependencyScope,
+      configVersion: entry.configVersion as number,
+      options: parseExternalRuleOptions(entry.options, id),
+      supportedExceptionContexts,
+      defaultExceptionPolicies: parseExternalExceptionPolicies(
+        entry.defaultExceptionPolicies,
+        id,
+        supportedExceptionContexts,
+      ),
     };
   });
 
@@ -307,7 +518,7 @@ export function validateExternalRulePackageMetadata(
 
 export function externalRuleReferenceKey(
   reference: Pick<
-    RuleProfileRef["external"][number],
+    RuleProfile["external"][number],
     "packageId" | "version" | "contentHash" | "ruleId"
   >,
 ) {
@@ -317,35 +528,11 @@ export function externalRuleReferenceKey(
 export function buildExternalRuleContext(
   analysis: HarmonyAnalysis,
 ): ExternalRuleContext {
-  const chordMap = new Map<string, ExternalRuleChordRegionV2>();
-  analysis.project.chordTrack.regions.forEach((chord) => {
-    if (
-      chord.identity.structure.kind !== "tertian" ||
-      chord.identity.structure.extensions.some((extension) => extension >= 9) ||
-      (chord.semantics &&
-        (chord.semantics.interpretations.length !== 1 ||
-          chord.semantics.pedalContext))
-    )
-      return;
-    chordMap.set(chord.id, {
-      id: chord.id,
-      startTick: chord.startTick,
-      durationTicks: chord.durationTicks,
-      identity: {
-        root: chord.identity.root,
-        quality: chord.identity.structure.quality,
-        extensions: chord.identity.structure.extensions,
-        alterations: chord.identity.structure.alterations,
-        bass: chord.identity.bass,
-      },
-      semantics: chord.semantics
-        ? legacyHarmonyProjection(chord.semantics)
-        : undefined,
-      locked: chord.locked,
-    });
-  });
+  const chordMap = new Map(
+    analysis.project.chordTrack.regions.map((chord) => [chord.id, chord]),
+  );
   const slices = analysis.slices.map(
-    (slice): ExternalRuleSliceV2 => ({
+    (slice): ExternalRuleSliceV3 => ({
       index: slice.index,
       spanId: analysis.sliceSpanIds.get(slice.index),
       tick: slice.tick,
@@ -359,8 +546,7 @@ export function buildExternalRuleContext(
     }),
   );
   const sliceMap = new Map(slices.map((slice) => [slice.index, slice]));
-  const displayMode = analysis.project.chordTrack.displayMode;
-  // Map 和宿主查询函数不跨越 Worker/QuickJS 边界；只发送冻结快照可重建的 plain data。
+  // Map 和查询函数不跨越 Worker/QuickJS 边界；V3 发送完整但裁剪过工程隐私的 plain data。
   return {
     apiVersion: EXTERNAL_RULE_API_VERSION,
     revision: analysis.revision,
@@ -377,42 +563,20 @@ export function buildExternalRuleContext(
       chordTrack: {
         visible: analysis.project.chordTrack.visible,
         locked: analysis.project.chordTrack.locked,
-        displayMode:
-          displayMode === "absolute"
-            ? "absolute"
-            : displayMode === "functional-absolute" ||
-                displayMode === "roman-absolute"
-              ? "both"
-              : "roman",
-        regions: [...chordMap.values()],
+        displayMode: analysis.project.chordTrack.displayMode,
+        regions: [...analysis.project.chordTrack.regions],
       },
     },
+    sharedSettings: analysis.project.ruleProfile.shared,
     slices,
-    harmonySpans: analysis.harmonySpans
-      .filter((span) => span.regionIds.every((id) => chordMap.has(id)))
-      .map((span) => ({
-        ...span,
-        semantics: span.semantics
-          ? legacyHarmonyProjection(span.semantics)
-          : undefined,
-      })),
+    harmonySpans: analysis.harmonySpans,
     melodyTransitions: analysis.melodyTransitions,
     sliceTransitions: analysis.sliceTransitions.map((transition) => ({
       ...transition,
       previous: sliceMap.get(transition.previous.index)!,
       current: sliceMap.get(transition.current.index)!,
     })),
-    chordProgressions: analysis.chordProgressions
-      .filter(
-        (progression) =>
-          chordMap.has(progression.previous.id) &&
-          chordMap.has(progression.current.id),
-      )
-      .map((progression) => ({
-        ...progression,
-        previous: chordMap.get(progression.previous.id)!,
-        current: chordMap.get(progression.current.id)!,
-      })),
+    connections: analysis.connections,
     auxiliarySummary: analysis.auxiliarySummary,
   };
 }
@@ -525,8 +689,13 @@ export function normalizeExternalRuleDiagnostics(options: {
   package: InstalledExternalRulePackage;
   rule: ExternalRuleManifestRule;
   severity: Exclude<HarmonyRuleSeverity, "off">;
+  exceptionPolicy?: RuleExceptionPolicy;
 }): HarmonyDiagnostic[] {
   const { value, project, package: installedPackage, rule, severity } = options;
+  const exceptionPolicy = {
+    ...rule.defaultExceptionPolicies,
+    ...(options.exceptionPolicy ?? {}),
+  };
   const diagnosticsValue = Array.isArray(value)
     ? value
     : isRecord(value) && Array.isArray(value.diagnostics)
@@ -544,7 +713,7 @@ export function normalizeExternalRuleDiagnostics(options: {
   );
   const chordIds = new Set(project.chordTrack.regions.map((chord) => chord.id));
 
-  return diagnosticsValue.map((entry, index) => {
+  return diagnosticsValue.map((entry, index): HarmonyDiagnostic | undefined => {
     if (!isRecord(entry)) throw new Error(`第 ${index + 1} 项诊断不是对象`);
     if (entry.ruleId !== undefined && entry.ruleId !== rule.id)
       throw new Error(`第 ${index + 1} 项诊断引用了未授权的规则 ID`);
@@ -588,6 +757,27 @@ export function normalizeExternalRuleDiagnostics(options: {
       typeof entry.messageKey === "string" && entry.messageKey.trim()
         ? requiredString(entry.messageKey, "诊断 messageKey", 120)
         : "external-diagnostic";
+    const exceptionContexts = stringArray(
+      entry.exceptionContexts ?? [],
+      "诊断 exceptionContexts",
+    ) as RuleExceptionContext[];
+    if (
+      exceptionContexts.some(
+        (context) => !rule.supportedExceptionContexts.includes(context),
+      )
+    )
+      throw new Error(`第 ${index + 1} 项诊断使用了规则未声明的特例上下文`);
+    if (
+      exceptionContexts.some((context) => exceptionPolicy[context] === "exempt")
+    )
+      return undefined;
+    const effectiveSeverity = exceptionContexts.some(
+      (context) => exceptionPolicy[context] === "downgrade",
+    )
+      ? severity === "error"
+        ? "warning"
+        : "suggestion"
+      : severity;
     const stableObjects = (items: string[]) => [...items].sort().join(",");
     return {
       id: [
@@ -603,7 +793,7 @@ export function normalizeExternalRuleDiagnostics(options: {
       ].join(":"),
       ruleId: rule.id,
       source: "external",
-      severity,
+      severity: effectiveSeverity,
       tick: tick as number,
       endTick: endTick as number,
       voiceIds: voiceIds as HarmonyDiagnostic["voiceIds"],
@@ -615,8 +805,11 @@ export function normalizeExternalRuleDiagnostics(options: {
       params: primitiveParams(entry.params),
       evidence: evidenceItems(entry.evidence),
       confidence,
+      exceptionContexts,
     };
-  });
+  }).filter(
+    (diagnostic): diagnostic is HarmonyDiagnostic => diagnostic !== undefined,
+  );
 }
 
 function severityOrder(severity: HarmonyDiagnostic["severity"]) {

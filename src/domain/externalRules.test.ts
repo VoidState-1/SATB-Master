@@ -18,10 +18,10 @@ import { checkHarmony } from "./harmony";
 const EXAMPLE_SOURCE = `
 SATB_RULE.register({
   manifest: {
-    apiVersion: 2,
+    apiVersion: 3,
     packageId: "org.example.safe",
     version: "1.0.0",
-    rules: [{ id: "safe-rule", label: "安全示例", group: "custom" }],
+    rules: [{ id: "safe-rule", label: "安全示例", group: "custom", configVersion: 1 }],
   },
   rules: [{
     id: "safe-rule",
@@ -41,10 +41,10 @@ SATB_RULE.register({
 function installedPackage(): InstalledExternalRulePackage {
   return {
     manifest: parseExternalRuleManifest({
-      apiVersion: 2,
+      apiVersion: 3,
       packageId: "org.example.safe",
       version: "1.0.0",
-      rules: [{ id: "safe-rule", label: "安全示例", group: "custom" }],
+      rules: [{ id: "safe-rule", label: "安全示例", group: "custom", configVersion: 1 }],
     }),
     contentHash: "a".repeat(64),
     sourcePath: "safe.satb-rule.js",
@@ -56,10 +56,10 @@ function installedPackage(): InstalledExternalRulePackage {
 describe("Phase C 外置规则 manifest", () => {
   it("补齐可选元数据并拒绝重复规则 ID", () => {
     const manifest = parseExternalRuleManifest({
-      apiVersion: 2,
+      apiVersion: 3,
       packageId: "org.example.rules",
       version: "1.2.0",
-      rules: [{ id: "example", label: "示例", group: "custom" }],
+      rules: [{ id: "example", label: "示例", group: "custom", configVersion: 1 }],
     });
     expect(manifest.rules[0]).toMatchObject({
       description: "外置检查规则",
@@ -74,20 +74,54 @@ describe("Phase C 外置规则 manifest", () => {
     ).toThrow("重复");
   });
 
-  it("直接拒绝未发布的 API v1 规则包", () => {
+  it("直接拒绝旧 API 规则包", () => {
     expect(() =>
       parseExternalRuleManifest({
         apiVersion: 1,
         packageId: "org.example.legacy",
         version: "1.0.0",
-        rules: [{ id: "legacy", label: "旧规则", group: "custom" }],
+        rules: [{ id: "legacy", label: "旧规则", group: "custom", configVersion: 1 }],
       }),
-    ).toThrow("API v2");
+    ).toThrow("API v3");
+  });
+
+  it("校验声明式特例上下文和默认策略", () => {
+    const manifest = parseExternalRuleManifest({
+      apiVersion: 3,
+      packageId: "org.example.exceptions",
+      version: "1.0.0",
+      rules: [
+        {
+          id: "exception-rule",
+          label: "特例规则",
+          group: "custom",
+          configVersion: 1,
+          supportedExceptionContexts: ["same-harmony"],
+          defaultExceptionPolicies: { "same-harmony": "downgrade" },
+        },
+      ],
+    });
+    expect(manifest.rules[0]).toMatchObject({
+      supportedExceptionContexts: ["same-harmony"],
+      defaultExceptionPolicies: { "same-harmony": "downgrade" },
+    });
+    expect(() =>
+      parseExternalRuleManifest({
+        ...manifest,
+        rules: [
+          {
+            ...manifest.rules[0],
+            supportedExceptionContexts: [],
+            defaultExceptionPolicies: { "same-harmony": "exempt" },
+          },
+        ],
+      }),
+    ).toThrow("默认特例策略");
   });
 });
 
 describe("Phase C QuickJS 沙箱", () => {
-  it("API v2 只暴露旧和弦投影，并过滤无法可靠解释的新结构", () => {
+  it("API v3 暴露完整 identity、语义、span 和连接事实", () => {
     const project = createEmptyProject();
     project.chordTrack.regions = [
       createChordRegion(
@@ -122,24 +156,19 @@ describe("Phase C QuickJS 沙箱", () => {
     ];
     const context = buildExternalRuleContext(buildHarmonyAnalysis(project, 2));
 
-    expect(context.project.chordTrack.regions).toHaveLength(1);
+    expect(context.project.chordTrack.regions).toHaveLength(2);
     expect(context.project.chordTrack.regions[0].identity).toMatchObject({
-      quality: "major",
-      extensions: [],
+      structure: { kind: "tertian", quality: "major", extensions: [] },
     });
-    expect(context.project.chordTrack.regions[0].identity).not.toHaveProperty(
-      "structure",
-    );
     expect(context.project.chordTrack.regions[0].semantics).toMatchObject({
-      degree: 1,
-      degreeAlteration: 0,
+      interpretations: [{ degree: 1, degreeAlteration: 0 }],
     });
-    expect(context.project.chordTrack.regions[0].semantics).not.toHaveProperty(
-      "interpretations",
-    );
     expect(
       context.slices.some((slice) => slice.chord?.id === "d9-new-structure"),
-    ).toBe(false);
+    ).toBe(true);
+    expect(context.harmonySpans).toHaveLength(2);
+    expect(context.connections).toHaveLength(1);
+    expect(context.sharedSettings).toBeDefined();
   });
 
   it("通过受控注册读取 manifest，并且不暴露宿主 API", async () => {
@@ -164,7 +193,7 @@ describe("Phase C QuickJS 沙箱", () => {
 
   it("中断超过 CPU 预算的死循环", async () => {
     const source = `SATB_RULE.register({
-      manifest: { apiVersion: 2, packageId: "org.example.loop", version: "1", rules: [{ id: "loop", label: "循环", group: "custom" }] },
+      manifest: { apiVersion: 3, packageId: "org.example.loop", version: "1", rules: [{ id: "loop", label: "循环", group: "custom", configVersion: 1 }] },
       rules: [{ id: "loop", evaluate() { while (true) {} } }],
     });`;
     const context = buildExternalRuleContext(
@@ -185,7 +214,7 @@ describe("Phase C QuickJS 沙箱", () => {
 
   it("隔离超过堆限制的规则", async () => {
     const source = `SATB_RULE.register({
-      manifest: { apiVersion: 2, packageId: "org.example.memory", version: "1", rules: [{ id: "memory", label: "内存", group: "custom" }] },
+      manifest: { apiVersion: 3, packageId: "org.example.memory", version: "1", rules: [{ id: "memory", label: "内存", group: "custom", configVersion: 1 }] },
       rules: [{ id: "memory", evaluate() { return [new Array(8000000).fill("xxxxxxxx")]; } }],
     });`;
     const context = buildExternalRuleContext(
@@ -206,10 +235,10 @@ describe("Phase C QuickJS 沙箱", () => {
   it("按切片传递规则私有状态并返回统一结果对象", async () => {
     const source = `SATB_RULE.register({
       manifest: {
-        apiVersion: 2,
+        apiVersion: 3,
         packageId: "org.example.safe",
         version: "1.0.0",
-        rules: [{ id: "safe-rule", label: "状态示例", group: "custom" }],
+        rules: [{ id: "safe-rule", label: "状态示例", group: "custom", configVersion: 1 }],
       },
       rules: [{
         id: "safe-rule",
@@ -318,5 +347,44 @@ describe("Phase C 外置诊断归一化", () => {
         severity: "warning",
       }),
     ).toThrow("不存在的音符");
+  });
+
+  it("由宿主执行外置规则特例的降级与豁免", () => {
+    const project = createEmptyProject();
+    const packageMetadata = installedPackage();
+    const rule = {
+      ...packageMetadata.manifest.rules[0],
+      supportedExceptionContexts: ["same-harmony"] as const,
+      defaultExceptionPolicies: { "same-harmony": "downgrade" as const },
+    };
+    const diagnostic = {
+      tick: 0,
+      title: "特例诊断",
+      message: "同和弦语境",
+      noteIds: [],
+      chordIds: [],
+      voiceIds: [],
+      exceptionContexts: ["same-harmony"],
+    };
+
+    expect(
+      normalizeExternalRuleDiagnostics({
+        value: [diagnostic],
+        project,
+        package: packageMetadata,
+        rule,
+        severity: "error",
+      })[0].severity,
+    ).toBe("warning");
+    expect(
+      normalizeExternalRuleDiagnostics({
+        value: [diagnostic],
+        project,
+        package: packageMetadata,
+        rule,
+        severity: "error",
+        exceptionPolicy: { "same-harmony": "exempt" },
+      }),
+    ).toEqual([]);
   });
 });

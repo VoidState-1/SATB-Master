@@ -65,10 +65,28 @@ import {
 } from "./domain/harmony";
 import {
   externalRuleReferenceKey,
+  normalizeExternalRuleConfig,
   type ExternalRuleFailure,
   type InstalledExternalRulePackage,
 } from "./domain/externalRules";
-import type { HarmonyRuleSeverity } from "./domain/harmonyRules";
+import {
+  type HarmonyRuleId,
+  type HarmonyRuleSeverity,
+  type RuleConfig,
+  type RuleExceptionPolicy,
+} from "./domain/harmonyRules";
+import {
+  createPortableRuleProfile,
+  loadNewProjectRuleProfile,
+  prepareRuleProfileImport,
+  resetAllBuiltinRules,
+  resetBuiltinRule,
+  resolveBuiltinRuleProfile,
+  saveNewProjectRuleProfile,
+  setBuiltinRuleConfig,
+  setBuiltinRuleException,
+  setBuiltinRuleSeverity,
+} from "./domain/ruleProfile";
 import { buildMidi, midiFileName } from "./domain/midi";
 import {
   createEmptyProject,
@@ -82,7 +100,7 @@ import {
   type EditableRange,
   type NoteEvent,
   type ProjectDocument,
-  type RuleProfileRef,
+  type RuleProfile,
   type SatbTrack,
   type VoiceId,
 } from "./domain/model";
@@ -105,7 +123,6 @@ import {
   PANEL_RESIZER_SIZE,
   usePanelLayout,
 } from "./hooks/usePanelLayout";
-import { useHarmonyRuleSettings } from "./hooks/useHarmonyRuleSettings";
 import { useDeveloperMode } from "./hooks/useDeveloperMode";
 import { useExternalRuleLibrary } from "./hooks/useExternalRuleLibrary";
 import { useProjectHistory } from "./hooks/useProjectHistory";
@@ -124,7 +141,9 @@ import {
   loadUserSoundFont,
   MAX_SOUNDFONT_BYTES,
   openProject,
+  openRuleProfileFile,
   readSoundFontBuffer,
+  saveRuleProfileFile,
   saveProject,
   type SoundFontLoadProgress,
 } from "./services/desktop";
@@ -168,6 +187,13 @@ function soundFontId(soundFont: ProjectDocument["audio"]["soundFont"]) {
   return soundFont.kind === "default"
     ? "default"
     : `user:${soundFont.hash ?? soundFont.path ?? soundFont.name}`;
+}
+
+function createProjectWithRuleProfileTemplate() {
+  const project = createEmptyProject();
+  const template = loadNewProjectRuleProfile();
+  if (template) project.ruleProfile = template;
+  return project;
 }
 
 function formatByteSize(bytes: number) {
@@ -228,7 +254,7 @@ async function ensureSoundFontLoaded(
 }
 
 function App() {
-  const initialProject = useMemo(() => createEmptyProject(), []);
+  const initialProject = useMemo(() => createProjectWithRuleProfileTemplate(), []);
   const history = useProjectHistory(initialProject);
   const project = history.project;
   const loopEnabled = project.loop.enabled;
@@ -279,7 +305,6 @@ function App() {
   const playSessionRef = useRef(0);
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
-  const harmonyRuleSettings = useHarmonyRuleSettings();
   const developerMode = useDeveloperMode();
   const externalRuleLibrary = useExternalRuleLibrary();
   const harmonySchedulerRef = useRef(createHarmonyRuleScheduler());
@@ -288,6 +313,10 @@ function App() {
   const [externalRuleFailures, setExternalRuleFailures] = useState<
     ExternalRuleFailure[]
   >([]);
+  const resolvedRuleProfile = useMemo(
+    () => resolveBuiltinRuleProfile(project),
+    [project],
+  );
   const effectiveTool: EditorTool =
     tool === "select"
       ? toolModifiers.alt
@@ -298,14 +327,21 @@ function App() {
       : tool;
 
   const [harmonyResult, setHarmonyResult] = useState(() =>
-    checkHarmony(project, harmonyRuleSettings.severities),
+    checkHarmony(
+      project,
+      resolvedRuleProfile.severities,
+      resolvedRuleProfile.configs,
+      resolvedRuleProfile.exceptions,
+    ),
   );
   useEffect(() => {
     const controller = new AbortController();
     const revision = ++harmonyRevisionRef.current;
     const builtinRun = harmonySchedulerRef.current.run({
       project,
-      severities: harmonyRuleSettings.severities,
+      severities: resolvedRuleProfile.severities,
+      configs: resolvedRuleProfile.configs,
+      exceptions: resolvedRuleProfile.exceptions,
       revision,
       signal: controller.signal,
     });
@@ -341,7 +377,14 @@ function App() {
       controller.abort();
       externalRuleRuntimeRef.current.cancel();
     };
-  }, [externalRuleLibrary.packages, harmonyRuleSettings.severities, project]);
+  }, [externalRuleLibrary.packages, project, resolvedRuleProfile]);
+  const ruleHitCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    harmonyResult.diagnostics.forEach((diagnostic) => {
+      counts[diagnostic.ruleId] = (counts[diagnostic.ruleId] ?? 0) + 1;
+    });
+    return counts;
+  }, [harmonyResult.diagnostics]);
   const selectedNote = useMemo(() => {
     const id = selectedNoteIds.values().next().value as string | undefined;
     if (!id) return undefined;
@@ -408,6 +451,10 @@ function App() {
             const existing = previous.find(
               (reference) => reference.ruleId === rule.id,
             );
+            const normalizedConfig = normalizeExternalRuleConfig(
+              rule,
+              existing?.config,
+            );
             draft.ruleProfile.external.push({
               ruleId: rule.id,
               packageId: installedPackage.manifest.packageId,
@@ -415,7 +462,9 @@ function App() {
               contentHash: installedPackage.contentHash,
               severity: existing?.severity ?? rule.defaultSeverity,
               enabled: existing?.enabled ?? true,
-              config: { ...(existing?.config ?? {}) },
+              configVersion: rule.configVersion,
+              config: normalizedConfig.config,
+              exceptions: { ...(existing?.exceptions ?? {}) },
             });
           });
         }),
@@ -460,8 +509,17 @@ function App() {
 
   const updateExternalRuleReference = useCallback(
     (
-      target: RuleProfileRef["external"][number],
-      patch: { enabled?: boolean; severity?: HarmonyRuleSeverity },
+      target: RuleProfile["external"][number],
+      patch: Partial<
+        Pick<
+          RuleProfile["external"][number],
+          | "enabled"
+          | "severity"
+          | "configVersion"
+          | "config"
+          | "exceptions"
+        >
+      >,
     ) => {
       const targetKey = externalRuleReferenceKey(target);
       history.commit(
@@ -475,6 +533,210 @@ function App() {
     },
     [history, project],
   );
+
+  const setExternalRuleConfig = useCallback(
+    (target: RuleProfile["external"][number], patch: RuleConfig) => {
+      const installedPackage = externalRuleLibrary.packages.find(
+        (candidate) => candidate.contentHash === target.contentHash,
+      );
+      const rule = installedPackage?.manifest.rules.find(
+        (candidate) => candidate.id === target.ruleId,
+      );
+      if (!rule) return;
+      const normalized = normalizeExternalRuleConfig(rule, {
+        ...target.config,
+        ...patch,
+      });
+      updateExternalRuleReference(target, {
+        configVersion: rule.configVersion,
+        config: normalized.config,
+      });
+    },
+    [externalRuleLibrary.packages, updateExternalRuleReference],
+  );
+
+  const setExternalRuleException = useCallback(
+    (
+      target: RuleProfile["external"][number],
+      policy: RuleExceptionPolicy | undefined,
+    ) => {
+      const installedPackage = externalRuleLibrary.packages.find(
+        (candidate) => candidate.contentHash === target.contentHash,
+      );
+      const rule = installedPackage?.manifest.rules.find(
+        (candidate) => candidate.id === target.ruleId,
+      );
+      if (!rule) return;
+      const supported = new Set(rule.supportedExceptionContexts);
+      const exceptions = Object.fromEntries(
+        Object.entries(policy ?? {}).filter(([context]) =>
+          supported.has(context as never),
+        ),
+      ) as RuleExceptionPolicy;
+      updateExternalRuleReference(target, { exceptions });
+    },
+    [externalRuleLibrary.packages, updateExternalRuleReference],
+  );
+
+  const resetExternalRule = useCallback(
+    (target: RuleProfile["external"][number]) => {
+      const installedPackage = externalRuleLibrary.packages.find(
+        (candidate) => candidate.contentHash === target.contentHash,
+      );
+      const rule = installedPackage?.manifest.rules.find(
+        (candidate) => candidate.id === target.ruleId,
+      );
+      if (!rule) return;
+      updateExternalRuleReference(target, {
+        enabled: true,
+        severity: rule.defaultSeverity,
+        configVersion: rule.configVersion,
+        config: normalizeExternalRuleConfig(rule, undefined).config,
+        exceptions: {},
+      });
+    },
+    [externalRuleLibrary.packages, updateExternalRuleReference],
+  );
+
+  const setRuleSeverity = useCallback(
+    (ruleId: HarmonyRuleId, severity: HarmonyRuleSeverity) => {
+      history.commit(
+        replaceProject(project, (draft) => {
+          setBuiltinRuleSeverity(draft, ruleId, severity);
+        }),
+      );
+    },
+    [history, project],
+  );
+
+  const resetRule = useCallback(
+    (ruleId: HarmonyRuleId) => {
+      history.commit(
+        replaceProject(project, (draft) => {
+          resetBuiltinRule(draft, ruleId);
+        }),
+      );
+    },
+    [history, project],
+  );
+
+  const resetAllRules = useCallback(() => {
+    history.commit(
+      replaceProject(project, (draft) => {
+        resetAllBuiltinRules(draft);
+        draft.ruleProfile.external = draft.ruleProfile.external.map(
+          (reference) => {
+            const installedPackage = externalRuleLibrary.packages.find(
+              (candidate) => candidate.contentHash === reference.contentHash,
+            );
+            const rule = installedPackage?.manifest.rules.find(
+              (candidate) => candidate.id === reference.ruleId,
+            );
+            if (!rule) return reference;
+            return {
+              ...reference,
+              enabled: true,
+              severity: rule.defaultSeverity,
+              configVersion: rule.configVersion,
+              config: normalizeExternalRuleConfig(rule, undefined).config,
+              exceptions: {},
+            };
+          },
+        );
+      }),
+    );
+  }, [externalRuleLibrary.packages, history, project]);
+
+  const setRuleConfig = useCallback(
+    (ruleId: HarmonyRuleId, patch: RuleConfig) => {
+      history.commit(
+        replaceProject(project, (draft) => {
+          setBuiltinRuleConfig(draft, ruleId, patch);
+        }),
+      );
+    },
+    [history, project],
+  );
+
+  const setRuleException = useCallback(
+    (ruleId: HarmonyRuleId, policy: RuleExceptionPolicy | undefined) => {
+      history.commit(
+        replaceProject(project, (draft) => {
+          setBuiltinRuleException(draft, ruleId, policy);
+        }),
+      );
+    },
+    [history, project],
+  );
+
+  const handleImportRuleProfile = useCallback(async () => {
+    try {
+      const source = await openRuleProfileFile();
+      if (source === undefined) return;
+      const prepared = prepareRuleProfileImport(
+        source,
+        project.ruleProfile,
+        externalRuleLibrary.packages,
+      );
+      const { report } = prepared;
+      const summary = [
+        `${report.changedRuleIds.length} 条修改`,
+        `${report.addedRuleIds.length} 条新增`,
+        `${report.removedRuleIds.length} 条移除`,
+        report.repairedSettings.length
+          ? `${report.repairedSettings.length} 条配置已按当前 schema 修复`
+          : undefined,
+        report.unknownBuiltinRuleIds.length
+          ? `${report.unknownBuiltinRuleIds.length} 条未知内置规则将仅列入报告`
+          : undefined,
+        report.missingExternalRuleKeys.length
+          ? `${report.missingExternalRuleKeys.length} 条外置规则缺少本机包，将保留为未挂载`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join("；");
+      const confirmed = await requestConfirmation({
+        title: "导入规则配置档案",
+        message: `将应用“${prepared.profile.title}”：${summary || "配置与当前工程一致"}。`,
+        confirmLabel: "应用配置",
+        cancelLabel: "取消",
+      });
+      if (!confirmed) return;
+      history.commit(
+        replaceProject(project, (draft) => {
+          draft.ruleProfile = structuredClone(prepared.profile);
+        }),
+      );
+      showNotice(
+        report.unknownBuiltinRuleIds.length > 0
+          ? `配置已导入；未知内置规则：${report.unknownBuiltinRuleIds.join("、")}`
+          : "规则配置档案已导入",
+      );
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "规则配置档案导入失败");
+    }
+  }, [
+    externalRuleLibrary.packages,
+    history,
+    project,
+    requestConfirmation,
+    showNotice,
+  ]);
+
+  const handleExportRuleProfile = useCallback(async () => {
+    try {
+      const portable = createPortableRuleProfile(project.ruleProfile);
+      const result = await saveRuleProfileFile(portable, project.title);
+      if (!result.canceled) showNotice("规则配置档案已导出");
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "规则配置档案导出失败");
+    }
+  }, [project, showNotice]);
+
+  const handleSetDefaultRuleProfile = useCallback(() => {
+    saveNewProjectRuleProfile(project.ruleProfile);
+    showNotice("已设为新建工程的默认规则配置");
+  }, [project.ruleProfile, showNotice]);
 
   useEffect(
     () => () => {
@@ -1096,14 +1358,15 @@ function App() {
     )
       return;
     audioEngine.stop();
-    history.load(createEmptyProject());
+    const nextProject = createProjectWithRuleProfileTemplate();
+    history.load(nextProject);
     setFilePath(undefined);
     setMigrationBackupSourcePath(undefined);
     setSelectedNoteIds(new Set());
     setSelectedChordIds(new Set());
-    setChordBrush(defaultChordDraftAtTick(initialProject, 0));
+    setChordBrush(defaultChordDraftAtTick(nextProject, 0));
     setPlayheadTick(0);
-  }, [history, initialProject, requestConfirmation]);
+  }, [history, requestConfirmation]);
 
   const handleOpen = useCallback(async () => {
     if (
@@ -2470,10 +2733,19 @@ function App() {
           onClearBinding={shortcutSettings.clearBinding}
           onResetBinding={shortcutSettings.resetBinding}
           onResetAll={shortcutSettings.resetAllBindings}
-          ruleSeverities={harmonyRuleSettings.severities}
-          onSetRuleSeverity={harmonyRuleSettings.setSeverity}
-          onResetRule={harmonyRuleSettings.resetRule}
-          onResetAllRules={harmonyRuleSettings.resetAllRules}
+          profileTitle={project.ruleProfile.title}
+          ruleHitCounts={ruleHitCounts}
+          ruleSeverities={resolvedRuleProfile.severities}
+          ruleConfigs={resolvedRuleProfile.configs}
+          ruleExceptions={resolvedRuleProfile.exceptions}
+          onSetRuleSeverity={setRuleSeverity}
+          onSetRuleConfig={setRuleConfig}
+          onSetRuleException={setRuleException}
+          onResetRule={resetRule}
+          onResetAllRules={resetAllRules}
+          onImportRuleProfile={() => void handleImportRuleProfile()}
+          onExportRuleProfile={() => void handleExportRuleProfile()}
+          onSetDefaultRuleProfile={handleSetDefaultRuleProfile}
           externalRulePackages={externalRuleLibrary.packages}
           externalRuleReferences={project.ruleProfile.external}
           externalRuleFailures={externalRuleFailures}
@@ -2492,6 +2764,9 @@ function App() {
           onSetExternalRuleSeverity={(reference, severity) =>
             updateExternalRuleReference(reference, { severity })
           }
+          onSetExternalRuleConfig={setExternalRuleConfig}
+          onSetExternalRuleException={setExternalRuleException}
+          onResetExternalRule={resetExternalRule}
           developerMode={developerMode.enabled}
           onSetDeveloperMode={developerMode.setEnabled}
           onClose={() => setSettingsOpen(false)}

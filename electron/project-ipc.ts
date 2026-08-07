@@ -9,8 +9,9 @@ import {
 } from './soundfont-resource.js'
 
 const MAX_PROJECT_BYTES = 20 * 1024 * 1024
+const MAX_RULE_PROFILE_BYTES = 2 * 1024 * 1024
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
-export type DialogDirectoryKind = 'project' | 'midi' | 'soundfont' | 'rule'
+export type DialogDirectoryKind = 'project' | 'midi' | 'soundfont' | 'rule' | 'profile'
 type DialogDirectories = Partial<Record<DialogDirectoryKind, string>>
 
 let dialogDirectories: DialogDirectories | undefined
@@ -65,6 +66,11 @@ function assertProjectEnvelope(value: unknown) {
   }
 }
 
+interface RuleProfileSaveRequest {
+  profile: unknown
+  defaultName?: string
+}
+
 function recoveryPath() {
   return path.join(app.getPath('userData'), 'recovery.json')
 }
@@ -78,7 +84,7 @@ async function loadDialogDirectories() {
   try {
     const stored = JSON.parse(await readFile(dialogDirectoriesPath(), 'utf8')) as Record<string, unknown>
     dialogDirectories = Object.fromEntries(
-      (['project', 'midi', 'soundfont', 'rule'] as DialogDirectoryKind[])
+      (['project', 'midi', 'soundfont', 'rule', 'profile'] as DialogDirectoryKind[])
         .filter((kind) => typeof stored[kind] === 'string' && path.isAbsolute(stored[kind] as string))
         .map((kind) => [kind, stored[kind] as string]),
     )
@@ -166,6 +172,16 @@ function assertSoundFontPath(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error('SoundFont 路径无效')
   const extension = path.extname(value).toLowerCase()
   if (extension !== '.sf2' && extension !== '.sf3') throw new Error('只支持 SF2 或 SF3 文件')
+}
+
+function assertRuleProfileEnvelope(value: unknown) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    (value as { kind?: unknown }).kind !== 'satb-rule-profile' ||
+    (value as { formatVersion?: unknown }).formatVersion !== 1
+  )
+    throw new Error('规则配置档案结构或版本无效')
 }
 
 export function registerProjectIpc() {
@@ -277,6 +293,50 @@ export function registerProjectIpc() {
     await rememberDialogDirectory('midi', selection.filePath)
     await writeFile(selection.filePath, request.bytes)
     return { canceled: false, filePath: selection.filePath }
+  })
+
+  ipcMain.handle('rule-profile:open', async () => {
+    const selection = await dialog.showOpenDialog({
+      title: '导入规则配置档案',
+      defaultPath: await rememberedDefaultPath('profile'),
+      properties: ['openFile'],
+      filters: [{ name: 'SATB Master 规则配置档案', extensions: ['json'] }],
+    })
+    if (selection.canceled || !selection.filePaths[0]) return { canceled: true }
+    const filePath = selection.filePaths[0]
+    const info = await stat(filePath)
+    if (info.size < 1 || info.size > MAX_RULE_PROFILE_BYTES)
+      throw new Error('规则配置档案必须小于等于 2 MB 且不能为空')
+    const profile = JSON.parse(await readFile(filePath, 'utf8')) as unknown
+    assertRuleProfileEnvelope(profile)
+    await rememberDialogDirectory('profile', filePath)
+    return { canceled: false, filePath, profile }
+  })
+
+  ipcMain.handle('rule-profile:save', async (_event, request: RuleProfileSaveRequest) => {
+    assertRuleProfileEnvelope(request?.profile)
+    const requestedName =
+      typeof request.defaultName === 'string' && request.defaultName.trim()
+        ? request.defaultName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 80)
+        : 'SATB Master 规则配置'
+    const selection = await dialog.showSaveDialog({
+      title: '导出规则配置档案',
+      defaultPath: await rememberedDefaultPath(
+        'profile',
+        `${requestedName}.satb-rule-profile.json`,
+      ),
+      filters: [{ name: 'SATB Master 规则配置档案', extensions: ['json'] }],
+    })
+    if (selection.canceled || !selection.filePath) return { canceled: true }
+    const filePath = selection.filePath.toLowerCase().endsWith('.json')
+      ? selection.filePath
+      : `${selection.filePath}.satb-rule-profile.json`
+    const json = JSON.stringify(request.profile, null, 2)
+    if (Buffer.byteLength(json, 'utf8') > MAX_RULE_PROFILE_BYTES)
+      throw new Error('规则配置档案超过 2 MB 限制')
+    await writeJsonAtomic(filePath, request.profile)
+    await rememberDialogDirectory('profile', filePath)
+    return { canceled: false, filePath }
   })
 
   ipcMain.handle('soundfont:open', async () => {

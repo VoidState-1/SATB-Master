@@ -4,6 +4,7 @@ import {
   externalRuleReferenceKey,
   mergeExternalRuleResult,
   normalizeExternalRuleDiagnostics,
+  normalizeExternalRuleConfig,
   parseExternalRuleManifest,
   type ExternalRuleFailure,
   type ExternalRuleImportCandidate,
@@ -196,6 +197,10 @@ export class ExternalRuleRuntime {
         sourcePromises.set(reference.contentHash, sourcePromise);
       }
       try {
+        const normalizedConfig = normalizeExternalRuleConfig(
+          rule,
+          reference.config,
+        );
         entries.push({
           package: installedPackage,
           source: await sourcePromise,
@@ -204,7 +209,11 @@ export class ExternalRuleRuntime {
             typeof reference.severity,
             "off"
           >,
-          config: { ...reference.config },
+          config: normalizedConfig.config,
+          exceptionPolicy: {
+            ...rule.defaultExceptionPolicies,
+            ...reference.exceptions,
+          },
         });
       } catch (error) {
         failures.push({
@@ -266,6 +275,7 @@ export class ExternalRuleRuntime {
             package: evaluation.package,
             rule: evaluation.rule,
             severity: evaluation.severity,
+            exceptionPolicy: evaluation.exceptionPolicy,
           });
         } catch (error) {
           failures.push({

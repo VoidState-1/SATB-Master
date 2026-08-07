@@ -21,6 +21,12 @@ import {
   type SemanticConfidence,
 } from "./chordModel";
 import {
+  RULE_EXCEPTION_CONTEXTS,
+  type RuleConfig,
+  type RuleExceptionPolicy,
+  type RuleInstanceSettings,
+} from "./harmonyRules";
+import {
   formatPitchClass,
   isSupportedKeySignature,
   legacyTonicSpelling,
@@ -186,17 +192,29 @@ export interface EditableRange {
 export type DiagnosticSeverity = "error" | "warning" | "suggestion";
 export type HarmonyRuleSeverity = DiagnosticSeverity | "off";
 
-export interface RuleProfileRef {
-  builtin: Record<string, HarmonyRuleSeverity>;
-  external: Array<{
+export interface SharedHarmonySettings {
+  voiceRanges: Record<VoiceId, { minMidi: number; maxMidi: number }>;
+  strictFourPartTexture: boolean;
+}
+
+export interface ExternalRuleReferenceV3 {
     ruleId: string;
     packageId: string;
     version: string;
     contentHash: string;
     severity: HarmonyRuleSeverity;
     enabled: boolean;
-    config: Record<string, string | number | boolean>;
-  }>;
+    configVersion: number;
+    config: RuleConfig;
+    exceptions: RuleExceptionPolicy;
+}
+
+export interface RuleProfile {
+  profileVersion: 1;
+  title: string;
+  shared: SharedHarmonySettings;
+  builtin: Record<string, RuleInstanceSettings>;
+  external: ExternalRuleReferenceV3[];
 }
 
 export interface ProjectDocument {
@@ -216,7 +234,7 @@ export interface ProjectDocument {
   auxiliaryTracks: AuxiliaryTrack[];
   chordTrack: ChordTrack;
   loop: LoopSettings;
-  ruleProfile: RuleProfileRef;
+  ruleProfile: RuleProfile;
   exercise: {
     instructions: string;
     editableRanges: EditableRange[];
@@ -314,6 +332,24 @@ function createTrack(id: VoiceId, program: number): SatbTrack {
   };
 }
 
+export function createDefaultRuleProfile(): RuleProfile {
+  return {
+    profileVersion: 1,
+    title: "斯波索宾基础规则",
+    shared: {
+      voiceRanges: {
+        soprano: { minMidi: 60, maxMidi: 81 },
+        alto: { minMidi: 55, maxMidi: 74 },
+        tenor: { minMidi: 48, maxMidi: 67 },
+        bass: { minMidi: 40, maxMidi: 60 },
+      },
+      strictFourPartTexture: false,
+    },
+    builtin: {},
+    external: [],
+  };
+}
+
 export function createEmptyProject(title = "未命名练习"): ProjectDocument {
   const now = new Date().toISOString();
   return {
@@ -356,7 +392,7 @@ export function createEmptyProject(title = "未命名练习"): ProjectDocument {
       startTick: 0,
       endTick: PPQ * 4,
     },
-    ruleProfile: { builtin: {}, external: [] },
+    ruleProfile: createDefaultRuleProfile(),
     exercise: { instructions: "", editableRanges: [] },
     audio: {
       masterVolume: 0.78,
@@ -696,7 +732,7 @@ function validateHarmonySemantics(value: unknown): value is HarmonySemantics {
         value.mixture as string,
       )) &&
     (value.cadenceRole === undefined ||
-      ["cadential64", "passing64", "pedal64"].includes(
+      ["cadential64", "passing64", "pedal64", "deceptive"].includes(
         value.cadenceRole as string,
       )) &&
     (value.pedalContext === undefined ||
@@ -734,7 +770,10 @@ function validateChordIdentity(value: unknown): value is ChordIdentity {
       (alteration) =>
         isRecord(alteration) &&
         [5, 9, 11, 13].includes(alteration.degree as number) &&
-        isInteger(alteration.alter, -2, 2),
+        isInteger(alteration.alter, -2, 2) &&
+        (alteration.tendency === undefined ||
+          alteration.tendency === "up" ||
+          alteration.tendency === "down"),
     ) &&
     new Set(
       value.structure.alterations.map(
@@ -762,21 +801,82 @@ function validateChordRegion(value: unknown, projectLength: number) {
 function validateRuleProfile(value: unknown) {
   if (
     !isRecord(value) ||
+    value.profileVersion !== 1 ||
+    typeof value.title !== "string" ||
+    value.title.length > 120 ||
+    !isRecord(value.shared) ||
     !isRecord(value.builtin) ||
     !Array.isArray(value.external)
   )
     return false;
-  if (value.external.length > 256) return false;
-  const severities = ["error", "warning", "suggestion", "off"];
   if (
-    !Object.values(value.builtin).every((severity) =>
-      severities.includes(severity as string),
-    )
+    value.external.length > 256 ||
+    Object.keys(value.builtin).length > 256 ||
+    !isRecord(value.shared)
+  )
+    return false;
+  const shared = value.shared;
+  if (
+    typeof shared.strictFourPartTexture !== "boolean" ||
+    !isRecord(shared.voiceRanges)
+  )
+    return false;
+  const voiceRanges = shared.voiceRanges;
+  const severities = ["error", "warning", "suggestion", "off"];
+  const configValue = (item: unknown) =>
+    typeof item === "string" ||
+    typeof item === "boolean" ||
+    (typeof item === "number" && Number.isFinite(item)) ||
+    (isRecord(item) &&
+      ((isInteger(item.minMidi, 0, 127) &&
+        isInteger(item.maxMidi, 0, 127) &&
+        (item.minMidi as number) <= (item.maxMidi as number)) ||
+        (typeof item.value === "number" &&
+          Number.isFinite(item.value) &&
+          ["ticks", "beats", "measures"].includes(item.unit as string))));
+  const config = (candidate: unknown) =>
+    isRecord(candidate) &&
+    Object.keys(candidate).length <= 64 &&
+    Object.values(candidate).every(configValue);
+  const exceptions = (candidate: unknown) =>
+    isRecord(candidate) &&
+    Object.keys(candidate).every((context) =>
+      RULE_EXCEPTION_CONTEXTS.includes(
+        context as (typeof RULE_EXCEPTION_CONTEXTS)[number],
+      ),
+    ) &&
+    Object.values(candidate).every(
+      (mode) =>
+        typeof mode === "string" &&
+        ["exempt", "downgrade", "strict"].includes(mode),
+    );
+  if (
+    !VOICE_ORDER.every((voiceId) => {
+      const range = voiceRanges[voiceId];
+      return (
+        isRecord(range) &&
+        isInteger(range.minMidi, 0, 127) &&
+        isInteger(range.maxMidi, 0, 127) &&
+        (range.minMidi as number) <= (range.maxMidi as number)
+      );
+    })
   )
     return false;
   const ids = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
   const versions = /^[0-9A-Za-z](?:[0-9A-Za-z.+-]{0,62}[0-9A-Za-z])?$/;
   const hashes = /^[a-f0-9]{64}$/;
+  if (
+    !Object.entries(value.builtin).every(
+      ([ruleId, settings]) =>
+        ids.test(ruleId) &&
+        isRecord(settings) &&
+        severities.includes(settings.severity as string) &&
+        isInteger(settings.configVersion, 1) &&
+        config(settings.config) &&
+        exceptions(settings.exceptions),
+    )
+  )
+    return false;
   const references = new Set<string>();
   return value.external.every((rule) => {
     if (
@@ -791,13 +891,9 @@ function validateRuleProfile(value: unknown) {
       !hashes.test(rule.contentHash) ||
       !severities.includes(rule.severity as string) ||
       typeof rule.enabled !== "boolean" ||
-      !isRecord(rule.config) ||
-      !Object.values(rule.config).every(
-        (item) =>
-          typeof item === "string" ||
-          typeof item === "boolean" ||
-          (typeof item === "number" && Number.isFinite(item)),
-      )
+      !isInteger(rule.configVersion, 1) ||
+      !config(rule.config) ||
+      !exceptions(rule.exceptions)
     )
       return false;
     const key = `${rule.packageId}@${rule.version}:${rule.contentHash}:${rule.ruleId}`;
@@ -1080,7 +1176,7 @@ function migrateV2Project(value: Record<string, unknown>) {
   migrated.satbTracks = satbTracks;
   migrated.auxiliaryTracks = [];
   delete migrated.tracks;
-  migrated.ruleProfile = { builtin: {}, external: [] };
+  migrated.ruleProfile = createDefaultRuleProfile();
   if (isRecord(migrated.chordTrack)) {
     migrated.chordTrack.displayMode =
       migrated.chordTrack.displayMode === "both"

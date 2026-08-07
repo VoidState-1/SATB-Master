@@ -20,16 +20,16 @@ describe("和声检查规则注册表", () => {
   });
 
   it("从注册表推导需要和弦标注的规则", () => {
-    expect(chordDependentRuleIds()).toEqual([
-      "chord-membership",
-      "chord-completeness",
-      "chord-inversion",
-      "leading-tone-doubling",
-      "chord-seventh-resolution",
-      "chord-seventh-doubling",
-      "functional-retrogression",
-      "secondary-dominant-resolution",
-      "cadential64-resolution",
-    ]);
+    const ids = chordDependentRuleIds();
+    expect(ids.length).toBeGreaterThan(40);
+    expect(ids).toContain("chord.unclassified-nonchord-tone");
+    expect(ids).toContain("tonality.pivot-reinterpretation");
+    expect(
+      ids.every((id) =>
+        HARMONY_RULE_DEFINITIONS.find((rule) => rule.id === id)?.requires.includes(
+          "chords",
+        ),
+      ),
+    ).toBe(true);
   });
 });

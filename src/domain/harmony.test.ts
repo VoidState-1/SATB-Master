@@ -105,7 +105,7 @@ describe("斯波索宾基础规则检查", () => {
     const result = checkHarmony(project);
     expect(
       result.diagnostics.some(
-        (item) => item.ruleId === "parallel-fifths" && item.tick === PPQ,
+        (item) => item.ruleId === "voice-leading.parallel-fifths" && item.tick === PPQ,
       ),
     ).toBe(true);
   });
@@ -127,7 +127,7 @@ describe("斯波索宾基础规则检查", () => {
     addPair(project, "soprano", [72, 79]);
     addPair(project, "bass", [48, 55]);
 
-    expect(ruleIds(project)).toContain("parallel-octaves");
+    expect(ruleIds(project)).toContain("voice-leading.parallel-octaves");
   });
 
   it("同和弦转换仍检查声部交叉", () => {
@@ -144,7 +144,7 @@ describe("斯波索宾基础规则检查", () => {
     addPair(project, "soprano", [72, 67]);
     addPair(project, "alto", [67, 72]);
 
-    expect(ruleIds(project)).toContain("voice-crossing");
+    expect(ruleIds(project)).toContain("voice.crossing");
   });
 
   it("同和弦转换放宽八度内大跳与声部超越", () => {
@@ -162,8 +162,8 @@ describe("斯波索宾基础规则检查", () => {
     addPair(project, "alto", [64, 72]);
 
     const ids = ruleIds(project);
-    expect(ids).not.toContain("melodic-large-leap");
-    expect(ids).not.toContain("voice-overlap");
+    expect(ids).not.toContain("melody.large-leap");
+    expect(ids).not.toContain("voice-leading.overlap");
   });
 
   it("同和弦转换放宽外声部隐伏完全协和音程", () => {
@@ -183,7 +183,7 @@ describe("斯波索宾基础规则检查", () => {
     addPair(project, "soprano", [64, 67]);
     addPair(project, "bass", [48, 55]);
 
-    expect(ruleIds(project)).not.toContain("hidden-perfect-interval");
+    expect(ruleIds(project)).not.toContain("voice-leading.hidden-fifth");
   });
 
   it("同一七和弦内的三全音分解不触发旋律警告", () => {
@@ -199,7 +199,7 @@ describe("斯波索宾基础规则检查", () => {
     addChord(project, "dominant-7-2", 1, dominantSeventh);
     addPair(project, "soprano", [71, 65]);
 
-    expect(ruleIds(project)).not.toContain("melodic-tritone");
+    expect(ruleIds(project)).not.toContain("melody.tritone");
   });
 
   it("使用规则配置改写诊断严重度", () => {
@@ -208,10 +208,10 @@ describe("斯波索宾基础规则检查", () => {
     addPair(project, "soprano", [67, 69]);
     addPair(project, "bass", [48, 50]);
     const severities = defaultHarmonyRuleSeverities();
-    severities["parallel-fifths"] = "suggestion";
+    severities["voice-leading.parallel-fifths"] = "suggestion";
 
     const diagnostic = checkHarmony(project, severities).diagnostics.find(
-      (item) => item.ruleId === "parallel-fifths",
+      (item) => item.ruleId === "voice-leading.parallel-fifths",
     );
     expect(diagnostic?.severity).toBe("suggestion");
   });
@@ -222,11 +222,11 @@ describe("斯波索宾基础规则检查", () => {
     addPair(project, "soprano", [67, 69]);
     addPair(project, "bass", [48, 50]);
     const severities = defaultHarmonyRuleSeverities();
-    severities["parallel-fifths"] = "off";
+    severities["voice-leading.parallel-fifths"] = "off";
 
     expect(
       checkHarmony(project, severities).diagnostics.map((item) => item.ruleId),
-    ).not.toContain("parallel-fifths");
+    ).not.toContain("voice-leading.parallel-fifths");
   });
 
   it("辅助轨音符不作为第五声部参与和声规则", () => {
@@ -260,22 +260,22 @@ describe("斯波索宾基础规则检查", () => {
     const result = checkHarmony(createEmptyProject());
     expect(result.skippedRuleIds).toEqual(
       expect.arrayContaining([
-        "chord-membership",
-        "chord-completeness",
-        "chord-inversion",
-        "leading-tone-doubling",
-        "chord-seventh-resolution",
+        "chord.unclassified-nonchord-tone",
+        "chord.incomplete-members",
+        "chord.inversion-bass",
+        "chord.doubled-leading-tone",
+        "resolution.chord-seventh",
       ]),
     );
   });
 
   it("已关闭的和弦规则不计入跳过统计", () => {
     const severities = defaultHarmonyRuleSeverities();
-    severities["chord-membership"] = "off";
+    severities["chord.unclassified-nonchord-tone"] = "off";
 
     expect(
       checkHarmony(createEmptyProject(), severities).skippedRuleIds,
-    ).not.toContain("chord-membership");
+    ).not.toContain("chord.unclassified-nonchord-tone");
   });
 
   it("识别同一声部内时间重叠的音符", () => {
@@ -286,7 +286,7 @@ describe("斯波索宾基础规则检查", () => {
       note("s-1", PPQ / 2, PPQ, 69),
     ];
 
-    expect(ruleIds(project)).toContain("voice-note-overlap");
+    expect(ruleIds(project)).toContain("voice.polyphonic-overlap");
   });
 
   it("相邻但不重叠的同声部音符不触发重叠规则", () => {
@@ -294,7 +294,7 @@ describe("斯波索宾基础规则检查", () => {
     project.lengthTicks = PPQ * 2;
     addPair(project, "soprano", [67, 69]);
 
-    expect(ruleIds(project)).not.toContain("voice-note-overlap");
+    expect(ruleIds(project)).not.toContain("voice.polyphonic-overlap");
   });
 
   it("大调导音上行到主音时通过", () => {
@@ -302,7 +302,7 @@ describe("斯波索宾基础规则检查", () => {
     project.lengthTicks = PPQ * 2;
     addPair(project, "soprano", [71, 72]);
 
-    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+    expect(ruleIds(project)).not.toContain("resolution.leading-tone");
   });
 
   it("连续导音未上行到主音时给出提示", () => {
@@ -310,7 +310,7 @@ describe("斯波索宾基础规则检查", () => {
     project.lengthTicks = PPQ * 2;
     addPair(project, "soprano", [71, 69]);
 
-    expect(ruleIds(project)).toContain("leading-tone-resolution");
+    expect(ruleIds(project)).toContain("resolution.leading-tone");
   });
 
   it("小调自然七级不被误判为升高导音", () => {
@@ -323,7 +323,7 @@ describe("斯波索宾基础规则检查", () => {
     };
     addPair(project, "soprano", [70, 68]);
 
-    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+    expect(ruleIds(project)).not.toContain("resolution.leading-tone");
   });
 
   it("换调边界不沿用旧调导音解决要求", () => {
@@ -337,7 +337,7 @@ describe("斯波索宾基础规则检查", () => {
     });
     addPair(project, "soprano", [71, 69]);
 
-    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+    expect(ruleIds(project)).not.toContain("resolution.leading-tone");
   });
 
   it("同和弦连续转换后再检查导音解决", () => {
@@ -359,7 +359,7 @@ describe("斯波索宾基础规则检查", () => {
     });
     addLine(project, "tenor", [59, 59, 60]);
 
-    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+    expect(ruleIds(project)).not.toContain("resolution.leading-tone");
   });
 
   it("任意长度的同和弦转换链只在离开 span 后判定导音", () => {
@@ -390,7 +390,7 @@ describe("斯波索宾基础规则检查", () => {
       "dominant-first",
       "dominant-second",
     ]);
-    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+    expect(ruleIds(project)).not.toContain("resolution.leading-tone");
   });
 
   it("置信度变化会切断 HarmonySpan，避免确定语义覆盖歧义语义", () => {
@@ -441,7 +441,7 @@ describe("斯波索宾基础规则检查", () => {
         note("later-note", PPQ * 2, PPQ, 57),
       );
 
-    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+    expect(ruleIds(project)).not.toContain("resolution.leading-tone");
   });
 
   it("工程结束时没有后继音不会凭空生成解决错误", () => {
@@ -455,7 +455,7 @@ describe("斯波索宾基础规则检查", () => {
     });
     addLine(project, "tenor", [59]);
 
-    expect(ruleIds(project)).not.toContain("leading-tone-resolution");
+    expect(ruleIds(project)).not.toContain("resolution.leading-tone");
   });
 
   it("离开同和弦后导音仍未解决时给出提示", () => {
@@ -478,7 +478,7 @@ describe("斯波索宾基础规则检查", () => {
     addLine(project, "tenor", [59, 59, 57]);
 
     const diagnostic = checkHarmony(project).diagnostics.find(
-      (item) => item.ruleId === "leading-tone-resolution",
+      (item) => item.ruleId === "resolution.leading-tone",
     );
     expect(diagnostic?.tick).toBe(PPQ * 2);
   });
@@ -500,7 +500,7 @@ describe("斯波索宾基础规则检查", () => {
     });
     addLine(project, "tenor", [59, 59]);
 
-    expect(ruleIds(project)).toContain("leading-tone-resolution");
+    expect(ruleIds(project)).toContain("resolution.leading-tone");
   });
 
   it("七和弦七音级进下行解决时通过", () => {
@@ -516,7 +516,7 @@ describe("斯波索宾基础规则检查", () => {
     );
     addPair(project, "alto", [65, 64]);
 
-    expect(ruleIds(project)).not.toContain("chord-seventh-resolution");
+    expect(ruleIds(project)).not.toContain("resolution.chord-seventh");
   });
 
   it("七和弦七音未级进下行时给出提示", () => {
@@ -532,7 +532,7 @@ describe("斯波索宾基础规则检查", () => {
     );
     addPair(project, "alto", [65, 67]);
 
-    expect(ruleIds(project)).toContain("chord-seventh-resolution");
+    expect(ruleIds(project)).toContain("resolution.chord-seventh");
   });
 
   it("同一七和弦转换结束后再检查七音解决", () => {
@@ -557,7 +557,7 @@ describe("斯波索宾基础规则检查", () => {
     });
     addLine(project, "alto", [65, 65, 64]);
 
-    expect(ruleIds(project)).not.toContain("chord-seventh-resolution");
+    expect(ruleIds(project)).not.toContain("resolution.chord-seventh");
   });
 
   it("检查和弦区域后半段的和弦外音并关联区域", () => {
@@ -577,7 +577,7 @@ describe("斯波索宾基础规则检查", () => {
     ];
 
     const diagnostic = checkHarmony(project).diagnostics.find(
-      (item) => item.ruleId === "chord-membership",
+      (item) => item.ruleId === "chord.unclassified-nonchord-tone",
     );
     expect(diagnostic).toMatchObject({
       tick: PPQ,
@@ -602,7 +602,7 @@ describe("斯波索宾基础规则检查", () => {
       { ...note("passing", 0, PPQ, 74), nonChordToneRole: "passing" },
     ];
 
-    expect(ruleIds(project)).not.toContain("chord-membership");
+    expect(ruleIds(project)).not.toContain("chord.unclassified-nonchord-tone");
   });
 
   it("和弦构成音不完整只关联和弦区域", () => {
@@ -622,7 +622,7 @@ describe("斯波索宾基础规则检查", () => {
     project.satbTracks[3].notes = [note("bass-c", 0, PPQ, 48)];
 
     const diagnostic = checkHarmony(project).diagnostics.find(
-      (item) => item.ruleId === "chord-completeness",
+      (item) => item.ruleId === "chord.incomplete-members",
     );
     expect(diagnostic).toMatchObject({
       chordIds: ["c-major"],
@@ -648,8 +648,8 @@ describe("斯波索宾基础规则检查", () => {
     addLine(project, "bass", [43, 43, 43]);
 
     const ids = ruleIds(project);
-    expect(ids).not.toContain("chord-completeness");
-    expect(ids).not.toContain("leading-tone-doubling");
+    expect(ids).not.toContain("chord.incomplete-members");
+    expect(ids).not.toContain("chord.doubled-leading-tone");
   });
 
   it("同和弦转换结束时仍缺音或重复导音继续给出提示", () => {
@@ -669,8 +669,8 @@ describe("斯波索宾基础规则检查", () => {
     addLine(project, "bass", [43, 43, 43]);
 
     const ids = ruleIds(project);
-    expect(ids).toContain("chord-completeness");
-    expect(ids).toContain("leading-tone-doubling");
+    expect(ids).toContain("chord.incomplete-members");
+    expect(ids).toContain("chord.doubled-leading-tone");
   });
 
   it("按斯波索宾基础功能序进提示属到下属的逆功能进行", () => {
@@ -692,7 +692,7 @@ describe("斯波索宾基础规则检查", () => {
     );
 
     const diagnostic = checkHarmony(project).diagnostics.find(
-      (item) => item.ruleId === "functional-retrogression",
+      (item) => item.ruleId === "function.retrogression",
     );
     expect(diagnostic?.chordIds).toEqual(["dominant", "subdominant"]);
     expect(diagnostic?.severity).toBe("warning");
@@ -720,7 +720,7 @@ describe("斯波索宾基础规则检查", () => {
       inversion: 0,
     });
 
-    expect(ruleIds(project)).not.toContain("secondary-dominant-resolution");
+    expect(ruleIds(project)).not.toContain("function.applied-dominant-target");
   });
 
   it("空白区间会中断功能进行判断", () => {
@@ -741,6 +741,6 @@ describe("斯波索宾基础规则检查", () => {
       }),
     );
 
-    expect(ruleIds(project)).not.toContain("functional-retrogression");
+    expect(ruleIds(project)).not.toContain("function.retrogression");
   });
 });

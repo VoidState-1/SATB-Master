@@ -4,7 +4,7 @@ import {
   type ExternalRuleFailure,
   type InstalledExternalRulePackage,
 } from "../domain/externalRules";
-import type { RuleProfileRef } from "../domain/model";
+import type { RuleProfile } from "../domain/model";
 import {
   HARMONY_RULE_SEVERITY_OPTIONS,
   type HarmonyRuleSeverity,
@@ -13,7 +13,7 @@ import { IconButton } from "./IconButton";
 
 interface ExternalRuleSettingsProps {
   packages: InstalledExternalRulePackage[];
-  references: RuleProfileRef["external"];
+  references: RuleProfile["external"];
   failures: ExternalRuleFailure[];
   loading: boolean;
   error?: string;
@@ -21,11 +21,11 @@ interface ExternalRuleSettingsProps {
   onMount(installedPackage: InstalledExternalRulePackage): void;
   onRemove(installedPackage: InstalledExternalRulePackage): void;
   onSetEnabled(
-    reference: RuleProfileRef["external"][number],
+    reference: RuleProfile["external"][number],
     enabled: boolean,
   ): void;
   onSetSeverity(
-    reference: RuleProfileRef["external"][number],
+    reference: RuleProfile["external"][number],
     severity: HarmonyRuleSeverity,
   ): void;
 }

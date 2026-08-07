@@ -51,6 +51,17 @@ interface Window {
         defaultName: string,
       ): Promise<{ canceled: boolean; filePath?: string }>;
     };
+    ruleProfile: {
+      open(): Promise<{
+        canceled: boolean;
+        filePath?: string;
+        profile?: unknown;
+      }>;
+      save(request: {
+        profile: unknown;
+        defaultName?: string;
+      }): Promise<{ canceled: boolean; filePath?: string }>;
+    };
     soundFont: {
       open(): Promise<{
         canceled: boolean;

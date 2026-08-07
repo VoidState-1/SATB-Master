@@ -59,7 +59,7 @@ forbidden   5
 - `primaryInterpretationId`：当前主要解释。
 - `alternatives`：未确认候选，不参与主要显示。
 - `mixture`：同主大小调或调式借用。
-- `cadenceRole`：终止、经过或持续四六角色。
+- `cadenceRole`：终止四六、经过四六、辅助四六或人工确认的阻碍进行起点。
 - `pedalContext`：持续低音音高及 start/continue/end 位置。
 
 每个 `HarmonyInterpretation` 保存局部调性、级数、变化、结构化离调目标、`FunctionalDesignation`、来源和置信度。`FunctionalDesignation` 采用 `notationSystem: "spasobin"`，主要/次要功能顺序不能交换，例如：
@@ -135,18 +135,13 @@ roman-absolute
 
 三种名称始终由 `formatChordIdentity` 计算。tooltip 同时显示功能、罗马和绝对名称。旧 v2 工程的 `displayMode: "both"` 在 v2 -> v3 迁移时转换为 `roman-absolute`。
 
-## 8. 与旧检查器和外置 API 的边界
+## 8. 与规则引擎和外置 API 的边界
 
-本轮没有让旧检查器理解新功能体系。`FunctionalClass` 仍只存在于旧规则兼容路径，不能被注册表、调色盘或 formatter 引用。
+当前规则引擎和外置 API v3 都原生读取完整实体与语义，不再经过 `FunctionalClass`、旧结构 projection 或 `chordProgressions`。连续同和弦区域先聚合为 `HarmonySpan`，相邻跨度再由精确连接器读取主要解释、功能标记、离调目标、终止角色和持续低音上下文。
 
-旧内置规则遇到以下结构时跳过相关和弦诊断：
+规则必须按自身所需处理 `D9`、方向性变音、增六和弦、阻碍进行、双解释与持续低音：能够可靠判断时读取结构化字段；语义歧义或上下文不足时返回保守结果、特例 context 或 skip，不能把新结构伪装成普通三和弦。变化音的 `tendency` 和阻碍进行的 `cadenceRole` 都是人工可编辑证据，规则不能从 accidental 或普通 `D -> VI` 连接反向猜写这些字段。
 
-- `D9` 或更高扩展。
-- 增六和弦。
-- 两个确认解释。
-- 持续低音上下文。
-
-外置规则 API 保持 v2。沙箱只收到旧 `quality/extensions/alterations` 与单解释投影；无法可靠投影的新结构会从 v2 和弦、span 和 progression 上下文中过滤。下一轮规则引擎/API 重构后才能原生消费完整功能语义。
+外置 API v3 暴露裁剪后的完整 `ChordRegion`、`HarmonySpan` 和 `connections`，并保留一个或两个 `HarmonyInterpretation`。脚本不能读取辅助轨明细，也不能修改宿主语义。完整契约见 [external-rules.md](./external-rules.md)。
 
 ## 9. 扩展步骤
 
@@ -158,6 +153,6 @@ roman-absolute
 4. 决定是否有专用 `ChordVoicingPolicy`。
 5. 更新调色盘可选项和开发者检查字段。
 6. 添加正例、冲突反例、保存重开和固定转位测试。
-7. 明确旧检查器/API 是可投影还是必须跳过。
+7. 为内置连接器、规则适用性与外置 API v3 添加相应上下文测试。
 
 领域金样本位于 [`functionalHarmonyCatalog.test.ts`](../src/domain/functionalHarmonyCatalog.test.ts)。

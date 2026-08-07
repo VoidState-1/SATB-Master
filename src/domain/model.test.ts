@@ -177,7 +177,9 @@ describe("工程文件校验", () => {
       contentHash: "a".repeat(64),
       severity: "warning" as const,
       enabled: true,
+      configVersion: 1,
       config: { threshold: 4 },
+      exceptions: {},
     };
     project.ruleProfile.external = [reference];
     expect(validateProject(project)).toBe(true);
@@ -326,7 +328,12 @@ describe("schema v2 -> v3 迁移", () => {
     expect(migrated?.schemaVersion).toBe(3);
     expect(validateProject(migrated)).toBe(true);
     expect(migrated?.auxiliaryTracks).toEqual([]);
-    expect(migrated?.ruleProfile).toEqual({ builtin: {}, external: [] });
+    expect(migrated?.ruleProfile).toMatchObject({
+      profileVersion: 1,
+      title: "斯波索宾基础规则",
+      builtin: {},
+      external: [],
+    });
     expect(migrated?.chordTrack.displayMode).toBe("roman-absolute");
     expect(migrated?.loop).toEqual(legacy.loop);
     expect(migrated?.exercise).toEqual(legacy.exercise);
