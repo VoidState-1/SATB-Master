@@ -45,7 +45,7 @@ flowchart LR
 
 | 文件 | 主要职责 |
 | --- | --- |
-| [`model.ts`](../src/domain/model.ts) | 工程 schema、轨道和事件、默认工程、验证与 v2 -> v3 迁移 |
+| [`project/`](../src/domain/project) | 工程 schema、轨道和事件、默认工程、选择器、规范化、验证与 v2 -> v3 迁移；`model.ts` 只保留兼容转发 |
 | [`pitch.ts`](../src/domain/pitch.ts) | 书写音高、MIDI 转换、音程与调号相关计算 |
 | [`chordModel.ts`](../src/domain/chordModel.ts) | 和弦实体、结构联合、语义解释、草稿解析与配器策略 |
 | [`functionalHarmonyCatalog.ts`](../src/domain/functionalHarmonyCatalog.ts) | 斯波索宾 A/B/C 功能词汇、组合约束与共同和弦候选 |
@@ -55,16 +55,30 @@ flowchart LR
 | [`midi.ts`](../src/domain/midi.ts) | MIDI Type 1 事件与轨道构造 |
 | [`harmonyAnalysis.ts`](../src/domain/harmonyAnalysis.ts) | 不可变快照、切片、转换、和声跨度与遍历查询 |
 | [`harmonyRuntime.ts`](../src/domain/harmonyRuntime.ts) | 规则接口、调度、私有状态、适用性接入与诊断收敛 |
-| [`harmonyRules.ts`](../src/domain/harmonyRules.ts) | 当前内置规则实现与运行注册表 |
+| [`harmony/`](../src/domain/harmony) | 内置规则注册表、按领域分组的规则实现和共享辅助函数；`harmony.ts` 只保留兼容转发 |
 | [`rules/`](../src/domain/rules) | 81 条目录、配置 schema、共享事实、连接器、适用性与仲裁 |
 | [`ruleProfile.ts`](../src/domain/ruleProfile.ts) | 工程规则设置命令、便携配置档案和新工程模板 |
 | [`externalRules.ts`](../src/domain/externalRules.ts) | 外置 API v3 manifest、公开上下文、配置和结果验证 |
 
 领域代码的关键约束是：给定同一输入，返回同一结果；不读取 DOM、磁盘、系统时钟或全局可变状态。创建 ID 和时间戳的边界代码应把结果传入领域对象，而不是让规则计算隐式依赖环境。
 
-### 3.2 `src/components`、`src/hooks` 与 `src/App.tsx`
+### 3.2 `src/app`、`src/features`、`src/components` 与 `src/hooks`
 
-[`src/App.tsx`](../src/App.tsx) 是应用编排层，组合工程历史、播放、规则、桌面服务、布局和弹窗状态。它可以决定何时调用一个领域命令，但不应重新实现该命令的合法性判断。
+[`src/App.tsx`](../src/App.tsx) 是稳定入口，实际应用壳位于 [`src/app/AppShell.tsx`](../src/app/AppShell.tsx)。`AppShell` 只组合工作区和控制器，不直接承载文件、播放或规则调度的完整异步流程。
+
+`src/app/controllers` 按工作流拆分会话控制：
+
+- `useFileWorkflow`：新建、打开、恢复、保存、另存为和关闭确认。
+- `usePlaybackController`：播放、暂停、循环、节拍器、SoundFont 生命周期和播放头同步。
+- `useHarmonyController`：内置/外置规则运行、revision 竞争和诊断合并。
+- `useEditorState` 与 `useEditorCommands`：选择、剪贴板、编辑意图和领域命令提交。
+- `useConfirmationController`：顶层确认请求的生命周期。
+
+`src/features` 按用户工作区拆分：
+
+- [`features/editor`](../src/features/editor)：钢琴卷帘、交互联合类型、诊断聚合和统一 tick/MIDI 坐标。`viewport.ts` 是所有轨道共享的坐标源，旧 [`components/PianoRoll.tsx`](../src/components/PianoRoll.tsx) 仅为兼容导出。
+- [`features/inspector`](../src/features/inspector)：属性面板、和弦语义、时间事件和提交字段。
+- [`features/settings`](../src/features/settings)：设置窗口、规则字段和快捷键/规则配置子区。
 
 组件负责：
 
@@ -79,6 +93,19 @@ hooks 负责把独立状态机接入 React，例如：
 - [`usePanelLayout.ts`](../src/hooks/usePanelLayout.ts)：面板尺寸及本地偏好。
 
 规则设置不再由独立 hook/localStorage 维护。`App.tsx` 通过 `ruleProfile.ts` 的纯命令修改当前 `ProjectDocument.ruleProfile`，并把整个修改作为一次工程历史提交。
+
+全局样式入口 [`src/styles.css`](../src/styles.css) 只负责保持加载顺序。实际样式按边界分布在 [`src/styles/`](../src/styles)：
+
+- `tokens.css`：全局字体、颜色基线和浏览器重置。
+- `window.css`：无边框窗口标题栏、窗口控制和引擎状态。
+- `layout.css`：工具栏、工作区、侧栏、赞助区和面板拖拽接缝。
+- `editor.css`：钢琴卷帘、小节轨、和弦轨、调色盘、时间标记和钢琴键。
+- `diagnostics.css`：底部检查结果和诊断条目。
+- `inspector.css`：属性面板、开发者事件检查器和音色/时间编辑器。
+- `settings.css`：设置窗口、快捷键、规则配置和外置规则库。
+- `dialogs.css`：通用确认弹窗及动画。
+
+拆分只改变物理文件，不改变选择器或 import 顺序；新增样式应优先放入对应 feature 文件。
 
 ### 3.3 `src/services`
 
@@ -114,9 +141,11 @@ services 是环境适配层。桌面模式转发到 `window.desktop`，浏览器
 推荐依赖方向：
 
 ```text
-components/hooks/App
+app/AppShell + app/controllers
         |
-        +--> domain
+        +--> features --> domain
+        +--> components
+        |
         +--> services --> preload --> Electron main
         +--> audio
         +--> Worker --> QuickJS
@@ -201,11 +230,11 @@ sequenceDiagram
 | 问题 | 放置位置 |
 | --- | --- |
 | 是否允许某次编辑 | `src/domain/editing.ts` |
-| 工程要永久保存什么 | `src/domain/model.ts` 并升级/迁移 schema |
+| 工程要永久保存什么 | `src/domain/project/types.ts`、`defaults.ts` 与 `migrations/`，并通过 `project/index.ts` 导出 |
 | tick 如何解释 | `src/domain/time.ts` |
 | 和弦/音高如何解释 | `src/domain/chordModel.ts`、`functionalHarmonyCatalog.ts`、`pitch.ts` |
-| 规则如何取上下文和发诊断 | 和声 analysis/runtime/rules |
-| 用户如何触发 | component/hook/shortcut registry |
+| 规则如何取上下文和发诊断 | 和声 analysis/runtime 与 `src/domain/harmony/rules/` |
+| 用户如何触发 | `src/features/*`、`src/components`、`src/hooks` 与 shortcut registry |
 | 文件、路径或系统能力 | service + preload + Electron main |
 | 合成器运行时资源 | `src/audio` |
 
@@ -221,3 +250,12 @@ sequenceDiagram
 - 新规则上下文是否只读、可序列化且没有泄露辅助轨明细或系统对象？
 - 长工程下的绘制、查询和数组构造是否以视口或局部范围为边界？
 - 浏览器预览、Electron 开发模式和安装包三种环境分别需要怎样验证？
+
+## 10. 重构后的验证入口
+
+架构边界由 [`electron/architecture-boundaries.test.ts`](../electron/architecture-boundaries.test.ts) 负责回归检查，当前覆盖：
+
+- `src/domain` 不得依赖 React、Electron、DOM、`window.desktop` 或 Web Audio 运行时对象。
+- `model.ts`、`components/PianoRoll.tsx` 等旧路径必须保持为兼容转发入口，不得重新出现第二份实现。
+
+钢琴卷帘的纯坐标契约由 [`features/editor/viewport.test.ts`](../src/features/editor/viewport.test.ts) 覆盖，包括 tick 与横坐标、MIDI 与纵坐标、时值宽度和缩放锚点。样式拆分必须保持 [`src/styles.css`](../src/styles.css) 的 import 顺序；桌面端的无边框窗口、恢复弹窗和资源路径仍需在 Electron 环境中手工验证。

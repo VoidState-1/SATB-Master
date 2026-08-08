@@ -1,0 +1,114 @@
+﻿.app-shell {
+  display: grid;
+  grid-template-rows: 42px 52px minmax(0, 1fr);
+  height: 100vh;
+  background: #ecece8;
+  user-select: none;
+}
+
+/* 工作台默认不产生浏览器文本选区；精确输入区域按需恢复文字选择。 */
+.app-shell input,
+.app-shell textarea,
+.app-shell [contenteditable="true"] {
+  user-select: text;
+}
+
+.app-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid #cacbc5;
+  background: #f8f8f5;
+  font-size: 13px;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.titlebar-controls {
+  display: flex;
+  align-self: stretch;
+  margin-right: -14px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-controls .window-control {
+  width: 44px;
+  height: 41px;
+  border: 0;
+  border-radius: 0;
+}
+
+.titlebar-controls .window-control:hover {
+  border: 0;
+  background: #e4e5df;
+}
+
+.titlebar-controls .window-control.close:hover {
+  background: #c73b32;
+  color: #fff;
+}
+
+.brand-mark {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 5px;
+  background: #252720;
+  color: #fff;
+  font-family: Georgia, serif;
+  font-size: 10px;
+}
+
+.project-title {
+  max-width: 220px;
+  overflow: hidden;
+  color: #565850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-path {
+  min-width: 0;
+  overflow: hidden;
+  color: #8a8b84;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.engine-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  color: #666860;
+  font-size: 11px;
+}
+
+.engine-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #989a92;
+}
+
+.engine-status.ready-sf2 i,
+.engine-status.ready-fallback i,
+.engine-status.playing i {
+  background: #2b8a60;
+  box-shadow: 0 0 0 3px rgba(43, 138, 96, 0.13);
+}
+
+.engine-status.loading i {
+  background: #d28a24;
+}
+
+.engine-status.error i {
+  background: #c44737;
+}
+

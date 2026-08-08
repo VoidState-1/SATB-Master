@@ -1,0 +1,130 @@
+﻿.external-rule-empty {
+  padding: 20px 14px;
+  color: #7d8179;
+  font-size: 10px;
+  text-align: center;
+}
+
+.is-spinning {
+  animation: ui-spin 0.9s linear infinite;
+}
+
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.confirmation-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(25, 27, 23, 0.42);
+  -webkit-app-region: no-drag;
+}
+
+.confirmation-dialog {
+  width: min(420px, calc(100vw - 40px));
+  padding: 20px;
+  border: 1px solid #bfc1ba;
+  border-radius: 6px;
+  background: #f8f8f5;
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.24);
+}
+
+.confirmation-dialog h2 {
+  margin: 0;
+  color: #292b26;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.confirmation-dialog p {
+  margin: 12px 0 20px;
+  color: #565850;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirmation-actions .command-button {
+  min-width: 84px;
+}
+
+@media (max-width: 980px) {
+  .main-toolbar {
+    overflow-x: auto;
+  }
+
+  .file-path,
+  .transport-meta {
+    display: none;
+  }
+
+  .settings-layout {
+    grid-template-columns: 126px minmax(0, 1fr);
+  }
+
+  .shortcut-row {
+    grid-template-columns: minmax(120px, 1fr) minmax(150px, auto) 30px 30px;
+  }
+
+  .shortcut-binding {
+    min-width: 150px;
+  }
+
+  .rule-settings-main {
+    grid-template-columns: minmax(300px, 0.9fr) minmax(320px, 1.1fr);
+  }
+
+  .rule-row {
+    grid-template-columns: minmax(0, 1fr) 84px;
+  }
+}
+
+@media (max-width: 760px) {
+  .settings-backdrop {
+    padding: 10px;
+  }
+
+  .settings-dialog {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+  }
+
+  .settings-layout {
+    grid-template-columns: 104px minmax(0, 1fr);
+  }
+
+  .rule-settings-main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(180px, 0.8fr) minmax(260px, 1.2fr);
+  }
+
+  .rule-groups {
+    border-right: 0;
+    border-bottom: 1px solid #cfd1ca;
+  }
+
+  .rule-details-panel {
+    padding: 12px 14px 16px;
+  }
+
+  .rule-settings-toolbar .settings-search {
+    flex-basis: 100%;
+  }
+
+  .rule-toolbar-actions {
+    margin-left: 0;
+  }
+}
