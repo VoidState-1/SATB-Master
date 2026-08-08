@@ -17,6 +17,7 @@ interface TimelineRulerProps {
   rulerTicks: TimelineRulerTick[];
   timingMarkerGroups: TimingMarkerGroup[];
   measureGuidePositions: MeasureGuidePosition[];
+  playheadX: number;
   loopEnabled: boolean;
   loopStartX: number;
   loopEndX: number;
@@ -39,6 +40,7 @@ export function TimelineRuler({
   rulerTicks,
   timingMarkerGroups,
   measureGuidePositions,
+  playheadX,
   loopEnabled,
   loopStartX,
   loopEndX,
@@ -62,6 +64,11 @@ export function TimelineRuler({
       onContextMenu={onContextMenu}
     >
       <span className="lane-sticky-label">小节</span>
+      <span
+        className="timeline-playhead-segment is-ruler"
+        style={{ left: playheadX }}
+        aria-hidden="true"
+      />
       <span
         className={`ruler-loop-range ${loopEnabled ? "is-enabled" : ""}`}
         style={{ left: loopStartX, width: Math.max(0, loopEndX - loopStartX) }}

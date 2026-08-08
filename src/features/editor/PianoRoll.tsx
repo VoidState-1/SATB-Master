@@ -98,6 +98,7 @@ export function PianoRoll({
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousPixelsPerBeatRef = useRef(pixelsPerBeat);
   const pendingZoomViewportXRef = useRef<number | undefined>(undefined);
+  const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 });
   const [chordPalette, setChordPalette] = useState<ChordPaletteState>();
   const [timingMarkerEditor, setTimingMarkerEditor] =
     useState<TimingMarkerEditorState>();
@@ -136,6 +137,26 @@ export function PianoRoll({
   const playheadX = tickToX(playheadTick, project.ppq, pixelsPerBeat);
   const loopStartX = tickToX(loopStartTick, project.ppq, pixelsPerBeat);
   const loopEndX = tickToX(loopEndTick, project.ppq, pixelsPerBeat);
+
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const updateViewportSize = () => {
+      const next = {
+        width: Math.max(1, scroll.clientWidth),
+        height: Math.max(1, scroll.clientHeight),
+      };
+      setViewportSize((current) =>
+        current.width === next.width && current.height === next.height
+          ? current
+          : next,
+      );
+    };
+    updateViewportSize();
+    const observer = new ResizeObserver(updateViewportSize);
+    observer.observe(scroll);
+    return () => observer.disconnect();
+  }, []);
 
   useLayoutEffect(() => {
     const previousPixelsPerBeat = previousPixelsPerBeatRef.current;
@@ -355,6 +376,7 @@ export function PianoRoll({
           rulerTicks={rulerTicks}
           timingMarkerGroups={timingMarkerGroups}
           measureGuidePositions={measureGuidePositions}
+          playheadX={playheadX}
           loopEnabled={loopEnabled}
           loopStartX={loopStartX}
           loopEndX={loopEndX}
@@ -379,6 +401,7 @@ export function PianoRoll({
           selectedChordIds={selectedChordIds}
           diagnosticsByChord={diagnosticsByChord}
           measureGuidePositions={measureGuidePositions}
+          playheadX={playheadX}
           onPointerDown={handleChordPointerDown}
           onPointerMove={handleChordPointerMove}
           onPointerUp={finishChordInteraction}
@@ -447,6 +470,7 @@ export function PianoRoll({
 
         <NoteLayer
           scrollRef={scrollRef}
+          viewportSize={viewportSize}
           project={project}
           measures={measures}
           pixelsPerBeat={pixelsPerBeat}
@@ -467,7 +491,7 @@ export function PianoRoll({
           onDoubleClick={handleNoteDoubleClick}
         />
 
-        <PlayheadLayer x={playheadX} height={totalHeight} />
+        <PlayheadLayer x={playheadX} height={rollHeight} />
         <PianoKeys height={rollHeight} />
       </div>
       <DiagnosticTooltip state={diagnosticTooltip} />

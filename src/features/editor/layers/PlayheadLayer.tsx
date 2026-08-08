@@ -1,3 +1,5 @@
+import { HEADER_HEIGHT } from "../viewport";
+
 interface PlayheadLayerProps {
   x: number;
   height: number;
@@ -6,11 +8,9 @@ interface PlayheadLayerProps {
 export function PlayheadLayer({ x, height }: PlayheadLayerProps) {
   return (
     <div
-      className="timeline-playhead"
+      className="roll-playhead"
       aria-hidden="true"
-      style={{ left: x, height }}
-    >
-      <span className="timeline-playhead-head" />
-    </div>
+      style={{ left: x, top: HEADER_HEIGHT, height }}
+    />
   );
 }

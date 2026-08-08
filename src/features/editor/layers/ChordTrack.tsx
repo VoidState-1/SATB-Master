@@ -22,6 +22,7 @@ interface ChordTrackProps {
   selectedChordIds: Set<string>;
   diagnosticsByChord: Map<string, HarmonyDiagnostic[]>;
   measureGuidePositions: MeasureGuidePosition[];
+  playheadX: number;
   onPointerDown(event: React.PointerEvent<HTMLDivElement>): void;
   onPointerMove(event: React.PointerEvent<HTMLDivElement>): void;
   onPointerUp(event: React.PointerEvent<HTMLDivElement>): void;
@@ -47,6 +48,7 @@ export function ChordTrack({
   selectedChordIds,
   diagnosticsByChord,
   measureGuidePositions,
+  playheadX,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -67,6 +69,11 @@ export function ChordTrack({
       onAuxClick={(event) => event.preventDefault()}
     >
       <span className="lane-sticky-label">和弦</span>
+      <span
+        className="timeline-playhead-segment is-chord"
+        style={{ left: playheadX }}
+        aria-hidden="true"
+      />
       {measureGuidePositions.map((guide) => (
         <span
           key={guide.startTick}

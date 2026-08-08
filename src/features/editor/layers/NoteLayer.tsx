@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type { HarmonyDiagnostic } from "../../../domain/harmony";
 import { keyAtTick, type MeasureInfo } from "../../../domain/time";
@@ -21,6 +21,7 @@ import type { NoteRect } from "./types";
 
 interface NoteLayerProps {
   scrollRef: RefObject<HTMLDivElement | null>;
+  viewportSize: { width: number; height: number };
   project: ProjectDocument;
   measures: MeasureInfo[];
   pixelsPerBeat: number;
@@ -43,6 +44,7 @@ interface NoteLayerProps {
 
 export function NoteLayer({
   scrollRef,
+  viewportSize,
   project,
   measures,
   pixelsPerBeat,
@@ -63,27 +65,6 @@ export function NoteLayer({
   onDoubleClick,
 }: NoteLayerProps) {
   const viewportCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 });
-
-  useLayoutEffect(() => {
-    const scroll = scrollRef.current;
-    if (!scroll) return;
-    const updateViewportSize = () => {
-      const next = {
-        width: Math.max(1, scroll.clientWidth),
-        height: Math.max(1, scroll.clientHeight),
-      };
-      setViewportSize((current) =>
-        current.width === next.width && current.height === next.height
-          ? current
-          : next,
-      );
-    };
-    updateViewportSize();
-    const observer = new ResizeObserver(updateViewportSize);
-    observer.observe(scroll);
-    return () => observer.disconnect();
-  }, [scrollRef]);
 
   useEffect(() => {
     const canvas = viewportCanvasRef.current;
