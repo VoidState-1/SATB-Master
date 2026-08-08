@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -28,14 +28,21 @@ describe("architecture boundaries", () => {
     expect(readFileSync(join(srcRoot, "domain", "model.ts"), "utf8").trim()).toBe(
       'export * from "./project";',
     );
-    expect(
-      readFileSync(join(srcRoot, "components", "PianoRoll.tsx"), "utf8"),
-    ).toContain('from "../features/editor/PianoRoll"');
+    expect(existsSync(join(srcRoot, "components", "PianoRoll.tsx"))).toBe(false);
+    expect(existsSync(join(srcRoot, "components", "Inspector.tsx"))).toBe(false);
+    expect(existsSync(join(srcRoot, "components", "ShortcutSettings.tsx"))).toBe(false);
 
     const harmonyFacade = readFileSync(
       join(srcRoot, "domain", "harmony.ts"),
       "utf8",
     );
     expect(harmonyFacade).not.toMatch(/\b(?:function|const|class)\s+[A-Za-z]/);
+  });
+
+  it("keeps shared components independent from feature implementations", () => {
+    const violations = sourceFiles(join(srcRoot, "components")).filter((path) =>
+      /from\s+["'][^"']*features\//.test(readFileSync(path, "utf8")),
+    );
+    expect(violations).toEqual([]);
   });
 });

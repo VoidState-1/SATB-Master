@@ -7,8 +7,8 @@ import {
   KeyRound,
   Music2,
 } from "lucide-react";
-import type { ProjectDocument } from "../domain/model";
-import { formatPosition } from "../domain/time";
+import type { ProjectDocument } from "../../../domain/model";
+import { formatPosition } from "../../../domain/time";
 
 type TimingEventType = "tempo" | "meter" | "key";
 

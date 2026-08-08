@@ -7,7 +7,7 @@ import type {
   ProjectDocument,
   VoiceId,
 } from "../../domain/model";
-import { type EditorTool } from "../../components/PianoRoll";
+import { type EditorTool } from "../../features/editor/PianoRoll";
 
 export interface ClipboardNote {
   voiceId: VoiceId;

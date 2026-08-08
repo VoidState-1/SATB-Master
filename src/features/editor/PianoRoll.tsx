@@ -32,9 +32,9 @@ import {
   buildTimelineRulerTicks,
   buildTimingMarkerGroups,
 } from "../../domain/timelineRuler";
-import { ChordPalette } from "../../components/ChordPalette";
-import { RulerContextMenu } from "../../components/RulerContextMenu";
-import { TimingMarkerPopover } from "../../components/TimingMarkerPopover";
+import { ChordPalette } from "./layers/ChordPalette";
+import { RulerContextMenu } from "./layers/RulerContextMenu";
+import { TimingMarkerPopover } from "./layers/TimingMarkerPopover";
 import {
   DIAGNOSTIC_LABEL,
   groupDiagnostics,

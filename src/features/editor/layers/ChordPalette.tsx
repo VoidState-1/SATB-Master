@@ -6,8 +6,8 @@ import {
   primaryHarmonyInterpretation,
   resolveChordIdentity,
   semanticsFromChordDraft,
-} from "../domain/chordModel";
-import { formatChord, isSeventhChord } from "../domain/chords";
+} from "../../../domain/chordModel";
+import { formatChord, isSeventhChord } from "../../../domain/chords";
 import {
   FUNCTIONAL_BASE_DEFINITIONS,
   FUNCTIONAL_TARGET_OPTIONS,
@@ -22,15 +22,15 @@ import {
   inversionFigures,
   type FunctionalBaseId,
   type FunctionalChordForm,
-} from "../domain/functionalHarmonyCatalog";
-import type { ChordDraft, KeyEvent, KeyReference } from "../domain/model";
+} from "../../../domain/functionalHarmonyCatalog";
+import type { ChordDraft, KeyEvent, KeyReference } from "../../../domain/model";
 import {
   formatPitchClass,
   keyTonicOptions,
   parsePitchClass,
   scaleDegreePitchClass,
   serializePitchClass,
-} from "../domain/pitch";
+} from "../../../domain/pitch";
 import {
   CHORD_ACCIDENTAL_OPTIONS,
   CHORD_APPLIED_OPTIONS,

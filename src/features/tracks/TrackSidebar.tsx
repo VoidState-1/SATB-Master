@@ -13,8 +13,8 @@ import {
   type ProjectDocument,
   type SatbTrack,
   type VoiceId,
-} from "../domain/model";
-import { IconButton } from "./IconButton";
+} from "../../domain/model";
+import { IconButton } from "../../components/IconButton";
 import { SponsorDialog } from "./SponsorDialog";
 
 interface TrackSidebarProps {

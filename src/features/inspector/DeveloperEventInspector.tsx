@@ -3,7 +3,7 @@ import { Check, Code2, Copy } from "lucide-react";
 import {
   formatDeveloperFieldValue,
   type DeveloperEventInspection,
-} from "../domain/developerInspection";
+} from "../../domain/developerInspection";
 
 interface DeveloperEventInspectorProps {
   inspection: DeveloperEventInspection;

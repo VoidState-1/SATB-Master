@@ -5,9 +5,9 @@ import {
   Info,
   Lightbulb,
 } from "lucide-react";
-import type { HarmonyCheckResult, HarmonyDiagnostic } from "../domain/harmony";
-import { formatPosition } from "../domain/time";
-import type { ProjectDocument } from "../domain/model";
+import type { HarmonyCheckResult, HarmonyDiagnostic } from "../../domain/harmony";
+import { formatPosition } from "../../domain/time";
+import type { ProjectDocument } from "../../domain/model";
 
 interface DiagnosticsPanelProps {
   project: ProjectDocument;

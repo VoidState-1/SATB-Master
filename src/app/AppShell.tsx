@@ -31,13 +31,13 @@ import {
 } from "lucide-react";
 import { audioEngine, type AudioEngineState } from "../audio/audioEngine";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
+import { DiagnosticsPanel } from "../features/diagnostics/DiagnosticsPanel";
 import { IconButton } from "../components/IconButton";
-import { Inspector } from "../components/Inspector";
+import { Inspector } from "../features/inspector/Inspector";
 import { PanelResizeHandle } from "../components/PanelResizeHandle";
-import { PianoRoll, type EditorTool } from "../components/PianoRoll";
-import { ShortcutSettings } from "../components/ShortcutSettings";
-import { TrackSidebar } from "../components/TrackSidebar";
+import { PianoRoll, type EditorTool } from "../features/editor/PianoRoll";
+import { SettingsDialog } from "../features/settings/SettingsDialog";
+import { TrackSidebar } from "../features/tracks/TrackSidebar";
 import {
   chordDraftFromRegion,
   createChordRegion,
@@ -956,7 +956,7 @@ function AppShell() {
         />
       ) : null}
       {settingsOpen ? (
-        <ShortcutSettings
+        <SettingsDialog
           bindings={shortcutSettings.bindings}
           onSetBinding={shortcutSettings.setBinding}
           onClearBinding={shortcutSettings.clearBinding}

@@ -38,7 +38,7 @@ import {
   ticksForMeasures,
 } from "../../domain/time";
 import { IconButton } from "../../components/IconButton";
-import { DeveloperEventInspector } from "../../components/DeveloperEventInspector";
+import { DeveloperEventInspector } from "./DeveloperEventInspector";
 import { ChordSemanticsEditor } from "./ChordSemanticsEditor";
 import { CommitField } from "./CommitField";
 import { TimingSection } from "./TimingSection";
