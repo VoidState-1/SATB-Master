@@ -1,8 +1,8 @@
 @import "./styles/tokens.css";
 @import "./styles/window.css";
 @import "./styles/layout.css";
-@import "./styles/editor.css";
-@import "./styles/diagnostics.css";
-@import "./styles/inspector.css";
-@import "./styles/settings.css";
+@import "./features/editor/editor.css";
+@import "./features/diagnostics/diagnostics.css";
+@import "./features/inspector/inspector.css";
+@import "./features/settings/settings.css";
 @import "./styles/dialogs.css";

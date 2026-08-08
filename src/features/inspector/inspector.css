@@ -1,4 +1,7 @@
-﻿.inspector {
+Exit code: 0
+Wall time: 0.5 seconds
+Output:
+.inspector {
   display: flex;
   flex-direction: column;
 }
@@ -482,4 +485,6 @@
   font-size: 11px;
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18);
 }
+
+
 

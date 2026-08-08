@@ -1,4 +1,7 @@
-﻿.settings-backdrop {
+Exit code: 0
+Wall time: 0.5 seconds
+Output:
+.settings-backdrop {
   position: fixed;
   z-index: 100;
   inset: 0;
@@ -1031,4 +1034,6 @@
 .external-rule-enabled input:disabled {
   opacity: 0.48;
 }
+
+
 
