@@ -1,6 +1,6 @@
 # 工程数据模型
 
-本文描述 `.satb` 工程的持久化模型、音乐实体和必须维护的不变量。编辑行为见 [editor-and-state.md](./editor-and-state.md)，和声解释见 [harmony-engine.md](./harmony-engine.md)。类型定义和运行时验证以 [`src/domain/project/`](../src/domain/project) 为准；`model.ts` 仅为兼容转发。
+本文描述 `.satb` 工程的持久化模型、音乐实体和必须维护的不变量。编辑行为见 [editor-and-state.md](./editor-and-state.md)，和声解释见 [harmony-engine.md](./harmony-engine.md)。类型定义和运行时验证以 [`src/domain/project/`](../src/domain/project) 为准。
 
 ## 1. 版本与时间基准
 

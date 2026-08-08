@@ -45,7 +45,7 @@ flowchart LR
 
 | 文件 | 主要职责 |
 | --- | --- |
-| [`project/`](../src/domain/project) | 工程 schema、轨道和事件、默认工程、选择器、规范化、验证与 v2 -> v3 迁移；`model.ts` 只保留兼容转发 |
+| [`project/`](../src/domain/project) | 工程 schema、轨道和事件、默认工程、选择器、规范化、验证与 v2 -> v3 迁移 |
 | [`pitch.ts`](../src/domain/pitch.ts) | 书写音高、MIDI 转换、音程与调号相关计算 |
 | [`chordModel.ts`](../src/domain/chordModel.ts) | 和弦实体、结构联合、语义解释、草稿解析与配器策略 |
 | [`functionalHarmonyCatalog.ts`](../src/domain/functionalHarmonyCatalog.ts) | 斯波索宾 A/B/C 功能词汇、组合约束与共同和弦候选 |
@@ -53,7 +53,7 @@ flowchart LR
 | [`editing.ts`](../src/domain/editing.ts) | 新增、移动、调整、删除、锁定检查和批量命令 |
 | [`time.ts`](../src/domain/time.ts) | tick、秒、小节、变拍号、变速与双向吸附 |
 | [`midi.ts`](../src/domain/midi.ts) | MIDI Type 1 事件与轨道构造 |
-| [`harmony/`](../src/domain/harmony) | 不可变分析快照、规则运行时、规则注册表、按领域分组的实现、配置 schema、共享事实、连接器、适用性与仲裁；`harmony.ts` 只保留兼容转发 |
+| [`harmony/`](../src/domain/harmony) | 不可变分析快照、规则运行时、规则注册表、按领域分组的实现、配置 schema、共享事实、连接器、适用性与仲裁 |
 | [`ruleProfile.ts`](../src/domain/ruleProfile.ts) | 工程规则设置命令、便携配置档案和新工程模板 |
 | [`harmony/external/api.ts`](../src/domain/harmony/external/api.ts) | 外置 API v3 manifest、公开上下文、配置和结果验证 |
 
@@ -253,6 +253,6 @@ sequenceDiagram
 架构边界由 [`electron/architecture-boundaries.test.ts`](../electron/architecture-boundaries.test.ts) 负责回归检查，当前覆盖：
 
 - `src/domain` 不得依赖 React、Electron、DOM、`window.desktop` 或 Web Audio 运行时对象。
-- `model.ts`、`components/PianoRoll.tsx` 等旧路径必须保持为兼容转发入口，不得重新出现第二份实现。
+- 已移除的 `model.ts`、`harmony.ts` 和 `components/PianoRoll.tsx` 等旧路径必须保持不存在，避免重新出现第二套入口。
 
 钢琴卷帘的纯坐标契约由 [`features/editor/viewport.test.ts`](../src/features/editor/viewport.test.ts) 覆盖，包括 tick 与横坐标、MIDI 与纵坐标、时值宽度和缩放锚点。样式拆分必须保持 [`src/styles.css`](../src/styles.css) 的 import 顺序；桌面端的无边框窗口、恢复弹窗和资源路径仍需在 Electron 环境中手工验证。

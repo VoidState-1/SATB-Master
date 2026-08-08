@@ -30,10 +30,9 @@ describe("architecture boundaries", () => {
     expect(violations).toEqual([]);
   });
 
-  it("keeps compatibility entries as forwarding facades", () => {
-    expect(readFileSync(join(srcRoot, "domain", "model.ts"), "utf8").trim()).toBe(
-      'export * from "./project";',
-    );
+  it("keeps removed legacy entries absent", () => {
+    expect(existsSync(join(srcRoot, "domain", "model.ts"))).toBe(false);
+    expect(existsSync(join(srcRoot, "domain", "harmony.ts"))).toBe(false);
     expect(existsSync(join(srcRoot, "components", "PianoRoll.tsx"))).toBe(false);
     expect(existsSync(join(srcRoot, "components", "Inspector.tsx"))).toBe(false);
     expect(existsSync(join(srcRoot, "components", "ShortcutSettings.tsx"))).toBe(false);
@@ -45,11 +44,6 @@ describe("architecture boundaries", () => {
     expect(existsSync(join(srcRoot, "domain", "externalRuleWorkerProtocol.ts"))).toBe(false);
     expect(existsSync(join(srcRoot, "domain", "rules"))).toBe(false);
 
-    const harmonyFacade = readFileSync(
-      join(srcRoot, "domain", "harmony.ts"),
-      "utf8",
-    );
-    expect(harmonyFacade).not.toMatch(/\b(?:function|const|class)\s+[A-Za-z]/);
   });
 
   it("keeps internal callers on domain package entry points", () => {
