@@ -4,7 +4,7 @@ import {
   getAllPlayableTracks,
   type MusicalTrack,
   type ProjectDocument,
-} from "./model";
+} from "./project";
 import { formatPitchClass, keySignatureFifths, toMidi } from "./pitch";
 
 type WithoutDelta<T> = T extends unknown ? Omit<T, "deltaTime"> : never;

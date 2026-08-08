@@ -15,7 +15,7 @@ import {
   type ChordTrack,
   type NoteEvent,
   type ProjectDocument,
-} from "./model";
+} from "./project";
 import { toMidi } from "./pitch";
 import { keyAtTick } from "./time";
 

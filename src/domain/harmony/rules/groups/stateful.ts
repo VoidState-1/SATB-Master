@@ -11,7 +11,7 @@ import type {
   RuleStepResult,
 } from "../../../harmonyRuntime";
 import type { HarmonyRuleId } from "../../../harmonyRules";
-import type { VoiceId } from "../../../model";
+import type { VoiceId } from "../../../project";
 import {
   formatPitchClass,
   pitchClassEquals,

@@ -8,7 +8,7 @@ import {
   VOICE_ORDER,
   type ProjectDocument,
   type RuleProfile,
-} from "./model";
+} from "./project";
 import {
   RULE_EXCEPTION_CONTEXTS,
   type DiagnosticSeverity,

@@ -1,7 +1,7 @@
 import { analysisKeyAtTick, type HarmonyAnalysis } from "../../../harmonyAnalysis";
 import type { RuleConfig, RuleDiagnostic } from "../../../harmonyRuntime";
 import type { RuleExceptionContext } from "../../../harmonyRules";
-import { VOICE_ORDER } from "../../../model";
+import { VOICE_ORDER } from "../../../project";
 import {
   formatSpelledPitch,
   pitchClassEquals,

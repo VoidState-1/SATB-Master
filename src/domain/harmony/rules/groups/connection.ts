@@ -4,7 +4,7 @@ import {
 } from "../../../chordModel";
 import type { AnalysisNote, HarmonyAnalysis } from "../../../harmonyAnalysis";
 import type { RuleDiagnostic } from "../../../harmonyRuntime";
-import { VOICE_ORDER } from "../../../model";
+import { VOICE_ORDER } from "../../../project";
 import {
   pitchClassEquals,
   scaleDegreePitchClass,

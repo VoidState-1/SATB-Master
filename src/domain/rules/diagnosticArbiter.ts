@@ -4,7 +4,7 @@ import type {
   RuleDefinition,
   RuleDiagnostic,
 } from "../harmonyRuntime";
-import { VOICE_ORDER, type VoiceId } from "../model";
+import { VOICE_ORDER, type VoiceId } from "../project";
 import type { DiagnosticSeverity } from "./types";
 
 const MAX_MESSAGE_LENGTH = 600;

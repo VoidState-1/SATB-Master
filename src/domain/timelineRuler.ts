@@ -3,7 +3,7 @@ import type {
   MeterEvent,
   ProjectDocument,
   TempoEvent,
-} from "./model";
+} from "./project";
 import { buildMeasures, ticksPerBeat } from "./time";
 
 export interface TimingMarkerGroup {

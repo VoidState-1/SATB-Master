@@ -4,7 +4,7 @@ import type {
   HarmonyInterpretation,
   NoteEvent,
   VoiceId,
-} from "./model";
+} from "./project";
 
 export type DeveloperFieldValue = string | number | boolean | undefined;
 

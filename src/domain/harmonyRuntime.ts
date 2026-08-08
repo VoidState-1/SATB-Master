@@ -7,7 +7,7 @@ import {
   type ProjectSnapshot,
   type SliceTransition,
 } from "./harmonyAnalysis";
-import { VOICE_ORDER, type ProjectDocument, type VoiceId } from "./model";
+import { VOICE_ORDER, type ProjectDocument, type VoiceId } from "./project";
 import { planRuleApplicability } from "./rules/applicability";
 import {
   arbitrateDiagnostics,

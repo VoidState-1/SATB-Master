@@ -10,7 +10,7 @@ import {
   type NoteEvent,
   type ProjectDocument,
   type VoiceId,
-} from "./model";
+} from "./project";
 import {
   pitchClassEquals,
   writtenInterval,

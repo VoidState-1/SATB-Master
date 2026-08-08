@@ -16,7 +16,7 @@ import {
   type HarmonyRuleSeverities,
   type RuleExceptionPolicy,
 } from "../harmonyRules";
-import type { ProjectDocument } from "../model";
+import type { ProjectDocument } from "../project";
 import { evaluation } from "./rules/helpers/core";
 import {
   chordInterpretationIdentityRule,

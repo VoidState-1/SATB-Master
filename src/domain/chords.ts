@@ -26,7 +26,7 @@ import {
   type HarmonySemantics,
   type KeyEvent,
   type ProjectDocument,
-} from "./model";
+} from "./project";
 import {
   accidentalSymbol,
   formatPitchClass,

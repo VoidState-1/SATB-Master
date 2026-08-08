@@ -3,7 +3,7 @@ import type {
   MeterEvent,
   ProjectDocument,
   TempoEvent,
-} from "./model";
+} from "./project";
 
 export interface MeasureInfo {
   number: number;

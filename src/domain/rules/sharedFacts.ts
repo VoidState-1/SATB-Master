@@ -5,7 +5,7 @@ import type {
   AnalysisSlice,
   SliceTransition,
 } from "../harmonyAnalysis";
-import { VOICE_ORDER, type VoiceId } from "../model";
+import { VOICE_ORDER, type VoiceId } from "../project";
 import {
   pitchClassEquals,
   toMidi,

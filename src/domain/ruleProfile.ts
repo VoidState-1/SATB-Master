@@ -19,7 +19,7 @@ import {
   type RuleProfile,
   type SharedHarmonySettings,
   type VoiceId,
-} from "./model";
+} from "./project";
 import {
   externalRuleReferenceKey,
   normalizeExternalRuleConfig,

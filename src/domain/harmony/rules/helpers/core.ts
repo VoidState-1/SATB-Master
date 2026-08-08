@@ -13,7 +13,7 @@ import type {
   HarmonyRuleId,
   RuleExceptionContext,
 } from "../../../harmonyRules";
-import { VOICE_CONFIG, VOICE_ORDER, type VoiceId } from "../../../model";
+import { VOICE_CONFIG, VOICE_ORDER, type VoiceId } from "../../../project";
 import {
   formatSpelledPitch,
   pitchClassEquals,
