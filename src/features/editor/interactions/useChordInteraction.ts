@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import type { ChordRegionPatch } from "../../../domain/editing";
-import type { ChordRegion, ProjectDocument } from "../../../domain/model";
+import type { ChordRegion, ProjectDocument } from "../../../domain/project";
 import { snapTickBackward, snapTickForward } from "../../../domain/time";
 import type { EditorDomain, EditorTool } from "../types";
 import type { ChordInteraction } from "./types";

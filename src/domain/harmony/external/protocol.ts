@@ -3,12 +3,12 @@ import type {
   ExternalRuleFailure,
   ExternalRuleManifestRule,
   InstalledExternalRulePackage,
-} from "./externalRules";
+} from "./api";
 import type {
   HarmonyRuleSeverity,
   RuleConfig,
   RuleExceptionPolicy,
-} from "./harmonyRules";
+} from "../ruleTypes";
 
 export type ExternalRuleWorkerRequest =
   | {

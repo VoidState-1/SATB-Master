@@ -1,4 +1,4 @@
-import type { ProjectDocument } from "../../../domain/model";
+import type { ProjectDocument } from "../../../domain/project";
 import type { EditorState } from "../useEditorState";
 
 export interface EditorCommandContext {

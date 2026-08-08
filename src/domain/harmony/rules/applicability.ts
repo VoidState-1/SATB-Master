@@ -1,5 +1,5 @@
-import type { HarmonyAnalysis } from "../harmonyAnalysis";
-import type { RuleDiagnostic } from "../harmonyRuntime";
+import type { HarmonyAnalysis } from "../analysis";
+import type { RuleDiagnostic } from "../runtime";
 import type {
   HarmonyRuleDefinition,
   RuleDependencyScope,

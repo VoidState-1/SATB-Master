@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { InstalledExternalRulePackage } from "../domain/externalRules";
+import type { InstalledExternalRulePackage } from "../domain/harmony";
 import {
   installExternalRulePackage,
   listExternalRulePackages,

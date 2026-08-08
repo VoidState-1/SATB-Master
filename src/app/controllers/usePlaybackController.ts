@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { audioEngine, type AudioEngineState } from "../../audio/audioEngine";
 import { replaceProject } from "../../domain/editing";
-import type { ProjectDocument } from "../../domain/model";
+import type { ProjectDocument } from "../../domain/project";
 import {
   loadDefaultSoundFont,
   loadPreparedDesktopSoundFont,

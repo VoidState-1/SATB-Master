@@ -1,17 +1,17 @@
-import { chordIdentityToneSpellings } from "../chordModel";
+import { chordIdentityToneSpellings } from "../../chordModel";
 import type {
   AnalysisChord,
   AnalysisNote,
   AnalysisSlice,
   SliceTransition,
-} from "../harmonyAnalysis";
-import { VOICE_ORDER, type VoiceId } from "../project";
+} from "../analysis";
+import { VOICE_ORDER, type VoiceId } from "../../project";
 import {
   pitchClassEquals,
   toMidi,
   writtenInterval,
   type WrittenInterval,
-} from "../pitch";
+} from "../../pitch";
 
 export type MotionDirection = "up" | "down" | "stationary";
 export type BassMotion = "step-up" | "step-down" | "other" | "stationary";

@@ -5,8 +5,8 @@ import {
   harmonySemanticsCompatibleWithIdentity,
   primaryHarmonyInterpretation,
 } from "../../../chordModel";
-import { analysisKeyAtTick, type HarmonyAnalysis } from "../../../harmonyAnalysis";
-import type { RuleConfig, RuleDiagnostic } from "../../../harmonyRuntime";
+import { analysisKeyAtTick, type HarmonyAnalysis } from "../../analysis";
+import type { RuleConfig, RuleDiagnostic } from "../../runtime";
 import {
   formatPitchClass,
   pitchClassEquals,

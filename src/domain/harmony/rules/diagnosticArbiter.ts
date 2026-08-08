@@ -1,10 +1,10 @@
-import type { HarmonyAnalysis } from "../harmonyAnalysis";
+import type { HarmonyAnalysis } from "../analysis";
 import type {
   HarmonyDiagnostic,
   RuleDefinition,
   RuleDiagnostic,
-} from "../harmonyRuntime";
-import { VOICE_ORDER, type VoiceId } from "../project";
+} from "../runtime";
+import { VOICE_ORDER, type VoiceId } from "../../project";
 import type { DiagnosticSeverity } from "./types";
 
 const MAX_MESSAGE_LENGTH = 600;

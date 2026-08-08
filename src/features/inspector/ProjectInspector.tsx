@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Lock, LockOpen, Plus, Trash2 } from "lucide-react";
-import type { KeyMode, ProjectDocument } from "../../domain/model";
+import type { KeyMode, ProjectDocument } from "../../domain/project";
 import {
   formatPitchClass,
   keyTonicOptions,

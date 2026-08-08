@@ -1,4 +1,7 @@
-import { buildHarmonyAnalysis } from "../domain/harmonyAnalysis";
+import {
+  buildHarmonyAnalysis,
+  type HarmonyCheckResult,
+} from "../domain/harmony";
 import {
   buildExternalRuleContext,
   externalRuleReferenceKey,
@@ -11,13 +14,12 @@ import {
   type ExternalRuleManifest,
   type ExternalRuleRunResult,
   type InstalledExternalRulePackage,
-} from "../domain/externalRules";
+} from "../domain/harmony";
 import type {
   ExternalRuleWorkerRequest,
   ExternalRuleWorkerResponse,
-} from "../domain/externalRuleWorkerProtocol";
-import type { HarmonyCheckResult } from "../domain/harmonyRuntime";
-import type { ProjectDocument } from "../domain/model";
+} from "../domain/harmony/external/protocol";
+import type { ProjectDocument } from "../domain/project";
 import { loadExternalRulePackageSource } from "./externalRuleLibrary";
 
 let requestId = 0;

@@ -2,11 +2,11 @@ import {
   ExternalRuleSandboxError,
   evaluateExternalRuleSource,
   inspectExternalRuleSource,
-} from "../domain/externalRuleSandbox";
+} from "../domain/harmony/external/sandbox";
 import type {
   ExternalRuleWorkerRequest,
   ExternalRuleWorkerResponse,
-} from "../domain/externalRuleWorkerProtocol";
+} from "../domain/harmony/external/protocol";
 
 self.addEventListener(
   "message",

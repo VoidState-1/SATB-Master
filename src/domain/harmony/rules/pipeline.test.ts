@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildHarmonyAnalysis } from "../harmonyAnalysis";
-import type { HarmonyDiagnostic, RuleDefinition } from "../harmonyRuntime";
+import { buildHarmonyAnalysis } from "../analysis";
+import type { HarmonyDiagnostic, RuleDefinition } from "../runtime";
 import {
   createEmptyProject,
   PPQ,
@@ -9,7 +9,7 @@ import {
   type NoteEvent,
   type ProjectDocument,
   type VoiceId,
-} from "../model";
+} from "../../project";
 import { HARMONY_RULE_DEFINITIONS } from "./catalog";
 import { arbitrateDiagnostics } from "./diagnosticArbiter";
 import { voicePairTransitionFacts } from "./sharedFacts";

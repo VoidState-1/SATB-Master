@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { HARMONY_PHASE_B_GOLDEN } from "./fixtures/harmonyPhaseB.v1";
-import { functionalTargetForDegree } from "./chordModel";
+import { HARMONY_PHASE_B_GOLDEN } from "../fixtures/harmonyPhaseB.v1";
+import { functionalTargetForDegree } from "../chordModel";
 import {
   BUILTIN_HARMONY_RULES,
   checkHarmony,
   createHarmonyRuleScheduler,
-} from "./harmony";
-import { RuleScheduler, type RuleDefinition } from "./harmonyRuntime";
+} from "./registry";
+import { RuleScheduler, type RuleDefinition } from "./runtime";
 import {
   HARMONY_RULE_DEFINITIONS,
   defaultHarmonyRuleSeverities,
-} from "./harmonyRules";
+} from "./ruleTypes";
 import {
   createEmptyProject,
   PPQ,
@@ -23,7 +23,7 @@ import {
   type SpelledPitch,
   type SpelledPitchClass,
   type VoiceId,
-} from "./model";
+} from "../project";
 
 function note(
   id: string,

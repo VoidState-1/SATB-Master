@@ -1,4 +1,4 @@
-import type { ChordDraft, ChordQuality } from "../../../domain/model";
+import type { ChordDraft, ChordQuality } from "../../../domain/project";
 
 export const CHORD_DEGREE_OPTIONS: ReadonlyArray<{
   value: ChordDraft["degree"];

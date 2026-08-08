@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { HarmonyDiagnostic } from "../../../domain/harmony";
 import { keyAtTick, type MeasureInfo } from "../../../domain/time";
-import { VOICE_CONFIG, type ProjectDocument, type VoiceId } from "../../../domain/model";
+import { VOICE_CONFIG, type ProjectDocument, type VoiceId } from "../../../domain/project";
 import { formatSpelledPitch, spellMidi } from "../../../domain/pitch";
 import { isBlackKey, primaryDiagnostic } from "../geometry";
 import type { PointerInteraction } from "../interactions/types";

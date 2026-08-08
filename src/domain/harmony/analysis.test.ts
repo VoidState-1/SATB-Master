@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { createChordRegion } from "./chords";
-import { checkHarmony } from "./harmony";
-import { buildHarmonyAnalysis, walkSpans } from "./harmonyAnalysis";
-import { defaultHarmonyRuleSeverities } from "./harmonyRules";
+import { createChordRegion } from "../chords";
+import { checkHarmony } from "./registry";
+import { buildHarmonyAnalysis, walkSpans } from "./analysis";
+import { defaultHarmonyRuleSeverities } from "./ruleTypes";
 import {
   createEmptyProject,
   PPQ,
   type ChordDraft,
   type NoteEvent,
   type VoiceId,
-} from "./model";
-import { spellMidi } from "./pitch";
+} from "../project";
+import { spellMidi } from "../pitch";
 
 type TestChordDraft = Omit<ChordDraft, "source" | "confidence"> & {
   source?: ChordDraft["source"];

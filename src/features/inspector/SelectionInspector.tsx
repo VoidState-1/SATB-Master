@@ -15,7 +15,7 @@ import {
   type Alteration,
   type DiatonicStep,
   type NoteEvent,
-} from "../../domain/model";
+} from "../../domain/project";
 import { spellMidi, toMidi } from "../../domain/pitch";
 import { keyAtTick } from "../../domain/time";
 import { ChordSemanticsEditor } from "./ChordSemanticsEditor";

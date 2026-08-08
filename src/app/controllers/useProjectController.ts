@@ -3,7 +3,7 @@ import { defaultChordDraftAtTick } from "../../domain/chords";
 import {
   createEmptyProject,
   type ProjectDocument,
-} from "../../domain/model";
+} from "../../domain/project";
 import { useProjectHistory } from "../../hooks/useProjectHistory";
 import { useEditorState } from "./useEditorState";
 

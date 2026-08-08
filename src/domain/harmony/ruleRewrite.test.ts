@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createChordRegion } from "./chords";
-import { checkHarmony } from "./harmony";
-import { defaultHarmonyRuleSeverities } from "./harmonyRules";
+import { createChordRegion } from "../chords";
+import { checkHarmony } from "./registry";
+import { defaultHarmonyRuleSeverities } from "./ruleTypes";
 import {
   createEmptyProject,
   PPQ,
@@ -10,14 +10,14 @@ import {
   type NoteEvent,
   type ProjectDocument,
   type VoiceId,
-} from "./model";
-import { spellMidi, type SpelledPitch } from "./pitch";
+} from "../project";
+import { spellMidi, type SpelledPitch } from "../pitch";
 import {
   resolveBuiltinRuleProfile,
   setBuiltinRuleConfig,
   setBuiltinRuleException,
   setBuiltinRuleSeverity,
-} from "./ruleProfile";
+} from "../ruleProfile";
 
 function note(id: string, startTick: number, pitch: SpelledPitch): NoteEvent {
   return {

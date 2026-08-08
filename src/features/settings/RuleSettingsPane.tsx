@@ -13,7 +13,7 @@ import {
   HARMONY_RULE_GROUPS,
   HARMONY_RULE_SEVERITY_OPTIONS,
   type HarmonyRuleSeverity,
-} from "../../domain/harmonyRules";
+} from "../../domain/harmony";
 import { BuiltinRuleDetails } from "./BuiltinRuleDetails";
 import { ExternalRuleSettingsPane } from "./ExternalRuleSettingsPane";
 import {

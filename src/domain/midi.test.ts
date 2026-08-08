@@ -2,7 +2,7 @@ import { parseMidi } from "midi-file";
 import { describe, expect, it } from "vitest";
 import { buildMidi } from "./midi";
 import { createChordRegion } from "./chords";
-import { createEmptyProject, PPQ } from "./model";
+import { createEmptyProject, PPQ } from "./project";
 
 describe("MIDI Type 1 导出", () => {
   it("导出全局轨与四条声部轨，并保留速度、拍号和调号", () => {

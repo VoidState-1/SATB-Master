@@ -18,7 +18,7 @@ import {
   inversionFigures,
   type FunctionalBaseId,
 } from "../../domain/functionalHarmonyCatalog";
-import type { ChordDraft, KeyEvent } from "../../domain/model";
+import type { ChordDraft, KeyEvent } from "../../domain/project";
 import {
   formatPitchClass,
   keyTonicOptions,

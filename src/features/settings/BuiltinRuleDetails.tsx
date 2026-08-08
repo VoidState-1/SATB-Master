@@ -3,7 +3,7 @@ import {
   HARMONY_RULE_DEFINITIONS,
   HARMONY_RULE_SEVERITY_OPTIONS,
   type HarmonyRuleSeverity,
-} from "../../domain/harmonyRules";
+} from "../../domain/harmony";
 import { RuleExceptionFields, RuleOptionFields } from "./RuleFields";
 import type { RuleSettingsProps } from "./types";
 

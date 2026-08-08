@@ -1,7 +1,7 @@
 import {
   chordIdentityToneSpellings,
   primaryHarmonyInterpretation,
-} from "./chordModel";
+} from "../chordModel";
 import {
   VOICE_ORDER,
   type ChordRegion,
@@ -10,13 +10,13 @@ import {
   type NoteEvent,
   type ProjectDocument,
   type VoiceId,
-} from "./project";
+} from "../project";
 import {
   pitchClassEquals,
   writtenInterval,
   type WrittenInterval,
-} from "./pitch";
-import type { RuleDependencyScope } from "./harmonyRules";
+} from "../pitch";
+import type { RuleDependencyScope } from "./ruleTypes";
 import {
   buildHarmonyConnections,
   type HarmonyConnectionAssessment,

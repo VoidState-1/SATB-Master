@@ -6,7 +6,7 @@ import {
   EXTERNAL_RULE_TIMEOUT_MS,
   type ExternalRuleContext,
   type ExternalRuleFailureCode,
-} from "./externalRules";
+} from "./api";
 
 export interface ExternalRuleSandboxInspection {
   manifest: unknown;
@@ -175,7 +175,7 @@ export function evaluateExternalRuleSource(options: {
   source: string;
   ruleId: string;
   context: ExternalRuleContext;
-  config: import("./harmonyRules").RuleConfig;
+  config: import("../ruleTypes").RuleConfig;
   timeoutMs?: number;
   memoryLimitBytes?: number;
 }): Promise<ExternalRuleSandboxEvaluation> {

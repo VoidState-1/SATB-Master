@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createChordRegion } from "./chords";
+import { createChordRegion } from "../chords";
 import {
   createEmptyProject,
   migrateProject,
@@ -7,8 +7,8 @@ import {
   reconcileChordIdentities,
   validateProject,
   type ProjectDocument,
-} from "./model";
-import { keySignatureFifths, pitchClassValue, toMidi } from "./pitch";
+} from "./index";
+import { keySignatureFifths, pitchClassValue, toMidi } from "../pitch";
 
 function createV2Fixture() {
   const project = createEmptyProject("v2 迁移金样本");

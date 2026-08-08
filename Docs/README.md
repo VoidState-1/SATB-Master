@@ -49,8 +49,8 @@ SATB Master 是一款离线优先的四部和声学习与编辑软件。主要�
 | 项目 | 当前值 | 说明 |
 | --- | --- | --- |
 | 产品版本 | `1.1.0` | 来自 [`package.json`](../package.json)，大版本开发分支上可能暂未更新 |
-| 工程 schema | `3` | 来自 [`src/domain/model.ts`](../src/domain/model.ts)，决定 `.satb` 兼容性 |
-| 外置规则 API | `3` | 来自 [`src/domain/externalRules.ts`](../src/domain/externalRules.ts)，决定规则脚本兼容性 |
+| 工程 schema | `3` | 来自 [`src/domain/project/types.ts`](../src/domain/project/types.ts)，决定 `.satb` 兼容性；`model.ts` 仅为兼容转发 |
+| 外置规则 API | `3` | 来自 [`src/domain/harmony/external/api.ts`](../src/domain/harmony/external/api.ts)，决定规则脚本兼容性 |
 
 工程 schema 和外置规则 API 是数据契约，不能用产品版本号替代。
 

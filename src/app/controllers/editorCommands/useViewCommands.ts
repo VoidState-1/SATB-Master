@@ -32,7 +32,7 @@ import {
   type ProjectDocument,
   type SatbTrack,
   type VoiceId,
-} from "../../../domain/model";
+} from "../../../domain/project";
 import {
   coerceKeyTonicForMode,
   parsePitchClass,

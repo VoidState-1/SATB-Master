@@ -3,16 +3,16 @@ import type {
   AnalysisChord,
   AnalysisNote,
   HarmonyAnalysis,
-} from "../../../harmonyAnalysis";
+} from "../../analysis";
 import type {
   DiagnosticEvidence,
   RuleDiagnostic,
   RuleEvaluation,
-} from "../../../harmonyRuntime";
+} from "../../runtime";
 import type {
   HarmonyRuleId,
   RuleExceptionContext,
-} from "../../../harmonyRules";
+} from "../../ruleTypes";
 import { VOICE_CONFIG, VOICE_ORDER, type VoiceId } from "../../../project";
 import {
   formatSpelledPitch,

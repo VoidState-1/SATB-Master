@@ -2,8 +2,8 @@ import {
   chordIdentityToneSpellings,
   primaryHarmonyInterpretation,
 } from "../../../chordModel";
-import type { AnalysisNote, HarmonyAnalysis } from "../../../harmonyAnalysis";
-import type { RuleDiagnostic } from "../../../harmonyRuntime";
+import type { AnalysisNote, HarmonyAnalysis } from "../../analysis";
+import type { RuleDiagnostic } from "../../runtime";
 import { VOICE_ORDER } from "../../../project";
 import {
   pitchClassEquals,

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Trash2, X } from "lucide-react";
-import { type KeyMode, type ProjectDocument } from "../../../domain/model";
+import { type KeyMode, type ProjectDocument } from "../../../domain/project";
 import {
   formatPitchClass,
   keyTonicOptions,

@@ -4,7 +4,7 @@ import {
   commandForKeyboardEvent,
   type ShortcutBindings,
 } from "../../shortcuts/shortcutRegistry";
-import type { EditorDomain, EditorTool } from "../../features/editor/types";
+import type { EditorDomain, EditorTool } from "../../features/editor";
 
 interface HistoryKeyboardPort {
   undo(): void;

@@ -4,7 +4,7 @@ import type {
   RuleExceptionContext,
   RuleExceptionPolicy,
   RuleOptionDefinition,
-} from "../../domain/harmonyRules";
+} from "../../domain/harmony";
 
 const EXCEPTION_CONTEXT_LABELS: Record<RuleExceptionContext, string> = {
   "same-harmony": "同和弦转换",

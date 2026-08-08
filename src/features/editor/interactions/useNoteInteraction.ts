@@ -11,7 +11,7 @@ import {
   type NoteEvent,
   type ProjectDocument,
   type VoiceId,
-} from "../../../domain/model";
+} from "../../../domain/project";
 import {
   formatSpelledPitch,
   toMidi,

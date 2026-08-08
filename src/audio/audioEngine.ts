@@ -4,7 +4,7 @@ import {
   getAllPlayableTracks,
   type ProjectDocument,
   type VoiceId,
-} from "../domain/model";
+} from "../domain/project";
 import { toMidi } from "../domain/pitch";
 import {
   buildMeasures,

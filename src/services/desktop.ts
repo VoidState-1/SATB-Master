@@ -1,4 +1,4 @@
-import { migrateProject, type ProjectDocument } from "../domain/model";
+import { migrateProject, type ProjectDocument } from "../domain/project";
 import type { PortableRuleProfile } from "../domain/ruleProfile";
 
 const BROWSER_PROJECT_KEY = "satb-master-browser-project";

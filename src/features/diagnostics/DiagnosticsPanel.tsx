@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import type { HarmonyCheckResult, HarmonyDiagnostic } from "../../domain/harmony";
 import { formatPosition } from "../../domain/time";
-import type { ProjectDocument } from "../../domain/model";
+import type { ProjectDocument } from "../../domain/project";
 
 interface DiagnosticsPanelProps {
   project: ProjectDocument;

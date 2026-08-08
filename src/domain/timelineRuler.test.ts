@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyProject, PPQ } from "./model";
+import { createEmptyProject, PPQ } from "./project";
 import {
   buildTimelineRulerTicks,
   buildTimingMarkerGroups,

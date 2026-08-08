@@ -4,7 +4,7 @@ import {
   type ExternalRuleFailure,
   type ExternalRuleManifestRule,
   type InstalledExternalRulePackage,
-} from "../../domain/externalRules";
+} from "../../domain/harmony";
 import {
   HARMONY_RULE_SEVERITY_OPTIONS,
   type HarmonyRuleId,
@@ -12,8 +12,8 @@ import {
   type HarmonyRuleSeverity,
   type RuleConfig,
   type RuleExceptionPolicy,
-} from "../../domain/harmonyRules";
-import type { RuleProfile } from "../../domain/model";
+} from "../../domain/harmony";
+import type { RuleProfile } from "../../domain/project";
 
 export interface ExternalRuleEntry {
   key: string;

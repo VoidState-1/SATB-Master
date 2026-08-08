@@ -3,14 +3,14 @@ import {
   chordIdentityToneSpellingForDegree,
   primaryHarmonyInterpretation,
 } from "../../../chordModel";
-import type { RuleDiagnostic } from "../../../harmonyRuntime";
+import type { RuleDiagnostic } from "../../runtime";
 import type {
   JsonValue,
   RuleStateEnvelope,
   RuleStepContext,
   RuleStepResult,
-} from "../../../harmonyRuntime";
-import type { HarmonyRuleId } from "../../../harmonyRules";
+} from "../../runtime";
+import type { HarmonyRuleId } from "../../ruleTypes";
 import type { VoiceId } from "../../../project";
 import {
   formatPitchClass,

@@ -6,14 +6,14 @@ import {
   normalizeExternalRuleConfig,
   type ExternalRuleFailure,
   type InstalledExternalRulePackage,
-} from "../../domain/externalRules";
+} from "../../domain/harmony";
 import type {
   HarmonyRuleId,
   HarmonyRuleSeverity,
   RuleConfig,
   RuleExceptionPolicy,
-} from "../../domain/harmonyRules";
-import type { ProjectDocument, RuleProfile } from "../../domain/model";
+} from "../../domain/harmony";
+import type { ProjectDocument, RuleProfile } from "../../domain/project";
 import {
   createPortableRuleProfile,
   prepareRuleProfileImport,

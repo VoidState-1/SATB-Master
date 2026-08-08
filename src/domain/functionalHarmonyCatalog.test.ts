@@ -21,7 +21,7 @@ import {
   type FunctionalBaseId,
   type FunctionalChordForm,
 } from "./functionalHarmonyCatalog";
-import { createEmptyProject, PPQ, validateProject } from "./model";
+import { createEmptyProject, PPQ, validateProject } from "./project";
 
 const C_MAJOR = {
   id: "c-major",

@@ -17,7 +17,7 @@ import {
   validateProject,
   type ChordDraft,
   type ChordRegion,
-} from "./model";
+} from "./project";
 
 function region(
   project: ReturnType<typeof createEmptyProject>,

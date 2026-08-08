@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   EXTERNAL_RULE_API_VERSION,
   type InstalledExternalRulePackage,
-} from "./externalRules";
-import { HARMONY_RULE_DEFINITIONS } from "./harmonyRules";
-import { createDefaultRuleProfile } from "./model";
+} from "./harmony/external/api";
+import { HARMONY_RULE_DEFINITIONS } from "./harmony/ruleTypes";
+import { createDefaultRuleProfile } from "./project";
 import {
   createPortableRuleProfile,
   parsePortableRuleProfile,

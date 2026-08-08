@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { buildHarmonyAnalysis } from "./harmonyAnalysis";
-import { createChordRegion } from "./chords";
+import { buildHarmonyAnalysis } from "../analysis";
+import { createChordRegion } from "../../chords";
 import {
   buildExternalRuleContext,
   mergeExternalRuleResult,
   normalizeExternalRuleDiagnostics,
   parseExternalRuleManifest,
   type InstalledExternalRulePackage,
-} from "./externalRules";
+} from "./api";
 import {
   evaluateExternalRuleSource,
   inspectExternalRuleSource,
-} from "./externalRuleSandbox";
-import { createEmptyProject, PPQ } from "./model";
-import { checkHarmony } from "./harmony";
+} from "./sandbox";
+import { createEmptyProject, PPQ } from "../../project";
+import { checkHarmony } from "../registry";
 
 const EXAMPLE_SOURCE = `
 SATB_RULE.register({

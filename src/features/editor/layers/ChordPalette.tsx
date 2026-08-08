@@ -23,7 +23,7 @@ import {
   type FunctionalBaseId,
   type FunctionalChordForm,
 } from "../../../domain/functionalHarmonyCatalog";
-import type { ChordDraft, KeyEvent, KeyReference } from "../../../domain/model";
+import type { ChordDraft, KeyEvent, KeyReference } from "../../../domain/project";
 import {
   formatPitchClass,
   keyTonicOptions,

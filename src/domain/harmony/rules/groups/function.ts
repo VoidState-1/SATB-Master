@@ -1,6 +1,6 @@
 import { primaryHarmonyInterpretation } from "../../../chordModel";
-import { analysisKeyAtTick, type HarmonyAnalysis } from "../../../harmonyAnalysis";
-import type { RuleDiagnostic } from "../../../harmonyRuntime";
+import { analysisKeyAtTick, type HarmonyAnalysis } from "../../analysis";
+import type { RuleDiagnostic } from "../../runtime";
 import {
   formatPitchClass,
   pitchClassEquals,

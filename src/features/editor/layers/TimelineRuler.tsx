@@ -1,6 +1,6 @@
 import type { MouseEvent } from "react";
 import { formatPitchClass } from "../../../domain/pitch";
-import type { ProjectDocument } from "../../../domain/model";
+import type { ProjectDocument } from "../../../domain/project";
 import type { MeasureInfo } from "../../../domain/time";
 import type {
   TimelineRulerTick,

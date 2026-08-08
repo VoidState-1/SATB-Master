@@ -2,7 +2,7 @@ import { Link2, RotateCcw, Trash2 } from "lucide-react";
 import {
   HARMONY_RULE_SEVERITY_OPTIONS,
   type HarmonyRuleSeverity,
-} from "../../domain/harmonyRules";
+} from "../../domain/harmony";
 import { RuleExceptionFields, RuleOptionFields } from "./RuleFields";
 import { sourceName, type ExternalRuleEntry } from "./ruleSettingsModel";
 import type { RuleSettingsProps } from "./types";

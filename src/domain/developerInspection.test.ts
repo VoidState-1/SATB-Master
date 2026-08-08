@@ -5,7 +5,7 @@ import {
   inspectNoteEvent,
 } from "./developerInspection";
 import { createChordRegion } from "./chords";
-import { createEmptyProject, PPQ, type NoteEvent } from "./model";
+import { createEmptyProject, PPQ, type NoteEvent } from "./project";
 import { spellMidi } from "./pitch";
 
 function paths(rows: ReturnType<typeof inspectNoteEvent>["rows"]) {

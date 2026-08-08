@@ -53,12 +53,9 @@ flowchart LR
 | [`editing.ts`](../src/domain/editing.ts) | 新增、移动、调整、删除、锁定检查和批量命令 |
 | [`time.ts`](../src/domain/time.ts) | tick、秒、小节、变拍号、变速与双向吸附 |
 | [`midi.ts`](../src/domain/midi.ts) | MIDI Type 1 事件与轨道构造 |
-| [`harmonyAnalysis.ts`](../src/domain/harmonyAnalysis.ts) | 不可变快照、切片、转换、和声跨度与遍历查询 |
-| [`harmonyRuntime.ts`](../src/domain/harmonyRuntime.ts) | 规则接口、调度、私有状态、适用性接入与诊断收敛 |
-| [`harmony/`](../src/domain/harmony) | 内置规则注册表、按领域分组的规则实现和共享辅助函数；`harmony.ts` 只保留兼容转发 |
-| [`rules/`](../src/domain/rules) | 81 条目录、配置 schema、共享事实、连接器、适用性与仲裁 |
+| [`harmony/`](../src/domain/harmony) | 不可变分析快照、规则运行时、规则注册表、按领域分组的实现、配置 schema、共享事实、连接器、适用性与仲裁；`harmony.ts` 只保留兼容转发 |
 | [`ruleProfile.ts`](../src/domain/ruleProfile.ts) | 工程规则设置命令、便携配置档案和新工程模板 |
-| [`externalRules.ts`](../src/domain/externalRules.ts) | 外置 API v3 manifest、公开上下文、配置和结果验证 |
+| [`harmony/external/api.ts`](../src/domain/harmony/external/api.ts) | 外置 API v3 manifest、公开上下文、配置和结果验证 |
 
 领域代码的关键约束是：给定同一输入，返回同一结果；不读取 DOM、磁盘、系统时钟或全局可变状态。创建 ID 和时间戳的边界代码应把结果传入领域对象，而不是让规则计算隐式依赖环境。
 

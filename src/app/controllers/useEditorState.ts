@@ -6,8 +6,8 @@ import type {
   NoteEvent,
   ProjectDocument,
   VoiceId,
-} from "../../domain/model";
-import { type EditorTool } from "../../features/editor/PianoRoll";
+} from "../../domain/project";
+import type { EditorTool } from "../../features/editor";
 
 export interface ClipboardNote {
   voiceId: VoiceId;

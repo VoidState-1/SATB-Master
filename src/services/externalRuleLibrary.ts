@@ -4,7 +4,7 @@ import {
   type ExternalRuleImportCandidate,
   type ExternalRuleManifest,
   type InstalledExternalRulePackage,
-} from "../domain/externalRules";
+} from "../domain/harmony";
 
 const BROWSER_LIBRARY_PREFIX = "satb-master-rule-library-v1:";
 const sourceCache = new Map<string, Promise<string>>();

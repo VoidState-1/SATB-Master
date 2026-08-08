@@ -1,6 +1,6 @@
-import { analysisKeyAtTick, type HarmonyAnalysis } from "../../../harmonyAnalysis";
-import type { RuleConfig, RuleDiagnostic } from "../../../harmonyRuntime";
-import type { RuleExceptionContext } from "../../../harmonyRules";
+import { analysisKeyAtTick, type HarmonyAnalysis } from "../../analysis";
+import type { RuleConfig, RuleDiagnostic } from "../../runtime";
+import type { RuleExceptionContext } from "../../ruleTypes";
 import { VOICE_ORDER } from "../../../project";
 import {
   formatSpelledPitch,
@@ -8,7 +8,7 @@ import {
   toMidi,
   writtenInterval,
 } from "../../../pitch";
-import { bassMotionFact } from "../../../rules/sharedFacts";
+import { bassMotionFact } from "../sharedFacts";
 import {
   diagnostic,
   direction,

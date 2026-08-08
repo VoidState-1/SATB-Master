@@ -7,7 +7,7 @@ import type {
   ProjectDocument,
   SatbTrack,
   VoiceId,
-} from "../../domain/model";
+} from "../../domain/project";
 
 export interface InspectorProps {
   project: ProjectDocument;

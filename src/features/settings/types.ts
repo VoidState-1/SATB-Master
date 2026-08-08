@@ -1,15 +1,15 @@
 import type {
   ExternalRuleFailure,
   InstalledExternalRulePackage,
-} from "../../domain/externalRules";
+} from "../../domain/harmony";
 import type {
   HarmonyRuleId,
   HarmonyRuleSeverities,
   HarmonyRuleSeverity,
   RuleConfig,
   RuleExceptionPolicy,
-} from "../../domain/harmonyRules";
-import type { RuleProfile } from "../../domain/model";
+} from "../../domain/harmony";
+import type { RuleProfile } from "../../domain/project";
 import type {
   ShortcutBindings,
   ShortcutCommandId,

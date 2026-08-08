@@ -1,14 +1,14 @@
-import type { HarmonyAnalysis } from "./harmonyAnalysis";
+import type { HarmonyAnalysis } from "../analysis";
 import type {
   HarmonyCheckResult,
   HarmonyDiagnostic,
   SkippedRule,
-} from "./harmonyRuntime";
+} from "../runtime";
 import {
   VOICE_ORDER,
   type ProjectDocument,
   type RuleProfile,
-} from "./project";
+} from "../../project";
 import {
   RULE_EXCEPTION_CONTEXTS,
   type DiagnosticSeverity,
@@ -20,8 +20,8 @@ import {
   type RuleExceptionMode,
   type RuleExceptionPolicy,
   type RuleOptionDefinition,
-} from "./harmonyRules";
-import { normalizeRuleConfig } from "./rules/configSchema";
+} from "../ruleTypes";
+import { normalizeRuleConfig } from "../rules/configSchema";
 
 export const EXTERNAL_RULE_API_VERSION = 3;
 export const MAX_EXTERNAL_RULE_BYTES = 512 * 1024;

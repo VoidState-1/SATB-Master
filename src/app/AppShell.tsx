@@ -30,16 +30,16 @@ import {
   Scissors,
 } from "lucide-react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { DiagnosticsPanel } from "../features/diagnostics/DiagnosticsPanel";
+import { DiagnosticsPanel } from "../features/diagnostics";
 import { IconButton } from "../components/IconButton";
-import { Inspector } from "../features/inspector/Inspector";
+import { Inspector } from "../features/inspector";
 import { PanelResizeHandle } from "../components/PanelResizeHandle";
-import { PianoRoll } from "../features/editor/PianoRoll";
-import { SettingsDialog } from "../features/settings/SettingsDialog";
-import { TrackSidebar } from "../features/tracks/TrackSidebar";
+import { PianoRoll } from "../features/editor";
+import { SettingsDialog } from "../features/settings";
+import { TrackSidebar } from "../features/tracks";
 import { replaceProject } from "../domain/editing";
 import type { HarmonyDiagnostic } from "../domain/harmony";
-import { createEmptyProject, type ProjectDocument } from "../domain/model";
+import { createEmptyProject, type ProjectDocument } from "../domain/project";
 import { buildMeasures, formatPosition } from "../domain/time";
 import { loadNewProjectRuleProfile } from "../domain/ruleProfile";
 import {

@@ -1,4 +1,4 @@
-import type { VoiceId } from "../../../domain/model";
+import type { VoiceId } from "../../../domain/project";
 
 export interface NoteInteraction {
   kind: "move" | "resize";

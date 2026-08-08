@@ -35,14 +35,15 @@ flowchart LR
 
 主要源码入口：
 
-- [`harmonyAnalysis.ts`](../src/domain/harmonyAnalysis.ts)：冻结快照、切片、转换、span、索引和失效范围。
-- [`rules/sharedFacts.ts`](../src/domain/rules/sharedFacts.ts)：书写音程、声部对、低音运动和和弦成员事实。
-- [`rules/connector.ts`](../src/domain/rules/connector.ts)：精确 span 连接。
-- [`harmonyRuntime.ts`](../src/domain/harmonyRuntime.ts)：无状态/有状态规则调度与结果收敛。
-- [`rules/applicability.ts`](../src/domain/rules/applicability.ts)：特例上下文折叠。
-- [`rules/diagnosticArbiter.ts`](../src/domain/rules/diagnosticArbiter.ts)：稳定根因键、合并与父子覆盖。
-- [`harmonyRules.ts`](../src/domain/harmonyRules.ts)：当前规则实现入口。
-- [`rules/catalog.ts`](../src/domain/rules/catalog.ts)：81 条规则目录、配置声明和实现状态。
+- [`harmony/analysis.ts`](../src/domain/harmony/analysis.ts)：冻结快照、切片、转换、span、索引和失效范围。
+- [`harmony/rules/sharedFacts.ts`](../src/domain/harmony/rules/sharedFacts.ts)：书写音程、声部对、低音运动和和弦成员事实。
+- [`harmony/rules/connector.ts`](../src/domain/harmony/rules/connector.ts)：精确 span 连接。
+- [`harmony/runtime.ts`](../src/domain/harmony/runtime.ts)：无状态/有状态规则调度与结果收敛。
+- [`harmony/rules/applicability.ts`](../src/domain/harmony/rules/applicability.ts)：特例上下文折叠。
+- [`harmony/rules/diagnosticArbiter.ts`](../src/domain/harmony/rules/diagnosticArbiter.ts)：稳定根因键、合并与父子覆盖。
+- [`harmony/registry.ts`](../src/domain/harmony/registry.ts)：唯一的内置规则聚合入口。
+- [`harmony/ruleTypes.ts`](../src/domain/harmony/ruleTypes.ts)：规则类型、目录投影和默认配置公共 API。
+- [`harmony/rules/catalog.ts`](../src/domain/harmony/rules/catalog.ts)：81 条规则目录、配置声明和实现状态。
 
 分析输入是指定 revision 的不可变快照。规则不得修改工程，只能返回原始诊断或结构化 skip。
 

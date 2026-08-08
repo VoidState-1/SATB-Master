@@ -6,8 +6,8 @@ import {
   type HarmonySpan,
   type ProjectSnapshot,
   type SliceTransition,
-} from "./harmonyAnalysis";
-import { VOICE_ORDER, type ProjectDocument, type VoiceId } from "./project";
+} from "./analysis";
+import { VOICE_ORDER, type ProjectDocument, type VoiceId } from "../project";
 import { planRuleApplicability } from "./rules/applicability";
 import {
   arbitrateDiagnostics,
@@ -21,9 +21,9 @@ import {
   type RuleConfig,
   type RuleExceptionContext,
   type RuleExceptionPolicy,
-} from "./harmonyRules";
+} from "./ruleTypes";
 
-export type { RuleConfig } from "./harmonyRules";
+export type { RuleConfig } from "./ruleTypes";
 
 export type DiagnosticEvidenceKind =
   "note" | "chord" | "interval" | "key" | "function";

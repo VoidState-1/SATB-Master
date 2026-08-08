@@ -1,5 +1,5 @@
 import { useCallback, useReducer } from "react";
-import type { ProjectDocument } from "../domain/model";
+import type { ProjectDocument } from "../domain/project";
 
 interface Frame {
   project: ProjectDocument;

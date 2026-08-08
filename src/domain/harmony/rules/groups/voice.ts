@@ -1,5 +1,5 @@
-import type { HarmonyAnalysis } from "../../../harmonyAnalysis";
-import type { RuleConfig, RuleDiagnostic } from "../../../harmonyRuntime";
+import type { HarmonyAnalysis } from "../../analysis";
+import type { RuleConfig, RuleDiagnostic } from "../../runtime";
 import { VOICE_CONFIG, VOICE_ORDER, type VoiceId } from "../../../project";
 import { formatSpelledPitch, toMidi } from "../../../pitch";
 import { diagnostic, noteEvidence, voiceName } from "../helpers/core";

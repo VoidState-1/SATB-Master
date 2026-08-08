@@ -12,7 +12,7 @@ import {
   type RuleExceptionMode,
   type RuleExceptionPolicy,
   type RuleInstanceSettings,
-} from "./harmonyRules";
+} from "./harmony/ruleTypes";
 import {
   createDefaultRuleProfile,
   type ProjectDocument,
@@ -24,8 +24,8 @@ import {
   externalRuleReferenceKey,
   normalizeExternalRuleConfig,
   type InstalledExternalRulePackage,
-} from "./externalRules";
-import { normalizeRuleConfig } from "./rules/configSchema";
+} from "./harmony/external/api";
+import { normalizeRuleConfig } from "./harmony/rules/configSchema";
 
 export const PORTABLE_RULE_PROFILE_KIND = "satb-rule-profile";
 export const PORTABLE_RULE_PROFILE_VERSION = 1;

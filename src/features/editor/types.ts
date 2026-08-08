@@ -5,7 +5,7 @@ import type {
   NoteEvent,
   ProjectDocument,
   VoiceId,
-} from "../../domain/model";
+} from "../../domain/project";
 
 export type EditorTool = "select" | "pencil" | "eraser" | "split";
 export type EditorDomain = "notes" | "chords";

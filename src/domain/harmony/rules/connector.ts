@@ -3,12 +3,12 @@ import {
   type FunctionalFamily,
   type HarmonyInterpretation,
   type KeyReference,
-} from "../chordModel";
+} from "../../chordModel";
 import type {
   HarmonyAnalysis,
   HarmonySpan,
-} from "../harmonyAnalysis";
-import { pitchClassEquals } from "../pitch";
+} from "../analysis";
+import { pitchClassEquals } from "../../pitch";
 import type { RuleExceptionContext } from "./types";
 
 export type HarmonyConnectionRelation =

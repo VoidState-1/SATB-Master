@@ -1,6 +1,6 @@
 # 外置规则开发与沙箱
 
-本文是 `.satb-rule.js` 规则包的开发者契约，说明 API v3 的 manifest、配置、特例、运行上下文、诊断输出和安全边界。内置分析结构见 [harmony-engine.md](./harmony-engine.md)，本机规则库存储见 [desktop-and-persistence.md](./desktop-and-persistence.md)。实现以 [`externalRules.ts`](../src/domain/externalRules.ts)、[`externalRuleSandbox.ts`](../src/domain/externalRuleSandbox.ts) 和 [`externalRuleRuntime.ts`](../src/services/externalRuleRuntime.ts) 为准。
+本文是 `.satb-rule.js` 规则包的开发者契约，说明 API v3 的 manifest、配置、特例、运行上下文、诊断输出和安全边界。内置分析结构见 [harmony-engine.md](./harmony-engine.md)，本机规则库存储见 [desktop-and-persistence.md](./desktop-and-persistence.md)。实现以 [`harmony/external/api.ts`](../src/domain/harmony/external/api.ts)、[`harmony/external/sandbox.ts`](../src/domain/harmony/external/sandbox.ts) 和 [`externalRuleRuntime.ts`](../src/services/externalRuleRuntime.ts) 为准。
 
 ## 1. 能力边界
 
@@ -131,7 +131,7 @@ SATB_RULE.register({
 
 ## 4. 特例策略
 
-可声明的 context 由 [`rules/types.ts`](../src/domain/rules/types.ts) 的 `RULE_EXCEPTION_CONTEXTS` 定义，例如：
+可声明的 context 由 [`harmony/rules/types.ts`](../src/domain/harmony/rules/types.ts) 的 `RULE_EXCEPTION_CONTEXTS` 定义，例如：
 
 ```text
 same-harmony / arpeggiation / voice-exchange / inner-voices

@@ -3,7 +3,7 @@ import {
   HARMONY_RULE_DEFINITIONS,
   chordDependentRuleIds,
   defaultHarmonyRuleSeverities,
-} from "./harmonyRules";
+} from "./ruleTypes";
 
 describe("和声检查规则注册表", () => {
   it("不包含重复 ID，且每条规则都有默认严重度", () => {

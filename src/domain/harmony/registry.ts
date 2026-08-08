@@ -1,4 +1,4 @@
-import type { HarmonyAnalysis } from "../harmonyAnalysis";
+import type { HarmonyAnalysis } from "./analysis";
 import {
   RuleScheduler,
   runRulesSynchronously,
@@ -8,14 +8,14 @@ import {
   type RuleDiagnostic,
   type RuleStateEnvelope,
   type RuleStepContext,
-} from "../harmonyRuntime";
+} from "./runtime";
 import {
   HARMONY_RULE_DEFINITIONS,
   defaultHarmonyRuleSeverities,
   type HarmonyRuleId,
   type HarmonyRuleSeverities,
   type RuleExceptionPolicy,
-} from "../harmonyRules";
+} from "./ruleTypes";
 import type { ProjectDocument } from "../project";
 import { evaluation } from "./rules/helpers/core";
 import {

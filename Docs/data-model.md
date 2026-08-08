@@ -1,6 +1,6 @@
 # 工程数据模型
 
-本文描述 `.satb` 工程的持久化模型、音乐实体和必须维护的不变量。编辑行为见 [editor-and-state.md](./editor-and-state.md)，和声解释见 [harmony-engine.md](./harmony-engine.md)。类型定义和运行时验证以 [`src/domain/model.ts`](../src/domain/model.ts) 为准。
+本文描述 `.satb` 工程的持久化模型、音乐实体和必须维护的不变量。编辑行为见 [editor-and-state.md](./editor-and-state.md)，和声解释见 [harmony-engine.md](./harmony-engine.md)。类型定义和运行时验证以 [`src/domain/project/`](../src/domain/project) 为准；`model.ts` 仅为兼容转发。
 
 ## 1. 版本与时间基准
 
@@ -39,7 +39,7 @@ ProjectDocument
   audio.soundFont
 ```
 
-完整字段见 [`ProjectDocument`](../src/domain/model.ts)。新增持久字段时必须同步：
+完整字段见 [`ProjectDocument`](../src/domain/project/types.ts)。新增持久字段时必须同步：
 
 1. TypeScript 类型。
 2. 默认工程创建。
@@ -250,7 +250,7 @@ error | warning | suggestion | off
 
 ## 9. 验证、规范化与迁移
 
-不可信 JSON 不能通过 TypeScript 类型断言直接成为工程。打开、恢复和 IPC 边界必须调用 [`model.ts`](../src/domain/model.ts) 中的运行时解析/规范化逻辑。
+不可信 JSON 不能通过 TypeScript 类型断言直接成为工程。打开、恢复和 IPC 边界必须调用 [`project/validation.ts`](../src/domain/project/validation.ts) 与 [`project/normalize.ts`](../src/domain/project/normalize.ts) 中的运行时解析/规范化逻辑。
 
 当前迁移策略：
 

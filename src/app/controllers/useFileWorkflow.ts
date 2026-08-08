@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { audioEngine } from "../../audio/audioEngine";
 import { buildMidi, midiFileName } from "../../domain/midi";
-import { normalizeProject, type ProjectDocument } from "../../domain/model";
+import { normalizeProject, type ProjectDocument } from "../../domain/project";
 import {
   autosaveProject,
   discardRecovery,

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -12,6 +12,12 @@ function sourceFiles(root: string): string[] {
     if (entry.isDirectory()) return sourceFiles(path);
     return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
   });
+}
+
+function importSpecifiers(path: string) {
+  return [...readFileSync(path, "utf8").matchAll(
+    /(?:from\s+|import\s*\()\s*["']([^"']+)["']/g,
+  )].map((match) => match[1]);
 }
 
 describe("architecture boundaries", () => {
@@ -31,6 +37,13 @@ describe("architecture boundaries", () => {
     expect(existsSync(join(srcRoot, "components", "PianoRoll.tsx"))).toBe(false);
     expect(existsSync(join(srcRoot, "components", "Inspector.tsx"))).toBe(false);
     expect(existsSync(join(srcRoot, "components", "ShortcutSettings.tsx"))).toBe(false);
+    expect(existsSync(join(srcRoot, "domain", "harmonyAnalysis.ts"))).toBe(false);
+    expect(existsSync(join(srcRoot, "domain", "harmonyRuntime.ts"))).toBe(false);
+    expect(existsSync(join(srcRoot, "domain", "harmonyRules.ts"))).toBe(false);
+    expect(existsSync(join(srcRoot, "domain", "externalRules.ts"))).toBe(false);
+    expect(existsSync(join(srcRoot, "domain", "externalRuleSandbox.ts"))).toBe(false);
+    expect(existsSync(join(srcRoot, "domain", "externalRuleWorkerProtocol.ts"))).toBe(false);
+    expect(existsSync(join(srcRoot, "domain", "rules"))).toBe(false);
 
     const harmonyFacade = readFileSync(
       join(srcRoot, "domain", "harmony.ts"),
@@ -39,10 +52,42 @@ describe("architecture boundaries", () => {
     expect(harmonyFacade).not.toMatch(/\b(?:function|const|class)\s+[A-Za-z]/);
   });
 
+  it("keeps internal callers on domain package entry points", () => {
+    const internalRoots = [
+      join(srcRoot, "app"),
+      join(srcRoot, "features"),
+      join(srcRoot, "hooks"),
+      join(srcRoot, "services"),
+      join(srcRoot, "audio"),
+    ];
+    const forbidden = /from\s+["'][^"']*(?:domain\/model|domain\/harmony\/(?:ruleTypes|runtime|analysis)|features\/(?:editor|inspector|settings|diagnostics|tracks)\/)/;
+    const violations = internalRoots
+      .flatMap(sourceFiles)
+      .filter((path) => forbidden.test(readFileSync(path, "utf8")));
+
+    expect(violations).toEqual([]);
+  });
+
   it("keeps shared components independent from feature implementations", () => {
     const violations = sourceFiles(join(srcRoot, "components")).filter((path) =>
       /from\s+["'][^"']*features\//.test(readFileSync(path, "utf8")),
     );
+    expect(violations).toEqual([]);
+  });
+
+  it("keeps feature implementations behind their package boundaries", () => {
+    const featuresRoot = join(srcRoot, "features");
+    const violations = sourceFiles(featuresRoot).flatMap((path) => {
+      const owner = relative(featuresRoot, path).split(sep)[0];
+      return importSpecifiers(path).flatMap((specifier) => {
+        if (!specifier.startsWith(".")) return [];
+        const target = relative(featuresRoot, resolve(dirname(path), specifier));
+        if (!target || target.startsWith(`..${sep}`)) return [];
+        const dependency = target.split(sep)[0];
+        return dependency === owner ? [] : [`${path} -> ${specifier}`];
+      });
+    });
+
     expect(violations).toEqual([]);
   });
 });

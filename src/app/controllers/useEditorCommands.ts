@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import type { ProjectDocument } from "../../domain/model";
+import type { ProjectDocument } from "../../domain/project";
 import type { EditorState } from "./useEditorState";
 import { useChordCommands } from "./editorCommands/useChordCommands";
 import { useNoteCommands } from "./editorCommands/useNoteCommands";

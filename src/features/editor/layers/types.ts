@@ -3,7 +3,7 @@ import type {
   ChordRegion,
   NoteEvent,
   SatbTrack,
-} from "../../../domain/model";
+} from "../../../domain/project";
 
 export interface MeasureGuidePosition {
   startTick: number;

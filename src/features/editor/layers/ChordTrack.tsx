@@ -4,7 +4,7 @@ import {
   formatChordRegion,
 } from "../../../domain/chords";
 import { keyAtTick } from "../../../domain/time";
-import type { ChordDraft, ProjectDocument } from "../../../domain/model";
+import type { ChordDraft, ProjectDocument } from "../../../domain/project";
 import { primaryDiagnostic } from "../geometry";
 import type { ChordInteraction } from "../interactions/types";
 import type { EditorTool } from "../types";

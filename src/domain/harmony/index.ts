@@ -3,3 +3,12 @@ export {
   checkHarmony,
   createHarmonyRuleScheduler,
 } from "./registry";
+export { buildHarmonyAnalysis } from "./analysis";
+export type {
+  DiagnosticEvidence,
+  HarmonyCheckResult,
+  HarmonyDiagnostic,
+  RuleDefinition,
+} from "./runtime";
+export * from "./ruleTypes";
+export * from "./external/api";

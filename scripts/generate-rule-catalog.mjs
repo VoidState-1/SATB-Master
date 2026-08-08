@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = resolve(projectRoot, "DesignDocs/harmony-rule-catalog.md");
-const targetPath = resolve(projectRoot, "src/domain/rules/catalog.generated.ts");
+const targetPath = resolve(
+  projectRoot,
+  "src/domain/harmony/rules/catalog.generated.ts",
+);
 const lines = readFileSync(sourcePath, "utf8").split(/\r?\n/);
 
 const severityMap = {
