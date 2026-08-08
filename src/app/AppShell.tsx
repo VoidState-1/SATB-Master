@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   BellRing,
   Clipboard,
@@ -29,95 +29,19 @@ import {
   X,
   Scissors,
 } from "lucide-react";
-import { audioEngine, type AudioEngineState } from "../audio/audioEngine";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DiagnosticsPanel } from "../features/diagnostics/DiagnosticsPanel";
 import { IconButton } from "../components/IconButton";
 import { Inspector } from "../features/inspector/Inspector";
 import { PanelResizeHandle } from "../components/PanelResizeHandle";
-import { PianoRoll, type EditorTool } from "../features/editor/PianoRoll";
+import { PianoRoll } from "../features/editor/PianoRoll";
 import { SettingsDialog } from "../features/settings/SettingsDialog";
 import { TrackSidebar } from "../features/tracks/TrackSidebar";
-import {
-  chordDraftFromRegion,
-  createChordRegion,
-  defaultChordDraftAtTick,
-} from "../domain/chords";
-import {
-  addChordRegion,
-  addNote,
-  deleteChordRegions,
-  deleteNotes,
-  replaceProject,
-  setChordTrackState,
-  splitChordRegion,
-  splitNote,
-  transformChordRegions,
-  transformNotes,
-  updateChordRegion,
-  updateNote,
-  type ChordRegionPatch,
-} from "../domain/editing";
-import {
-  checkHarmony,
-  createHarmonyRuleScheduler,
-  type HarmonyDiagnostic,
-} from "../domain/harmony";
-import {
-  externalRuleReferenceKey,
-  normalizeExternalRuleConfig,
-  type ExternalRuleFailure,
-  type InstalledExternalRulePackage,
-} from "../domain/externalRules";
-import {
-  type HarmonyRuleId,
-  type HarmonyRuleSeverity,
-  type RuleConfig,
-  type RuleExceptionPolicy,
-} from "../domain/harmonyRules";
-import {
-  createPortableRuleProfile,
-  loadNewProjectRuleProfile,
-  prepareRuleProfileImport,
-  resetAllBuiltinRules,
-  resetBuiltinRule,
-  resolveBuiltinRuleProfile,
-  saveNewProjectRuleProfile,
-  setBuiltinRuleConfig,
-  setBuiltinRuleException,
-  setBuiltinRuleSeverity,
-} from "../domain/ruleProfile";
-import { buildMidi, midiFileName } from "../domain/midi";
-import {
-  createEmptyProject,
-  createId,
-  getAllPlayableTracks,
-  getTrack,
-  normalizeProject,
-  reconcileChordIdentities,
-  type ChordDraft,
-  type ChordRegion,
-  type EditableRange,
-  type NoteEvent,
-  type ProjectDocument,
-  type RuleProfile,
-  type SatbTrack,
-  type VoiceId,
-} from "../domain/model";
-import {
-  coerceKeyTonicForMode,
-  parsePitchClass,
-  spellMidi,
-  toMidi,
-  transposeSpelledPitch,
-} from "../domain/pitch";
-import {
-  buildMeasures,
-  eventAtTick,
-  formatPosition,
-  keyAtTick,
-  ticksPerBeat,
-} from "../domain/time";
+import { replaceProject } from "../domain/editing";
+import type { HarmonyDiagnostic } from "../domain/harmony";
+import { createEmptyProject, type ProjectDocument } from "../domain/model";
+import { buildMeasures, formatPosition } from "../domain/time";
+import { loadNewProjectRuleProfile } from "../domain/ruleProfile";
 import {
   DEFAULT_PANEL_SIZES,
   PANEL_RESIZER_SIZE,
@@ -125,38 +49,16 @@ import {
 } from "../hooks/usePanelLayout";
 import { useDeveloperMode } from "../hooks/useDeveloperMode";
 import { useExternalRuleLibrary } from "../hooks/useExternalRuleLibrary";
-import { useProjectHistory } from "../hooks/useProjectHistory";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
 import { useConfirmationController } from "./controllers/useConfirmationController";
 import { useHarmonyController } from "./controllers/useHarmonyController";
 import { useFileWorkflow } from "./controllers/useFileWorkflow";
 import { useEditorCommands } from "./controllers/useEditorCommands";
-import { useEditorState } from "./controllers/useEditorState";
 import { usePlaybackController } from "./controllers/usePlaybackController";
-import {
-  commandForKeyboardEvent,
-  formatShortcutBinding,
-} from "../shortcuts/shortcutRegistry";
-import {
-  autosaveProject,
-  discardRecovery,
-  exportMidi,
-  findRecovery,
-  loadDefaultSoundFont,
-  loadPreparedDesktopSoundFont,
-  loadUserSoundFont,
-  MAX_SOUNDFONT_BYTES,
-  openProject,
-  openRuleProfileFile,
-  readSoundFontBuffer,
-  saveRuleProfileFile,
-  saveProject,
-  type SoundFontLoadProgress,
-} from "../services/desktop";
-import {
-  ExternalRuleRuntime,
-  mergeHarmonyWithExternalRules,
-} from "../services/externalRuleRuntime";
+import { useKeyboardController } from "./controllers/useKeyboardController";
+import { useProjectController } from "./controllers/useProjectController";
+import { useWindowController } from "./controllers/useWindowController";
+import { formatShortcutBinding } from "../shortcuts/shortcutRegistry";
 
 const GRID_OPTIONS = [
   { label: "1/4", ticks: 960 },
@@ -180,9 +82,8 @@ function formatByteSize(bytes: number) {
 
 function AppShell() {
   const initialProject = useMemo(() => createProjectWithRuleProfileTemplate(), []);
-  const history = useProjectHistory(initialProject);
-  const project = history.project;
-  const editor = useEditorState(initialProject, project);
+  const { history, project, editor, resetWorkspace } =
+    useProjectController(initialProject);
   const {
     activeVoice,
     setActiveVoice,
@@ -190,7 +91,6 @@ function AppShell() {
     setTool,
     editorDomain,
     setEditorDomain,
-    toolModifiers,
     editorInteractionActive,
     setEditorInteractionActive,
     cancelEditorRequest,
@@ -204,7 +104,6 @@ function AppShell() {
     selectedChordIds,
     setSelectedChordIds,
     chordBrush,
-    setChordBrush,
     effectiveTool,
     selectedNote,
     selectedChord,
@@ -212,7 +111,6 @@ function AppShell() {
   const loopEnabled = project.loop.enabled;
   const loopStartTick = project.loop.startTick;
   const loopEndTick = project.loop.endTick;
-  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const panelLayout = usePanelLayout();
@@ -252,15 +150,12 @@ function AppShell() {
   });
   const { confirmation, requestConfirmation, answerConfirmation } =
     useConfirmationController();
-  const resetWorkspaceForProject = useCallback(
-    (nextProject: ProjectDocument) => {
-      setSelectedNoteIds(new Set());
-      setSelectedChordIds(new Set());
-      setChordBrush(defaultChordDraftAtTick(nextProject, 0));
-      setPlayheadTick(0);
-    },
-    [setPlayheadTick],
-  );
+  const windowController = useWindowController({
+    isDirty: history.isDirty,
+    requestConfirmation,
+  });
+  const resetWorkspaceForProject = (nextProject: ProjectDocument) =>
+    resetWorkspace(nextProject, setPlayheadTick);
   const {
     handleAddNote,
     handleMoveNotes,
@@ -341,192 +236,39 @@ function AppShell() {
     showNotice,
     requestConfirmation,
   });
-  useEffect(() => {
-    const controls = window.desktop?.windowControls;
-    if (!controls) return;
-    void controls.isMaximized().then(setIsWindowMaximized);
-    return controls.onMaximizedChange(setIsWindowMaximized);
-  }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (confirmation || settingsOpen || event.isComposing) return;
-      const target =
-        event.target instanceof HTMLElement ? event.target : document.body;
-      if (
-        target.matches('input, textarea, select, [contenteditable="true"]') ||
-        target.closest('[role="dialog"]')
-      )
-        return;
-      // Ctrl 仅作为选择工具的临时画笔修饰键时，不应改变 Tab / Shift+Tab 的声部切换绑定。
-      const transparentToolControl =
-        tool === "select" &&
-        event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey &&
-        event.code === "Tab";
-      const command = commandForKeyboardEvent(
-        event,
-        shortcutSettings.bindings,
-        {
-          ignoreControl: transparentToolControl,
-        },
-      );
-      if (!command || (event.repeat && !command.allowRepeat)) return;
-      if (
-        (command.id === "nextVoice" || command.id === "previousVoice") &&
-        target !== document.body &&
-        !target.closest(".piano-roll")
-      )
-        return;
-      event.preventDefault();
-
-      switch (command.id) {
-        case "newProject":
-          void handleNew();
-          break;
-        case "openProject":
-          void handleOpen();
-          break;
-        case "saveProject":
-          void handleSave(false);
-          break;
-        case "saveProjectAs":
-          void handleSave(true);
-          break;
-        case "undo":
-          history.undo();
-          break;
-        case "redo":
-          history.redo();
-          break;
-        case "selectAll":
-          selectAllInEditorDomain();
-          break;
-        case "clearSelection":
-          clearSelection();
-          break;
-        case "copySelection":
-          copySelection();
-          break;
-        case "cutSelection":
-          cutSelection();
-          break;
-        case "pasteSelection":
-          pasteSelection();
-          break;
-        case "duplicateSelection":
-          duplicateSelection();
-          break;
-        case "deleteSelection":
-          if (editorDomain === "chords") handleDeleteChords(selectedChordIds);
-          else handleDeleteNotes(selectedNoteIds);
-          break;
-        case "cancelOrClear":
-          if (editorInteractionActive)
-            setCancelEditorRequest((current) => current + 1);
-          else clearSelection();
-          break;
-        case "quantizeSelection":
-          transformSelection(0, 0, true);
-          break;
-        case "moveSelectionLeft":
-          transformSelection(-gridTicks, 0);
-          break;
-        case "moveSelectionRight":
-          transformSelection(gridTicks, 0);
-          break;
-        case "pitchUp":
-          if (selectedChordIds.size === 0) transformSelection(0, 1);
-          break;
-        case "pitchDown":
-          if (selectedChordIds.size === 0) transformSelection(0, -1);
-          break;
-        case "octaveUp":
-          if (selectedChordIds.size === 0) transformSelection(0, 12);
-          break;
-        case "octaveDown":
-          if (selectedChordIds.size === 0) transformSelection(0, -12);
-          break;
-        case "selectTool":
-          setTool("select");
-          break;
-        case "pencilTool":
-          setTool("pencil");
-          break;
-        case "eraserTool":
-          setTool("eraser");
-          break;
-        case "splitTool":
-          setTool("split");
-          break;
-        case "nextVoice":
-          cycleActiveVoice(1);
-          break;
-        case "previousVoice":
-          cycleActiveVoice(-1);
-          break;
-        case "playPause":
-          void handlePlay();
-          break;
-        case "goToStart":
-          setPlayheadTick(0);
-          break;
-        case "goToEnd":
-          setPlayheadTick(project.lengthTicks);
-          break;
-        case "previousMeasure":
-          movePlayheadByMeasure(-1);
-          break;
-        case "nextMeasure":
-          movePlayheadByMeasure(1);
-          break;
-        case "gridCoarser":
-          changeGridResolution(-1);
-          break;
-        case "gridFiner":
-          changeGridResolution(1);
-          break;
-        case "zoomOut":
-          changeTimelineZoom(-1);
-          break;
-        case "zoomIn":
-          changeTimelineZoom(1);
-          break;
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    changeGridResolution,
-    changeTimelineZoom,
-    clearSelection,
+  useKeyboardController({
+    bindings: shortcutSettings.bindings,
     confirmation,
-    copySelection,
-    cutSelection,
-    cycleActiveVoice,
-    duplicateSelection,
+    settingsOpen,
+    tool,
     editorDomain,
     editorInteractionActive,
     gridTicks,
-    handleDeleteChords,
-    handleDeleteNotes,
+    projectLengthTicks: project.lengthTicks,
+    selectedNoteIds,
+    selectedChordIds,
+    history,
+    setTool,
+    setPlayheadTick,
+    setCancelEditorRequest,
     handleNew,
     handleOpen,
-    handlePlay,
     handleSave,
-    history,
-    movePlayheadByMeasure,
-    pasteSelection,
-    project.lengthTicks,
+    handlePlay,
+    handleDeleteChords,
+    handleDeleteNotes,
     selectAllInEditorDomain,
-    selectedChordIds,
-    selectedNoteIds,
-    settingsOpen,
-    shortcutSettings.bindings,
-    tool,
+    clearSelection,
+    copySelection,
+    cutSelection,
+    pasteSelection,
+    duplicateSelection,
+    cycleActiveVoice,
+    movePlayheadByMeasure,
+    changeGridResolution,
+    changeTimelineZoom,
     transformSelection,
-  ]);
+  });
 
   const handleDiagnostic = (diagnostic: HarmonyDiagnostic) => {
     setPlayheadTick(diagnostic.tick);
@@ -535,24 +277,6 @@ function AppShell() {
   };
 
   const measureCount = buildMeasures(project).length;
-  const toggleWindowMaximize = async () => {
-    const maximized = await window.desktop?.windowControls.toggleMaximize();
-    if (typeof maximized === "boolean") setIsWindowMaximized(maximized);
-  };
-  const closeWindow = async () => {
-    if (
-      history.isDirty &&
-      !(await requestConfirmation({
-        title: "关闭工程",
-        message: "当前工程尚未保存，仍要关闭吗？",
-        confirmLabel: "仍要关闭",
-        cancelLabel: "取消",
-      }))
-    )
-      return;
-    void window.desktop?.windowControls.close();
-  };
-
   return (
     <main className="app-shell">
       <header
@@ -563,7 +287,7 @@ function AppShell() {
             event.target.closest(".titlebar-controls")
           )
             return;
-          void toggleWindowMaximize();
+          void windowController.toggleMaximize();
         }}
       >
         <div className="brand-mark">SM</div>
@@ -587,15 +311,15 @@ function AppShell() {
             />
             <IconButton
               className="window-control"
-              label={isWindowMaximized ? "还原" : "最大化"}
-              icon={isWindowMaximized ? <Minimize2 /> : <Maximize2 />}
-              onClick={() => void toggleWindowMaximize()}
+              label={windowController.isMaximized ? "还原" : "最大化"}
+              icon={windowController.isMaximized ? <Minimize2 /> : <Maximize2 />}
+              onClick={() => void windowController.toggleMaximize()}
             />
             <IconButton
               className="window-control close"
               label="关闭"
               icon={<X />}
-              onClick={() => void closeWindow()}
+              onClick={() => void windowController.close()}
             />
           </div>
         ) : null}
