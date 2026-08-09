@@ -126,6 +126,7 @@ services 是环境适配层。桌面模式转发到 `window.desktop`，浏览器
 - [`project-ipc.ts`](../electron/project-ipc.ts)：工程打开、保存、恢复、MIDI、规则配置档案与分类型对话框目录。
 - [`soundfont-resource.ts`](../electron/soundfont-resource.ts)：大 SoundFont 的 token、哈希和流读取。
 - [`rule-library.ts`](../electron/rule-library.ts)：本机规则包内容寻址存储。
+- [`rule-library-policy.ts`](../electron/rule-library-policy.ts)：Electron 边界上的 API v3 manifest、hash、容量和元数据校验。
 
 策略类纯逻辑尽量放入可测试模块，例如 SoundFont 和规则库的路径/容量策略，而不是埋在 IPC handler 中。
 
@@ -182,7 +183,7 @@ sequenceDiagram
 
 ### 5.2 和声检查
 
-工程快照先转换为时间切片、声部转换、连续和弦跨度、精确和弦连接和共享事实。内置规则经过工程 profile、适用性计划、结果校验和诊断仲裁；外置 API v3 在 Worker 中读取同一裁剪语义快照。每次请求携带 revision，旧请求即使晚返回也不能覆盖新工程结果。详见 [harmony-engine.md](./harmony-engine.md)。
+工程快照先转换为时间切片、声部转换、连续和弦跨度、精确和弦连接和共享事实。内置规则经过工程 profile、适用性计划、结果校验和诊断仲裁；外置 API v3 在 Worker 中读取同一裁剪语义快照。只修改规则 profile 时复用音乐分析并只重跑变化规则；外置上下文仍读取当前工程的共享设置。每次请求携带 revision，旧请求即使晚返回也不能覆盖新工程结果。详见 [harmony-engine.md](./harmony-engine.md)。
 
 ### 5.3 播放
 

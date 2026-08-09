@@ -170,6 +170,7 @@ function isStatefulRule(
 
 export interface RuleRunRequest {
   project: ProjectDocument;
+  analysis?: HarmonyAnalysis;
   severities: HarmonyRuleSeverities;
   revision: number;
   signal?: AbortSignal;
@@ -548,6 +549,11 @@ export function runRulesSynchronously(
 export class RuleScheduler {
   private runToken = 0;
   private previousSnapshot?: ProjectSnapshot;
+  private cachedAnalysis?: HarmonyAnalysis;
+  private cachedAnalysisSignature?: string;
+  private previousRuleSignatures = new Map<string, string>();
+  private previousRuleDiagnostics = new Map<string, HarmonyDiagnostic[]>();
+  private previousRuleSkips = new Map<string, SkippedRule[]>();
 
   constructor(private readonly definitions: readonly RuleDefinition[]) {}
 
@@ -555,16 +561,50 @@ export class RuleScheduler {
     this.runToken += 1;
   }
 
+  prepareAnalysis(project: ProjectDocument, revision: number) {
+    // 规则 profile 与界面元数据不参与切片/连接构建；只改配置时复用音乐分析快照。
+    const signature = JSON.stringify({
+      ppq: project.ppq,
+      lengthTicks: project.lengthTicks,
+      tempoEvents: project.tempoEvents,
+      meterEvents: project.meterEvents,
+      keyEvents: project.keyEvents,
+      satbTracks: project.satbTracks,
+      chordTrack: project.chordTrack,
+      auxiliaryTracks: project.auxiliaryTracks,
+    });
+    if (
+      this.cachedAnalysis &&
+      this.cachedAnalysisSignature === signature
+    ) {
+      return Object.freeze({
+        ...this.cachedAnalysis,
+        revision,
+        invalidationRanges: Object.freeze([]),
+      }) satisfies HarmonyAnalysis;
+    }
+    const analysis = buildHarmonyAnalysis(
+      project,
+      revision,
+      this.previousSnapshot,
+    );
+    this.previousSnapshot = analysis.project;
+    this.cachedAnalysis = analysis;
+    this.cachedAnalysisSignature = signature;
+    return analysis;
+  }
+
   async run(request: RuleRunRequest): Promise<HarmonyCheckResult> {
     const token = ++this.runToken;
     await Promise.resolve();
-    const analysis = buildHarmonyAnalysis(
-      request.project,
-      request.revision,
-      this.previousSnapshot,
-    );
+    const analysis =
+      request.analysis ?? this.prepareAnalysis(request.project, request.revision);
     const diagnostics: HarmonyDiagnostic[] = [];
     const skippedRules: SkippedRule[] = [];
+    const canReuseRuleResults = analysis.invalidationRanges.length === 0;
+    const nextRuleSignatures = new Map<string, string>();
+    const nextRuleDiagnostics = new Map<string, HarmonyDiagnostic[]>();
+    const nextRuleSkips = new Map<string, SkippedRule[]>();
 
     for (const definition of this.definitions) {
       if (token !== this.runToken || request.signal?.aborted)
@@ -576,10 +616,36 @@ export class RuleScheduler {
           this.definitions,
         );
       const severity = request.severities[definition.id];
-      if (severity === "off") continue;
+      const ruleSignature = JSON.stringify({
+        severity,
+        config: request.configs?.[definition.id] ?? {},
+        exceptions: request.exceptions?.[definition.id] ?? {},
+      });
+      nextRuleSignatures.set(definition.id, ruleSignature);
+      if (severity === "off") {
+        nextRuleDiagnostics.set(definition.id, []);
+        nextRuleSkips.set(definition.id, []);
+        continue;
+      }
+      if (
+        canReuseRuleResults &&
+        this.previousRuleSignatures.get(definition.id) === ruleSignature
+      ) {
+        const reusedDiagnostics = this.previousRuleDiagnostics.get(definition.id) ?? [];
+        const reusedSkips = this.previousRuleSkips.get(definition.id) ?? [];
+        diagnostics.push(...reusedDiagnostics);
+        skippedRules.push(...reusedSkips);
+        nextRuleDiagnostics.set(definition.id, reusedDiagnostics);
+        nextRuleSkips.set(definition.id, reusedSkips);
+        continue;
+      }
       const requirements = requirementSkips(definition, analysis);
       skippedRules.push(...requirements);
-      if (requirements.some((item) => !item.partial)) continue;
+      if (requirements.some((item) => !item.partial)) {
+        nextRuleDiagnostics.set(definition.id, []);
+        nextRuleSkips.set(definition.id, requirements);
+        continue;
+      }
       let evaluation: RuleEvaluation;
       try {
         evaluation = await runRule(
@@ -588,12 +654,15 @@ export class RuleScheduler {
           request.configs?.[definition.id] ?? {},
         );
       } catch {
-        skippedRules.push({
+        const failure = {
           ruleId: definition.id,
           reason: "rule-error",
           message: `规则“${definition.label}”本次执行失败，其他规则仍继续运行。`,
           partial: false,
-        });
+        } satisfies SkippedRule;
+        skippedRules.push(failure);
+        nextRuleDiagnostics.set(definition.id, []);
+        nextRuleSkips.set(definition.id, [...requirements, failure]);
         continue;
       }
       if (token !== this.runToken || request.signal?.aborted)
@@ -613,9 +682,16 @@ export class RuleScheduler {
       );
       diagnostics.push(...collected.diagnostics);
       skippedRules.push(...collected.skipped);
+      nextRuleDiagnostics.set(definition.id, collected.diagnostics);
+      nextRuleSkips.set(definition.id, [
+        ...requirements,
+        ...collected.skipped,
+      ]);
     }
 
-    this.previousSnapshot = analysis.project;
+    this.previousRuleSignatures = nextRuleSignatures;
+    this.previousRuleDiagnostics = nextRuleDiagnostics;
+    this.previousRuleSkips = nextRuleSkips;
     return completeResult(
       analysis,
       diagnostics,

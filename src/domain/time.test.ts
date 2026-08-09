@@ -8,6 +8,7 @@ import {
   tickToPosition,
   tickToSeconds,
   ticksForMeasures,
+  durationToTicksAt,
 } from "./time";
 
 describe("音乐时间轴", () => {
@@ -72,5 +73,20 @@ describe("音乐时间轴", () => {
     expect(ticksForMeasures(project, 1)).toBe(PPQ * 4);
     expect(ticksForMeasures(project, 2)).toBe(PPQ * 7);
     expect(ticksForMeasures(project, 3)).toBe(PPQ * 10);
+  });
+
+  it("converts duration units from the active meter instead of assuming 4/4", () => {
+    const project = createEmptyProject();
+    project.meterEvents = [
+      { id: "meter-1", tick: 0, numerator: 4, denominator: 4 },
+      { id: "meter-2", tick: PPQ * 4, numerator: 3, denominator: 8 },
+    ];
+
+    expect(
+      durationToTicksAt(project, PPQ * 4, { value: 1, unit: "beats" }),
+    ).toBe(PPQ / 2);
+    expect(
+      durationToTicksAt(project, PPQ * 4, { value: 1, unit: "measures" }),
+    ).toBe((PPQ / 2) * 3);
   });
 });

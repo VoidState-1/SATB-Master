@@ -4,6 +4,7 @@ export {
   createHarmonyRuleScheduler,
 } from "./registry";
 export { buildHarmonyAnalysis } from "./analysis";
+export type { HarmonyAnalysis } from "./analysis";
 export type {
   DiagnosticEvidence,
   HarmonyCheckResult,

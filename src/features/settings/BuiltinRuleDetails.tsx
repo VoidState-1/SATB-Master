@@ -66,6 +66,7 @@ export function BuiltinRuleDetails({
           <span>严重程度</span>
           <select
             value={ruleSeverities[rule.id]}
+            aria-label={`设置“${rule.label}”严重程度`}
             onChange={(event) =>
               onSetRuleSeverity(
                 rule.id,
@@ -95,6 +96,7 @@ export function BuiltinRuleDetails({
       <button
         type="button"
         className="command-button rule-reset-button"
+        aria-label={`恢复“${rule.label}”默认严重程度`}
         onClick={() => onResetRule(rule.id)}
       >
         <RotateCcw aria-hidden="true" />

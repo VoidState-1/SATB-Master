@@ -147,7 +147,7 @@ cadence / modulation / ambiguous-semantics / insufficient-context
 | `downgrade` | 由宿主把诊断降低一级 |
 | `exempt` | 由宿主丢弃该诊断 |
 
-规则只可在原始诊断中返回 `exceptionContexts` 作为证据，不能自行选择最终严重程度。宿主先过滤未声明支持的 context，再合并 manifest 默认策略与工程覆盖，最后执行豁免或降级。因此脚本不能借特例字段隐藏其他规则，也不能提升自身严重程度。
+脚本不能在诊断中返回 `exceptionContexts`。宿主根据诊断的时间范围、音符、和弦、声部及结构化根因引用，从 `HarmonyContextFacts` 计算实际 context，再合并 manifest 默认策略与工程覆盖，最后执行豁免或降级。因此脚本不能伪造特例来隐藏结果，也不能提升自身严重程度。
 
 ## 5. 无状态与有状态规则
 
@@ -199,13 +199,16 @@ project
 sharedSettings
 slices
 harmonySpans
+chordSpanIds
+contextFacts
 melodyTransitions
 sliceTransitions
 connections
+targetChains
 auxiliarySummary { trackCount, noteCount }
 ```
 
-`ChordRegion` 保留完整 `ChordIdentity`、一个或两个 `HarmonyInterpretation`、`FunctionalDesignation`、离调目标、混合、终止角色和持续低音上下文。`HarmonySpan` 聚合同一调性、相同实体和相同语义的连续和弦区域；`connections` 提供精确 span 间关系、目标是否匹配、特例标签、证据与置信度。
+`ChordRegion` 保留完整 `ChordIdentity`、一个或两个 `HarmonyInterpretation`、`FunctionalDesignation`、离调目标、混合、终止角色和持续低音上下文。`HarmonySpan` 聚合同一调性、相同实体和相同语义的连续和弦区域；`connections` 提供稳定 `connectionKey`、精确 span 间关系、目标是否匹配、证据与置信度；`targetChains` 展开允许经过 `K46` 的副属/重属目标路径。
 
 边界约束：
 
@@ -217,9 +220,19 @@ auxiliarySummary { trackCount, noteCount }
 
 ## 7. 诊断输出
 
-原始诊断必须提供有效的 `tick` / `endTick`、对象引用、`title`、`message`、稳定 `messageKey`、原始参数、证据和 0 到 1 的 `confidence`。可选 `exceptionContexts` 只接受 manifest 声明过的 context。
+原始诊断必须提供有效的 `tick` / `endTick`、对象引用、`title`、`message`、稳定 `messageKey`、原始参数、证据和 0 到 1 的 `confidence`。可选 `causeRefs` 使用结构化对象：
 
-规则不返回 `severity` 和稳定诊断 ID。宿主从工程 `RuleProfile` 注入严重程度，并在验证后生成根因键。单规则最多返回 512 项，message 最长 600 字，evidence 最多 16 项；未知引用、越界范围、非法字段或 Promise 返回值会使该规则本次结果成为 `invalid-result`。
+```js
+causeRefs: [
+  { kind: "connection", id: connection.connectionKey },
+  { kind: "voice", id: "alto" },
+  { kind: "local", id: "my-stable-cause" },
+]
+```
+
+`kind` 仅允许 `note`、`chord`、`voice`、`span`、`connection`、`melody-transition`、`slice-transition` 和 `local`。除 `local` 外，ID 必须存在于当前分析快照；宿主会为所有引用添加包 hash 与规则 ID 命名空间。
+
+规则不返回 `severity`、稳定诊断 ID、`exceptionContexts` 或 `coverageRefs`。宿主从工程 `RuleProfile` 注入严重程度、计算适用性并生成根因键。单规则最多返回 512 项，message 最长 600 字，evidence 最多 16 项；未知引用、越界范围、非法字段或 Promise 返回值会使该规则本次结果成为 `invalid-result`。
 
 对象归属遵循：和弦整体问题只填 `chordIds`，单声部旋律问题填对应 `voiceIds/noteIds`，两声部进行同时引用两组声部和音符。外置诊断会与内置诊断一起进入最终排序，但不能参与或改变内置父子覆盖声明。
 
@@ -246,7 +259,7 @@ userData/rule-library/
   <sha256>.json
 ```
 
-导入时依次检查扩展名和大小、在 QuickJS 中读取注册信息、校验 manifest 与实现 ID、计算 SHA-256，再写入规则库。工程保存每条规则的包标识、版本、hash、规则 ID、严重程度、`configVersion`、配置和特例覆盖；脚本正文不进入 `.satb` 文件。
+导入时依次检查扩展名和大小、在 QuickJS 中读取注册信息、校验 manifest 与实现 ID、计算 SHA-256，再写入规则库。renderer 的 API parser 与 Electron 主进程的 `rule-library-policy` 都只接受 API v3；主进程存储元数据时保留 `configVersion`、配置 schema、特例上下文和默认策略。工程保存每条规则的包标识、版本、hash、规则 ID、严重程度、`configVersion`、配置和特例覆盖；脚本正文不进入 `.satb` 文件。
 
 本机缺少匹配 hash 时，引用保留并显示“未挂载”，内置规则继续运行。重新安装相同内容后可恢复匹配。浏览器预览使用 localStorage 降级存储，不能代替桌面内容寻址行为验证。
 

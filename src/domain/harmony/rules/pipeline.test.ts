@@ -5,6 +5,7 @@ import type {
   RuleDefinition,
   RuleDiagnostic,
 } from "../runtime";
+import { RuleScheduler } from "../runtime";
 import {
   createEmptyProject,
   PPQ,
@@ -14,7 +15,10 @@ import {
   type ProjectDocument,
   type VoiceId,
 } from "../../project";
-import { HARMONY_RULE_DEFINITIONS } from "./catalog";
+import {
+  HARMONY_RULE_DEFINITIONS,
+  defaultHarmonyRuleSeverities,
+} from "./catalog";
 import { arbitrateDiagnostics } from "./diagnosticArbiter";
 import { planRuleApplicability } from "./applicability";
 import { voicePairTransitionFacts } from "./sharedFacts";
@@ -349,5 +353,56 @@ describe("共享事实与诊断仲裁", () => {
         HARMONY_RULE_DEFINITIONS as readonly RuleDefinition[],
       ).map((item) => item.ruleId),
     ).toEqual(["connection.dominant-seventh"]);
+  });
+});
+
+describe("分析与规则结果复用", () => {
+  it("只修改 profile 时复用分析并只重跑变化规则", async () => {
+    const project = createEmptyProject();
+    const counts = { range: 0, leap: 0 };
+    const rangeMetadata = HARMONY_RULE_DEFINITIONS.find(
+      (definition) => definition.id === "voice.range",
+    )!;
+    const leapMetadata = HARMONY_RULE_DEFINITIONS.find(
+      (definition) => definition.id === "melody.large-leap",
+    )!;
+    const definitions: RuleDefinition[] = [
+      {
+        ...rangeMetadata,
+        evaluate: () => {
+          counts.range += 1;
+          return { diagnostics: [] };
+        },
+      },
+      {
+        ...leapMetadata,
+        evaluate: () => {
+          counts.leap += 1;
+          return { diagnostics: [] };
+        },
+      },
+    ];
+    const scheduler = new RuleScheduler(definitions);
+    const severities = defaultHarmonyRuleSeverities();
+    severities["voice.range"] = "warning";
+    severities["melody.large-leap"] = "warning";
+    const first = scheduler.prepareAnalysis(project, 1);
+    await scheduler.run({ project, analysis: first, severities, revision: 1 });
+
+    const profileOnly = structuredClone(project);
+    profileOnly.ruleProfile.title = "另一套规则配置";
+    const second = scheduler.prepareAnalysis(profileOnly, 2);
+    const changedSeverities = { ...severities };
+    changedSeverities["melody.large-leap"] = "suggestion";
+    await scheduler.run({
+      project: profileOnly,
+      analysis: second,
+      severities: changedSeverities,
+      revision: 2,
+    });
+
+    expect(second.slices).toBe(first.slices);
+    expect(second.invalidationRanges).toEqual([]);
+    expect(counts).toEqual({ range: 1, leap: 2 });
   });
 });

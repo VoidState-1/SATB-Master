@@ -15,7 +15,7 @@ export interface MeasureInfo {
 }
 
 export function eventAtTick<T extends { tick: number }>(
-  events: T[],
+  events: readonly T[],
   tick: number,
 ): T {
   let current = events[0];
@@ -129,6 +129,39 @@ export function ticksForMeasures(
   return tick;
 }
 
+export function durationToTicksAt(
+  project: {
+    readonly ppq: number;
+    readonly meterEvents: readonly MeterEvent[];
+  },
+  startTick: number,
+  duration: { value: number; unit: "ticks" | "beats" | "measures" },
+) {
+  const value = Math.max(0, Number(duration.value));
+  if (!Number.isFinite(value) || value === 0) return 0;
+  if (duration.unit === "ticks") return Math.round(value);
+  const meters = [...project.meterEvents].sort((left, right) => left.tick - right.tick);
+  let cursor = Math.max(0, startTick);
+  let remaining = value;
+  while (remaining > 0) {
+    const meter = eventAtTick(meters, cursor);
+    const beatLength = ticksPerBeat(project.ppq, meter.denominator);
+    const unitLength =
+      duration.unit === "beats" ? beatLength : beatLength * meter.numerator;
+    const nextMeter = meters.find((event) => event.tick > cursor);
+    const availableUnits = nextMeter
+      ? (nextMeter.tick - cursor) / unitLength
+      : Number.POSITIVE_INFINITY;
+    const consumed = Math.min(remaining, availableUnits);
+    cursor += consumed * unitLength;
+    remaining -= consumed;
+    if (remaining <= Number.EPSILON) break;
+    if (!nextMeter) break;
+    cursor = nextMeter.tick;
+  }
+  return Math.max(0, Math.round(cursor - Math.max(0, startTick)));
+}
+
 export function tickToPosition(
   project: Pick<ProjectDocument, "ppq" | "meterEvents" | "lengthTicks">,
   tick: number,
@@ -165,7 +198,7 @@ export function keyAtTick(events: KeyEvent[], tick: number) {
   return eventAtTick(events, tick);
 }
 
-export function meterAtTick(events: MeterEvent[], tick: number) {
+export function meterAtTick(events: readonly MeterEvent[], tick: number) {
   return eventAtTick(events, tick);
 }
 

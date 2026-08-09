@@ -240,6 +240,7 @@ export function RuleSettingsPane({
                     <button
                       type="button"
                       className={`rule-row severity-${severity} ${selectedRuleKey === key ? "is-selected" : ""} ${!rule.implemented ? "is-unimplemented" : ""}`}
+                      aria-label={`查看“${rule.label}”规则`}
                       data-rule-key={key}
                       key={rule.id}
                       onClick={() => setSelectedRuleKey(key)}
@@ -275,6 +276,7 @@ export function RuleSettingsPane({
                   <button
                     type="button"
                     className={`rule-row severity-${severity} ${selectedRuleKey === entry.key ? "is-selected" : ""} ${entry.failure ? "has-failure" : ""}`}
+                    aria-label={`查看“${entry.rule?.label ?? entry.reference?.ruleId ?? "未知规则"}”规则`}
                     data-rule-key={entry.key}
                     key={entry.key}
                     onClick={() => setSelectedRuleKey(entry.key)}

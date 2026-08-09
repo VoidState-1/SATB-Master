@@ -9,7 +9,7 @@ import {
 } from './rule-library-policy'
 
 const manifest = {
-  apiVersion: 2,
+  apiVersion: 3,
   packageId: 'org.example.rules',
   version: '1.0.0',
   rules: [
@@ -20,6 +20,10 @@ const manifest = {
       group: 'custom',
       defaultSeverity: 'warning',
       dependencyScope: 'project',
+      configVersion: 1,
+      options: [],
+      supportedExceptionContexts: [],
+      defaultExceptionPolicies: {},
     },
   ],
 }
@@ -27,6 +31,15 @@ const manifest = {
 describe('外置规则私有库策略', () => {
   it('接受完整 manifest，并拒绝重复或越界标识', () => {
     expect(validateRuleManifest(manifest)).toEqual(manifest)
+    expect(() =>
+      validateRuleManifest({ ...manifest, apiVersion: 2 }),
+    ).toThrow('manifest')
+    expect(() =>
+      validateRuleManifest({
+        ...manifest,
+        rules: [{ ...manifest.rules[0], configVersion: 0 }],
+      }),
+    ).toThrow('configVersion')
     expect(() =>
       validateRuleManifest({ ...manifest, rules: [...manifest.rules, ...manifest.rules] }),
     ).toThrow('重复')

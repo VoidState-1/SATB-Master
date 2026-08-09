@@ -1,5 +1,6 @@
 import {
   buildHarmonyAnalysis,
+  type HarmonyAnalysis,
   type HarmonyCheckResult,
 } from "../domain/harmony";
 import {
@@ -136,6 +137,7 @@ export class ExternalRuleRuntime {
     project: ProjectDocument;
     packages: InstalledExternalRulePackage[];
     revision: number;
+    analysis?: HarmonyAnalysis;
     signal?: AbortSignal;
   }): Promise<ExternalRuleRunResult> {
     this.cancel();
@@ -248,7 +250,9 @@ export class ExternalRuleRuntime {
       };
     }
 
-    const analysis = buildHarmonyAnalysis(project, revision);
+    const analysis = options.analysis ?? buildHarmonyAnalysis(project, revision);
+    if (analysis.revision !== revision)
+      throw new Error("外置规则收到的分析 revision 与运行请求不一致");
     const worker = createRuleWorker();
     this.activeWorker = worker;
     try {
@@ -257,7 +261,7 @@ export class ExternalRuleRuntime {
         {
           id: ++requestId,
           type: "run",
-          context: buildExternalRuleContext(analysis),
+          context: buildExternalRuleContext(analysis, project),
           entries,
         },
         signal,
@@ -273,7 +277,7 @@ export class ExternalRuleRuntime {
             throw new Error("执行时 manifest 与已安装记录不一致");
           return normalizeExternalRuleDiagnostics({
             value: evaluation.value,
-            project,
+            analysis,
             package: evaluation.package,
             rule: evaluation.rule,
             severity: evaluation.severity,

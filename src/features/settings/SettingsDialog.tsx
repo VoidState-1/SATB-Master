@@ -80,6 +80,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               type="button"
               className={activeTab === "shortcuts" ? "is-active" : ""}
               aria-current={activeTab === "shortcuts" ? "page" : undefined}
+              aria-label="快捷键"
               onClick={() => setActiveTab("shortcuts")}
             >
               <Keyboard aria-hidden="true" />
@@ -89,6 +90,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               type="button"
               className={activeTab === "rules" ? "is-active" : ""}
               aria-current={activeTab === "rules" ? "page" : undefined}
+              aria-label="检查规则"
               onClick={() => setActiveTab("rules")}
             >
               <ShieldCheck aria-hidden="true" />
@@ -98,6 +100,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               type="button"
               className={activeTab === "developer" ? "is-active" : ""}
               aria-current={activeTab === "developer" ? "page" : undefined}
+              aria-label="开发者"
               onClick={() => setActiveTab("developer")}
             >
               <Bug aria-hidden="true" />

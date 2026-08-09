@@ -4,7 +4,10 @@ export const MAX_RULE_BYTES = 512 * 1024
 const HASH_PATTERN = /^[a-f0-9]{64}$/
 const ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/
 const VERSION_PATTERN = /^[0-9A-Za-z](?:[0-9A-Za-z.+-]{0,62}[0-9A-Za-z])?$/
-const VALID_GROUPS = new Set(['voice', 'melody', 'voiceLeading', 'chord', 'custom'])
+const VALID_GROUPS = new Set([
+  'voice', 'melody', 'voiceLeading', 'chord', 'resolution', 'nonchord',
+  'function', 'connection', 'rhythm', 'cadence', 'tonality', 'custom',
+])
 const VALID_SEVERITIES = new Set(['error', 'warning', 'suggestion'])
 const VALID_SCOPES = new Set(['note', 'slice', 'chord', 'phrase', 'project'])
 
@@ -15,10 +18,14 @@ export interface RuleManifestEntry {
   group: string
   defaultSeverity: string
   dependencyScope: string
+  configVersion: number
+  options: unknown[]
+  supportedExceptionContexts: string[]
+  defaultExceptionPolicies: Record<string, string>
 }
 
 export interface RuleManifest {
-  apiVersion: 2
+  apiVersion: 3
   packageId: string
   version: string
   rules: RuleManifestEntry[]
@@ -47,7 +54,7 @@ function requiredString(value: unknown, label: string, max: number, pattern?: Re
 }
 
 export function validateRuleManifest(value: unknown): RuleManifest {
-  if (!isRecord(value) || value.apiVersion !== 2) throw new Error('规则包 manifest 无效')
+  if (!isRecord(value) || value.apiVersion !== 3) throw new Error('规则包 manifest 无效')
   const packageId = requiredString(value.packageId, 'packageId', 128, ID_PATTERN)
   const version = requiredString(value.version, 'version', 64, VERSION_PATTERN)
   if (!Array.isArray(value.rules) || value.rules.length < 1 || value.rules.length > 64) {
@@ -65,6 +72,21 @@ export function validateRuleManifest(value: unknown): RuleManifest {
     if (!VALID_GROUPS.has(group)) throw new Error(`规则“${id}”的分组无效`)
     if (!VALID_SEVERITIES.has(defaultSeverity)) throw new Error(`规则“${id}”的默认严重程度无效`)
     if (!VALID_SCOPES.has(dependencyScope)) throw new Error(`规则“${id}”的依赖范围无效`)
+    if (!Number.isInteger(entry.configVersion) || (entry.configVersion as number) < 1 || (entry.configVersion as number) > 1_000_000) {
+      throw new Error(`规则“${id}”的 configVersion 无效`)
+    }
+    const options = entry.options === undefined ? [] : entry.options
+    if (!Array.isArray(options) || options.length > 32) throw new Error(`规则“${id}”的配置项无效`)
+    const supportedExceptionContexts = entry.supportedExceptionContexts === undefined
+      ? []
+      : entry.supportedExceptionContexts
+    if (!Array.isArray(supportedExceptionContexts) || supportedExceptionContexts.length > 32 || supportedExceptionContexts.some((context) => typeof context !== 'string')) {
+      throw new Error(`规则“${id}”的特例上下文无效`)
+    }
+    const defaultExceptionPolicies = entry.defaultExceptionPolicies === undefined
+      ? {}
+      : entry.defaultExceptionPolicies
+    if (!isRecord(defaultExceptionPolicies)) throw new Error(`规则“${id}”的默认特例策略无效`)
     return {
       id,
       label: requiredString(entry.label, '规则名称', 120),
@@ -72,9 +94,13 @@ export function validateRuleManifest(value: unknown): RuleManifest {
       group,
       defaultSeverity,
       dependencyScope,
+      configVersion: entry.configVersion as number,
+      options: [...options],
+      supportedExceptionContexts: [...supportedExceptionContexts] as string[],
+      defaultExceptionPolicies: { ...defaultExceptionPolicies } as Record<string, string>,
     }
   })
-  return { apiVersion: 2, packageId, version, rules }
+  return { apiVersion: 3, packageId, version, rules }
 }
 
 export function validateInstalledRuleMetadata(value: unknown): InstalledRulePackage {

@@ -845,6 +845,11 @@ describe("斯波索宾基础规则检查", () => {
     });
 
     expect(ruleIds(project)).not.toContain("function.applied-dominant-target");
+    expect(buildHarmonyAnalysis(project, 1).targetChains[0]).toMatchObject({
+      sourceSpanId: "harmony-span-1",
+      pathSpanIds: ["harmony-span-2", "harmony-span-3"],
+      status: "matched",
+    });
   });
 
   it("副属目标不能只凭相同级数通过主次功能核对", () => {

@@ -43,6 +43,17 @@ export interface HarmonyConnectionAssessment {
   confidence: "certain" | "probable" | "ambiguous" | "unknown";
 }
 
+export interface FunctionalTargetChainFact {
+  id: string;
+  sourceSpanId: string;
+  target: FunctionalTarget;
+  pathSpanIds: readonly string[];
+  connectionKeys: readonly string[];
+  terminalSpanId?: string;
+  status: "matched" | "violated" | "deferred";
+  confidence: HarmonyConnectionAssessment["confidence"];
+}
+
 function interpretationOf(span: HarmonySpan) {
   return span.semantics
     ? primaryHarmonyInterpretation(span.semantics)
@@ -287,4 +298,95 @@ export function buildHarmonyConnections(
     );
   }
   return Object.freeze(result);
+}
+
+function explicitTargetOf(span: HarmonySpan): FunctionalTarget | undefined {
+  const interpretation = interpretationOf(span);
+  if (interpretation?.appliedTarget) return interpretation.appliedTarget;
+  const kind = interpretation?.designation?.kind;
+  if (kind === "double-dominant" || kind === "double-dominant-leading-tone") {
+    return { degree: 5, primaryFunction: "dominant" };
+  }
+  return undefined;
+}
+
+/**
+ * 将副属/重属目标沿 span 链展开。K46 只在目标为属功能时作为中介，
+ * 休止、转调和歧义连接均保守标为 deferred，不伪造一个失败目标。
+ */
+export function buildFunctionalTargetChains(
+  analysis: Pick<
+    HarmonyAnalysis,
+    "project" | "harmonySpans" | "chordById" | "connections"
+  >,
+): readonly FunctionalTargetChainFact[] {
+  const connectionBySource = new Map(
+    analysis.connections.map((connection) => [
+      connection.previousSpanId,
+      connection,
+    ]),
+  );
+  return Object.freeze(
+    analysis.harmonySpans.flatMap((sourceSpan) => {
+      const target = explicitTargetOf(sourceSpan);
+      if (!target) return [];
+      const pathSpanIds: string[] = [];
+      const connectionKeys: string[] = [];
+      let currentSpanId = sourceSpan.id;
+      let terminalSpanId: string | undefined;
+      let status: FunctionalTargetChainFact["status"] = "deferred";
+      let confidence: FunctionalTargetChainFact["confidence"] = "certain";
+
+      while (true) {
+        const connection = connectionBySource.get(currentSpanId);
+        if (!connection || !connection.contiguous || !connection.sameKey) break;
+        connectionKeys.push(connection.connectionKey);
+        terminalSpanId = connection.currentSpanId;
+        pathSpanIds.push(connection.currentSpanId);
+        confidence = connection.confidence;
+        if (
+          connection.confidence === "ambiguous" ||
+          connection.confidence === "unknown"
+        )
+          break;
+        if (
+          functionalTargetMatches(
+            analysis,
+            sourceSpan.id,
+            connection.currentSpanId,
+            target,
+          )
+        ) {
+          status = "matched";
+          break;
+        }
+        const currentSpan = analysis.harmonySpans.find(
+          (span) => span.id === connection.currentSpanId,
+        );
+        if (
+          target.primaryFunction === "dominant" &&
+          currentSpan &&
+          isCadential64Span(currentSpan)
+        ) {
+          currentSpanId = currentSpan.id;
+          continue;
+        }
+        status = "violated";
+        break;
+      }
+
+      return [
+        Object.freeze({
+          id: `target-chain:${sourceSpan.id}`,
+          sourceSpanId: sourceSpan.id,
+          target: Object.freeze({ ...target }),
+          pathSpanIds: Object.freeze(pathSpanIds),
+          connectionKeys: Object.freeze(connectionKeys),
+          terminalSpanId,
+          status,
+          confidence,
+        }),
+      ];
+    }),
+  );
 }

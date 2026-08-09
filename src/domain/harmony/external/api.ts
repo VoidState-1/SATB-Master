@@ -2,6 +2,7 @@ import type { HarmonyAnalysis } from "../analysis";
 import type {
   HarmonyCheckResult,
   HarmonyDiagnostic,
+  RuleDiagnostic,
   SkippedRule,
 } from "../runtime";
 import {
@@ -22,6 +23,7 @@ import {
   type RuleOptionDefinition,
 } from "../ruleTypes";
 import { normalizeRuleConfig } from "../rules/configSchema";
+import { planRuleApplicability } from "../rules/applicability";
 
 export const EXTERNAL_RULE_API_VERSION = 3;
 export const MAX_EXTERNAL_RULE_BYTES = 512 * 1024;
@@ -150,7 +152,23 @@ export interface ExternalRuleContext {
     }
   >;
   connections: HarmonyAnalysis["connections"];
+  targetChains: HarmonyAnalysis["targetChains"];
   auxiliarySummary: HarmonyAnalysis["auxiliarySummary"];
+}
+
+export type ExternalDiagnosticCauseKind =
+  | "note"
+  | "chord"
+  | "voice"
+  | "span"
+  | "connection"
+  | "melody-transition"
+  | "slice-transition"
+  | "local";
+
+export interface ExternalDiagnosticCauseRef {
+  kind: ExternalDiagnosticCauseKind;
+  id: string;
 }
 
 const ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
@@ -529,6 +547,7 @@ export function externalRuleReferenceKey(
 
 export function buildExternalRuleContext(
   analysis: HarmonyAnalysis,
+  currentProject: ProjectDocument = analysis.project as ProjectDocument,
 ): ExternalRuleContext {
   const chordMap = new Map(
     analysis.project.chordTrack.regions.map((chord) => [chord.id, chord]),
@@ -553,23 +572,23 @@ export function buildExternalRuleContext(
     apiVersion: EXTERNAL_RULE_API_VERSION,
     revision: analysis.revision,
     project: {
-      schemaVersion: analysis.project.schemaVersion,
-      id: analysis.project.id,
-      title: analysis.project.title,
-      ppq: analysis.project.ppq,
-      lengthTicks: analysis.project.lengthTicks,
-      tempoEvents: analysis.project.tempoEvents,
-      meterEvents: analysis.project.meterEvents,
-      keyEvents: analysis.project.keyEvents,
-      satbTracks: analysis.project.satbTracks,
+      schemaVersion: currentProject.schemaVersion,
+      id: currentProject.id,
+      title: currentProject.title,
+      ppq: currentProject.ppq,
+      lengthTicks: currentProject.lengthTicks,
+      tempoEvents: currentProject.tempoEvents,
+      meterEvents: currentProject.meterEvents,
+      keyEvents: currentProject.keyEvents,
+      satbTracks: currentProject.satbTracks,
       chordTrack: {
-        visible: analysis.project.chordTrack.visible,
-        locked: analysis.project.chordTrack.locked,
-        displayMode: analysis.project.chordTrack.displayMode,
-        regions: [...analysis.project.chordTrack.regions],
+        visible: currentProject.chordTrack.visible,
+        locked: currentProject.chordTrack.locked,
+        displayMode: currentProject.chordTrack.displayMode,
+        regions: [...currentProject.chordTrack.regions],
       },
     },
-    sharedSettings: analysis.project.ruleProfile.shared,
+    sharedSettings: currentProject.ruleProfile.shared,
     slices,
     harmonySpans: analysis.harmonySpans,
     chordSpanIds: Object.fromEntries(analysis.chordSpanIds),
@@ -581,6 +600,7 @@ export function buildExternalRuleContext(
       current: sliceMap.get(transition.current.index)!,
     })),
     connections: analysis.connections,
+    targetChains: analysis.targetChains,
     auxiliarySummary: analysis.auxiliarySummary,
   };
 }
@@ -633,6 +653,57 @@ function evidenceItems(value: unknown) {
       value: requiredString(candidate.value, "evidence.value", 240),
     };
   });
+}
+
+function externalCauseRefs(
+  value: unknown,
+  analysis: HarmonyAnalysis,
+  installedPackage: InstalledExternalRulePackage,
+  rule: ExternalRuleManifestRule,
+) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 32)
+    throw new Error("诊断 causeRefs 最多允许 32 项");
+  const noteIds = analysis.noteById;
+  const chordIds = analysis.chordById;
+  const spanIds = new Set(analysis.harmonySpans.map((span) => span.id));
+  const connectionIds = new Set(
+    analysis.connections.map((connection) => connection.connectionKey),
+  );
+  const melodyTransitionIds = new Set(
+    analysis.melodyTransitions.map((transition) => transition.id),
+  );
+  const sliceTransitionIds = new Set(
+    analysis.sliceTransitions.map((transition) => transition.id),
+  );
+  const localIdPattern = /^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,118}[A-Za-z0-9])?$/;
+  const prefix =
+    `external:${installedPackage.manifest.packageId}:` +
+    `${installedPackage.contentHash}:${rule.id}`;
+  return [
+    ...new Set(
+      value.map((entry, index) => {
+        if (!isRecord(entry))
+          throw new Error(`第 ${index + 1} 项 causeRef 不是对象`);
+        const kind = requiredString(entry.kind, "causeRef.kind", 32) as
+          ExternalDiagnosticCauseKind;
+        const id = requiredString(entry.id, "causeRef.id", 240);
+        const valid =
+          (kind === "note" && noteIds.has(id)) ||
+          (kind === "chord" && chordIds.has(id)) ||
+          (kind === "voice" && VOICE_ORDER.includes(id as never)) ||
+          (kind === "span" && spanIds.has(id)) ||
+          (kind === "connection" && connectionIds.has(id)) ||
+          (kind === "melody-transition" && melodyTransitionIds.has(id)) ||
+          (kind === "slice-transition" && sliceTransitionIds.has(id)) ||
+          (kind === "local" && localIdPattern.test(id));
+        if (!valid)
+          throw new Error(`第 ${index + 1} 项 causeRef 引用了无效分析对象`);
+        const reference = kind === "connection" ? id : `${kind}:${id}`;
+        return `${prefix}|${reference}`;
+      }),
+    ),
+  ];
 }
 
 function validateExternalRuleStates(
@@ -689,13 +760,20 @@ function validateExternalRuleStates(
 
 export function normalizeExternalRuleDiagnostics(options: {
   value: unknown;
-  project: ProjectDocument;
+  analysis: HarmonyAnalysis;
   package: InstalledExternalRulePackage;
   rule: ExternalRuleManifestRule;
   severity: Exclude<HarmonyRuleSeverity, "off">;
   exceptionPolicy?: RuleExceptionPolicy;
 }): HarmonyDiagnostic[] {
-  const { value, project, package: installedPackage, rule, severity } = options;
+  const {
+    value,
+    analysis,
+    package: installedPackage,
+    rule,
+    severity,
+  } = options;
+  const project = analysis.project as ProjectDocument;
   const exceptionPolicy = {
     ...rule.defaultExceptionPolicies,
     ...(options.exceptionPolicy ?? {}),
@@ -721,6 +799,12 @@ export function normalizeExternalRuleDiagnostics(options: {
     if (!isRecord(entry)) throw new Error(`第 ${index + 1} 项诊断不是对象`);
     if (entry.ruleId !== undefined && entry.ruleId !== rule.id)
       throw new Error(`第 ${index + 1} 项诊断引用了未授权的规则 ID`);
+    if (entry.exceptionContexts !== undefined)
+      throw new Error(`第 ${index + 1} 项诊断不能自行声明 exceptionContexts`);
+    if (entry.coverageRefs !== undefined)
+      throw new Error(`第 ${index + 1} 项外置诊断不能声明 coverageRefs`);
+    if (entry.severity !== undefined)
+      throw new Error(`第 ${index + 1} 项诊断不能自行声明 severity`);
     const tick = entry.tick;
     const endTick = entry.endTick ?? tick;
     if (
@@ -761,23 +845,45 @@ export function normalizeExternalRuleDiagnostics(options: {
       typeof entry.messageKey === "string" && entry.messageKey.trim()
         ? requiredString(entry.messageKey, "诊断 messageKey", 120)
         : "external-diagnostic";
-    const exceptionContexts = stringArray(
-      entry.exceptionContexts ?? [],
-      "诊断 exceptionContexts",
-    ) as RuleExceptionContext[];
+    const causeRefs = externalCauseRefs(
+      entry.causeRefs,
+      analysis,
+      installedPackage,
+      rule,
+    );
+    const rawDiagnostic: RuleDiagnostic = {
+      ruleId: rule.id,
+      source: "external",
+      tick: tick as number,
+      endTick: endTick as number,
+      voiceIds: voiceIds as HarmonyDiagnostic["voiceIds"],
+      noteIds: diagnosticNoteIds,
+      chordIds: diagnosticChordIds,
+      title,
+      message,
+      messageKey,
+      params: primitiveParams(entry.params),
+      evidence: evidenceItems(entry.evidence),
+      confidence,
+      causeRefs,
+    };
+    const applicability = planRuleApplicability(
+      {
+        id: rule.id,
+        dependencyScope: rule.dependencyScope,
+        supportedExceptionContexts: rule.supportedExceptionContexts,
+        defaultExceptionPolicies: rule.defaultExceptionPolicies,
+      },
+      rawDiagnostic,
+      analysis,
+      exceptionPolicy,
+    );
     if (
-      exceptionContexts.some(
-        (context) => !rule.supportedExceptionContexts.includes(context),
-      )
-    )
-      throw new Error(`第 ${index + 1} 项诊断使用了规则未声明的特例上下文`);
-    if (
-      exceptionContexts.some((context) => exceptionPolicy[context] === "exempt")
+      applicability.policy === "skip" ||
+      applicability.policy === "deferred"
     )
       return undefined;
-    const effectiveSeverity = exceptionContexts.some(
-      (context) => exceptionPolicy[context] === "downgrade",
-    )
+    const effectiveSeverity = applicability.policy === "downgraded"
       ? severity === "error"
         ? "warning"
         : "suggestion"
@@ -794,22 +900,14 @@ export function normalizeExternalRuleDiagnostics(options: {
         stableObjects(diagnosticNoteIds),
         stableObjects(diagnosticChordIds),
         stableObjects(voiceIds),
+        ...(causeRefs ?? []),
       ].join(":"),
-      ruleId: rule.id,
-      source: "external",
+      ...rawDiagnostic,
       severity: effectiveSeverity,
-      tick: tick as number,
-      endTick: endTick as number,
-      voiceIds: voiceIds as HarmonyDiagnostic["voiceIds"],
-      noteIds: diagnosticNoteIds,
-      chordIds: diagnosticChordIds,
-      title,
-      message,
-      messageKey,
-      params: primitiveParams(entry.params),
-      evidence: evidenceItems(entry.evidence),
-      confidence,
-      exceptionContexts,
+      exceptionContexts:
+        applicability.contexts.length > 0
+          ? [...applicability.contexts]
+          : undefined,
     };
   }).filter(
     (diagnostic): diagnostic is HarmonyDiagnostic => diagnostic !== undefined,

@@ -132,6 +132,7 @@ export function ShortcutSettingsPane({
                     <button
                       type="button"
                       className={`shortcut-binding ${isCapturing ? "is-capturing" : ""}`}
+                      aria-label={`修改“${definition.label}”快捷键`}
                       aria-pressed={isCapturing}
                       onClick={() => {
                         setCapturing(isCapturing ? undefined : definition.id);

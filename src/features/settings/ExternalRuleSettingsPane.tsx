@@ -102,6 +102,7 @@ export function ExternalRuleSettingsPane({
             <input
               type="checkbox"
               checked={entry.reference.enabled}
+              aria-label={`启用外置规则“${entry.rule?.label ?? ruleId}”`}
               onChange={(event) =>
                 onSetExternalRuleEnabled(entry.reference!, event.target.checked)
               }
@@ -111,6 +112,7 @@ export function ExternalRuleSettingsPane({
             <span>严重程度</span>
             <select
               value={entry.reference.severity}
+              aria-label={`设置外置规则“${entry.rule?.label ?? ruleId}”严重程度`}
               onChange={(event) =>
                 onSetExternalRuleSeverity(
                   entry.reference!,
@@ -150,7 +152,8 @@ export function ExternalRuleSettingsPane({
         {entry.installedPackage && !entry.reference ? (
           <button
             type="button"
-            className="command-button"
+            className="command-button external-rule-mount-button"
+            aria-label={`挂载外置规则包“${entry.installedPackage.manifest.packageId}”`}
             onClick={() => onMountExternalRulePackage(entry.installedPackage!)}
           >
             <Link2 aria-hidden="true" />
@@ -161,6 +164,7 @@ export function ExternalRuleSettingsPane({
           <button
             type="button"
             className="command-button"
+            aria-label={`恢复外置规则“${entry.rule.label}”默认设置`}
             onClick={() => onResetExternalRule(entry.reference!)}
           >
             <RotateCcw aria-hidden="true" />
@@ -171,6 +175,7 @@ export function ExternalRuleSettingsPane({
           <button
             type="button"
             className="command-button danger-button"
+            aria-label={`移除规则包“${entry.installedPackage.manifest.packageId}”的本机副本`}
             onClick={() =>
               onRemoveExternalRulePackage(entry.installedPackage!)
             }

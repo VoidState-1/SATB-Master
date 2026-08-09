@@ -103,6 +103,7 @@ span 只表达区段事实，不承担“导音必须上行”等规则结论。
 
 ```ts
 interface HarmonyConnectionAssessment {
+  connectionKey: string;
   previousSpanId: string;
   currentSpanId: string;
   previousInterpretationId?: string;
@@ -122,7 +123,6 @@ interface HarmonyConnectionAssessment {
   contiguous: boolean;
   sameKey: boolean;
   targetMatched?: boolean;
-  exceptionTags: readonly RuleExceptionContext[];
   evidence: readonly ConnectionEvidence[];
   confidence: "certain" | "probable" | "ambiguous" | "unknown";
 }
@@ -132,6 +132,8 @@ interface HarmonyConnectionAssessment {
 
 连接器提供“发生了什么”的结构化事实，不决定某一规则是否报警。不同教材口径通过规则严重程度、配置和特例策略表达，不能重新引入一个粗粒度枚举替代精确解释。
 
+副属与重属目标还会展开为 `FunctionalTargetChainFact`。目标链沿连续 span 前进，允许指向属功能的目标经过 `K46`，并明确区分 `matched`、`violated` 与 `deferred`；休止、转调或语义歧义不会被强行判成失败。
+
 ## 6. 共享事实
 
 跨规则重复使用的低层事实集中计算：
@@ -139,6 +141,7 @@ interface HarmonyConnectionAssessment {
 - `voicePairTransitionFacts`：六组声部对的前后书写音程、上下运动、同向性、外/内声部身份和低音运动。
 - `bassMotionFact`：按字母级数与实际方向区分上行级进、下行级进、保持和其他运动。
 - `chordMemberFacts`：每个活跃音符是否属于当前 `ChordIdentity`，以及对应构成音索引。
+- `HarmonyContextFacts`：同和弦、分解和弦、声部交换、内声部、低音上行级进、已标注非和弦音、持续低音、终止与转调连接的稳定 ID 集合。
 
 平行五八度、不等五度、隐伏进行和对斜等规则必须共享书写音高口径，避免各自按 MIDI 半音重新推导而产生互相矛盾的结果。
 
@@ -146,7 +149,7 @@ interface HarmonyConnectionAssessment {
 
 设计清单由 [`harmony-rule-catalog.md`](../DesignDocs/harmony-rule-catalog.md) 维护，并通过 [`generate-rule-catalog.mjs`](../scripts/generate-rule-catalog.mjs) 生成静态目录。`HarmonyRuleDefinition` 包含稳定 ID、目录号、说明、理由、分组、默认严重程度、依赖、配置版本、声明式 options、特例 context、父规则和 `implemented` 状态。
 
-目录条目不等于可执行实现。设置页会显示所有 81 条规则，但 `implemented: false` 的条目明确标记“尚未实现”并禁用执行配置。只有同时存在规则定义和实现的条目进入调度。
+目录条目不等于可执行实现。设置页会显示并保存所有 81 条规则；`implemented: false` 的条目明确标记“尚未实现”，默认严重程度保存为 `off`，且不会进入执行队列。只有同时存在规则定义和实现的条目进入调度。
 
 ## 8. 规则私有状态
 
@@ -156,7 +159,7 @@ interface HarmonyConnectionAssessment {
 interface RuleStateEnvelope<T extends JsonValue = JsonValue> {
   id: string;
   ownerRuleId: string;
-  createdAt: { tick: number; sliceIndex: number; spanId?: string };
+  createdAt: { tick: number; sliceIndex: number };
   subjectRefs: {
     voiceIds: readonly VoiceId[];
     noteIds: readonly string[];
@@ -181,24 +184,24 @@ process 当前 step
 
 ## 9. 适用性计划
 
-规则在原始诊断上附加自己支持的 `exceptionContexts`。`planRuleApplicability` 将目录默认策略、工程覆盖和本次 context 折叠为：
+规则定义只声明自己支持哪些 context。`planRuleApplicability` 根据诊断对象引用、时间范围与宿主生成的 `HarmonyContextFacts` 计算本次 context，再将目录默认策略和工程覆盖折叠为：
 
 - `strict`：正常报告；
 - `downgraded`：严重程度降低一级；
 - `skip`：按明确豁免不报告；
 - `deferred`：上下文不足或歧义无法形成可靠结论。
 
-未在规则定义中声明支持的 context 会被过滤。`same-harmony`、`voice-exchange`、`bass-step-up`、`pedal-point` 或 `modulation` 不会成为全局万能豁免，只有具体规则选择支持后才生效。
+内置规则不能在诊断中自行注入公共 context；外置规则也只能读取宿主事实。`same-harmony`、`voice-exchange`、`bass-step-up`、`pedal-point` 或 `modulation` 不会成为全局万能豁免，只有具体规则声明支持后才生效。尚无事实生产者的 `sequence` 不会出现在规则配置项中。
 
 ## 10. 校验与诊断仲裁
 
 原始诊断先验证范围、对象引用、消息、置信度和证据，再由宿主注入工程严重程度并生成稳定根因键。最终仲裁包含：
 
 1. 同规则、同根因、同对象且时间相接的诊断合并为范围。
-2. 子规则与父规则命中同对象、同时间时只保留更具体的子规则。
+2. 专用规则可声明多个 `coveredRuleIds`；只有结构化 `causeRefs/coverageRefs` 匹配或严格对象集合相同时才覆盖通用诊断。
 3. 结果按时间、严重程度和稳定 ID 排序，规则注册顺序不影响输出。
 
-稳定根因键由规则 ID、规范对象范围、时间、证据 ID 与 `rootCauseKey/messageKey` 组成。自然语言消息不应承担去重身份。
+稳定根因键优先使用结构化 `causeRefs`，并结合规则 ID、规范对象范围、时间与 `rootCauseKey/messageKey`。自然语言消息不应承担去重身份。外置诊断在内置仲裁结束后合并，且不能声明 `coverageRefs`，因此不能隐藏内置诊断。
 
 和弦整体问题必须归属 `chordIds`，避免在四个音符上重复显示；旋律和声部进行问题才归属对应音符。UI 根据对象引用显示悬停诊断与证据。
 
@@ -208,7 +211,8 @@ process 当前 step
 
 ```ts
 interface RuleProfile {
-  profileVersion: 1;
+  profileVersion: 2;
+  catalogRevision: 1;
   title: string;
   shared: SharedHarmonySettings;
   builtin: Record<string, RuleInstanceSettings>;
@@ -224,7 +228,9 @@ interface RuleProfile {
 
 内置分析与外置规则请求都携带 revision。旧请求晚返回时标记为 superseded，不能覆盖新工程结果。外置脚本在 Worker + QuickJS 中隔离；其失败记录在独立 failure 列表，不能清空内置诊断。
 
-`AnalysisInvalidationRange` 已记录受影响 tick 与依赖 scope，为后续增量失效和缓存提供契约。当前不要假设完整的 5,000 音符性能目标已经完成，性能基准和桌面 E2E 仍属于收敛阶段。
+`RuleScheduler.prepareAnalysis` 使用不含规则 profile 的音乐签名缓存分析快照。只修改规则严重程度、配置或特例时，调度器复用已有 slices、spans、connections 和共享事实，并只重跑签名发生变化的规则；最终诊断仍统一经过仲裁。音乐事件变化时继续由 `AnalysisInvalidationRange` 记录受影响 tick 与依赖 scope，并禁止复用旧规则结果。
+
+5,000 音符工程的单规则配置变更基准已达到 100 ms 目标；本地 Electron 生产构建 E2E 已覆盖规则设置、外置 API v3、恢复、播放、SoundFont、保存和 MIDI。NSIS 安装后 E2E 尚未执行，因此不能据此宣称安装包验收完成。
 
 ## 13. 新增规则流程
 
@@ -238,7 +244,7 @@ interface RuleProfile {
 
 ## 14. 当前完成边界
 
-规则目录、工程 profile、共享事实、span、连接器、适用性、仲裁、设置页和外置 API v3 已落地。Phase E 当前已启用 D.10-D.13、E.3-E.5、G.5、H.9-H.12 与 K.4：包括 D9/增六配置、属九/方向性变音/增六解决、人工阻碍进行、三种增六连接和同主大小调借用来源。
+规则目录、完整工程 profile、共享事实、span、目标链、连接器、适用性、多规则覆盖仲裁、设置页、分析复用和外置 API v3 已落地。当前 81 条目录中 44 条具有实现，其余 37 条保持 `implemented: false`。Phase E 当前已启用 D.10-D.13、E.3-E.5、G.5、H.9-H.12 与 K.4：包括 D9/增六配置、属九/方向性变音/增六解决、人工阻碍进行、三种增六连接和同主大小调借用来源。
 
 G.6、H.1-H.8、J.1-J.2、K.2-K.3 仍保持 `implemented: false`。它们分别缺少“所有解释候选的合法性比较”、按转位校准的功能和弦连接金样本、变拍号重音层级，以及人工转调/进入侧/离开侧标记。不得用当前主要解释、`beatIndex === 0` 或局部调外音数量代替这些前置事实。
 

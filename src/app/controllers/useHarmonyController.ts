@@ -108,8 +108,13 @@ export function useHarmonyController({
   useEffect(() => {
     const controller = new AbortController();
     const revision = ++harmonyRevisionRef.current;
+    const analysis = harmonySchedulerRef.current.prepareAnalysis(
+      project,
+      revision,
+    );
     const builtinRun = harmonySchedulerRef.current.run({
       project,
+      analysis,
       severities: resolvedRuleProfile.severities,
       configs: resolvedRuleProfile.configs,
       exceptions: resolvedRuleProfile.exceptions,
@@ -120,6 +125,7 @@ export function useHarmonyController({
       project,
       packages: externalRuleLibrary.packages,
       revision,
+      analysis,
       signal: controller.signal,
     });
     void builtinRun.then((builtinResult) => {

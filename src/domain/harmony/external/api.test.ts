@@ -171,6 +171,20 @@ describe("Phase C QuickJS 沙箱", () => {
     expect(context.sharedSettings).toBeDefined();
   });
 
+  it("复用音乐分析时仍向外置规则提供当前工程的共享设置", () => {
+    const project = createEmptyProject();
+    const analysis = buildHarmonyAnalysis(project, 4);
+    const profileOnly = structuredClone(project);
+    profileOnly.ruleProfile.shared.strictFourPartTexture = false;
+    profileOnly.ruleProfile.shared.voiceRanges.soprano.maxMidi = 84;
+
+    const context = buildExternalRuleContext(analysis, profileOnly);
+
+    expect(context.revision).toBe(4);
+    expect(context.sharedSettings.strictFourPartTexture).toBe(false);
+    expect(context.sharedSettings.voiceRanges.soprano.maxMidi).toBe(84);
+  });
+
   it("通过受控注册读取 manifest，并且不暴露宿主 API", async () => {
     const inspection = await inspectExternalRuleSource(EXAMPLE_SOURCE);
     expect(inspection.executableRuleIds).toEqual(["safe-rule"]);
@@ -278,7 +292,7 @@ describe("Phase C QuickJS 沙箱", () => {
     expect(
       normalizeExternalRuleDiagnostics({
         value: evaluation.value,
-        project,
+        analysis: buildHarmonyAnalysis(project, 7),
         package: packageMetadata,
         rule: packageMetadata.manifest.rules[0],
         severity: "suggestion",
@@ -304,7 +318,7 @@ describe("Phase C 外置诊断归一化", () => {
           evidence: [],
         },
       ],
-      project,
+      analysis: buildHarmonyAnalysis(project, 1),
       package: packageMetadata,
       rule: packageMetadata.manifest.rules[0],
       severity: "suggestion",
@@ -341,7 +355,7 @@ describe("Phase C 外置诊断归一化", () => {
             voiceIds: [],
           },
         ],
-        project,
+        analysis: buildHarmonyAnalysis(project, 1),
         package: packageMetadata,
         rule: packageMetadata.manifest.rules[0],
         severity: "warning",
@@ -349,8 +363,46 @@ describe("Phase C 外置诊断归一化", () => {
     ).toThrow("不存在的音符");
   });
 
-  it("由宿主执行外置规则特例的降级与豁免", () => {
+  it("由宿主事实执行外置规则特例的降级与豁免", () => {
     const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions = [
+      createChordRegion(
+        project,
+        0,
+        PPQ * 2,
+        {
+          degree: 1,
+          degreeAlteration: 0,
+          quality: "major",
+          inversion: 0,
+          source: "manual",
+          confidence: "certain",
+        },
+        "same-tonic",
+      ),
+    ];
+    project.satbTracks.find((track) => track.id === "soprano")!.notes = [
+      {
+        id: "same-c",
+        startTick: 0,
+        durationTicks: PPQ,
+        pitch: { step: "C", alter: 0, octave: 5 },
+        velocity: 88,
+        locked: false,
+        spellingSource: "manual",
+      },
+      {
+        id: "same-e",
+        startTick: PPQ,
+        durationTicks: PPQ,
+        pitch: { step: "E", alter: 0, octave: 5 },
+        velocity: 88,
+        locked: false,
+        spellingSource: "manual",
+      },
+    ];
+    const analysis = buildHarmonyAnalysis(project, 1);
     const packageMetadata = installedPackage();
     const rule = {
       ...packageMetadata.manifest.rules[0],
@@ -359,18 +411,18 @@ describe("Phase C 外置诊断归一化", () => {
     };
     const diagnostic = {
       tick: 0,
+      endTick: PPQ * 2,
       title: "特例诊断",
       message: "同和弦语境",
-      noteIds: [],
-      chordIds: [],
-      voiceIds: [],
-      exceptionContexts: ["same-harmony"],
+      noteIds: ["same-c", "same-e"],
+      chordIds: ["same-tonic"],
+      voiceIds: ["soprano"],
     };
 
     expect(
       normalizeExternalRuleDiagnostics({
         value: [diagnostic],
-        project,
+        analysis,
         package: packageMetadata,
         rule,
         severity: "error",
@@ -379,12 +431,86 @@ describe("Phase C 外置诊断归一化", () => {
     expect(
       normalizeExternalRuleDiagnostics({
         value: [diagnostic],
-        project,
+        analysis,
         package: packageMetadata,
         rule,
         severity: "error",
         exceptionPolicy: { "same-harmony": "exempt" },
       }),
     ).toEqual([]);
+  });
+
+  it("拒绝脚本伪造公共特例、严重程度或覆盖引用", () => {
+    const project = createEmptyProject();
+    const analysis = buildHarmonyAnalysis(project, 1);
+    const packageMetadata = installedPackage();
+    const base = {
+      tick: 0,
+      title: "非法字段",
+      message: "脚本不能决定宿主策略",
+      noteIds: [],
+      chordIds: [],
+      voiceIds: [],
+    };
+    for (const patch of [
+      { exceptionContexts: ["same-harmony"] },
+      { severity: "suggestion" },
+      { coverageRefs: ["resolution.leading-tone"] },
+    ]) {
+      expect(() =>
+        normalizeExternalRuleDiagnostics({
+          value: [{ ...base, ...patch }],
+          analysis,
+          package: packageMetadata,
+          rule: packageMetadata.manifest.rules[0],
+          severity: "warning",
+        }),
+      ).toThrow();
+    }
+  });
+
+  it("只接受当前分析快照内的结构化 causeRefs 并进行命名空间隔离", () => {
+    const project = createEmptyProject();
+    const analysis = buildHarmonyAnalysis(project, 1);
+    const packageMetadata = installedPackage();
+    const normalized = normalizeExternalRuleDiagnostics({
+      value: [
+        {
+          tick: 0,
+          title: "本地根因",
+          message: "结构化引用",
+          noteIds: [],
+          chordIds: [],
+          voiceIds: [],
+          causeRefs: [{ kind: "local", id: "first-cause" }],
+        },
+      ],
+      analysis,
+      package: packageMetadata,
+      rule: packageMetadata.manifest.rules[0],
+      severity: "warning",
+    });
+    expect(normalized[0].causeRefs?.[0]).toContain(
+      "external:org.example.safe:",
+    );
+    expect(() =>
+      normalizeExternalRuleDiagnostics({
+        value: [
+          {
+            tick: 0,
+            title: "非法根因",
+            message: "不存在的连接",
+            noteIds: [],
+            chordIds: [],
+            voiceIds: [],
+            causeRefs: [{ kind: "connection", id: "connection:missing" }],
+          },
+        ],
+        analysis,
+        package: packageMetadata,
+        rule: packageMetadata.manifest.rules[0],
+        severity: "warning",
+      }),
+    ).toThrow("无效分析对象");
   });
 });

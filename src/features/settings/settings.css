@@ -332,6 +332,12 @@
   background: #fff;
 }
 
+.rule-group {
+  content-visibility: auto;
+  contain: layout paint style;
+  contain-intrinsic-block-size: 520px;
+}
+
 .shortcut-group h3,
 .rule-group h3 {
   position: sticky;
@@ -1031,5 +1037,4 @@
 .external-rule-enabled input:disabled {
   opacity: 0.48;
 }
-
 

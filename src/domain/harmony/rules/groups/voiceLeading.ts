@@ -10,6 +10,7 @@ import {
   primaryHarmonyInterpretation,
 } from "../../../chordModel";
 import { VOICE_ORDER } from "../../../project";
+import { durationToTicksAt } from "../../../time";
 import {
   formatSpelledPitch,
   pitchClassEquals,
@@ -60,21 +61,11 @@ export function crossRelationRule(
   config: RuleConfig,
 ) {
   const configuredWindow = config.window;
-  const windowTicks =
+  const duration =
     configuredWindow && typeof configuredWindow === "object" &&
     "value" in configuredWindow && "unit" in configuredWindow
-      ? Math.max(
-          0,
-          Math.floor(
-            configuredWindow.value *
-              (configuredWindow.unit === "ticks"
-                ? 1
-                : configuredWindow.unit === "beats"
-                  ? analysis.project.ppq
-                  : analysis.project.ppq * 4),
-          ),
-        )
-      : analysis.project.ppq;
+      ? configuredWindow
+      : { value: 1, unit: "beats" as const };
   const notes = VOICE_ORDER.flatMap((voiceId) =>
     analysis.notesByVoice[voiceId].map((note) => ({ voiceId, note })),
   ).sort(
@@ -86,6 +77,8 @@ export function crossRelationRule(
 
   for (let leftIndex = 0; leftIndex < notes.length; leftIndex += 1) {
     const left = notes[leftIndex];
+    const leftEnd = left.note.startTick + left.note.durationTicks;
+    const windowTicks = durationToTicksAt(analysis.project, leftEnd, duration);
     for (
       let rightIndex = leftIndex + 1;
       rightIndex < notes.length;
@@ -103,7 +96,6 @@ export function crossRelationRule(
         left.note.pitch.alter === right.note.pitch.alter
       )
         continue;
-      const leftEnd = left.note.startTick + left.note.durationTicks;
       const rightEnd = right.note.startTick + right.note.durationTicks;
       const overlapStart = Math.max(left.note.startTick, right.note.startTick);
       const overlapEnd = Math.min(leftEnd, rightEnd);

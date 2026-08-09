@@ -50,7 +50,7 @@ await writeFile(path.join(e2eDirectory, 'user-data', 'recovery.json'), JSON.stri
 }, null, 2), 'utf8')
 const externalRuleSource = `SATB_RULE.register({
   manifest: {
-    apiVersion: 2,
+    apiVersion: 3,
     packageId: "org.satbmaster.e2e",
     version: "1.0.0",
     rules: [{
@@ -58,6 +58,7 @@ const externalRuleSource = `SATB_RULE.register({
       label: "Phase C E2E 规则",
       description: "验证外置规则私有库、QuickJS Worker 与诊断归并。",
       group: "custom",
+      configVersion: 1,
       defaultSeverity: "suggestion",
       dependencyScope: "project",
     }],
@@ -207,6 +208,17 @@ async function clickButton(label) {
     return true;
   })()`)
   if (!clicked) throw new Error(`按钮不可用：${label}`)
+  await delay(120)
+}
+
+async function selectRuleByKey(ruleKey) {
+  const selected = await evaluate(`(() => {
+    const row = document.querySelector(${JSON.stringify(`[data-rule-key="${ruleKey}"]`)});
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`)
+  if (!selected) throw new Error(`规则详情不存在：${ruleKey}`)
   await delay(120)
 }
 
@@ -574,10 +586,10 @@ async function verifyChordTrackEditing(projectPath) {
   const firstLabel = await evaluate(`document.querySelector('.chord-label')?.textContent`)
   if (firstLabel !== 'I') throw new Error(`和弦名称未由系统计算：${firstLabel}`)
 
-  await clickPaletteOption('级数', 'V')
-  await clickPaletteOption('和弦性质', '属七')
+  await clickPaletteOption('功能', 'D')
+  await clickPaletteOption('形态', '七和弦')
   await clickPaletteOption('转位', '一转')
-  await clickPaletteOption('副属目标', 'II')
+  await clickPaletteOption('离调目标', 'SII')
   await waitFor(`document.querySelector('.chord-label')?.textContent === 'V6/5/II'`, '调色盘更新和弦名称')
   const shortcutIsolated = await evaluate(`(() => {
     document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: '1', code: 'Digit1', bubbles: true }));
@@ -660,17 +672,22 @@ async function verifyChordTrackEditing(projectPath) {
   await clickButton('保存')
   const saved = JSON.parse(await readFile(projectPath, 'utf8'))
   const region = saved.chordTrack?.regions?.[0]
+  const interpretation = region?.semantics?.interpretations?.find(
+    (candidate) => candidate.id === region?.semantics?.primaryInterpretationId,
+  )
   if (saved.schemaVersion !== 3
     || saved.loop?.enabled !== false
     || saved.loop?.startTick !== 3840
     || saved.loop?.endTick !== 7680
     || region?.startTick !== 2400
     || region?.durationTicks !== 1440
-    || region?.function?.degree !== 5
-    || region?.function?.quality !== 'dominant7'
-    || region?.function?.inversion !== 1
-    || region?.function?.applied?.targetDegree !== 2
-    || !region?.identity?.root
+    || region?.identity?.structure?.quality !== 'dominant7'
+    || region?.identity?.bass?.step !== 'C'
+    || region?.identity?.bass?.alter !== 1
+    || interpretation?.degree !== 5
+    || interpretation?.appliedTarget?.degree !== 2
+    || interpretation?.designation?.kind !== 'applied-dominant'
+    || interpretation?.designation?.primaryFunction !== 'dominant'
     || 'label' in region) {
     throw new Error(`和弦范围保存结果错误：${JSON.stringify({ schemaVersion: saved.schemaVersion, region })}`)
   }
@@ -973,8 +990,9 @@ async function verifyShortcutSettings() {
 
 async function configureHarmonyRuleSeverity() {
   await clickButton('设置')
-  await clickButton('检查规则设置')
-  await waitFor(`document.querySelectorAll('.rule-row').length === 19`, '列出全部检查规则')
+  await clickButton('检查规则')
+  await waitFor(`document.querySelectorAll('.rule-row').length === 81`, '列出全部检查规则')
+  await selectRuleByKey('builtin:voice-leading.parallel-fifths')
   const layout = await evaluate(`(() => {
     const content = document.querySelector('.rule-settings-content');
     const row = document.querySelector('.rule-row');
@@ -994,16 +1012,16 @@ async function configureHarmonyRuleSeverity() {
     return true;
   })()`)
   if (!changed) throw new Error('无法修改平行纯五度严重程度')
-  await waitFor(`JSON.parse(localStorage.getItem('satb-master-harmony-rules-v1'))['parallel-fifths'] === 'suggestion'`, '检查规则严重度持久化')
+  await waitFor(`document.querySelector('select[aria-label="设置“平行纯五度”严重程度"]')?.value === 'suggestion'`, '检查规则严重度更新')
   await clickButton('关闭设置')
 }
 
 async function verifyExternalRuleSandbox() {
   await clickButton('设置')
-  await clickButton('检查规则设置')
-  await clickButton('导入外置规则')
+  await clickButton('检查规则')
+  await clickButton('导入外置规则包')
   await waitFor(
-    `document.body.innerText.includes('org.satbmaster.e2e') && document.body.innerText.includes('Phase C E2E 规则')`,
+    `document.querySelector(${JSON.stringify(`[data-rule-key="external:org.satbmaster.e2e@1.0.0:${externalRuleHash}:phase-c-e2e"]`)}) !== null`,
     '外置规则包导入并挂载',
     15_000,
   )
@@ -1011,44 +1029,43 @@ async function verifyExternalRuleSandbox() {
     path.join(e2eDirectory, 'user-data', 'rule-library', `${externalRuleHash}.satb-rule.js`),
     '外置规则私有副本',
   )
+  await selectRuleByKey('external:org.satbmaster.e2e@1.0.0:' + externalRuleHash + ':phase-c-e2e')
   const mounted = await evaluate(`(() => {
     const checkbox = document.querySelector('input[aria-label="启用外置规则“Phase C E2E 规则”"]');
-    const button = [...document.querySelectorAll('.external-rule-mount-button')]
-      .find((item) => item.textContent?.includes('已挂载'));
-    return Boolean(checkbox?.checked && button?.disabled);
+    return Boolean(checkbox?.checked);
   })()`)
   if (!mounted) throw new Error('外置规则未以启用状态挂载到工程')
   await clickButton('关闭设置')
   await waitFor(`document.body.innerText.includes('Phase C 外置规则已运行')`, 'QuickJS 外置诊断归并', 15_000)
 
   await clickButton('设置')
-  await clickButton('检查规则设置')
+  await clickButton('检查规则')
+  await selectRuleByKey('external:org.satbmaster.e2e@1.0.0:' + externalRuleHash + ':phase-c-e2e')
   const disabled = await evaluate(`(() => {
     const checkbox = document.querySelector('input[aria-label="启用外置规则“Phase C E2E 规则”"]');
     if (!checkbox) return false;
-    checkbox.checked = false;
-    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
+    if (checkbox.checked) checkbox.click();
+    return !checkbox.checked;
   })()`)
   if (!disabled) throw new Error('无法关闭外置规则')
   await clickButton('关闭设置')
   await waitFor(`!document.body.innerText.includes('Phase C 外置规则已运行')`, '关闭外置规则后移除诊断')
 
   await clickButton('设置')
-  await clickButton('检查规则设置')
+  await clickButton('检查规则')
+  await selectRuleByKey('external:org.satbmaster.e2e@1.0.0:' + externalRuleHash + ':phase-c-e2e')
   await evaluate(`(() => {
     const checkbox = document.querySelector('input[aria-label="启用外置规则“Phase C E2E 规则”"]');
-    checkbox.checked = true;
-    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!checkbox.checked) checkbox.click();
   })()`)
   await clickButton('移除规则包“org.satbmaster.e2e”的本机副本')
   await clickButton('移除')
   await waitFor(
-    `document.body.innerText.includes('未挂载的工程规则') && window.desktop.ruleLibrary.list().then((items) => items.length === 0)`,
+    `document.querySelector('.rule-unimplemented-badge')?.textContent?.includes('未挂载') && window.desktop.ruleLibrary.list().then((items) => items.length === 0)`,
     '移除本机副本但保留工程引用',
   )
-  await clickButton('导入外置规则')
-  await waitFor(`document.body.innerText.includes('Phase C E2E 规则') && !document.body.innerText.includes('未挂载的工程规则')`, '重新挂载匹配规则包', 15_000)
+  await clickButton('导入外置规则包')
+  await waitFor(`window.desktop.ruleLibrary.list().then((items) => items.length === 1 && !document.querySelector('.rule-unimplemented-badge'))`, '重新挂载匹配规则包', 15_000)
   await clickButton('关闭设置')
   await waitFor(`document.body.innerText.includes('Phase C 外置规则已运行')`, '重新导入后恢复外置诊断', 15_000)
 }
@@ -1060,7 +1077,8 @@ async function verifyHarmonyRuleSeverityApplication() {
   })()`, '平行纯五度改为建议')
 
   await clickButton('设置')
-  await clickButton('检查规则设置')
+  await clickButton('检查规则')
+  await selectRuleByKey('builtin:voice-leading.parallel-fifths')
   await evaluate(`(() => {
     const select = document.querySelector('select[aria-label="设置“平行纯五度”严重程度"]');
     select.value = 'off';
@@ -1070,7 +1088,8 @@ async function verifyHarmonyRuleSeverityApplication() {
   await waitFor(`![...document.querySelectorAll('.diagnostic-item')].some((item) => item.textContent?.includes('平行纯五度'))`, '严重度为无时关闭规则')
 
   await clickButton('设置')
-  await clickButton('检查规则设置')
+  await clickButton('检查规则')
+  await selectRuleByKey('builtin:voice-leading.parallel-fifths')
   await clickButton('恢复“平行纯五度”默认严重程度')
   await clickButton('关闭设置')
   await waitFor(`(() => {

@@ -19,6 +19,8 @@ import {
 import type { RuleDependencyScope } from "./ruleTypes";
 import {
   buildHarmonyConnections,
+  buildFunctionalTargetChains,
+  type FunctionalTargetChainFact,
   type HarmonyConnectionAssessment,
 } from "./rules/connector";
 import {
@@ -103,6 +105,7 @@ export interface HarmonyAnalysis {
   readonly melodyTransitions: readonly MelodyTransition[];
   readonly sliceTransitions: readonly SliceTransition[];
   readonly connections: readonly HarmonyConnectionAssessment[];
+  readonly targetChains: readonly FunctionalTargetChainFact[];
   readonly contextFacts: HarmonyContextFacts;
   readonly notesByVoice: Readonly<Record<VoiceId, readonly AnalysisNote[]>>;
   readonly noteById: ReadonlyMap<string, AnalysisNote>;
@@ -677,6 +680,12 @@ export function buildHarmonyAnalysis(
     harmonySpans,
     chordById,
   });
+  const targetChains = buildFunctionalTargetChains({
+    project: snapshot,
+    harmonySpans,
+    chordById,
+    connections,
+  });
   const contextFacts = buildHarmonyContextFacts({
     slices,
     harmonySpans,
@@ -695,6 +704,7 @@ export function buildHarmonyAnalysis(
     melodyTransitions,
     sliceTransitions,
     connections,
+    targetChains,
     contextFacts,
     notesByVoice: Object.freeze(notesByVoice),
     noteById,
