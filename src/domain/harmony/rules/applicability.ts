@@ -32,6 +32,113 @@ function targetIdsOf(diagnostic: RuleDiagnostic) {
   ].sort();
 }
 
+function intersects(left: readonly string[], right: ReadonlySet<string>) {
+  return left.some((value) => right.has(value));
+}
+
+function transitionIdsFor(
+  diagnostic: RuleDiagnostic,
+  analysis: HarmonyAnalysis,
+) {
+  const noteIds = new Set(diagnostic.noteIds);
+  const overlapsTick = (tick: number) =>
+    diagnostic.tick === diagnostic.endTick
+      ? tick === diagnostic.tick
+      : diagnostic.tick <= tick && tick < diagnostic.endTick;
+  const sliceTransitionIds = analysis.sliceTransitions
+    .filter(
+      (transition) =>
+        overlapsTick(transition.current.tick) ||
+        Object.values(transition.previous.notes).some((note) =>
+          note ? noteIds.has(note.id) : false,
+        ) ||
+        Object.values(transition.current.notes).some((note) =>
+          note ? noteIds.has(note.id) : false,
+        ),
+    )
+    .map((transition) => transition.id);
+  const melodyTransitionIds = analysis.melodyTransitions
+    .filter(
+      (transition) =>
+        overlapsTick(transition.current.startTick) ||
+        noteIds.has(transition.previous.id) ||
+        noteIds.has(transition.current.id),
+    )
+    .map((transition) => transition.id);
+  return {
+    slice: new Set(sliceTransitionIds),
+    melody: new Set(melodyTransitionIds),
+    all: new Set([...sliceTransitionIds, ...melodyTransitionIds]),
+  };
+}
+
+function spanIdsFor(diagnostic: RuleDiagnostic, analysis: HarmonyAnalysis) {
+  const result = new Set<string>();
+  diagnostic.chordIds.forEach((chordId) =>
+    analysis.chordSpanIds
+      .get(chordId)
+      ?.forEach((spanId) => result.add(spanId)),
+  );
+  analysis.harmonySpans.forEach((span) => {
+    const overlaps =
+      diagnostic.tick === diagnostic.endTick
+        ? span.fromTick <= diagnostic.tick && diagnostic.tick <= span.toTick
+        : diagnostic.tick < span.toTick && diagnostic.endTick > span.fromTick;
+    if (overlaps)
+      result.add(span.id);
+  });
+  return result;
+}
+
+function contextsFor(
+  diagnostic: RuleDiagnostic,
+  analysis: HarmonyAnalysis,
+): RuleExceptionContext[] {
+  const transitions = transitionIdsFor(diagnostic, analysis);
+  const spanIds = spanIdsFor(diagnostic, analysis);
+  const contexts: RuleExceptionContext[] = [];
+  const facts = analysis.contextFacts;
+  if (intersects(facts.sameHarmonyTransitionIds, transitions.all))
+    contexts.push("same-harmony");
+  if (intersects(facts.arpeggiationTransitionIds, transitions.melody))
+    contexts.push("arpeggiation");
+  if (intersects(facts.voiceExchangeTransitionIds, transitions.slice))
+    contexts.push("voice-exchange");
+  if (intersects(facts.innerVoiceTransitionIds, transitions.slice))
+    contexts.push("inner-voices");
+  if (intersects(facts.bassStepUpTransitionIds, transitions.slice))
+    contexts.push("bass-step-up");
+  if (diagnostic.noteIds.some((id) => facts.nonchordToneNoteIds.includes(id)))
+    contexts.push("nonchord-tone");
+  if (intersects(facts.pedalSpanIds, spanIds)) contexts.push("pedal-point");
+  if (intersects(facts.cadenceSpanIds, spanIds)) contexts.push("cadence");
+  const referencedConnectionIds = new Set(
+    (diagnostic.causeRefs ?? [])
+      .flatMap((reference) => reference.split("|"))
+      .filter((part) => part.startsWith("connection:")),
+  );
+  const connectionIds = referencedConnectionIds.size > 0
+    ? referencedConnectionIds
+    : new Set(
+        analysis.connections
+          .filter(
+            (connection) =>
+              spanIds.has(connection.previousSpanId) ||
+              spanIds.has(connection.currentSpanId),
+          )
+          .map((connection) => connection.connectionKey),
+      );
+  if (intersects(facts.modulationConnectionIds, connectionIds))
+    contexts.push("modulation");
+  if (
+    analysis.harmonySpans.some(
+      (span) => spanIds.has(span.id) && span.status === "ambiguous",
+    )
+  )
+    contexts.push("ambiguous-semantics");
+  return contexts;
+}
+
 /** 将规则声明、工程配置和本次证据上的上下文统一折叠为单一执行策略。 */
 export function planRuleApplicability(
   definition: Pick<
@@ -42,15 +149,13 @@ export function planRuleApplicability(
     | "defaultExceptionPolicies"
   >,
   diagnostic: RuleDiagnostic,
-  _analysis: HarmonyAnalysis,
+  analysis: HarmonyAnalysis,
   overrides: RuleExceptionPolicy = {},
 ): RuleApplicability {
   const supported = new Set(definition.supportedExceptionContexts);
   const contexts = [
     ...new Set(
-      (diagnostic.exceptionContexts ?? []).filter((context) =>
-        supported.has(context),
-      ),
+      contextsFor(diagnostic, analysis).filter((context) => supported.has(context)),
     ),
   ];
   const effective = {

@@ -34,7 +34,7 @@ export function stableRootCauseKey(item: RuleDiagnostic) {
     item.ruleId,
     canonicalScope(item),
     `${item.tick}-${item.endTick}`,
-    evidenceIds(item).join(","),
+    stable(item.causeRefs ?? []).join(",") || evidenceIds(item).join(","),
     item.rootCauseKey ?? item.messageKey,
   ].join("|");
 }
@@ -76,10 +76,20 @@ export function normalizeBuiltinDiagnostic(
     item.evidence.length > MAX_EVIDENCE_ITEMS
   )
     return undefined;
-  const supported = new Set(definition.supportedExceptionContexts);
-  const exceptionContexts = stable(
-    (item.exceptionContexts ?? []).filter((context) => supported.has(context)),
-  ) as HarmonyDiagnostic["exceptionContexts"];
+  const validStructuredRefs = (refs: readonly string[] | undefined) =>
+    refs === undefined ||
+    (refs.length <= 32 &&
+      refs.every(
+        (ref) =>
+          typeof ref === "string" &&
+          ref.trim().length > 0 &&
+          ref.length <= 240,
+      ));
+  if (
+    !validStructuredRefs(item.causeRefs) ||
+    !validStructuredRefs(item.coverageRefs)
+  )
+    return undefined;
   const normalized: HarmonyDiagnostic = {
     ...item,
     id: stableRootCauseKey(item),
@@ -89,9 +99,13 @@ export function normalizeBuiltinDiagnostic(
     chordIds: stable(item.chordIds),
     params: { ...item.params },
     evidence: item.evidence.map((entry) => ({ ...entry })),
-    exceptionContexts:
-      exceptionContexts && exceptionContexts.length > 0
-        ? exceptionContexts
+    causeRefs:
+      item.causeRefs && item.causeRefs.length > 0
+        ? stable(item.causeRefs)
+        : undefined,
+    coverageRefs:
+      item.coverageRefs && item.coverageRefs.length > 0
+        ? stable(item.coverageRefs)
         : undefined,
   };
   return normalized;
@@ -111,6 +125,7 @@ function mergeRanges(source: readonly HarmonyDiagnostic[]) {
     const key = [
       item.ruleId,
       item.rootCauseKey ?? item.messageKey,
+      stable(item.causeRefs ?? []).join(","),
       stable(item.noteIds).join(","),
       stable(item.chordIds).join(","),
       stable(item.voiceIds).join(","),
@@ -139,6 +154,22 @@ function mergeRanges(source: readonly HarmonyDiagnostic[]) {
   });
 }
 
+function structuredCoverageMatches(
+  specific: HarmonyDiagnostic,
+  candidate: HarmonyDiagnostic,
+) {
+  const candidateCauses = new Set(candidate.causeRefs ?? []);
+  if (
+    (specific.coverageRefs ?? []).some((reference) =>
+      candidateCauses.has(reference),
+    )
+  )
+    return true;
+  return (specific.causeRefs ?? []).some((reference) =>
+    candidateCauses.has(reference),
+  );
+}
+
 function overlaps(left: HarmonyDiagnostic, right: HarmonyDiagnostic) {
   return left.tick <= right.endTick && right.tick <= left.endTick;
 }
@@ -149,20 +180,24 @@ export function arbitrateDiagnostics(
   definitions: readonly RuleDefinition[],
 ) {
   const merged = mergeRanges(source);
-  const parentByChild = new Map<string, string>(
+  const coveredByRule = new Map<string, ReadonlySet<string>>(
     definitions
-      .filter((definition) => definition.parentRuleId)
-      .map((definition) => [definition.id, definition.parentRuleId!]),
+      .filter((definition) => definition.coveredRuleIds.length > 0)
+      .map((definition) => [
+        definition.id,
+        new Set(definition.coveredRuleIds),
+      ]),
   );
   return merged.filter((candidate) => {
     return !merged.some((specific) => {
       const specificCoversCandidate =
-        parentByChild.get(specific.ruleId) === candidate.ruleId ||
-        (specific.ruleId === "melody.tritone" &&
-          (candidate.ruleId === "melody.augmented-interval" ||
-            candidate.ruleId === "melody.diminished-interval"));
+        coveredByRule.get(specific.ruleId)?.has(candidate.ruleId) ?? false;
       if (!specificCoversCandidate) return false;
-      return overlaps(specific, candidate) && sameCauseObjects(specific, candidate);
+      return (
+        overlaps(specific, candidate) &&
+        (structuredCoverageMatches(specific, candidate) ||
+          sameCauseObjects(specific, candidate))
+      );
     });
   });
 }

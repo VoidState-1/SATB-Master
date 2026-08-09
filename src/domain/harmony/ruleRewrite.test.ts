@@ -357,6 +357,62 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     ).toBe("error");
   });
 
+  it("D9 仍建立通用导音与七音解决状态", () => {
+    const project = twoChordProject(
+      dominantNinthRegion(),
+      triadRegion("tonic", PPQ, "C", "major"),
+      {
+        soprano: [pitch("B", 0, 4), pitch("A", 0, 4)],
+        alto: [pitch("F", 0, 4), pitch("G", 0, 4)],
+        tenor: [pitch("A", 0, 3), pitch("G", 0, 3)],
+        bass: [pitch("G", 0, 2), pitch("C", 0, 3)],
+      },
+    );
+
+    const ids = checkHarmony(project).diagnostics.map((item) => item.ruleId);
+    expect(ids).toContain("resolution.leading-tone");
+    expect(ids).toContain("resolution.chord-seventh");
+  });
+
+  it("副属和弦按目标调性识别局部导音", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions = [
+      functionalChord(project, "applied-dominant", 0, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        appliedTarget: 2,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "applied-dominant",
+          primaryFunction: "dominant",
+        },
+        ...manualCertain,
+      }),
+      functionalChord(project, "supertonic", 1, {
+        degree: 2,
+        degreeAlteration: 0,
+        quality: "minor",
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "side-degree",
+          primaryFunction: "subdominant",
+        },
+        ...manualCertain,
+      }),
+    ];
+    setLine(project, "soprano", [pitch("C", 1, 5), pitch("B", 0, 4)]);
+
+    const diagnostic = diagnosticFor(project, "resolution.leading-tone");
+    expect(diagnostic?.params).toMatchObject({
+      leadingTone: "C♯",
+      targetTonic: "D",
+    });
+  });
+
   it("It+6、Fr+6、Ger+6 的审定四声部配置均通过", () => {
     const legal: Record<
       "italian" | "french" | "german",

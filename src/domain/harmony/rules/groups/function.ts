@@ -140,7 +140,9 @@ export function functionalRetrogressionRule(analysis: HarmonyAnalysis) {
             },
           ],
           confidence: connection.confidence === "certain" ? 1 : 0.8,
-          exceptionContexts: [...connection.exceptionTags],
+          causeRefs: [
+            `function.retrogression|${connection.connectionKey}`,
+          ],
         },
       ),
     );
@@ -197,7 +199,9 @@ export function doubleDominantTargetRule(analysis: HarmonyAnalysis) {
               : connection.confidence === "probable"
                 ? 0.8
                 : 0,
-          exceptionContexts: [...connection.exceptionTags],
+          causeRefs: [
+            `function.double-dominant-target|${connection.connectionKey}`,
+          ],
         },
       ),
     );
@@ -231,8 +235,16 @@ export function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
     const current = currentSpan?.regionIds
       .map((id) => analysis.chordById.get(id))
       .find(Boolean);
+    if (
+      !connection ||
+      !connection.contiguous ||
+      !connection.sameKey ||
+      connection.confidence === "ambiguous" ||
+      connection.confidence === "unknown"
+    )
+      return;
     const resolves = Boolean(
-      connection?.relation === "cadential64-target" &&
+      connection.relation === "cadential64-target" &&
         connection.targetMatched &&
         connection.contiguous &&
         connection.sameKey,
@@ -264,9 +276,9 @@ export function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
               value: "终止四六 → 属功能",
             },
           ],
-          exceptionContexts: connection
-            ? [...connection.exceptionTags]
-            : ["insufficient-context"],
+          causeRefs: [
+            `function.cadential64-target|${connection.connectionKey}`,
+          ],
         },
       ),
     );

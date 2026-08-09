@@ -84,14 +84,28 @@ const IMPLEMENTED_RULE_IDS = new Set<HarmonyRuleId>([
   "tonality.mixture-source",
 ]);
 
-const PARENT_RULE_IDS: Partial<Record<HarmonyRuleId, HarmonyRuleId>> = {
-  "melody.tritone": "melody.augmented-interval",
-  "connection.dominant-seventh": "resolution.chord-seventh",
-  "connection.dominant-ninth": "resolution.dominant-ninth",
-  "connection.italian-augmented-sixth": "resolution.augmented-sixth",
-  "connection.french-augmented-sixth": "resolution.augmented-sixth",
-  "connection.german-augmented-sixth": "resolution.augmented-sixth",
-  "connection.deceptive-voice-leading": "function.deceptive-cadence-target",
+const COVERED_RULE_IDS: Partial<
+  Record<HarmonyRuleId, readonly HarmonyRuleId[]>
+> = {
+  "melody.tritone": [
+    "melody.augmented-interval",
+    "melody.diminished-interval",
+  ],
+  "connection.dominant-seventh": [
+    "resolution.leading-tone",
+    "resolution.chord-seventh",
+  ],
+  "connection.dominant-ninth": [
+    "resolution.leading-tone",
+    "resolution.chord-seventh",
+    "resolution.dominant-ninth",
+  ],
+  "connection.italian-augmented-sixth": ["resolution.augmented-sixth"],
+  "connection.french-augmented-sixth": ["resolution.augmented-sixth"],
+  "connection.german-augmented-sixth": ["resolution.augmented-sixth"],
+  "connection.deceptive-voice-leading": [
+    "function.deceptive-cadence-target",
+  ],
 };
 
 const RULE_OPTIONS: Partial<Record<HarmonyRuleId, readonly RuleOptionDefinition[]>> = {
@@ -185,7 +199,6 @@ const EXCEPTION_CONTEXTS: Partial<
     "insufficient-context",
   ],
   "function.retrogression": [
-    "sequence",
     "pedal-point",
     "modulation",
     "ambiguous-semantics",
@@ -269,7 +282,7 @@ export const HARMONY_RULE_DEFINITIONS: readonly (HarmonyRuleDefinition & {
     ) as RuleConfig;
     return {
       ...entry,
-      parentRuleId: PARENT_RULE_IDS[entry.id],
+      coveredRuleIds: COVERED_RULE_IDS[entry.id] ?? [],
       group: groupOf(entry.id),
       requires: requirementsOf(entry.id),
       dependencyScope: dependencyScopeOf(entry.id),

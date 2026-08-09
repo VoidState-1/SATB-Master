@@ -1,6 +1,7 @@
 import {
   primaryHarmonyInterpretation,
   type FunctionalFamily,
+  type FunctionalTarget,
   type HarmonyInterpretation,
   type KeyReference,
 } from "../../chordModel";
@@ -8,8 +9,7 @@ import type {
   HarmonyAnalysis,
   HarmonySpan,
 } from "../analysis";
-import { pitchClassEquals } from "../../pitch";
-import type { RuleExceptionContext } from "./types";
+import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
 
 export type HarmonyConnectionRelation =
   | "same-harmony"
@@ -30,6 +30,7 @@ export interface ConnectionEvidence {
 }
 
 export interface HarmonyConnectionAssessment {
+  connectionKey: string;
   previousSpanId: string;
   currentSpanId: string;
   previousInterpretationId?: string;
@@ -38,7 +39,6 @@ export interface HarmonyConnectionAssessment {
   contiguous: boolean;
   sameKey: boolean;
   targetMatched?: boolean;
-  exceptionTags: readonly RuleExceptionContext[];
   evidence: readonly ConnectionEvidence[];
   confidence: "certain" | "probable" | "ambiguous" | "unknown";
 }
@@ -63,13 +63,29 @@ function sameKey(left: KeyReference, right: KeyReference) {
 function familyOf(
   interpretation: HarmonyInterpretation | undefined,
 ): FunctionalFamily | undefined {
-  const designation = interpretation?.designation;
-  if (designation?.primaryFunction) return designation.primaryFunction;
-  if (!interpretation) return undefined;
-  if ([1, 3, 6].includes(interpretation.degree)) return "tonic";
-  if ([2, 4].includes(interpretation.degree)) return "subdominant";
-  if ([5, 7].includes(interpretation.degree)) return "dominant";
-  return undefined;
+  return interpretation?.designation?.primaryFunction;
+}
+
+function targetMatches(
+  target: FunctionalTarget | undefined,
+  current: HarmonyInterpretation | undefined,
+  currentChord: ReturnType<typeof primaryChordAtSpan>,
+  sourceKey: KeyReference,
+) {
+  if (!target || !current || !currentChord) return false;
+  const designation = current.designation;
+  if (!designation?.primaryFunction) return false;
+  if (
+    current.degree !== target.degree ||
+    designation.primaryFunction !== target.primaryFunction ||
+    (target.secondaryFunction !== undefined &&
+      designation.secondaryFunction !== target.secondaryFunction)
+  )
+    return false;
+  return pitchClassEquals(
+    currentChord.identity.root,
+    scaleDegreePitchClass(sourceKey, target.degree),
+  );
 }
 
 function combinedConfidence(
@@ -92,6 +108,62 @@ function primaryChordAtSpan(
     .find(Boolean);
 }
 
+function projectKeyAtSpan(
+  analysis: Pick<HarmonyAnalysis, "project">,
+  span: HarmonySpan,
+) {
+  return (
+    analysis.project.keyEvents
+      .filter((event) => event.tick <= span.fromTick)
+      .at(-1) ?? analysis.project.keyEvents[0]
+  );
+}
+
+export function isCadential64Span(span: HarmonySpan) {
+  const interpretation = interpretationOf(span);
+  return (
+    interpretation?.designation?.kind === "cadential64" ||
+    span.semantics?.cadenceRole === "cadential64"
+  );
+}
+
+export function functionalTargetMatches(
+  analysis: Pick<
+    HarmonyAnalysis,
+    "project" | "harmonySpans" | "chordById"
+  >,
+  sourceSpanId: string,
+  currentSpanId: string,
+  target: FunctionalTarget,
+) {
+  const sourceSpan = analysis.harmonySpans.find(
+    (span) => span.id === sourceSpanId,
+  );
+  const currentSpan = analysis.harmonySpans.find(
+    (span) => span.id === currentSpanId,
+  );
+  if (!sourceSpan || !currentSpan) return false;
+  const sourceInterpretation = interpretationOf(sourceSpan);
+  const currentInterpretation = interpretationOf(currentSpan);
+  const sourceKey = localKeyOf(
+    sourceInterpretation,
+    projectKeyAtSpan(analysis, sourceSpan),
+  );
+  const currentKey = localKeyOf(
+    currentInterpretation,
+    projectKeyAtSpan(analysis, currentSpan),
+  );
+  return (
+    sameKey(sourceKey, currentKey) &&
+    targetMatches(
+      target,
+      currentInterpretation,
+      primaryChordAtSpan(analysis, currentSpan),
+      sourceKey,
+    )
+  );
+}
+
 function assessConnection(
   analysis: Pick<HarmonyAnalysis, "project" | "chordById">,
   previous: HarmonySpan,
@@ -103,33 +175,18 @@ function assessConnection(
   const currentInterpretation = interpretationOf(current);
   const previousKey = localKeyOf(
     previousInterpretation,
-    previousChord
-      ? analysis.project.keyEvents
-          .filter((event) => event.tick <= previousChord.startTick)
-          .at(-1)!
-      : analysis.project.keyEvents[0],
+    projectKeyAtSpan(analysis, previous),
   );
   const currentKey = localKeyOf(
     currentInterpretation,
-    currentChord
-      ? analysis.project.keyEvents
-          .filter((event) => event.tick <= currentChord.startTick)
-          .at(-1)!
-      : analysis.project.keyEvents[0],
+    projectKeyAtSpan(analysis, current),
   );
   const keyMatches = sameKey(previousKey, currentKey);
   const contiguous = previous.toTick === current.fromTick;
-  const exceptionTags: RuleExceptionContext[] = [];
-  if (!keyMatches) exceptionTags.push("modulation");
-  if (previous.semantics?.pedalContext || current.semantics?.pedalContext)
-    exceptionTags.push("pedal-point");
-
   const confidence = combinedConfidence(
     previousInterpretation,
     currentInterpretation,
   );
-  if (confidence === "ambiguous" || confidence === "unknown")
-    exceptionTags.push("ambiguous-semantics");
 
   const previousFamily = familyOf(previousInterpretation);
   const currentFamily = familyOf(currentInterpretation);
@@ -151,7 +208,6 @@ function assessConnection(
       previousInterpretation?.id === currentInterpretation?.id && keyMatches
         ? "same-harmony"
         : "pivot-reinterpretation";
-    if (relation === "same-harmony") exceptionTags.push("same-harmony");
   } else if (previousKind === "cadential64") {
     targetMatched = currentFamily === "dominant";
     relation = "cadential64-target";
@@ -161,8 +217,11 @@ function assessConnection(
     previousInterpretation?.appliedTarget
   ) {
     const target = previousInterpretation?.appliedTarget;
-    targetMatched = Boolean(
-      target && currentInterpretation?.degree === target.degree,
+    targetMatched = targetMatches(
+      target,
+      currentInterpretation,
+      currentChord,
+      previousKey,
     );
     relation = "applied-target";
   } else if (
@@ -195,6 +254,7 @@ function assessConnection(
   }
 
   return Object.freeze({
+    connectionKey: `connection:${previous.id}->${current.id}`,
     previousSpanId: previous.id,
     currentSpanId: current.id,
     previousInterpretationId: previousInterpretation?.id,
@@ -203,7 +263,6 @@ function assessConnection(
     contiguous,
     sameKey: keyMatches,
     targetMatched,
-    exceptionTags: Object.freeze([...new Set(exceptionTags)]),
     evidence: Object.freeze([
       { code: "previous-family", value: previousFamily ?? "unknown" },
       { code: "current-family", value: currentFamily ?? "unknown" },

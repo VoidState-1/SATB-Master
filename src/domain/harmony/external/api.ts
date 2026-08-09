@@ -137,6 +137,8 @@ export interface ExternalRuleContext {
   sharedSettings: HarmonyAnalysis["project"]["ruleProfile"]["shared"];
   slices: ExternalRuleSliceV3[];
   harmonySpans: HarmonyAnalysis["harmonySpans"];
+  chordSpanIds: Record<string, readonly string[]>;
+  contextFacts: HarmonyAnalysis["contextFacts"];
   melodyTransitions: HarmonyAnalysis["melodyTransitions"];
   sliceTransitions: Array<
     Omit<
@@ -570,6 +572,8 @@ export function buildExternalRuleContext(
     sharedSettings: analysis.project.ruleProfile.shared,
     slices,
     harmonySpans: analysis.harmonySpans,
+    chordSpanIds: Object.fromEntries(analysis.chordSpanIds),
+    contextFacts: analysis.contextFacts,
     melodyTransitions: analysis.melodyTransitions,
     sliceTransitions: analysis.sliceTransitions.map((transition) => ({
       ...transition,

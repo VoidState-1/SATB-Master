@@ -9,10 +9,7 @@ import type {
   RuleDiagnostic,
   RuleEvaluation,
 } from "../../runtime";
-import type {
-  HarmonyRuleId,
-  RuleExceptionContext,
-} from "../../ruleTypes";
+import type { HarmonyRuleId } from "../../ruleTypes";
 import { VOICE_CONFIG, VOICE_ORDER, type VoiceId } from "../../../project";
 import {
   formatSpelledPitch,
@@ -39,7 +36,8 @@ export function diagnostic(
     params?: Record<string, string | number | boolean>;
     evidence?: DiagnosticEvidence[];
     confidence?: number;
-    exceptionContexts?: RuleExceptionContext[];
+    causeRefs?: string[];
+    coverageRefs?: string[];
   } = {},
 ): RuleDiagnostic {
   return {
@@ -56,7 +54,8 @@ export function diagnostic(
     params: options.params ?? {},
     evidence: options.evidence ?? [],
     confidence: options.confidence ?? 1,
-    exceptionContexts: options.exceptionContexts,
+    causeRefs: options.causeRefs,
+    coverageRefs: options.coverageRefs,
   };
 }
 

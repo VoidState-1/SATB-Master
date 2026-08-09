@@ -21,6 +21,10 @@ import {
   buildHarmonyConnections,
   type HarmonyConnectionAssessment,
 } from "./rules/connector";
+import {
+  buildHarmonyContextFacts,
+  type HarmonyContextFacts,
+} from "./rules/sharedFacts";
 
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown
   ? T
@@ -48,6 +52,7 @@ export interface AnalysisSlice {
 }
 
 export interface MelodyTransition {
+  readonly id: string;
   readonly voiceId: VoiceId;
   readonly previous: AnalysisNote;
   readonly current: AnalysisNote;
@@ -58,6 +63,7 @@ export interface MelodyTransition {
 }
 
 export interface SliceTransition {
+  readonly id: string;
   readonly previousIndex: number;
   readonly currentIndex: number;
   readonly previous: AnalysisSlice;
@@ -93,10 +99,11 @@ export interface HarmonyAnalysis {
   readonly slices: readonly AnalysisSlice[];
   readonly harmonySpans: readonly HarmonySpan[];
   readonly sliceSpanIds: ReadonlyMap<number, string>;
-  readonly chordSpanIds: ReadonlyMap<string, string>;
+  readonly chordSpanIds: ReadonlyMap<string, readonly string[]>;
   readonly melodyTransitions: readonly MelodyTransition[];
   readonly sliceTransitions: readonly SliceTransition[];
   readonly connections: readonly HarmonyConnectionAssessment[];
+  readonly contextFacts: HarmonyContextFacts;
   readonly notesByVoice: Readonly<Record<VoiceId, readonly AnalysisNote[]>>;
   readonly noteById: ReadonlyMap<string, AnalysisNote>;
   readonly noteVoiceById: ReadonlyMap<string, VoiceId>;
@@ -319,50 +326,53 @@ function chordIdentityKey(region: AnalysisChord) {
 }
 
 function buildHarmonySpans(
-  project: ProjectSnapshot,
+  _project: ProjectSnapshot,
   slices: readonly AnalysisSlice[],
 ) {
-  const regions = [...project.chordTrack.regions].sort(
-    (left, right) => left.startTick - right.startTick,
-  );
-  const groups: AnalysisChord[][] = [];
-  regions.forEach((region) => {
+  const groups: AnalysisSlice[][] = [];
+  slices.forEach((slice) => {
+    if (!slice.chord) return;
     const previous = groups.at(-1)?.at(-1);
     const canJoin = Boolean(
       previous &&
-        previous.startTick + previous.durationTicks === region.startTick &&
-        sameKey(
-          keyAtTick(project.keyEvents, previous.startTick),
-          keyAtTick(project.keyEvents, region.startTick),
+        previous.chord &&
+        previous.endTick === slice.tick &&
+        sameKey(previous.key, slice.key) &&
+        sameChordIdentityWithoutBass(
+          previous.chord.identity,
+          slice.chord.identity,
         ) &&
-        sameChordIdentityWithoutBass(previous.identity, region.identity) &&
-        sameSemanticContext(previous.semantics, region.semantics),
+        sameSemanticContext(previous.chord.semantics, slice.chord.semantics),
     );
-    if (canJoin) groups.at(-1)!.push(region);
-    else groups.push([region]);
+    if (canJoin) groups.at(-1)!.push(slice);
+    else groups.push([slice]);
   });
 
   const sliceSpanIds = new Map<number, string>();
-  const chordSpanIds = new Map<string, string>();
+  const chordSpanIds = new Map<string, string[]>();
   const harmonySpans = groups.map((group, groupIndex) => {
     const id = `harmony-span-${groupIndex + 1}`;
-    const regionIds = group.map((region) => region.id);
-    const regionIdSet = new Set(regionIds);
-    const sliceIndices = slices
-      .filter((slice) => slice.chord && regionIdSet.has(slice.chord.id))
-      .map((slice) => slice.index);
+    const regionIds = [
+      ...new Set(group.flatMap((slice) => (slice.chord ? [slice.chord.id] : []))),
+    ];
+    const sliceIndices = group.map((slice) => slice.index);
     sliceIndices.forEach((index) => sliceSpanIds.set(index, id));
-    regionIds.forEach((regionId) => chordSpanIds.set(regionId, id));
-    const first = group[0];
-    const last = group.at(-1)!;
+    regionIds.forEach((regionId) => {
+      const spanIds = chordSpanIds.get(regionId) ?? [];
+      spanIds.push(id);
+      chordSpanIds.set(regionId, spanIds);
+    });
+    const firstSlice = group[0];
+    const lastSlice = group.at(-1)!;
+    const first = firstSlice.chord!;
     const semantics = first.semantics;
     const confidence = semantics
       ? primaryHarmonyInterpretation(semantics).confidence
       : "unknown";
     return {
       id,
-      fromTick: first.startTick,
-      toTick: last.startTick + last.durationTicks,
+      fromTick: firstSlice.tick,
+      toTick: lastSlice.endTick,
       regionIds: Object.freeze(regionIds),
       sliceIndices: Object.freeze(sliceIndices),
       identityKey: chordIdentityKey(first),
@@ -385,7 +395,12 @@ function buildHarmonySpans(
   return {
     harmonySpans: Object.freeze(harmonySpans),
     sliceSpanIds,
-    chordSpanIds,
+    chordSpanIds: new Map(
+      [...chordSpanIds].map(([regionId, spanIds]) => [
+        regionId,
+        Object.freeze([...spanIds]),
+      ]),
+    ),
   };
 }
 
@@ -400,6 +415,7 @@ function buildSliceTransitions(
         (voiceId) => previous.notes[voiceId]?.id !== current.notes[voiceId]?.id,
       );
       return {
+        id: `slice-transition:${previous.index}->${current.index}`,
         previousIndex: index,
         currentIndex: current.index,
         previous,
@@ -434,6 +450,7 @@ function buildMelodyTransitions(
         current.startTick,
       );
       transitions.push({
+        id: `melody-transition:${voiceId}:${previous.id}->${current.id}`,
         voiceId,
         previous,
         current,
@@ -654,10 +671,18 @@ export function buildHarmonyAnalysis(
     snapshot.chordTrack.regions.map((chord) => [chord.id, chord] as const),
   );
   const sliceTransitions = buildSliceTransitions(slices, sliceSpanIds);
+  const melodyTransitions = buildMelodyTransitions(analysisShell, notesByVoice);
   const connections = buildHarmonyConnections({
     project: snapshot,
     harmonySpans,
     chordById,
+  });
+  const contextFacts = buildHarmonyContextFacts({
+    slices,
+    harmonySpans,
+    melodyTransitions,
+    sliceTransitions,
+    connections,
   });
 
   return Object.freeze({
@@ -667,9 +692,10 @@ export function buildHarmonyAnalysis(
     harmonySpans,
     sliceSpanIds,
     chordSpanIds,
-    melodyTransitions: buildMelodyTransitions(analysisShell, notesByVoice),
+    melodyTransitions,
     sliceTransitions,
     connections,
+    contextFacts,
     notesByVoice: Object.freeze(notesByVoice),
     noteById,
     noteVoiceById,

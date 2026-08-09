@@ -50,13 +50,20 @@ export interface HarmonyDiagnostic {
   messageKey: string;
   /** 同一音乐学根因跨切片重复出现时使用的稳定键；省略时退回 messageKey。 */
   rootCauseKey?: string;
+  /** 规则产生诊断所依据的稳定音乐学根因。 */
+  causeRefs?: string[];
+  /** 专用规则声明本条诊断能够覆盖的通用根因。 */
+  coverageRefs?: string[];
   params: Record<string, string | number | boolean>;
   evidence: DiagnosticEvidence[];
   confidence: number;
   exceptionContexts?: RuleExceptionContext[];
 }
 
-export type RuleDiagnostic = Omit<HarmonyDiagnostic, "id" | "severity">;
+export type RuleDiagnostic = Omit<
+  HarmonyDiagnostic,
+  "id" | "severity" | "exceptionContexts"
+>;
 
 export type RuleSkipReason =
   | "no-chords"

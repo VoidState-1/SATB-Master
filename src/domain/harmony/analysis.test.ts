@@ -682,12 +682,22 @@ describe("斯波索宾基础规则检查", () => {
         degreeAlteration: 0,
         quality: "major",
         inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "dominant",
+        },
       }),
       chordRegion(project, "subdominant", PPQ, PPQ, {
         degree: 4,
         degreeAlteration: 0,
         quality: "major",
         inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "subdominant",
+        },
       }),
     );
 
@@ -707,6 +717,11 @@ describe("斯波索宾基础规则检查", () => {
       quality: "major",
       inversion: 0,
       appliedTarget: 2,
+      designation: {
+        notationSystem: "spasobin",
+        kind: "applied-dominant",
+        primaryFunction: "dominant",
+      },
     };
     addChord(project, "secondary-dominant-1", 0, secondaryDominant);
     addChord(project, "secondary-dominant-2", 1, {
@@ -718,9 +733,86 @@ describe("斯波索宾基础规则检查", () => {
       degreeAlteration: 0,
       quality: "minor",
       inversion: 0,
+      designation: {
+        notationSystem: "spasobin",
+        kind: "side-degree",
+        primaryFunction: "subdominant",
+      },
     });
 
     expect(ruleIds(project)).not.toContain("function.applied-dominant-target");
+  });
+
+  it("指向属功能的副属目标允许经 K46 延迟完成", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    addChord(project, "applied-dominant", 0, {
+      degree: 5,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+      appliedTarget: 5,
+      designation: {
+        notationSystem: "spasobin",
+        kind: "applied-dominant",
+        primaryFunction: "dominant",
+      },
+    });
+    addChord(project, "cadential64", 1, {
+      degree: 1,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 2,
+      designation: {
+        notationSystem: "spasobin",
+        kind: "cadential64",
+        primaryFunction: "dominant",
+      },
+      cadenceRole: "cadential64",
+    });
+    addChord(project, "dominant", 2, {
+      degree: 5,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+      designation: {
+        notationSystem: "spasobin",
+        kind: "primary",
+        primaryFunction: "dominant",
+      },
+    });
+
+    expect(ruleIds(project)).not.toContain("function.applied-dominant-target");
+  });
+
+  it("副属目标不能只凭相同级数通过主次功能核对", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    addChord(project, "secondary-dominant", 0, {
+      degree: 5,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+      appliedTarget: 2,
+      designation: {
+        notationSystem: "spasobin",
+        kind: "applied-dominant",
+        primaryFunction: "dominant",
+      },
+    });
+    addChord(project, "wrong-function", 1, {
+      degree: 2,
+      degreeAlteration: 0,
+      quality: "minor",
+      inversion: 0,
+      designation: {
+        notationSystem: "spasobin",
+        kind: "side-degree",
+        primaryFunction: "tonic",
+      },
+    });
+
+    expect(ruleIds(project)).toContain("function.applied-dominant-target");
   });
 
   it("空白区间会中断功能进行判断", () => {

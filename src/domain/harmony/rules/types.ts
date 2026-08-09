@@ -100,7 +100,7 @@ export type RuleOptionDefinition =
 export interface HarmonyRuleDefinition {
   id: string;
   catalogNumber: string;
-  parentRuleId?: string;
+  coveredRuleIds: readonly string[];
   label: string;
   description: string;
   rationale: string;

@@ -2,6 +2,7 @@ import {
   chordIdentityToneSpellings,
   chordIdentityToneSpellingForDegree,
   primaryHarmonyInterpretation,
+  type FunctionalFamily,
 } from "../../../chordModel";
 import type { RuleDiagnostic } from "../../runtime";
 import type {
@@ -17,6 +18,7 @@ import {
   pitchClassEquals,
   scaleDegreePitchClass,
   toMidi,
+  type SpelledPitchClass,
 } from "../../../pitch";
 import {
   chordEvidence,
@@ -26,6 +28,10 @@ import {
   noteEvidence,
   supportsTertianResolutionRules,
 } from "../helpers/core";
+import {
+  functionalTargetMatches,
+  isCadential64Span,
+} from "../connector";
 
 type LeadingToneState = {
   voiceId: VoiceId;
@@ -33,6 +39,8 @@ type LeadingToneState = {
   sourceKeyId: string;
   sourceSpanId?: string;
   leadingMidi: number;
+  leadingTone: SpelledPitchClass;
+  targetTonic: SpelledPitchClass;
 };
 
 type SeventhState = {
@@ -66,6 +74,8 @@ type SecondaryDominantState = {
   sourceChordId: string;
   sourceToTick: number;
   targetDegree: number;
+  targetPrimaryFunction: FunctionalFamily;
+  targetSecondaryFunction?: FunctionalFamily;
 };
 
 function makeRuleState<T extends JsonValue>(
@@ -91,6 +101,61 @@ function stateStep(
   return { diagnostics, outgoing };
 }
 
+function supportsTendencyResolutionRules(
+  chord: RuleStepContext["slice"]["chord"],
+) {
+  if (!chord) return true;
+  return (
+    chord.identity.structure.kind === "tertian" &&
+    (!chord.semantics ||
+      (chord.semantics.interpretations.length === 1 &&
+        !chord.semantics.pedalContext))
+  );
+}
+
+function resolutionCauseRef(
+  context: RuleStepContext,
+  kind:
+    | "leading-tone"
+    | "chord-seventh"
+    | "dominant-ninth"
+    | "altered-tone",
+  sourceSpanId: string | undefined,
+  currentSpanId: string | undefined,
+  voiceId: VoiceId,
+) {
+  const connection = context.analysis.connections.find(
+    (candidate) =>
+      candidate.previousSpanId === sourceSpanId &&
+      candidate.currentSpanId === currentSpanId,
+  );
+  const connectionKey =
+    connection?.connectionKey ??
+    `connection:${sourceSpanId ?? "none"}->${currentSpanId ?? "none"}`;
+  return `resolution.${kind}|${connectionKey}|voice:${voiceId}`;
+}
+
+function leadingToneExpectation(context: RuleStepContext) {
+  const interpretation = context.slice.chord?.semantics
+    ? primaryHarmonyInterpretation(context.slice.chord.semantics)
+    : undefined;
+  const baseKey = interpretation?.localKey ?? context.slice.key;
+  const targetTonic = interpretation?.appliedTarget
+    ? scaleDegreePitchClass(baseKey, interpretation.appliedTarget.degree)
+    : context.slice.key.tonic;
+  const targetKey = interpretation?.appliedTarget
+    ? { tonic: targetTonic, mode: "major" as const }
+    : context.slice.key;
+  return {
+    leadingTone: scaleDegreePitchClass(
+      targetKey,
+      7,
+      targetKey.mode === "minor" ? 1 : 0,
+    ),
+    targetTonic,
+  };
+}
+
 export function leadingToneStateStep(
   context: RuleStepContext,
   incoming: readonly RuleStateEnvelope[],
@@ -99,8 +164,8 @@ export function leadingToneStateStep(
   const outgoing: RuleStateEnvelope[] = [];
   const currentSpanId = context.analysis.sliceSpanIds.get(context.sliceIndex);
   incoming.forEach((state) => {
-    if (!supportsTertianResolutionRules(context.slice.chord)) return;
-    const payload = state.payload as LeadingToneState;
+    if (!supportsTendencyResolutionRules(context.slice.chord)) return;
+    const payload = state.payload as unknown as LeadingToneState;
     if (payload.sourceKeyId !== context.slice.key.id) return;
     const active = context.slice.notes[payload.voiceId];
     // 声部进入休止后，后续起音已不再是可直接归属本次导音的解决音。
@@ -122,16 +187,11 @@ export function leadingToneStateStep(
       return;
     }
     const resolves =
-      pitchClassEquals(current.pitch, context.slice.key.tonic) &&
+      pitchClassEquals(current.pitch, payload.targetTonic) &&
       toMidi(current.pitch) - payload.leadingMidi === 1;
     if (!resolves) {
       const source = context.analysis.noteById.get(payload.sourceNoteId);
       if (source) {
-        const leadingTone = scaleDegreePitchClass(
-          context.slice.key,
-          7,
-          context.slice.key.mode === "minor" ? 1 : 0,
-        );
         diagnostics.push(
           diagnostic(
             "resolution.leading-tone",
@@ -141,7 +201,7 @@ export function leadingToneStateStep(
             [source, current],
             "导音未上行解决",
             "书写导音 " +
-              formatPitchClass(leadingTone) +
+              formatPitchClass(payload.leadingTone) +
               " 通常应上行半音解决到主音。",
             {
               params: {
@@ -149,7 +209,8 @@ export function leadingToneStateStep(
                   formatPitchClass(context.slice.key.tonic) +
                   " " +
                   context.slice.key.mode,
-                leadingTone: formatPitchClass(leadingTone),
+                leadingTone: formatPitchClass(payload.leadingTone),
+                targetTonic: formatPitchClass(payload.targetTonic),
               },
               evidence: [
                 noteEvidence(source, "导音"),
@@ -164,6 +225,15 @@ export function leadingToneStateStep(
                     context.slice.key.mode,
                 },
               ],
+              causeRefs: [
+                resolutionCauseRef(
+                  context,
+                  "leading-tone",
+                  payload.sourceSpanId,
+                  currentSpanId,
+                  payload.voiceId,
+                ),
+              ],
             },
           ),
         );
@@ -173,15 +243,12 @@ export function leadingToneStateStep(
   context.slice.attackVoiceIds.forEach((voiceId) => {
     const note = context.slice.notes[voiceId];
     if (!note) return;
-    if (!supportsTertianResolutionRules(context.slice.chord)) return;
+    if (!supportsTendencyResolutionRules(context.slice.chord)) return;
     const alreadyPending = outgoing.some(
-      (state) => (state.payload as LeadingToneState).voiceId === voiceId,
+      (state) =>
+        (state.payload as unknown as LeadingToneState).voiceId === voiceId,
     );
-    const leadingTone = scaleDegreePitchClass(
-      context.slice.key,
-      7,
-      context.slice.key.mode === "minor" ? 1 : 0,
-    );
+    const { leadingTone, targetTonic } = leadingToneExpectation(context);
     if (!alreadyPending && pitchClassEquals(note.pitch, leadingTone)) {
       outgoing.push(
         makeRuleState(
@@ -194,6 +261,8 @@ export function leadingToneStateStep(
             sourceKeyId: context.slice.key.id,
             ...(currentSpanId ? { sourceSpanId: currentSpanId } : {}),
             leadingMidi: toMidi(note.pitch),
+            leadingTone,
+            targetTonic,
           } as unknown as JsonValue,
           {
             voiceIds: [voiceId],
@@ -215,7 +284,7 @@ export function seventhStateStep(
   const outgoing: RuleStateEnvelope[] = [];
   const currentSpanId = context.analysis.sliceSpanIds.get(context.sliceIndex);
   incoming.forEach((state) => {
-    if (!supportsTertianResolutionRules(context.slice.chord)) return;
+    if (!supportsTendencyResolutionRules(context.slice.chord)) return;
     const payload = state.payload as SeventhState;
     const active = context.slice.notes[payload.voiceId];
     // 七音解决同样要求连续的声部线条；休止会终止本次待判定状态。
@@ -259,6 +328,15 @@ export function seventhStateStep(
                 noteEvidence(source, "和弦七音"),
                 noteEvidence(current, "后继音"),
               ],
+              causeRefs: [
+                resolutionCauseRef(
+                  context,
+                  "chord-seventh",
+                  payload.sourceSpanId,
+                  currentSpanId,
+                  payload.voiceId,
+                ),
+              ],
             },
           ),
         );
@@ -268,9 +346,9 @@ export function seventhStateStep(
   context.slice.attackVoiceIds.forEach((voiceId) => {
     const note = context.slice.notes[voiceId];
     const chord = context.slice.chord;
-    if (!note || !chord || !supportsTertianResolutionRules(chord)) return;
+    if (!note || !chord || !supportsTendencyResolutionRules(chord)) return;
     const tones = chordIdentityToneSpellings(chord.identity);
-    if (tones.length !== 4 || !pitchClassEquals(note.pitch, tones[3])) return;
+    if (tones.length < 4 || !pitchClassEquals(note.pitch, tones[3])) return;
     const alreadyPending = outgoing.some(
       (state) => (state.payload as SeventhState).voiceId === voiceId,
     );
@@ -354,6 +432,15 @@ export function dominantNinthStateStep(
               noteEvidence(source, "属九音"),
               chordEvidence(targetChord),
               noteEvidence(active, "后继音"),
+            ],
+            causeRefs: [
+              resolutionCauseRef(
+                context,
+                "dominant-ninth",
+                payload.sourceSpanId,
+                currentSpanId,
+                payload.voiceId,
+              ),
             ],
           },
         ),
@@ -455,6 +542,15 @@ export function alteredToneStateStep(
               chordEvidence(targetChord),
               noteEvidence(active, "后继音"),
             ],
+            causeRefs: [
+              resolutionCauseRef(
+                context,
+                "altered-tone",
+                payload.sourceSpanId,
+                currentSpanId,
+                payload.voiceId,
+              ),
+            ],
           },
         ),
       );
@@ -513,29 +609,39 @@ export function secondaryDominantStateStep(
   const diagnostics: RuleDiagnostic[] = [];
   const outgoing: RuleStateEnvelope[] = [];
   if (context.isSpanStart && context.span) {
+    const currentSpan = context.span;
     incoming.forEach((state) => {
       const payload = state.payload as SecondaryDominantState;
       const connection = context.analysis.connections.find(
-        (candidate) =>
-          candidate.previousSpanId === payload.sourceSpanId &&
-          candidate.currentSpanId === context.span!.id,
+        (candidate) => candidate.currentSpanId === currentSpan.id,
       );
-      const resolves = Boolean(
-        connection?.relation === "applied-target" &&
-          connection.targetMatched &&
-          connection.contiguous &&
-          connection.sameKey,
+      const resolves = functionalTargetMatches(
+        context.analysis,
+        payload.sourceSpanId,
+        currentSpan.id,
+        {
+          degree: payload.targetDegree as 1 | 2 | 3 | 4 | 5 | 6 | 7,
+          primaryFunction: payload.targetPrimaryFunction,
+          secondaryFunction: payload.targetSecondaryFunction,
+        },
       );
-      if (!resolves) {
+      const allowedCadential64 =
+        payload.targetPrimaryFunction === "dominant" &&
+        isCadential64Span(currentSpan);
+      if (allowedCadential64 && connection?.contiguous && connection.sameKey) {
+        outgoing.push(state);
+      } else if (!resolves) {
         const previous = context.analysis.chordById.get(payload.sourceChordId);
-        const current = context.span?.regionIds
+        const current = currentSpan.regionIds
           .map((id) => context.analysis.chordById.get(id))
           .find(Boolean);
         if (
           previous &&
           current &&
           connection?.contiguous &&
-          connection.sameKey
+          connection.sameKey &&
+          connection.confidence !== "ambiguous" &&
+          connection.confidence !== "unknown"
         ) {
           diagnostics.push(
             diagnostic(
@@ -551,6 +657,9 @@ export function secondaryDominantStateStep(
               {
                 chordIds: [previous.id, current.id],
                 evidence: [chordEvidence(previous), chordEvidence(current)],
+                causeRefs: [
+                  `function.applied-dominant-target|${connection.connectionKey}`,
+                ],
               },
             ),
           );
@@ -580,6 +689,14 @@ export function secondaryDominantStateStep(
             sourceChordId: chord.id,
             sourceToTick: context.span.toTick,
             targetDegree: sourceInterpretation.appliedTarget.degree,
+            targetPrimaryFunction:
+              sourceInterpretation.appliedTarget.primaryFunction,
+            ...(sourceInterpretation.appliedTarget.secondaryFunction
+              ? {
+                  targetSecondaryFunction:
+                    sourceInterpretation.appliedTarget.secondaryFunction,
+                }
+              : {}),
           } as unknown as JsonValue,
           { chordIds: [chord.id], spanIds: [context.span.id] },
         ),

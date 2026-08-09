@@ -1,6 +1,5 @@
 import { analysisKeyAtTick, type HarmonyAnalysis } from "../../analysis";
 import type { RuleConfig, RuleDiagnostic } from "../../runtime";
-import type { RuleExceptionContext } from "../../ruleTypes";
 import { VOICE_ORDER } from "../../../project";
 import {
   formatSpelledPitch,
@@ -8,7 +7,6 @@ import {
   toMidi,
   writtenInterval,
 } from "../../../pitch";
-import { bassMotionFact } from "../sharedFacts";
 import {
   diagnostic,
   direction,
@@ -168,7 +166,6 @@ export function voiceLeadingRule(
         const similarMotion =
           upperDirection !== 0 && upperDirection === lowerDirection;
         let matches = false;
-        let exceptionContexts: RuleExceptionContext[] | undefined;
         if (
           ruleId ===
             "voice-leading.unequal-fifths-perfect-to-diminished" ||
@@ -191,7 +188,6 @@ export function voiceLeadingRule(
           const currentPerfect = isPerfectFifth(currentWritten);
           const isOuter =
             upperId === "soprano" && lowerId === "bass";
-          const lowStepwise = bassMotionFact(transition) === "step-up";
           matches =
             similarMotion &&
             ((ruleId ===
@@ -208,13 +204,6 @@ export function voiceLeadingRule(
                 !isOuter &&
                 previousDiminished &&
                 currentPerfect));
-          if (
-            matches &&
-            ruleId ===
-              "voice-leading.unequal-fifths-inner-diminished-to-perfect" &&
-            lowStepwise
-          )
-            exceptionContexts = ["bass-step-up"];
         } else if (ruleId === "voice-leading.parallel-fifths" || ruleId === "voice-leading.parallel-octaves") {
           const target = ruleId === "voice-leading.parallel-fifths" ? 7 : 0;
           matches =
@@ -242,19 +231,6 @@ export function voiceLeadingRule(
             (toMidi(currentUpper.pitch) < toMidi(previousLower.pitch) ||
               toMidi(currentLower.pitch) > toMidi(previousUpper.pitch));
         }
-        if (
-          matches &&
-          transition.sameHarmony &&
-          (ruleId === "voice-leading.overlap" ||
-            ruleId === "voice-leading.hidden-fifth" ||
-            ruleId === "voice-leading.hidden-octave" ||
-            ruleId ===
-              "voice-leading.unequal-fifths-perfect-to-diminished")
-        )
-          exceptionContexts = [
-            ...(exceptionContexts ?? []),
-            "same-harmony",
-          ];
         if (!matches) continue;
         const title =
           ruleId === "voice-leading.parallel-fifths"
@@ -320,7 +296,6 @@ export function voiceLeadingRule(
                   `${voiceName(analysis, lowerId)}当前音`,
                 ),
               ],
-              exceptionContexts,
             },
           ),
         );

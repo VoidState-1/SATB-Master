@@ -176,6 +176,9 @@ export function augmentedSixthResolutionRule(
             ? "Fr+6"
             : "Ger+6"
         : "增六和弦";
+    const genericCause =
+      `resolution.augmented-sixth|${connection.connectionKey}`;
+    const specificCause = `${ruleId}|${connection.connectionKey}`;
     diagnostics.push(
       diagnostic(
         ruleId,
@@ -208,6 +211,11 @@ export function augmentedSixthResolutionRule(
               ? [noteEvidence(characteristicTarget, "特有音后继音")]
               : []),
           ],
+          causeRefs: [specificCause],
+          coverageRefs:
+            ruleId === "resolution.augmented-sixth"
+              ? undefined
+              : [genericCause],
         },
       ),
     );
@@ -240,10 +248,18 @@ export function deceptiveCadenceTargetRule(analysis: HarmonyAnalysis) {
     const targetChord = targetSpan?.regionIds
       .map((id) => analysis.chordById.get(id))
       .find(Boolean);
-    if (!sourceChord) return;
+    if (
+      !sourceChord ||
+      !connection ||
+      !connection.contiguous ||
+      !connection.sameKey ||
+      connection.confidence === "ambiguous" ||
+      connection.confidence === "unknown"
+    )
+      return;
     const resolves = Boolean(
       sourceIsDominant &&
-        connection?.relation === "deceptive" &&
+        connection.relation === "deceptive" &&
         connection.contiguous &&
         connection.sameKey,
     );
@@ -280,9 +296,9 @@ export function deceptiveCadenceTargetRule(analysis: HarmonyAnalysis) {
               value: "D → TSVI",
             },
           ],
-          exceptionContexts: connection
-            ? [...connection.exceptionTags]
-            : ["insufficient-context"],
+          causeRefs: [
+            `function.deceptive-cadence-target|${connection.connectionKey}`,
+          ],
         },
       ),
     );
@@ -381,6 +397,8 @@ export function deceptiveVoiceLeadingRule(analysis: HarmonyAnalysis) {
     ];
     const sourceNotes = activeNotes(sourceSlice).map(({ note }) => note);
     const targetNotes = activeNotes(targetSlice).map(({ note }) => note);
+    const targetCause =
+      `function.deceptive-cadence-target|${connection.connectionKey}`;
     diagnostics.push(
       diagnostic(
         "connection.deceptive-voice-leading",
@@ -407,6 +425,10 @@ export function deceptiveVoiceLeadingRule(analysis: HarmonyAnalysis) {
             ...(targetBass ? [noteEvidence(targetBass, "TSVI 低音")] : []),
             ...leadingSources.map(({ note }) => noteEvidence(note, "导音")),
           ],
+          causeRefs: [
+            `connection.deceptive-voice-leading|${connection.connectionKey}`,
+          ],
+          coverageRefs: [targetCause],
         },
       ),
     );

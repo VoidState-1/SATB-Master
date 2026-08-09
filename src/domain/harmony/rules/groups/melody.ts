@@ -9,11 +9,7 @@ import {
 } from "../helpers/core";
 
 function validMelodyTransitions(analysis: HarmonyAnalysis) {
-  return analysis.melodyTransitions.filter(
-    (transition) =>
-      transition.current.startTick >=
-      transition.previous.startTick + transition.previous.durationTicks,
-  );
+  return analysis.melodyTransitions.filter((transition) => transition.contiguous);
 }
 
 export function melodicLeapRule(
@@ -23,12 +19,15 @@ export function melodicLeapRule(
   const diagnostics: RuleDiagnostic[] = [];
   validMelodyTransitions(analysis).forEach((transition) => {
     const interval = Math.abs(transition.writtenInterval.semitones);
+    const writtenName = intervalName(transition.writtenInterval);
     const matches =
       ruleId === "melody.leap-over-octave"
         ? interval > 12
         : ruleId === "melody.large-leap"
           ? interval > 7 && interval <= 12
-          : interval === 6;
+          : writtenName.altered &&
+            ((writtenName.number === 4 && writtenName.quality === "增") ||
+              (writtenName.number === 5 && writtenName.quality === "减"));
     if (!matches) return;
     const title =
       ruleId === "melody.leap-over-octave"
@@ -42,7 +41,6 @@ export function melodicLeapRule(
         : ruleId === "melody.large-leap"
           ? `${voiceName(analysis, transition.voiceId)}出现大于纯五度的跳进，需检查前后旋律方向。`
           : `${voiceName(analysis, transition.voiceId)}出现三全音跳进。`;
-    const writtenName = intervalName(transition.writtenInterval);
     diagnostics.push(
       diagnostic(
         ruleId,
@@ -66,10 +64,6 @@ export function melodicLeapRule(
                   : `${interval} 个半音`,
             },
           ],
-          exceptionContexts:
-            transition.sameHarmony && ruleId !== "melody.leap-over-octave"
-              ? ["same-harmony"]
-              : undefined,
         },
       ),
     );
@@ -113,9 +107,6 @@ export function augmentedDiminishedIntervalRule(
             noteEvidence(transition.current, "当前音"),
             { kind: "interval", label: "书写音程", value: named.label },
           ],
-          exceptionContexts: transition.sameHarmony
-            ? ["same-harmony"]
-            : undefined,
         },
       ),
     );

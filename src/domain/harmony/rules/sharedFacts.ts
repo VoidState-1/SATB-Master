@@ -1,6 +1,7 @@
 import { chordIdentityToneSpellings } from "../../chordModel";
 import type {
   AnalysisChord,
+  HarmonyAnalysis,
   AnalysisNote,
   AnalysisSlice,
   SliceTransition,
@@ -35,6 +36,18 @@ export interface ChordMemberFact {
   note: AnalysisNote;
   chordToneIndex?: number;
   isChordTone: boolean;
+}
+
+export interface HarmonyContextFacts {
+  readonly sameHarmonyTransitionIds: readonly string[];
+  readonly arpeggiationTransitionIds: readonly string[];
+  readonly voiceExchangeTransitionIds: readonly string[];
+  readonly innerVoiceTransitionIds: readonly string[];
+  readonly bassStepUpTransitionIds: readonly string[];
+  readonly nonchordToneNoteIds: readonly string[];
+  readonly pedalSpanIds: readonly string[];
+  readonly cadenceSpanIds: readonly string[];
+  readonly modulationConnectionIds: readonly string[];
 }
 
 function motion(previous: AnalysisNote, current: AnalysisNote): MotionDirection {
@@ -126,4 +139,115 @@ export function chordMemberFacts(
       ];
     }),
   );
+}
+
+export function buildHarmonyContextFacts(
+  analysis: Pick<
+    HarmonyAnalysis,
+    | "slices"
+    | "harmonySpans"
+    | "melodyTransitions"
+    | "sliceTransitions"
+    | "connections"
+  >,
+): HarmonyContextFacts {
+  const sliceByTick = (tick: number) =>
+    analysis.slices.find(
+      (slice) => slice.tick <= tick && tick < slice.endTick,
+    );
+  const sameHarmonyTransitionIds = [
+    ...analysis.sliceTransitions
+      .filter((transition) => transition.sameHarmony && transition.contiguous)
+      .map((transition) => transition.id),
+    ...analysis.melodyTransitions
+      .filter((transition) => transition.sameHarmony && transition.contiguous)
+      .map((transition) => transition.id),
+  ];
+  const arpeggiationTransitionIds = analysis.melodyTransitions
+    .filter((transition) => {
+      if (!transition.sameHarmony || !transition.contiguous) return false;
+      const previousSlice = sliceByTick(transition.previous.startTick);
+      const currentSlice = sliceByTick(transition.current.startTick);
+      if (!previousSlice?.chord || !currentSlice?.chord) return false;
+      const previousMember = chordMemberFacts(
+        previousSlice,
+        previousSlice.chord,
+      ).find((fact) => fact.voiceId === transition.voiceId);
+      const currentMember = chordMemberFacts(
+        currentSlice,
+        currentSlice.chord,
+      ).find((fact) => fact.voiceId === transition.voiceId);
+      return Boolean(previousMember?.isChordTone && currentMember?.isChordTone);
+    })
+    .map((transition) => transition.id);
+  const voiceExchangeTransitionIds = analysis.sliceTransitions
+    .filter((transition) => {
+      const changed = transition.changedVoiceIds.filter(
+        (voiceId) =>
+          transition.previous.notes[voiceId] && transition.current.notes[voiceId],
+      );
+      return changed.some((left, leftIndex) =>
+        changed.slice(leftIndex + 1).some((right) => {
+          const previousLeft = transition.previous.notes[left]!;
+          const previousRight = transition.previous.notes[right]!;
+          const currentLeft = transition.current.notes[left]!;
+          const currentRight = transition.current.notes[right]!;
+          return (
+            pitchClassEquals(previousLeft.pitch, currentRight.pitch) &&
+            pitchClassEquals(previousRight.pitch, currentLeft.pitch)
+          );
+        }),
+      );
+    })
+    .map((transition) => transition.id);
+  const innerVoiceTransitionIds = analysis.sliceTransitions
+    .filter(
+      (transition) =>
+        transition.changedVoiceIds.length > 0 &&
+        transition.changedVoiceIds.every(
+          (voiceId) => voiceId !== "soprano" && voiceId !== "bass",
+        ),
+    )
+    .map((transition) => transition.id);
+  const bassStepUpTransitionIds = analysis.sliceTransitions
+    .filter((transition) => bassMotionFact(transition) === "step-up")
+    .map((transition) => transition.id);
+  const nonchordToneNoteIds = [
+    ...new Set(
+      analysis.slices.flatMap((slice) => {
+        if (!slice.chord) return [];
+        return chordMemberFacts(slice, slice.chord)
+          .filter((fact) => !fact.isChordTone && Boolean(fact.note.nonChordToneRole))
+          .map((fact) => fact.note.id);
+      }),
+    ),
+  ];
+
+  return Object.freeze({
+    sameHarmonyTransitionIds: Object.freeze(sameHarmonyTransitionIds),
+    arpeggiationTransitionIds: Object.freeze(arpeggiationTransitionIds),
+    voiceExchangeTransitionIds: Object.freeze(voiceExchangeTransitionIds),
+    innerVoiceTransitionIds: Object.freeze(innerVoiceTransitionIds),
+    bassStepUpTransitionIds: Object.freeze(bassStepUpTransitionIds),
+    nonchordToneNoteIds: Object.freeze(nonchordToneNoteIds),
+    pedalSpanIds: Object.freeze(
+      analysis.harmonySpans
+        .filter((span) => Boolean(span.semantics?.pedalContext))
+        .map((span) => span.id),
+    ),
+    cadenceSpanIds: Object.freeze(
+      analysis.harmonySpans
+        .filter((span) => Boolean(span.semantics?.cadenceRole))
+        .map((span) => span.id),
+    ),
+    modulationConnectionIds: Object.freeze(
+      analysis.connections
+        .filter(
+          (connection) =>
+            !connection.sameKey ||
+            connection.relation === "pivot-reinterpretation",
+        )
+        .map((connection) => connection.connectionKey),
+    ),
+  });
 }

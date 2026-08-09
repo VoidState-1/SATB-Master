@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildHarmonyAnalysis } from "../analysis";
-import type { HarmonyDiagnostic, RuleDefinition } from "../runtime";
+import type {
+  HarmonyDiagnostic,
+  RuleDefinition,
+  RuleDiagnostic,
+} from "../runtime";
 import {
   createEmptyProject,
   PPQ,
@@ -12,6 +16,7 @@ import {
 } from "../../project";
 import { HARMONY_RULE_DEFINITIONS } from "./catalog";
 import { arbitrateDiagnostics } from "./diagnosticArbiter";
+import { planRuleApplicability } from "./applicability";
 import { voicePairTransitionFacts } from "./sharedFacts";
 
 function semantics(
@@ -143,7 +148,7 @@ describe("和声 span 与连接器", () => {
     });
   });
 
-  it("持续低音语义成为连接器的共享特例标签", () => {
+  it("持续低音语义成为分析层共享事实", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
     project.chordTrack.regions = [
@@ -151,13 +156,83 @@ describe("和声 span 与连接器", () => {
       region("next", PPQ, PPQ, { root: "G" }),
     ];
 
-    expect(
-      buildHarmonyAnalysis(project, 1).connections[0].exceptionTags,
-    ).toContain("pedal-point");
+    const analysis = buildHarmonyAnalysis(project, 1);
+    expect(analysis.contextFacts.pedalSpanIds).toContain(
+      analysis.harmonySpans[0].id,
+    );
   });
 });
 
 describe("共享事实与诊断仲裁", () => {
+  it("分析层统一生成同和弦与分解和弦事实", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions = [region("tonic", 0, PPQ * 2)];
+    setLine(project, "soprano", [
+      note("s-c", 0, "C", 5),
+      note("s-e", PPQ, "E", 5),
+    ]);
+
+    const analysis = buildHarmonyAnalysis(project, 1);
+    const transitionId = analysis.melodyTransitions[0].id;
+    expect(analysis.contextFacts.sameHarmonyTransitionIds).toContain(
+      transitionId,
+    );
+    expect(analysis.contextFacts.arpeggiationTransitionIds).toContain(
+      transitionId,
+    );
+  });
+
+  it("没有明确功能标记时不按级数猜测 T/S/D", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions = [
+      region("degree-five", 0, PPQ, { root: "G", degree: 5 }),
+      region("degree-four", PPQ, PPQ, { root: "C", degree: 1 }),
+    ];
+
+    expect(buildHarmonyAnalysis(project, 1).connections[0].relation).toBe(
+      "unknown",
+    );
+  });
+
+  it("适用性只读取宿主事实，不接受诊断伪造公共特例", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    setLine(project, "soprano", [
+      note("s-c", 0, "C", 5),
+      note("s-a", PPQ, "A", 5),
+    ]);
+    const analysis = buildHarmonyAnalysis(project, 1);
+    const definition = HARMONY_RULE_DEFINITIONS.find(
+      (candidate) => candidate.id === "melody.large-leap",
+    )!;
+    const diagnostic: RuleDiagnostic = {
+      ruleId: definition.id,
+      source: "builtin",
+      tick: PPQ,
+      endTick: PPQ * 2,
+      voiceIds: ["soprano"],
+      noteIds: ["s-c", "s-a"],
+      chordIds: [],
+      title: definition.label,
+      message: "测试",
+      messageKey: "test",
+      params: {},
+      evidence: [],
+      confidence: 1,
+    };
+
+    expect(
+      planRuleApplicability(
+        definition,
+        diagnostic,
+        analysis,
+        definition.defaultExceptionPolicies,
+      ).policy,
+    ).toBe("strict");
+  });
+
   it("所有声部对共用同一低音上行级进事实", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
@@ -220,5 +295,59 @@ describe("共享事实与诊断仲裁", () => {
 
     expect(forward.map((item) => item.ruleId)).toEqual(["melody.tritone"]);
     expect(reverse.map((item) => item.ruleId)).toEqual(["melody.tritone"]);
+  });
+
+  it("专用规则可按稳定根因覆盖多个通用规则", () => {
+    const leadingCause =
+      "resolution.leading-tone|connection:span-a->span-b|voice:alto";
+    const seventhCause =
+      "resolution.chord-seventh|connection:span-a->span-b|voice:tenor";
+    const base: HarmonyDiagnostic = {
+      id: "base",
+      ruleId: "resolution.leading-tone",
+      source: "builtin",
+      severity: "warning",
+      tick: PPQ,
+      endTick: PPQ * 2,
+      voiceIds: ["alto"],
+      noteIds: ["leading-note"],
+      chordIds: ["dominant-seventh"],
+      title: "通用解决",
+      message: "通用诊断",
+      messageKey: "generic-resolution",
+      params: {},
+      evidence: [],
+      confidence: 1,
+      causeRefs: [leadingCause],
+    };
+    const seventh: HarmonyDiagnostic = {
+      ...base,
+      id: "seventh",
+      ruleId: "resolution.chord-seventh",
+      voiceIds: ["tenor"],
+      noteIds: ["seventh-note"],
+      causeRefs: [seventhCause],
+    };
+    const specific: HarmonyDiagnostic = {
+      ...base,
+      id: "specific",
+      ruleId: "connection.dominant-seventh",
+      voiceIds: [],
+      noteIds: [],
+      title: "属七和弦解决",
+      message: "联合诊断",
+      messageKey: "dominant-seventh-resolution",
+      causeRefs: [
+        "connection.dominant-seventh|connection:span-a->span-b",
+      ],
+      coverageRefs: [leadingCause, seventhCause],
+    };
+
+    expect(
+      arbitrateDiagnostics(
+        [base, seventh, specific],
+        HARMONY_RULE_DEFINITIONS as readonly RuleDefinition[],
+      ).map((item) => item.ruleId),
+    ).toEqual(["connection.dominant-seventh"]);
   });
 });
