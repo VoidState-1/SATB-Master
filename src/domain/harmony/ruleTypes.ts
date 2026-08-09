@@ -9,6 +9,7 @@ export {
   HARMONY_RULE_DEFINITION_BY_ID,
   HARMONY_RULE_GROUPS,
   HARMONY_RULE_SEVERITY_OPTIONS,
+  HARMONY_RULE_CATALOG_REVISION,
   chordDependentRuleIds,
   defaultHarmonyRuleSeverities,
 } from "./rules/catalog";

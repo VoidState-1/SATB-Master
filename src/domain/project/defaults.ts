@@ -1,6 +1,11 @@
 import type { ProjectDocument, RuleProfile, SatbTrack, VoiceId } from "./types";
 import { PPQ, PROJECT_SCHEMA_VERSION } from "./types";
 import { VOICE_CONFIG } from "./voice";
+import {
+  HARMONY_RULE_CATALOG_REVISION,
+  HARMONY_RULE_DEFINITIONS,
+  type RuleInstanceSettings,
+} from "../harmony/ruleTypes";
 
 export function createId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -35,8 +40,20 @@ function createTrack(id: VoiceId, program: number): SatbTrack {
 }
 
 export function createDefaultRuleProfile(): RuleProfile {
+  const builtin = Object.fromEntries(
+    HARMONY_RULE_DEFINITIONS.map((definition) => [
+      definition.id,
+      {
+        severity: definition.implemented ? definition.defaultSeverity : "off",
+        configVersion: definition.configVersion,
+        config: structuredClone(definition.defaultConfig),
+        exceptions: { ...definition.defaultExceptionPolicies },
+      } satisfies RuleInstanceSettings,
+    ]),
+  );
   return {
-    profileVersion: 1,
+    profileVersion: 2,
+    catalogRevision: HARMONY_RULE_CATALOG_REVISION,
     title: "斯波索宾基础规则",
     shared: {
       voiceRanges: {
@@ -47,7 +64,7 @@ export function createDefaultRuleProfile(): RuleProfile {
       },
       strictFourPartTexture: false,
     },
-    builtin: {},
+    builtin,
     external: [],
   };
 }

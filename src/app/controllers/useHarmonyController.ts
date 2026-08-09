@@ -24,6 +24,7 @@ import {
   setBuiltinRuleConfig,
   setBuiltinRuleException,
   setBuiltinRuleSeverity,
+  upgradeBuiltinRuleProfileSnapshot,
 } from "../../domain/ruleProfile";
 import { useExternalRuleLibrary } from "../../hooks/useExternalRuleLibrary";
 import { openRuleProfileFile, saveRuleProfileFile } from "../../services/desktop";
@@ -54,6 +55,7 @@ export function useHarmonyController({
   const harmonySchedulerRef = useRef(createHarmonyRuleScheduler());
   const externalRuleRuntimeRef = useRef(new ExternalRuleRuntime());
   const harmonyRevisionRef = useRef(0);
+  const profileUpgradePromptsRef = useRef(new Set<string>());
   const [externalRuleFailures, setExternalRuleFailures] = useState<
     ExternalRuleFailure[]
   >([]);
@@ -61,6 +63,39 @@ export function useHarmonyController({
     () => resolveBuiltinRuleProfile(project),
     [project],
   );
+  useEffect(() => {
+    if (!resolvedRuleProfile.profileUpgradeRequired) return;
+    const promptKey = [
+      project.id,
+      project.ruleProfile.catalogRevision,
+      ...resolvedRuleProfile.addedRuleIds,
+    ].join(":");
+    if (profileUpgradePromptsRef.current.has(promptKey)) return;
+    profileUpgradePromptsRef.current.add(promptKey);
+    void requestConfirmation({
+      title: "规则目录已更新",
+      message:
+        `当前工程缺少 ${resolvedRuleProfile.addedRuleIds.length} 条规则配置。` +
+        "补齐后新增规则仍保持关闭，不会改变当前检查结果。",
+      confirmLabel: "更新工程配置",
+      cancelLabel: "暂不更新",
+    }).then((confirmed) => {
+      if (!confirmed) return;
+      history.commit(
+        replaceProject(project, (draft) => {
+          upgradeBuiltinRuleProfileSnapshot(draft);
+        }),
+      );
+      showNotice("已更新工程规则目录，新增规则保持关闭");
+    });
+  }, [
+    history,
+    project,
+    requestConfirmation,
+    resolvedRuleProfile.addedRuleIds,
+    resolvedRuleProfile.profileUpgradeRequired,
+    showNotice,
+  ]);
 
   const [harmonyResult, setHarmonyResult] = useState(() =>
     checkHarmony(

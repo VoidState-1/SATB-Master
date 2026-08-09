@@ -329,11 +329,12 @@ describe("schema v2 -> v3 迁移", () => {
     expect(validateProject(migrated)).toBe(true);
     expect(migrated?.auxiliaryTracks).toEqual([]);
     expect(migrated?.ruleProfile).toMatchObject({
-      profileVersion: 1,
+      profileVersion: 2,
+      catalogRevision: 1,
       title: "斯波索宾基础规则",
-      builtin: {},
       external: [],
     });
+    expect(Object.keys(migrated!.ruleProfile.builtin)).toHaveLength(81);
     expect(migrated?.chordTrack.displayMode).toBe("roman-absolute");
     expect(migrated?.loop).toEqual(legacy.loop);
     expect(migrated?.exercise).toEqual(legacy.exercise);

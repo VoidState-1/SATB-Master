@@ -50,7 +50,7 @@ export function BuiltinRuleDetails({
       </header>
       {!rule.implemented ? (
         <div className="rule-implementation-note" role="status">
-          本项已进入规则目录，但尚无可执行实现。当前版本不会运行或保存针对它的修改。
+          本项已进入规则目录，但尚无可执行实现。设置会随工程保存，当前版本不会运行它。
         </div>
       ) : null}
       <section className="rule-details-section">
@@ -66,7 +66,6 @@ export function BuiltinRuleDetails({
           <span>严重程度</span>
           <select
             value={ruleSeverities[rule.id]}
-            disabled={!rule.implemented}
             onChange={(event) =>
               onSetRuleSeverity(
                 rule.id,
@@ -85,20 +84,17 @@ export function BuiltinRuleDetails({
       <RuleOptionFields
         options={rule.options}
         config={ruleConfigs[rule.id] ?? rule.defaultConfig}
-        disabled={!rule.implemented}
         onPatch={(patch) => onSetRuleConfig(rule.id, patch)}
       />
       <RuleExceptionFields
         contexts={rule.supportedExceptionContexts}
         defaults={rule.defaultExceptionPolicies}
         exceptions={ruleExceptions[rule.id] ?? {}}
-        disabled={!rule.implemented}
         onChange={(policy) => onSetRuleException(rule.id, policy)}
       />
       <button
         type="button"
         className="command-button rule-reset-button"
-        disabled={!rule.implemented}
         onClick={() => onResetRule(rule.id)}
       >
         <RotateCcw aria-hidden="true" />

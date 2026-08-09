@@ -179,7 +179,7 @@ function assertRuleProfileEnvelope(value: unknown) {
     !value ||
     typeof value !== 'object' ||
     (value as { kind?: unknown }).kind !== 'satb-rule-profile' ||
-    (value as { formatVersion?: unknown }).formatVersion !== 1
+    (value as { formatVersion?: unknown }).formatVersion !== 2
   )
     throw new Error('规则配置档案结构或版本无效')
 }

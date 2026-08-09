@@ -1,8 +1,8 @@
 import {
   HARMONY_RULE_DEFINITIONS,
   HARMONY_RULE_DEFINITION_BY_ID,
+  HARMONY_RULE_CATALOG_REVISION,
   RULE_EXCEPTION_CONTEXTS,
-  defaultHarmonyRuleSeverities,
   type HarmonyRuleId,
   type HarmonyRuleSeverities,
   type HarmonyRuleSeverity,
@@ -28,12 +28,13 @@ import {
 import { normalizeRuleConfig } from "./harmony/rules/configSchema";
 
 export const PORTABLE_RULE_PROFILE_KIND = "satb-rule-profile";
-export const PORTABLE_RULE_PROFILE_VERSION = 1;
+export const PORTABLE_RULE_PROFILE_VERSION = 2;
 const NEW_PROJECT_RULE_PROFILE_KEY = "satb-master-new-project-rule-profile-v1";
 
 export interface PortableRuleProfile {
   kind: typeof PORTABLE_RULE_PROFILE_KIND;
   formatVersion: typeof PORTABLE_RULE_PROFILE_VERSION;
+  catalogRevision: number;
   title: string;
   shared: SharedHarmonySettings;
   builtin: Record<string, RuleInstanceSettings>;
@@ -176,6 +177,8 @@ export function parsePortableRuleProfile(value: unknown): PortableRuleProfile {
     !isRecord(value) ||
     value.kind !== PORTABLE_RULE_PROFILE_KIND ||
     value.formatVersion !== PORTABLE_RULE_PROFILE_VERSION ||
+    !Number.isInteger(value.catalogRevision) ||
+    (value.catalogRevision as number) < 1 ||
     typeof value.title !== "string" ||
     !value.title.trim() ||
     value.title.length > 120 ||
@@ -225,6 +228,7 @@ export function parsePortableRuleProfile(value: unknown): PortableRuleProfile {
   return {
     kind: PORTABLE_RULE_PROFILE_KIND,
     formatVersion: PORTABLE_RULE_PROFILE_VERSION,
+    catalogRevision: value.catalogRevision as number,
     title: value.title,
     shared: parseSharedSettings(value.shared),
     builtin,
@@ -234,9 +238,12 @@ export function parsePortableRuleProfile(value: unknown): PortableRuleProfile {
 
 export interface ResolvedBuiltinRuleProfile {
   severities: HarmonyRuleSeverities;
-  configs: Partial<Record<HarmonyRuleId, RuleConfig>>;
-  exceptions: Partial<Record<HarmonyRuleId, RuleExceptionPolicy>>;
+  configs: Record<HarmonyRuleId, RuleConfig>;
+  exceptions: Record<HarmonyRuleId, RuleExceptionPolicy>;
   shared: SharedHarmonySettings;
+  addedRuleIds: HarmonyRuleId[];
+  unknownBuiltinRuleIds: string[];
+  profileUpgradeRequired: boolean;
 }
 
 function definitionOf(ruleId: HarmonyRuleId) {
@@ -250,7 +257,7 @@ function definitionOf(ruleId: HarmonyRuleId) {
 function defaultInstance(ruleId: HarmonyRuleId): RuleInstanceSettings {
   const definition = definitionOf(ruleId);
   return {
-    severity: definition.defaultSeverity,
+    severity: definition.implemented ? definition.defaultSeverity : "off",
     configVersion: definition.configVersion,
     config: structuredClone(definition.defaultConfig),
     exceptions: { ...definition.defaultExceptionPolicies },
@@ -271,38 +278,64 @@ function sharedVoiceRangeConfig(shared: SharedHarmonySettings): RuleConfig {
 }
 
 /**
- * 将工程 profile 解析成一次检查使用的不可变快照。目录升级后缺失的规则只在
- * 内存中采用目录默认值，直到用户实际修改时才写入工程，避免无意义文件抖动。
+ * 将工程 profile 解析成一次检查使用的不可变快照。目录升级后缺失的规则在内存
+ * 中保持关闭，直到用户确认升级工程快照，避免新版默认值静默改变旧工程结果。
  */
 export function resolveBuiltinRuleProfile(
   project: ProjectDocument,
-  applicationSeverities = defaultHarmonyRuleSeverities(),
 ): ResolvedBuiltinRuleProfile {
-  const severities = { ...applicationSeverities };
-  const configs = {} as Partial<Record<HarmonyRuleId, RuleConfig>>;
-  const exceptions = {} as Partial<Record<HarmonyRuleId, RuleExceptionPolicy>>;
+  const severities = {} as HarmonyRuleSeverities;
+  const configs = {} as Record<HarmonyRuleId, RuleConfig>;
+  const exceptions = {} as Record<HarmonyRuleId, RuleExceptionPolicy>;
+  const addedRuleIds: HarmonyRuleId[] = [];
 
   HARMONY_RULE_DEFINITIONS.forEach((definition) => {
     const ruleId = definition.id;
     const stored = project.ruleProfile.builtin[ruleId];
-    severities[ruleId] = stored?.severity ?? severities[ruleId];
+    if (!stored) addedRuleIds.push(ruleId);
+    severities[ruleId] = stored?.severity ?? "off";
     const sourceConfig =
       ruleId === "voice.range"
         ? sharedVoiceRangeConfig(project.ruleProfile.shared)
         : stored?.config;
     configs[ruleId] = normalizeRuleConfig(definition, sourceConfig).config;
-    exceptions[ruleId] = {
-      ...definition.defaultExceptionPolicies,
-      ...(stored?.exceptions ?? {}),
-    };
+    exceptions[ruleId] = stored
+      ? normalizeExceptions(
+          stored.exceptions,
+          definition.supportedExceptionContexts,
+        )
+      : {};
   });
+
+  const knownRuleIds = new Set(HARMONY_RULE_DEFINITIONS.map(({ id }) => id));
+  const unknownBuiltinRuleIds = Object.keys(project.ruleProfile.builtin).filter(
+    (ruleId) => !knownRuleIds.has(ruleId as HarmonyRuleId),
+  );
 
   return {
     severities,
     configs,
     exceptions,
     shared: structuredClone(project.ruleProfile.shared),
+    addedRuleIds,
+    unknownBuiltinRuleIds,
+    profileUpgradeRequired:
+      project.ruleProfile.catalogRevision !== HARMONY_RULE_CATALOG_REVISION ||
+      addedRuleIds.length > 0,
   };
+}
+
+/** 用户确认目录升级后，才把缺失规则写入工程；新增项始终保持关闭。 */
+export function upgradeBuiltinRuleProfileSnapshot(project: ProjectDocument) {
+  for (const definition of HARMONY_RULE_DEFINITIONS) {
+    if (project.ruleProfile.builtin[definition.id]) continue;
+    project.ruleProfile.builtin[definition.id] = {
+      ...defaultInstance(definition.id),
+      severity: "off",
+    };
+  }
+  project.ruleProfile.profileVersion = 2;
+  project.ruleProfile.catalogRevision = HARMONY_RULE_CATALOG_REVISION;
 }
 
 export function setBuiltinRuleSeverity(
@@ -361,7 +394,7 @@ export function resetBuiltinRule(
   project: ProjectDocument,
   ruleId: HarmonyRuleId,
 ) {
-  delete project.ruleProfile.builtin[ruleId];
+  project.ruleProfile.builtin[ruleId] = defaultInstance(ruleId);
   if (ruleId === "voice.range") {
     project.ruleProfile.shared.voiceRanges = structuredClone(
       createDefaultRuleProfile().shared.voiceRanges,
@@ -371,8 +404,9 @@ export function resetBuiltinRule(
 
 export function resetAllBuiltinRules(project: ProjectDocument) {
   const defaults = createDefaultRuleProfile();
-  project.ruleProfile.builtin = {};
+  project.ruleProfile.builtin = structuredClone(defaults.builtin);
   project.ruleProfile.shared = defaults.shared;
+  project.ruleProfile.catalogRevision = defaults.catalogRevision;
 }
 
 export function setSharedVoiceRange(
@@ -402,13 +436,10 @@ function completeBuiltinSettings(profile: RuleProfile) {
       return [
         definition.id,
         {
-          severity: stored?.severity ?? definition.defaultSeverity,
+          severity: stored?.severity ?? "off",
           configVersion: definition.configVersion,
           config,
-          exceptions: {
-            ...definition.defaultExceptionPolicies,
-            ...(stored?.exceptions ?? {}),
-          },
+          exceptions: stored ? { ...stored.exceptions } : {},
         } satisfies RuleInstanceSettings,
       ];
     }),
@@ -420,6 +451,7 @@ export function createPortableRuleProfile(profile: RuleProfile): PortableRulePro
   return {
     kind: PORTABLE_RULE_PROFILE_KIND,
     formatVersion: PORTABLE_RULE_PROFILE_VERSION,
+    catalogRevision: HARMONY_RULE_CATALOG_REVISION,
     title: profile.title,
     shared: structuredClone(profile.shared),
     builtin: completeBuiltinSettings(profile),
@@ -495,21 +527,23 @@ export function prepareRuleProfileImport(
         keys: [...new Set(normalized.repairs.map((repair) => repair.key))],
       });
     builtin[definition.id] = {
-      severity: imported?.severity ?? definition.defaultSeverity,
+      severity: imported?.severity ?? "off",
       configVersion: definition.configVersion,
       config:
         definition.id === "voice.range"
           ? sharedVoiceRangeConfig(portable.shared)
           : normalized.config,
       exceptions: normalizeExceptions(
-        imported?.exceptions ?? definition.defaultExceptionPolicies,
+        imported?.exceptions ?? {},
         definition.supportedExceptionContexts,
       ),
     };
   }
   for (const ruleId of Object.keys(portable.builtin)) {
-    if (!HARMONY_RULE_DEFINITION_BY_ID.has(ruleId as HarmonyRuleId))
+    if (!HARMONY_RULE_DEFINITION_BY_ID.has(ruleId as HarmonyRuleId)) {
       unknownBuiltinRuleIds.push(ruleId);
+      builtin[ruleId] = structuredClone(portable.builtin[ruleId]);
+    }
   }
 
   const installedByKey = new Map(
@@ -562,7 +596,8 @@ export function prepareRuleProfileImport(
   });
 
   const profile: RuleProfile = {
-    profileVersion: 1,
+    profileVersion: 2,
+    catalogRevision: HARMONY_RULE_CATALOG_REVISION,
     title: portable.title,
     shared: structuredClone(portable.shared),
     builtin,

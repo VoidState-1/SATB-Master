@@ -193,7 +193,8 @@ export interface ExternalRuleReferenceV3 {
 }
 
 export interface RuleProfile {
-  profileVersion: 1;
+  profileVersion: 2;
+  catalogRevision: number;
   title: string;
   shared: SharedHarmonySettings;
   builtin: Record<string, RuleInstanceSettings>;

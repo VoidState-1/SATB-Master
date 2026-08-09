@@ -17,6 +17,9 @@ export type HarmonyRuleSeverities = Record<
   HarmonyRuleSeverity
 >;
 
+// 目录修订号只描述规则配置快照，不等同于工程 schema 版本。
+export const HARMONY_RULE_CATALOG_REVISION = 1;
+
 export const HARMONY_RULE_GROUPS: readonly {
   id: HarmonyRuleGroupId;
   label: string;

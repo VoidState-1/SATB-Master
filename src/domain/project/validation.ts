@@ -353,7 +353,8 @@ function validateChordRegion(value: unknown, projectLength: number) {
 function validateRuleProfile(value: unknown) {
   if (
     !isRecord(value) ||
-    value.profileVersion !== 1 ||
+    value.profileVersion !== 2 ||
+    !isInteger(value.catalogRevision, 1) ||
     typeof value.title !== "string" ||
     value.title.length > 120 ||
     !isRecord(value.shared) ||

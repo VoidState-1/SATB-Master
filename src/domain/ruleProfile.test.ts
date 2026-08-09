@@ -9,6 +9,11 @@ import {
   createPortableRuleProfile,
   parsePortableRuleProfile,
   prepareRuleProfileImport,
+  resetAllBuiltinRules,
+  resetBuiltinRule,
+  resolveBuiltinRuleProfile,
+  setBuiltinRuleSeverity,
+  upgradeBuiltinRuleProfileSnapshot,
 } from "./ruleProfile";
 
 const CONTENT_HASH = "a".repeat(64);
@@ -54,6 +59,47 @@ function installedPackage(): InstalledExternalRulePackage {
 }
 
 describe("规则配置档案", () => {
+  it("新工程保存完整目录快照，未实现规则默认关闭", () => {
+    const profile = createDefaultRuleProfile();
+    expect(profile.profileVersion).toBe(2);
+    expect(profile.catalogRevision).toBe(1);
+    expect(Object.keys(profile.builtin)).toHaveLength(81);
+    for (const definition of HARMONY_RULE_DEFINITIONS) {
+      expect(profile.builtin[definition.id]).toBeDefined();
+      if (!definition.implemented)
+        expect(profile.builtin[definition.id].severity).toBe("off");
+    }
+  });
+
+  it("缺失目录项只在用户确认后写回，并始终保持关闭", () => {
+    const project = createDefaultRuleProfile();
+    delete project.builtin["voice.range"];
+    const projectDocument = { ruleProfile: project } as Parameters<
+      typeof resolveBuiltinRuleProfile
+    >[0];
+    const resolved = resolveBuiltinRuleProfile(projectDocument);
+    expect(resolved.profileUpgradeRequired).toBe(true);
+    expect(resolved.addedRuleIds).toContain("voice.range");
+    expect(resolved.severities["voice.range"]).toBe("off");
+
+    upgradeBuiltinRuleProfileSnapshot(projectDocument);
+    expect(projectDocument.ruleProfile.builtin["voice.range"].severity).toBe("off");
+    expect(resolveBuiltinRuleProfile(projectDocument).profileUpgradeRequired).toBe(false);
+  });
+
+  it("恢复默认会写入完整实例而不是删除目录项", () => {
+    const projectDocument = {
+      ruleProfile: createDefaultRuleProfile(),
+    } as Parameters<typeof resetBuiltinRule>[0];
+    setBuiltinRuleSeverity(projectDocument, "voice.range", "suggestion");
+    resetBuiltinRule(projectDocument, "voice.range");
+    expect(projectDocument.ruleProfile.builtin["voice.range"].severity).toBe("warning");
+
+    delete projectDocument.ruleProfile.builtin["melody.large-leap"];
+    resetAllBuiltinRules(projectDocument);
+    expect(Object.keys(projectDocument.ruleProfile.builtin)).toHaveLength(81);
+  });
+
   it("导出时展开全部内置规则并保留共享音域", () => {
     const profile = createDefaultRuleProfile();
     profile.shared.voiceRanges.soprano = { minMidi: 61, maxMidi: 82 };
@@ -93,7 +139,9 @@ describe("规则配置档案", () => {
       prepared.profile.builtin["voice-leading.cross-relation-successive"].config
         .window,
     ).toEqual({ value: 1, unit: "beats" });
-    expect(prepared.profile.builtin["future.rule"]).toBeUndefined();
+    expect(prepared.profile.builtin["future.rule"]).toEqual(
+      portable.builtin["future.rule"],
+    );
   });
 
   it("缺失外置包时保留引用，匹配包存在时修复配置", () => {
@@ -138,7 +186,7 @@ describe("规则配置档案", () => {
     expect(() =>
       parsePortableRuleProfile({
         ...createPortableRuleProfile(createDefaultRuleProfile()),
-        formatVersion: 2,
+        formatVersion: 3,
       }),
     ).toThrow("不是受支持");
   });
