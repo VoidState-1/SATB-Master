@@ -225,6 +225,14 @@ const DEFAULT_EXCEPTION_POLICIES: Partial<
   },
   "voice-leading.hidden-fifth": { "same-harmony": "exempt" },
   "voice-leading.hidden-octave": { "same-harmony": "exempt" },
+  "voice-leading.cross-relation-simultaneous": {
+    modulation: "exempt",
+    "ambiguous-semantics": "exempt",
+  },
+  "voice-leading.cross-relation-successive": {
+    modulation: "exempt",
+    "ambiguous-semantics": "exempt",
+  },
   "function.double-dominant-target": { modulation: "exempt" },
 };
 

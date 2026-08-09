@@ -513,6 +513,12 @@ describe("斯波索宾基础规则检查", () => {
         quality: "dominant7",
         inversion: 0,
       }),
+      chordRegion(project, "tonic-after-g7", PPQ, PPQ, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+      }),
     );
     addPair(project, "alto", [65, 64]);
 
@@ -529,10 +535,66 @@ describe("斯波索宾基础规则检查", () => {
         quality: "dominant7",
         inversion: 0,
       }),
+      chordRegion(project, "tonic-after-g7", PPQ, PPQ, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+      }),
     );
     addPair(project, "alto", [65, 67]);
 
     expect(ruleIds(project)).toContain("resolution.chord-seventh");
+  });
+
+  it("七音即使级进下行，未落到目标和弦音仍给出提示", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions.push(
+      chordRegion(project, "g7-to-tonic", 0, PPQ, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "dominant7",
+        inversion: 0,
+      }),
+      chordRegion(project, "tonic-target", PPQ, PPQ, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+      }),
+    );
+    project.satbTracks.find((track) => track.id === "alto")!.notes = [
+      {
+        ...note("seventh", 0, PPQ, 65),
+        pitch: { step: "F", alter: 0, octave: 4 },
+      },
+      {
+        ...note("false-resolution", PPQ, PPQ, 63),
+        pitch: { step: "E", alter: -1, octave: 4 },
+      },
+    ];
+
+    expect(ruleIds(project)).toContain("resolution.chord-seventh");
+  });
+
+  it("同声部重叠检查不会漏掉被较短音符隔开的长音", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    project.satbTracks.find((track) => track.id === "soprano")!.notes = [
+      note("long", 0, PPQ * 3, 72),
+      note("middle", PPQ, PPQ / 2, 74),
+      note("late", PPQ * 2, PPQ / 2, 76),
+    ];
+
+    const overlaps = checkHarmony(project).diagnostics.filter(
+      (item) => item.ruleId === "voice.polyphonic-overlap",
+    );
+    expect(
+      overlaps.some(
+        (item) => item.noteIds.includes("long") && item.noteIds.includes("late"),
+      ),
+    ).toBe(true);
   });
 
   it("同一七和弦转换结束后再检查七音解决", () => {

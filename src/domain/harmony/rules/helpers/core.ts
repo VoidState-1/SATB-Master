@@ -63,10 +63,6 @@ export function pitchClass(value: number) {
   return ((value % 12) + 12) % 12;
 }
 
-export function direction(from: number, to: number) {
-  return Math.sign(to - from);
-}
-
 export function intervalMod12(value: number) {
   return ((value % 12) + 12) % 12;
 }

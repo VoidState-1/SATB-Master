@@ -304,8 +304,14 @@ export function seventhStateStep(
       outgoing.push(state);
       return;
     }
+    const targetChord = context.slice.chord;
+    // 没有明确目标和弦时不能只凭旋律方向断言七音已经或尚未解决。
+    if (!targetChord) return;
     const resolution = toMidi(current.pitch) - payload.seventhMidi;
-    if (resolution !== -1 && resolution !== -2) {
+    const resolves =
+      (resolution === -1 || resolution === -2) &&
+      hasExactPitch(current, chordIdentityToneSpellings(targetChord.identity));
+    if (!resolves) {
       const source = context.analysis.noteById.get(payload.sourceNoteId);
       const chord = context.analysis.chordById.get(payload.sourceChordId);
       if (source && chord) {
@@ -322,10 +328,15 @@ export function seventhStateStep(
               formatPitchClass(tones[3]) +
               " 通常应以半音或全音级进下行解决。",
             {
-              chordIds: [chord.id],
+              chordIds: [chord.id, targetChord.id],
+              params: {
+                resolutionSemitones: resolution,
+                targetChord: chordLabel(targetChord),
+              },
               evidence: [
                 chordEvidence(chord),
                 noteEvidence(source, "和弦七音"),
+                chordEvidence(targetChord),
                 noteEvidence(current, "后继音"),
               ],
               causeRefs: [

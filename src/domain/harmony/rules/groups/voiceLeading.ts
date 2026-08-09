@@ -1,21 +1,56 @@
-import { analysisKeyAtTick, type HarmonyAnalysis } from "../../analysis";
+import {
+  analysisKeyAtTick,
+  type AnalysisNote,
+  type AnalysisSlice,
+  type HarmonyAnalysis,
+} from "../../analysis";
 import type { RuleConfig, RuleDiagnostic } from "../../runtime";
+import {
+  chordIdentityToneSpellings,
+  primaryHarmonyInterpretation,
+} from "../../../chordModel";
 import { VOICE_ORDER } from "../../../project";
 import {
   formatSpelledPitch,
   pitchClassEquals,
   toMidi,
-  writtenInterval,
 } from "../../../pitch";
+import { voicePairTransitionFacts } from "../sharedFacts";
 import {
   diagnostic,
-  direction,
+  hasExactPitch,
   isDiminishedFifth,
   isPerfectFifth,
   noteEvidence,
   pitchClass,
   voiceName,
 } from "../helpers/core";
+
+function chromaticHarmonyLicenses(
+  note: AnalysisNote,
+  slice: AnalysisSlice | undefined,
+) {
+  const chord = slice?.chord;
+  if (!chord || !hasExactPitch(note, chordIdentityToneSpellings(chord.identity)))
+    return false;
+  const interpretation = chord.semantics
+    ? primaryHarmonyInterpretation(chord.semantics)
+    : undefined;
+  const kind = interpretation?.designation?.kind;
+  return (
+    chord.identity.structure.kind === "augmented-sixth" ||
+    (chord.identity.structure.kind === "tertian" &&
+      chord.identity.structure.alterations.length > 0) ||
+    Boolean(chord.semantics?.mixture) ||
+    Boolean(interpretation?.appliedTarget) ||
+    kind === "applied-dominant" ||
+    kind === "applied-leading-tone" ||
+    kind === "double-dominant" ||
+    kind === "double-dominant-leading-tone" ||
+    kind === "neapolitan" ||
+    kind === "augmented-sixth"
+  );
+}
 
 export function crossRelationRule(
   analysis: HarmonyAnalysis,
@@ -82,6 +117,21 @@ export function crossRelationRule(
         !pitchClassEquals(leftKey.tonic, rightKey.tonic)
       )
         continue;
+      const leftSlice = analysis.slices.find(
+        (slice) =>
+          slice.tick <= left.note.startTick && left.note.startTick < slice.endTick,
+      );
+      const rightSlice = analysis.slices.find(
+        (slice) =>
+          slice.tick <= right.note.startTick && right.note.startTick < slice.endTick,
+      );
+      // 明确写入变化和弦实体的半音化构成音不是“声部间偶然对斜”。
+      if (
+        !simultaneous &&
+        (chromaticHarmonyLicenses(left.note, leftSlice) ||
+          chromaticHarmonyLicenses(right.note, rightSlice))
+      )
+        continue;
 
       const kind = simultaneous ? "simultaneous" : "successive";
       if (
@@ -127,44 +177,17 @@ export function voiceLeadingRule(
     | "voice-leading.unequal-fifths-perfect-to-diminished"
     | "voice-leading.unequal-fifths-outer-diminished-to-perfect"
     | "voice-leading.unequal-fifths-inner-diminished-to-perfect",
-  config: RuleConfig = {},
+  _config: RuleConfig = {},
 ) {
   const diagnostics: RuleDiagnostic[] = [];
   analysis.sliceTransitions.forEach((transition) => {
-    for (
-      let upperIndex = 0;
-      upperIndex < VOICE_ORDER.length - 1;
-      upperIndex += 1
-    ) {
-      for (
-        let lowerIndex = upperIndex + 1;
-        lowerIndex < VOICE_ORDER.length;
-        lowerIndex += 1
-      ) {
-        const upperId = VOICE_ORDER[upperIndex];
-        const lowerId = VOICE_ORDER[lowerIndex];
-        const previousUpper = transition.previous.notes[upperId];
-        const previousLower = transition.previous.notes[lowerId];
-        const currentUpper = transition.current.notes[upperId];
-        const currentLower = transition.current.notes[lowerId];
-        if (!previousUpper || !previousLower || !currentUpper || !currentLower)
-          continue;
-        const upperDirection = direction(
-          toMidi(previousUpper.pitch),
-          toMidi(currentUpper.pitch),
-        );
-        const lowerDirection = direction(
-          toMidi(previousLower.pitch),
-          toMidi(currentLower.pitch),
-        );
-        const previousInterval = pitchClass(
-          toMidi(previousUpper.pitch) - toMidi(previousLower.pitch),
-        );
-        const currentInterval = pitchClass(
-          toMidi(currentUpper.pitch) - toMidi(currentLower.pitch),
-        );
-        const similarMotion =
-          upperDirection !== 0 && upperDirection === lowerDirection;
+    voicePairTransitionFacts(transition).forEach((fact) => {
+        const [upperId, lowerId] = fact.voiceIds;
+        const [previousUpper, previousLower] = fact.previousNotes;
+        const [currentUpper, currentLower] = fact.currentNotes;
+        const previousInterval = pitchClass(fact.previousInterval.semitones);
+        const currentInterval = pitchClass(fact.currentInterval.semitones);
+        const similarMotion = fact.sameDirection;
         let matches = false;
         if (
           ruleId ===
@@ -174,20 +197,10 @@ export function voiceLeadingRule(
           ruleId ===
             "voice-leading.unequal-fifths-inner-diminished-to-perfect"
         ) {
-          const previousWritten = writtenInterval(
-            previousLower.pitch,
-            previousUpper.pitch,
-          );
-          const currentWritten = writtenInterval(
-            currentLower.pitch,
-            currentUpper.pitch,
-          );
-          const previousDiminished = isDiminishedFifth(previousWritten);
-          const currentDiminished = isDiminishedFifth(currentWritten);
-          const previousPerfect = isPerfectFifth(previousWritten);
-          const currentPerfect = isPerfectFifth(currentWritten);
-          const isOuter =
-            upperId === "soprano" && lowerId === "bass";
+          const previousDiminished = isDiminishedFifth(fact.previousInterval);
+          const currentDiminished = isDiminishedFifth(fact.currentInterval);
+          const previousPerfect = isPerfectFifth(fact.previousInterval);
+          const currentPerfect = isPerfectFifth(fact.currentInterval);
           matches =
             similarMotion &&
             ((ruleId ===
@@ -196,42 +209,59 @@ export function voiceLeadingRule(
               currentDiminished) ||
               (ruleId ===
                 "voice-leading.unequal-fifths-outer-diminished-to-perfect" &&
-                isOuter &&
+                fact.outerVoicesOnly &&
                 previousDiminished &&
                 currentPerfect) ||
               (ruleId ===
                 "voice-leading.unequal-fifths-inner-diminished-to-perfect" &&
-                !isOuter &&
+                fact.includesInnerVoice &&
                 previousDiminished &&
                 currentPerfect));
-        } else if (ruleId === "voice-leading.parallel-fifths" || ruleId === "voice-leading.parallel-octaves") {
-          const target = ruleId === "voice-leading.parallel-fifths" ? 7 : 0;
-          matches =
-            similarMotion &&
-            previousInterval === target &&
-            currentInterval === target;
+        } else if (
+          ruleId === "voice-leading.parallel-fifths" ||
+          ruleId === "voice-leading.parallel-octaves"
+        ) {
+          const previousMatches =
+            ruleId === "voice-leading.parallel-fifths"
+              ? isPerfectFifth(fact.previousInterval)
+              : Math.abs(fact.previousInterval.diatonicSteps) % 7 === 0 &&
+                previousInterval === 0;
+          const currentMatches =
+            ruleId === "voice-leading.parallel-fifths"
+              ? isPerfectFifth(fact.currentInterval)
+              : Math.abs(fact.currentInterval.diatonicSteps) % 7 === 0 &&
+                currentInterval === 0;
+          matches = similarMotion && previousMatches && currentMatches;
         } else if (
           ruleId === "voice-leading.hidden-fifth" ||
           ruleId === "voice-leading.hidden-octave"
         ) {
-          const targetInterval =
-            ruleId === "voice-leading.hidden-fifth" ? 7 : 0;
+          const currentMatches =
+            ruleId === "voice-leading.hidden-fifth"
+              ? isPerfectFifth(fact.currentInterval)
+              : Math.abs(fact.currentInterval.diatonicSteps) % 7 === 0 &&
+                currentInterval === 0;
+          const previousMatches =
+            ruleId === "voice-leading.hidden-fifth"
+              ? isPerfectFifth(fact.previousInterval)
+              : Math.abs(fact.previousInterval.diatonicSteps) % 7 === 0 &&
+                previousInterval === 0;
           matches =
-            upperId === "soprano" &&
-            lowerId === "bass" &&
+            fact.outerVoicesOnly &&
             similarMotion &&
-            currentInterval === targetInterval &&
-            previousInterval !== currentInterval &&
+            currentMatches &&
+            !previousMatches &&
             Math.abs(toMidi(currentUpper.pitch) - toMidi(previousUpper.pitch)) >
               2;
         } else {
-          const adjacent = lowerIndex === upperIndex + 1;
+          const adjacent =
+            VOICE_ORDER.indexOf(lowerId) === VOICE_ORDER.indexOf(upperId) + 1;
           matches =
             adjacent &&
             (toMidi(currentUpper.pitch) < toMidi(previousLower.pitch) ||
               toMidi(currentLower.pitch) > toMidi(previousUpper.pitch));
         }
-        if (!matches) continue;
+        if (!matches) return;
         const title =
           ruleId === "voice-leading.parallel-fifths"
             ? "平行纯五度"
@@ -278,6 +308,9 @@ export function voiceLeadingRule(
             title,
             message,
             {
+              causeRefs: [
+                `${ruleId}|${transition.id}|voices:${upperId},${lowerId}`,
+              ],
               evidence: [
                 noteEvidence(
                   previousUpper,
@@ -299,8 +332,7 @@ export function voiceLeadingRule(
             },
           ),
         );
-      }
-    }
+    });
   });
   return diagnostics;
 }

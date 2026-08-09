@@ -196,6 +196,33 @@ describe("Phase B v1 书写与和弦金样本", () => {
     ).toBe(false);
   });
 
+  it("等于七个半音但书写为增四度的进行不算平行纯五度", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    setNotes(project, "soprano", [
+      note("f-double-sharp", 0, PPQ, {
+        step: "F",
+        alter: 2,
+        octave: 4,
+      }),
+      note("g-double-sharp", PPQ, PPQ, {
+        step: "G",
+        alter: 2,
+        octave: 4,
+      }),
+    ]);
+    setNotes(project, "bass", [
+      note("c-natural", 0, PPQ, { step: "C", alter: 0, octave: 4 }),
+      note("d-natural", PPQ, PPQ, { step: "D", alter: 0, octave: 4 }),
+    ]);
+
+    expect(
+      checkHarmony(project).diagnostics.some(
+        (item) => item.ruleId === "voice-leading.parallel-fifths",
+      ),
+    ).toBe(false);
+  });
+
   it("识别同时对斜与先后对斜", () => {
     const simultaneous = createEmptyProject();
     simultaneous.lengthTicks = PPQ;

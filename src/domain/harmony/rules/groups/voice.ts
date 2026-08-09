@@ -40,7 +40,7 @@ export function voiceRangeRule(analysis: HarmonyAnalysis, config: RuleConfig = {
             [voiceId],
             [note],
             "超出建议音域",
-            `${voiceName(analysis, voiceId)}建议使用 MIDI ${range.min}-${range.max}，当前音高为 ${formatSpelledPitch(note.pitch)}（MIDI ${midi}）。`,
+            `${voiceName(analysis, voiceId)}建议使用 MIDI ${minimum}-${maximum}，当前音高为 ${formatSpelledPitch(note.pitch)}（MIDI ${midi}）。`,
             {
               params: { midi, minimum, maximum },
               evidence: [noteEvidence(note)],
@@ -54,28 +54,41 @@ export function voiceRangeRule(analysis: HarmonyAnalysis, config: RuleConfig = {
 }
 
 export function noteOverlapRule(analysis: HarmonyAnalysis) {
-  return analysis.melodyTransitions.flatMap((transition) =>
-    transition.current.startTick <
-    transition.previous.startTick + transition.previous.durationTicks
-      ? [
+  const diagnostics: RuleDiagnostic[] = [];
+  VOICE_ORDER.forEach((voiceId) => {
+    const active: typeof analysis.notesByVoice[typeof voiceId][number][] = [];
+    analysis.notesByVoice[voiceId].forEach((current) => {
+      for (let index = active.length - 1; index >= 0; index -= 1) {
+        const previous = active[index];
+        if (previous.startTick + previous.durationTicks <= current.startTick)
+          active.splice(index, 1);
+      }
+      active.forEach((previous) => {
+        diagnostics.push(
           diagnostic(
             "voice.polyphonic-overlap",
-            transition.current.startTick,
-            transition.current.startTick + transition.current.durationTicks,
-            [transition.voiceId],
-            [transition.previous, transition.current],
+            current.startTick,
+            Math.min(
+              previous.startTick + previous.durationTicks,
+              current.startTick + current.durationTicks,
+            ),
+            [voiceId],
+            [previous, current],
             "同声部音符重叠",
-            `${voiceName(analysis, transition.voiceId)}中存在时间上互相重叠的音符。`,
+            `${voiceName(analysis, voiceId)}中存在时间上互相重叠的音符。`,
             {
               evidence: [
-                noteEvidence(transition.previous, "前一音"),
-                noteEvidence(transition.current, "当前音"),
+                noteEvidence(previous, "先开始的音"),
+                noteEvidence(current, "后开始的音"),
               ],
             },
           ),
-        ]
-      : [],
-  );
+        );
+      });
+      active.push(current);
+    });
+  });
+  return diagnostics;
 }
 
 export function verticalRule(

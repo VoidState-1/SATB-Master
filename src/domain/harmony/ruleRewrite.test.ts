@@ -357,6 +357,49 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     ).toBe("error");
   });
 
+  it("建议音域诊断显示当前 profile 的实际上下界", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ;
+    setLine(project, "soprano", [pitch("C", 0, 4)]);
+    const severities = defaultHarmonyRuleSeverities();
+    const diagnostic = checkHarmony(project, severities, {
+      "voice.range": {
+        soprano: { minMidi: 61, maxMidi: 79 },
+      },
+    }).diagnostics.find((item) => item.ruleId === "voice.range");
+
+    expect(diagnostic?.message).toContain("MIDI 61-79");
+    expect(diagnostic?.params).toMatchObject({ minimum: 61, maximum: 79 });
+  });
+
+  it("明确变化和弦构成音的先后半音化不误报为对斜", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions = [
+      triadRegion("plain-tonic", 0, "C", "major"),
+      functionalChord(project, "double-dominant", 1, {
+        degree: 2,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "double-dominant",
+          primaryFunction: "dominant",
+        },
+        ...manualCertain,
+      }),
+    ];
+    setLine(project, "soprano", [pitch("F", 0, 4)]);
+    project.satbTracks.find((track) => track.id === "alto")!.notes = [
+      note("altered-third", PPQ, pitch("F", 1, 4)),
+    ];
+
+    expect(
+      diagnosticFor(project, "voice-leading.cross-relation-successive"),
+    ).toBeUndefined();
+  });
+
   it("D9 仍建立通用导音与七音解决状态", () => {
     const project = twoChordProject(
       dominantNinthRegion(),
@@ -820,6 +863,35 @@ describe("下一代规则配置与斯波索宾金样本", () => {
         "connection.german-augmented-sixth",
       )?.severity,
     ).toBe("warning");
+  });
+
+  it("Ger+6 直入 D 的真实平行五度只由基础规则报错", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    const target = functionalChord(project, "german-direct-dominant", 1, {
+      degree: 5,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+      designation: {
+        notationSystem: "spasobin",
+        kind: "primary",
+        primaryFunction: "dominant",
+      },
+      ...manualCertain,
+    });
+    project.chordTrack.regions = [augmentedSixthRegion("german"), target];
+    setLine(project, "soprano", [pitch("F", 1, 4), pitch("G", 0, 4)]);
+    setLine(project, "alto", [pitch("C", 0, 4), pitch("B", 0, 3)]);
+    setLine(project, "tenor", [pitch("E", -1, 3), pitch("D", 0, 3)]);
+    setLine(project, "bass", [pitch("A", -1, 2), pitch("G", 0, 2)]);
+
+    expect(
+      diagnosticFor(project, "voice-leading.parallel-fifths")?.severity,
+    ).toBe("error");
+    expect(
+      diagnosticFor(project, "connection.german-augmented-sixth"),
+    ).toBeUndefined();
   });
 
   it("只有人工标注的 D→TSVI 才进入阻碍进行规则", () => {

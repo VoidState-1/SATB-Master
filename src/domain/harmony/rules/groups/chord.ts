@@ -12,6 +12,7 @@ import {
   pitchClassEquals,
   scaleDegreePitchClass,
   toMidi,
+  writtenInterval,
   type SpelledPitchClass,
 } from "../../../pitch";
 import {
@@ -302,11 +303,11 @@ export function chordSliceRule(
         pitchClassEquals(note.pitch, tones[4]),
       );
       const minimumSemitones = 12;
-      if (
-        root &&
-        ninth &&
-        toMidi(ninth.note.pitch) - toMidi(root.note.pitch) <= minimumSemitones
-      ) {
+      if (root && ninth) {
+        const interval = writtenInterval(root.note.pitch, ninth.note.pitch);
+        const isCompoundNinth =
+          interval.semitones > minimumSemitones && interval.diatonicSteps >= 8;
+        if (isCompoundNinth) return;
         diagnostics.push(
           diagnostic(
             ruleId,
@@ -319,7 +320,8 @@ export function chordSliceRule(
             {
               chordIds: [chord.id],
               params: {
-                distance: toMidi(ninth.note.pitch) - toMidi(root.note.pitch),
+                distance: interval.semitones,
+                diatonicSteps: interval.diatonicSteps,
                 minimumSemitones,
               },
               evidence: [
