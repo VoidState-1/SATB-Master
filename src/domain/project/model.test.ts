@@ -330,7 +330,7 @@ describe("schema v2 -> v3 迁移", () => {
     expect(migrated?.auxiliaryTracks).toEqual([]);
     expect(migrated?.ruleProfile).toMatchObject({
       profileVersion: 2,
-      catalogRevision: 1,
+      catalogRevision: 2,
       title: "斯波索宾基础规则",
       external: [],
     });

@@ -57,6 +57,7 @@ export type NonChordToneRole =
   | "passing"
   | "neighbor"
   | "suspension"
+  | "retardation"
   | "appoggiatura"
   | "anticipation"
   | "escape"

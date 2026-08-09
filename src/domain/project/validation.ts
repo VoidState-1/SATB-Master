@@ -76,6 +76,7 @@ const nonChordToneRoles = new Set<NonChordToneRole>([
   "passing",
   "neighbor",
   "suspension",
+  "retardation",
   "appoggiatura",
   "anticipation",
   "escape",
@@ -287,6 +288,15 @@ function validateHarmonySemantics(value: unknown): value is HarmonySemantics {
       ["cadential64", "passing64", "pedal64", "deceptive"].includes(
         value.cadenceRole as string,
       )) &&
+    (value.cadenceType === undefined ||
+      [
+        "perfect-authentic",
+        "imperfect-authentic",
+        "half",
+        "plagal",
+        "deceptive",
+        "open",
+      ].includes(value.cadenceType as string)) &&
     (value.pedalContext === undefined ||
       (isRecord(value.pedalContext) &&
         validatePitchClass(value.pedalContext.pitch) &&

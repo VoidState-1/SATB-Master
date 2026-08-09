@@ -18,7 +18,7 @@ export type HarmonyRuleSeverities = Record<
 >;
 
 // 目录修订号只描述规则配置快照，不等同于工程 schema 版本。
-export const HARMONY_RULE_CATALOG_REVISION = 1;
+export const HARMONY_RULE_CATALOG_REVISION = 2;
 
 export const HARMONY_RULE_GROUPS: readonly {
   id: HarmonyRuleGroupId;
@@ -37,52 +37,49 @@ export const HARMONY_RULE_GROUPS: readonly {
   { id: "tonality", label: "调性与转调" },
 ] as const;
 
-const IMPLEMENTED_RULE_IDS = new Set<HarmonyRuleId>([
-  "voice.range",
-  "voice.polyphonic-overlap",
-  "voice.crossing",
-  "voice.upper-spacing",
-  "melody.leap-over-octave",
-  "melody.large-leap",
-  "melody.augmented-interval",
-  "melody.diminished-interval",
-  "melody.tritone",
-  "voice-leading.overlap",
-  "voice-leading.parallel-fifths",
-  "voice-leading.parallel-octaves",
-  "voice-leading.unequal-fifths-perfect-to-diminished",
-  "voice-leading.unequal-fifths-outer-diminished-to-perfect",
-  "voice-leading.unequal-fifths-inner-diminished-to-perfect",
-  "voice-leading.hidden-fifth",
-  "voice-leading.hidden-octave",
-  "voice-leading.cross-relation-simultaneous",
-  "voice-leading.cross-relation-successive",
-  "chord.unclassified-nonchord-tone",
-  "chord.incomplete-members",
-  "chord.inversion-bass",
-  "chord.interpretation-identity-conflict",
-  "chord.doubled-leading-tone",
-  "chord.doubled-seventh",
-  "chord.doubled-altered-tendency-tone",
-  "chord.dominant-ninth-voicing",
-  "chord.dominant-ninth-root-spacing",
-  "chord.augmented-sixth-voicing",
-  "resolution.leading-tone",
-  "resolution.chord-seventh",
-  "resolution.dominant-ninth",
-  "resolution.altered-tone",
-  "resolution.augmented-sixth",
-  "connection.italian-augmented-sixth",
-  "connection.french-augmented-sixth",
-  "connection.german-augmented-sixth",
-  "function.retrogression",
-  "function.applied-dominant-target",
-  "function.double-dominant-target",
-  "function.cadential64-target",
-  "function.deceptive-cadence-target",
-  "connection.deceptive-voice-leading",
-  "tonality.mixture-source",
-]);
+export const HARMONY_RULE_IDS_IMPLEMENTED_IN_REVISION_2 = [
+  "voice.incomplete-satb",
+  "melody.leap-recovery",
+  "melody.consecutive-leaps",
+  "voice-leading.all-voices-similar",
+  "chord.triad-root-position-doubling",
+  "chord.first-inversion-doubling",
+  "chord.second-inversion-voicing",
+  "nonchord.passing-tone",
+  "nonchord.neighbor-tone",
+  "nonchord.suspension-preparation",
+  "nonchord.suspension-resolution",
+  "nonchord.retardation",
+  "nonchord.appoggiatura",
+  "nonchord.anticipation",
+  "nonchord.pedal-point",
+  "function.ambiguous-connection",
+  "connection.dominant-seventh",
+  "connection.dominant-ninth",
+  "connection.leading-tone-seventh",
+  "connection.supertonic-seventh",
+  "connection.subdominant-seventh",
+  "connection.double-dominant-seventh",
+  "connection.double-dominant-leading-tone",
+  "connection.neapolitan-sixth",
+  "connection.second-inversion-context",
+  "connection.common-tone-fourth-fifth",
+  "connection.second-relation-contrary-motion",
+  "connection.common-tone-third",
+  "connection.nonparsimonious-motion",
+  "rhythm.harmonic-syncopation",
+  "cadence.cadential64-metric-position",
+  "cadence.bass-formula",
+  "cadence.perfect-authentic-soprano",
+  "cadence.unstable-ending",
+  "tonality.unmarked-key-change",
+  "tonality.pivot-reinterpretation",
+  "tonality.tonicization-modulation-conflict",
+] as const satisfies readonly HarmonyRuleId[];
+
+const IMPLEMENTED_RULE_IDS = new Set<HarmonyRuleId>(
+  GENERATED_RULE_CATALOG.map((entry) => entry.id),
+);
 
 const COVERED_RULE_IDS: Partial<
   Record<HarmonyRuleId, readonly HarmonyRuleId[]>
@@ -170,6 +167,8 @@ const EXCEPTION_CONTEXTS: Partial<
   "melody.augmented-interval": ["same-harmony", "arpeggiation"],
   "melody.diminished-interval": ["same-harmony", "arpeggiation"],
   "melody.tritone": ["same-harmony", "arpeggiation"],
+  "melody.leap-recovery": ["same-harmony", "arpeggiation"],
+  "melody.consecutive-leaps": ["same-harmony", "arpeggiation"],
   "voice-leading.overlap": ["same-harmony", "voice-exchange"],
   "voice-leading.unequal-fifths-perfect-to-diminished": [
     "same-harmony",
@@ -207,6 +206,13 @@ const EXCEPTION_CONTEXTS: Partial<
     "modulation",
     "ambiguous-semantics",
   ],
+  "connection.common-tone-fourth-fifth": ["voice-exchange"],
+  "connection.common-tone-third": ["voice-exchange"],
+  "connection.nonparsimonious-motion": [
+    "same-harmony",
+    "voice-exchange",
+    "pedal-point",
+  ],
 };
 
 const DEFAULT_EXCEPTION_POLICIES: Partial<
@@ -216,6 +222,8 @@ const DEFAULT_EXCEPTION_POLICIES: Partial<
   "melody.augmented-interval": { "same-harmony": "exempt" },
   "melody.diminished-interval": { "same-harmony": "exempt" },
   "melody.tritone": { "same-harmony": "exempt" },
+  "melody.leap-recovery": { "same-harmony": "exempt" },
+  "melody.consecutive-leaps": { "same-harmony": "exempt" },
   "voice-leading.overlap": {
     "same-harmony": "exempt",
     "voice-exchange": "exempt",
@@ -234,6 +242,13 @@ const DEFAULT_EXCEPTION_POLICIES: Partial<
     "ambiguous-semantics": "exempt",
   },
   "function.double-dominant-target": { modulation: "exempt" },
+  "connection.common-tone-fourth-fifth": { "voice-exchange": "exempt" },
+  "connection.common-tone-third": { "voice-exchange": "exempt" },
+  "connection.nonparsimonious-motion": {
+    "same-harmony": "exempt",
+    "voice-exchange": "exempt",
+    "pedal-point": "exempt",
+  },
 };
 
 function groupOf(id: HarmonyRuleId): HarmonyRuleGroupId {
@@ -257,6 +272,7 @@ function groupOf(id: HarmonyRuleId): HarmonyRuleGroupId {
 
 function requirementsOf(id: HarmonyRuleId): readonly RuleRequirement[] {
   if (id === "resolution.leading-tone") return ["written-pitches"];
+  if (id === "function.ambiguous-connection") return ["chords"];
   if (id === "chord.interpretation-identity-conflict")
     return ["chords", "semantics"];
   if (id.startsWith("function.")) return ["chords", "semantics"];

@@ -35,8 +35,29 @@ import {
 } from "./rules/groups/function";
 import {
   augmentedDiminishedIntervalRule,
+  melodicContourRule,
   melodicLeapRule,
 } from "./rules/groups/melody";
+import {
+  allVoicesSimilarRule,
+  basicConnectionRule,
+  incompleteSatbRule,
+  triadVoicingRule,
+} from "./rules/groups/basicTeaching";
+import { nonchordRoleRule } from "./rules/groups/nonchord";
+import {
+  ambiguousConnectionRule,
+  secondInversionContextRule,
+  specializedConnectionRule,
+} from "./rules/groups/specializedConnections";
+import {
+  cadenceRule,
+  cadential64MetricRule,
+  harmonicSyncopationRule,
+  pivotReinterpretationRule,
+  tonicizationModulationConflictRule,
+  unmarkedKeyChangeRule,
+} from "./rules/groups/rhythmCadenceTonality";
 import {
   alteredToneStateStep,
   dominantNinthStateStep,
@@ -65,6 +86,7 @@ type StatelessHarmonyRuleId =
   | "voice.polyphonic-overlap"
   | "voice.crossing"
   | "voice.upper-spacing"
+  | "voice.incomplete-satb"
   | "voice-leading.overlap"
   | "voice-leading.unequal-fifths-perfect-to-diminished"
   | "voice-leading.unequal-fifths-outer-diminished-to-perfect"
@@ -75,29 +97,65 @@ type StatelessHarmonyRuleId =
   | "voice-leading.hidden-octave"
   | "voice-leading.cross-relation-simultaneous"
   | "voice-leading.cross-relation-successive"
+  | "voice-leading.all-voices-similar"
   | "melody.leap-over-octave"
   | "melody.large-leap"
   | "melody.tritone"
   | "melody.augmented-interval"
   | "melody.diminished-interval"
+  | "melody.leap-recovery"
+  | "melody.consecutive-leaps"
   | "chord.unclassified-nonchord-tone"
   | "chord.incomplete-members"
   | "chord.inversion-bass"
   | "chord.interpretation-identity-conflict"
+  | "chord.triad-root-position-doubling"
+  | "chord.first-inversion-doubling"
+  | "chord.second-inversion-voicing"
   | "chord.doubled-leading-tone"
   | "chord.doubled-seventh"
   | "chord.doubled-altered-tendency-tone"
   | "chord.dominant-ninth-voicing"
   | "chord.dominant-ninth-root-spacing"
   | "chord.augmented-sixth-voicing"
+  | "nonchord.passing-tone"
+  | "nonchord.neighbor-tone"
+  | "nonchord.suspension-preparation"
+  | "nonchord.suspension-resolution"
+  | "nonchord.retardation"
+  | "nonchord.appoggiatura"
+  | "nonchord.anticipation"
+  | "nonchord.pedal-point"
   | "function.retrogression"
   | "function.double-dominant-target"
   | "function.cadential64-target"
   | "function.deceptive-cadence-target"
+  | "function.ambiguous-connection"
+  | "connection.dominant-seventh"
+  | "connection.dominant-ninth"
+  | "connection.leading-tone-seventh"
+  | "connection.supertonic-seventh"
+  | "connection.subdominant-seventh"
+  | "connection.double-dominant-seventh"
+  | "connection.double-dominant-leading-tone"
+  | "connection.neapolitan-sixth"
   | "connection.deceptive-voice-leading"
   | "connection.italian-augmented-sixth"
   | "connection.french-augmented-sixth"
   | "connection.german-augmented-sixth"
+  | "connection.second-inversion-context"
+  | "connection.common-tone-fourth-fifth"
+  | "connection.second-relation-contrary-motion"
+  | "connection.common-tone-third"
+  | "connection.nonparsimonious-motion"
+  | "rhythm.harmonic-syncopation"
+  | "cadence.cadential64-metric-position"
+  | "cadence.bass-formula"
+  | "cadence.perfect-authentic-soprano"
+  | "cadence.unstable-ending"
+  | "tonality.unmarked-key-change"
+  | "tonality.pivot-reinterpretation"
+  | "tonality.tonicization-modulation-conflict"
   | "tonality.mixture-source"
   | "resolution.augmented-sixth";
 
@@ -109,6 +167,7 @@ const evaluators: Record<
   "voice.polyphonic-overlap": (analysis) => noteOverlapRule(analysis),
   "voice.crossing": (analysis) => verticalRule(analysis, "voice.crossing"),
   "voice.upper-spacing": (analysis) => verticalRule(analysis, "voice.upper-spacing"),
+  "voice.incomplete-satb": (analysis) => incompleteSatbRule(analysis),
   "voice-leading.overlap": (analysis) => voiceLeadingRule(analysis, "voice-leading.overlap"),
   "voice-leading.unequal-fifths-perfect-to-diminished": (analysis, config) =>
     voiceLeadingRule(
@@ -143,6 +202,12 @@ const evaluators: Record<
     augmentedDiminishedIntervalRule(analysis, "melody.augmented-interval"),
   "melody.diminished-interval": (analysis) =>
     augmentedDiminishedIntervalRule(analysis, "melody.diminished-interval"),
+  "melody.leap-recovery": (analysis) =>
+    melodicContourRule(analysis, "melody.leap-recovery"),
+  "melody.consecutive-leaps": (analysis) =>
+    melodicContourRule(analysis, "melody.consecutive-leaps"),
+  "voice-leading.all-voices-similar": (analysis) =>
+    allVoicesSimilarRule(analysis),
   "voice-leading.cross-relation-simultaneous": (analysis, config) =>
     crossRelationRule(
       analysis,
@@ -170,6 +235,12 @@ const evaluators: Record<
   "chord.inversion-bass": (analysis) => chordSliceRule(analysis, "chord.inversion-bass"),
   "chord.interpretation-identity-conflict": (analysis) =>
     chordInterpretationIdentityRule(analysis),
+  "chord.triad-root-position-doubling": (analysis) =>
+    triadVoicingRule(analysis, "chord.triad-root-position-doubling"),
+  "chord.first-inversion-doubling": (analysis) =>
+    triadVoicingRule(analysis, "chord.first-inversion-doubling"),
+  "chord.second-inversion-voicing": (analysis) =>
+    triadVoicingRule(analysis, "chord.second-inversion-voicing"),
   "chord.doubled-leading-tone": (analysis) =>
     chordSliceRule(analysis, "chord.doubled-leading-tone"),
   "chord.doubled-seventh": (analysis) =>
@@ -182,6 +253,22 @@ const evaluators: Record<
     chordSliceRule(analysis, "chord.dominant-ninth-root-spacing", config),
   "chord.augmented-sixth-voicing": (analysis, config) =>
     chordSliceRule(analysis, "chord.augmented-sixth-voicing", config),
+  "nonchord.passing-tone": (analysis) =>
+    nonchordRoleRule(analysis, "nonchord.passing-tone"),
+  "nonchord.neighbor-tone": (analysis) =>
+    nonchordRoleRule(analysis, "nonchord.neighbor-tone"),
+  "nonchord.suspension-preparation": (analysis) =>
+    nonchordRoleRule(analysis, "nonchord.suspension-preparation"),
+  "nonchord.suspension-resolution": (analysis) =>
+    nonchordRoleRule(analysis, "nonchord.suspension-resolution"),
+  "nonchord.retardation": (analysis) =>
+    nonchordRoleRule(analysis, "nonchord.retardation"),
+  "nonchord.appoggiatura": (analysis) =>
+    nonchordRoleRule(analysis, "nonchord.appoggiatura"),
+  "nonchord.anticipation": (analysis) =>
+    nonchordRoleRule(analysis, "nonchord.anticipation"),
+  "nonchord.pedal-point": (analysis) =>
+    nonchordRoleRule(analysis, "nonchord.pedal-point"),
   "resolution.augmented-sixth": (analysis) =>
     augmentedSixthResolutionRule(analysis),
   "connection.italian-augmented-sixth": (analysis) =>
@@ -206,8 +293,55 @@ const evaluators: Record<
   "function.cadential64-target": (analysis) => cadential64ResolutionRule(analysis),
   "function.deceptive-cadence-target": (analysis) =>
     deceptiveCadenceTargetRule(analysis),
+  "function.ambiguous-connection": (analysis) =>
+    ambiguousConnectionRule(analysis),
+  "connection.dominant-seventh": (analysis) =>
+    specializedConnectionRule(analysis, "connection.dominant-seventh"),
+  "connection.dominant-ninth": (analysis) =>
+    specializedConnectionRule(analysis, "connection.dominant-ninth"),
+  "connection.leading-tone-seventh": (analysis) =>
+    specializedConnectionRule(analysis, "connection.leading-tone-seventh"),
+  "connection.supertonic-seventh": (analysis) =>
+    specializedConnectionRule(analysis, "connection.supertonic-seventh"),
+  "connection.subdominant-seventh": (analysis) =>
+    specializedConnectionRule(analysis, "connection.subdominant-seventh"),
+  "connection.double-dominant-seventh": (analysis) =>
+    specializedConnectionRule(analysis, "connection.double-dominant-seventh"),
+  "connection.double-dominant-leading-tone": (analysis) =>
+    specializedConnectionRule(
+      analysis,
+      "connection.double-dominant-leading-tone",
+    ),
+  "connection.neapolitan-sixth": (analysis) =>
+    specializedConnectionRule(analysis, "connection.neapolitan-sixth"),
   "connection.deceptive-voice-leading": (analysis) =>
     deceptiveVoiceLeadingRule(analysis),
+  "connection.second-inversion-context": (analysis) =>
+    secondInversionContextRule(analysis),
+  "connection.common-tone-fourth-fifth": (analysis) =>
+    basicConnectionRule(analysis, "connection.common-tone-fourth-fifth"),
+  "connection.second-relation-contrary-motion": (analysis) =>
+    basicConnectionRule(analysis, "connection.second-relation-contrary-motion"),
+  "connection.common-tone-third": (analysis) =>
+    basicConnectionRule(analysis, "connection.common-tone-third"),
+  "connection.nonparsimonious-motion": (analysis) =>
+    basicConnectionRule(analysis, "connection.nonparsimonious-motion"),
+  "rhythm.harmonic-syncopation": (analysis) =>
+    harmonicSyncopationRule(analysis),
+  "cadence.cadential64-metric-position": (analysis) =>
+    cadential64MetricRule(analysis),
+  "cadence.bass-formula": (analysis) =>
+    cadenceRule(analysis, "cadence.bass-formula"),
+  "cadence.perfect-authentic-soprano": (analysis) =>
+    cadenceRule(analysis, "cadence.perfect-authentic-soprano"),
+  "cadence.unstable-ending": (analysis) =>
+    cadenceRule(analysis, "cadence.unstable-ending"),
+  "tonality.unmarked-key-change": (analysis) =>
+    unmarkedKeyChangeRule(analysis),
+  "tonality.pivot-reinterpretation": (analysis) =>
+    pivotReinterpretationRule(analysis),
+  "tonality.tonicization-modulation-conflict": (analysis) =>
+    tonicizationModulationConflictRule(analysis),
   "tonality.mixture-source": (analysis) => mixtureSourceRule(analysis),
 };
 

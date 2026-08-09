@@ -82,7 +82,7 @@ interface SpelledPitch {
 
 ## 4. 音符与轨道
 
-`NoteEvent` 除 ID、位置、时值和书写音高外，还可以包含锁定、人工非和弦音角色与 MIDI 导入来源等属性。以后添加奏法、力度或声部来源时，应先判断它是音符事实、分析结果还是临时 UI 状态。
+`NoteEvent` 除 ID、位置、时值和书写音高外，还可以包含锁定、人工非和弦音角色与 MIDI 导入来源等属性。人工角色包括经过音、辅助音、挂留音、延宕音、倚音、先现音、逃逸音和持续音；规则不会根据单个和弦外音自动写回角色。以后添加奏法、力度或声部来源时，应先判断它是音符事实、分析结果还是临时 UI 状态。
 
 ### 4.1 SATB 轨
 
@@ -168,7 +168,7 @@ interface ChordToneAlteration {
 
 ### 6.2 `HarmonySemantics`
 
-`HarmonySemantics` 保存一个或两个 `HarmonyInterpretation`，并用 `primaryInterpretationId` 指定主要解释。单项解释包含局部调性、级数、变化音、结构化目标、斯波索宾 `FunctionalDesignation`、来源和置信度；外层保存借用、终止/四六角色和持续低音上下文。`cadenceRole: deceptive` 表示人工确认当前和弦是阻碍进行起点；普通 `D -> VI` 不会仅凭局部连接自动获得该角色。共同和弦的两个确认解释必须都能解析为同一实体，不能只复制不同 ID。
+`HarmonySemantics` 保存一个或两个 `HarmonyInterpretation`，并用 `primaryInterpretationId` 指定主要解释。单项解释包含局部调性、级数、变化音、结构化目标、斯波索宾 `FunctionalDesignation`、来源和置信度；外层保存借用、终止/四六角色、终止类型和持续低音上下文。`cadenceRole` 描述当前和弦在连接中的局部用途，例如终止四六、经过四六、辅助四六或阻碍进行起点；`cadenceType` 独立描述乐句末端的完全终止、不完全终止、半终止、变格终止、阻碍终止或开放结束。普通 `D -> VI` 不会仅凭局部连接自动获得终止标记。共同和弦的两个确认解释必须都能解析为同一实体，不能只复制不同 ID。
 
 代码中避免再使用宽泛的 `FunctionalAnalysis` 名称：中文“功能”既可能指 T/S/D，又可能泛指用途。当前约定是：
 

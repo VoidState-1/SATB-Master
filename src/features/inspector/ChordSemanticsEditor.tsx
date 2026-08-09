@@ -216,6 +216,27 @@ export function ChordSemanticsEditor({
         </select>
       </label>
       <label>
+        <span>终止类型</span>
+        <select
+          value={draft.cadenceType ?? ""}
+          onChange={(event) =>
+            onChange({
+              cadenceType: (event.target.value || undefined) as
+                | NonNullable<ChordDraft["cadenceType"]>
+                | undefined,
+            })
+          }
+        >
+          <option value="">无</option>
+          <option value="perfect-authentic">完全终止</option>
+          <option value="imperfect-authentic">不完全终止</option>
+          <option value="half">半终止</option>
+          <option value="plagal">变格终止</option>
+          <option value="deceptive">阻碍终止</option>
+          <option value="open">开放结束</option>
+        </select>
+      </label>
+      <label>
         <span>构成音变化</span>
         <select
           value={

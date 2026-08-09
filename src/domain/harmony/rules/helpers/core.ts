@@ -1,4 +1,5 @@
 import { formatChordIdentity } from "../../../chords";
+import { chordIdentityInversion } from "../../../chordModel";
 import type {
   AnalysisChord,
   AnalysisNote,
@@ -10,6 +11,7 @@ import type {
   RuleEvaluation,
 } from "../../runtime";
 import type { HarmonyRuleId } from "../../ruleTypes";
+import type { HarmonyConnectionAssessment } from "../connector";
 import { VOICE_CONFIG, VOICE_ORDER, type VoiceId } from "../../../project";
 import {
   formatSpelledPitch,
@@ -179,5 +181,30 @@ export function activeNotes(slice: HarmonyAnalysis["slices"][number]) {
     note: slice.notes[voiceId],
   })).filter((item): item is { voiceId: VoiceId; note: AnalysisNote } =>
     Boolean(item.note),
+  );
+}
+
+export function connectionBoundarySlices(
+  analysis: HarmonyAnalysis,
+  connection: HarmonyConnectionAssessment,
+) {
+  const sourceIndices = analysis.harmonySpans.find(
+    (span) => span.id === connection.previousSpanId,
+  )?.sliceIndices;
+  const targetIndices = analysis.harmonySpans.find(
+    (span) => span.id === connection.currentSpanId,
+  )?.sliceIndices;
+  const sourceIndex = sourceIndices?.at(-1);
+  const targetIndex = targetIndices?.[0];
+  if (sourceIndex === undefined || targetIndex === undefined) return undefined;
+  const source = analysis.slices[sourceIndex];
+  const target = analysis.slices[targetIndex];
+  if (!source?.chord || !target?.chord) return undefined;
+  return { source, target, sourceIndex, targetIndex };
+}
+
+export function chordInversion(chord: AnalysisChord) {
+  return chordIdentityInversion(
+    chord.identity as Parameters<typeof chordIdentityInversion>[0],
   );
 }

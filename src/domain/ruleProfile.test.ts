@@ -62,13 +62,29 @@ describe("规则配置档案", () => {
   it("新工程保存完整目录快照，未实现规则默认关闭", () => {
     const profile = createDefaultRuleProfile();
     expect(profile.profileVersion).toBe(2);
-    expect(profile.catalogRevision).toBe(1);
+    expect(profile.catalogRevision).toBe(2);
     expect(Object.keys(profile.builtin)).toHaveLength(81);
     for (const definition of HARMONY_RULE_DEFINITIONS) {
       expect(profile.builtin[definition.id]).toBeDefined();
       if (!definition.implemented)
         expect(profile.builtin[definition.id].severity).toBe("off");
     }
+  });
+
+  it("确认目录修订 2 后启用旧工程中的待实现规则占位项", () => {
+    const projectDocument = {
+      ruleProfile: createDefaultRuleProfile(),
+    } as Parameters<typeof upgradeBuiltinRuleProfileSnapshot>[0];
+    projectDocument.ruleProfile.catalogRevision = 1;
+    projectDocument.ruleProfile.builtin["nonchord.passing-tone"].severity = "off";
+    projectDocument.ruleProfile.builtin["voice.range"].severity = "off";
+
+    upgradeBuiltinRuleProfileSnapshot(projectDocument);
+
+    expect(projectDocument.ruleProfile.builtin["nonchord.passing-tone"].severity)
+      .toBe("warning");
+    expect(projectDocument.ruleProfile.builtin["voice.range"].severity).toBe("off");
+    expect(projectDocument.ruleProfile.catalogRevision).toBe(2);
   });
 
   it("缺失目录项只在用户确认后写回，并始终保持关闭", () => {

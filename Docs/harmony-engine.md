@@ -149,7 +149,7 @@ interface HarmonyConnectionAssessment {
 
 设计清单由 [`harmony-rule-catalog.md`](../DesignDocs/harmony-rule-catalog.md) 维护，并通过 [`generate-rule-catalog.mjs`](../scripts/generate-rule-catalog.mjs) 生成静态目录。`HarmonyRuleDefinition` 包含稳定 ID、目录号、说明、理由、分组、默认严重程度、依赖、配置版本、声明式 options、特例 context、父规则和 `implemented` 状态。
 
-目录条目不等于可执行实现。设置页会显示并保存所有 81 条规则；`implemented: false` 的条目明确标记“尚未实现”，默认严重程度保存为 `off`，且不会进入执行队列。只有同时存在规则定义和实现的条目进入调度。
+当前目录修订 2 的 81 条内置规则均有可执行实现并进入调度。规则是否产生诊断仍取决于工程严重程度、配置、适用性策略和结构化上下文；缺少人工非和弦音角色、终止类型、局部调性或双重解释时，相关规则保持静默或返回 skip，不使用启发式猜测补齐语意。
 
 ## 8. 规则私有状态
 
@@ -212,7 +212,7 @@ process 当前 step
 ```ts
 interface RuleProfile {
   profileVersion: 2;
-  catalogRevision: 1;
+  catalogRevision: 2;
   title: string;
   shared: SharedHarmonySettings;
   builtin: Record<string, RuleInstanceSettings>;
@@ -244,8 +244,8 @@ interface RuleProfile {
 
 ## 14. 当前完成边界
 
-规则目录、完整工程 profile、共享事实、span、目标链、连接器、适用性、多规则覆盖仲裁、设置页、分析复用和外置 API v3 已落地。当前 81 条目录中 44 条具有实现，其余 37 条保持 `implemented: false`。Phase E 当前已启用 D.10-D.13、E.3-E.5、G.5、H.9-H.12 与 K.4：包括 D9/增六配置、属九/方向性变音/增六解决、人工阻碍进行、三种增六连接和同主大小调借用来源。
+规则目录、完整工程 profile、共享事实、span、目标链、连接器、适用性、多规则覆盖仲裁、设置页、分析复用和外置 API v3 已落地。目录修订 2 已为全部 81 条规则提供首版实现；新增模块分别承载基础教学规则、非和弦音角色、专用功能和弦连接，以及节奏、终止与调性规则。
 
-G.6、H.1-H.8、J.1-J.2、K.2-K.3 仍保持 `implemented: false`。它们分别缺少“所有解释候选的合法性比较”、按转位校准的功能和弦连接金样本、变拍号重音层级，以及人工转调/进入侧/离开侧标记。不得用当前主要解释、`beatIndex === 0` 或局部调外音数量代替这些前置事实。
+首版实现遵循保守判断：非和弦音只验证人工角色；终止规则只消费显式 `cadenceType`；转调规则只消费连续局部调性、双重解释或人工确认冲突；专用连接规则只在明确功能和连续 span 上执行。教材例题校准不足的规则仍可能需要调整阈值或细化转位口径，但不会用缺失上下文伪造确定结论。
 
-目录中的其余条目仍以“尚未实现”状态展示。开发者必须以 `HARMONY_RULE_DEFINITIONS[].implemented` 和对应测试为准，不能把“目录中存在”解释为“规则已完成”。
+目录修订 1 曾把 37 条待实现规则保存为 `off`。工程确认升级到修订 2 时，仅这些历史占位项恢复为正式默认严重程度；原有已实现规则中由用户主动设置的 `off` 保持不变。

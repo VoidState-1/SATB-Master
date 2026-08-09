@@ -27,6 +27,7 @@ const nonChordToneOptions = [
   ["passing", "经过音"],
   ["neighbor", "辅助音"],
   ["suspension", "延留音"],
+  ["retardation", "延宕音"],
   ["appoggiatura", "倚音"],
   ["anticipation", "先现音"],
   ["escape", "逃逸音"],

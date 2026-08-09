@@ -22,8 +22,8 @@ describe("规则引擎修正基线", () => {
     );
 
     expect(HARMONY_RULE_DEFINITIONS).toHaveLength(81);
-    expect(implemented).toHaveLength(44);
-    expect(deferred).toHaveLength(37);
+    expect(implemented).toHaveLength(81);
+    expect(deferred).toHaveLength(0);
     expect(new Set(HARMONY_RULE_DEFINITIONS.map(({ id }) => id)).size).toBe(81);
   });
 

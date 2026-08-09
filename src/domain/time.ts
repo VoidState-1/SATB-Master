@@ -71,7 +71,11 @@ export function snapTickForward(
 }
 
 export function buildMeasures(
-  project: Pick<ProjectDocument, "ppq" | "meterEvents" | "lengthTicks">,
+  project: {
+    readonly ppq: number;
+    readonly meterEvents: readonly MeterEvent[];
+    readonly lengthTicks: number;
+  },
 ): MeasureInfo[] {
   const meters = [...project.meterEvents].sort((a, b) => a.tick - b.tick);
   const measures: MeasureInfo[] = [];
