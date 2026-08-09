@@ -43,7 +43,6 @@ describe("architecture boundaries", () => {
     expect(existsSync(join(srcRoot, "domain", "externalRuleSandbox.ts"))).toBe(false);
     expect(existsSync(join(srcRoot, "domain", "externalRuleWorkerProtocol.ts"))).toBe(false);
     expect(existsSync(join(srcRoot, "domain", "rules"))).toBe(false);
-
   });
 
   it("keeps internal callers on domain package entry points", () => {
