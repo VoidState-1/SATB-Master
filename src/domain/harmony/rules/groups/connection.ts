@@ -18,6 +18,7 @@ import {
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 export function augmentedSixthResolutionRule(
   analysis: HarmonyAnalysis,
@@ -435,3 +436,33 @@ export function deceptiveVoiceLeadingRule(analysis: HarmonyAnalysis) {
   });
   return diagnostics;
 }
+
+export const CONNECTION_RULE_BINDINGS = defineRuleBindings({
+  "resolution.augmented-sixth": statelessRule((analysis) =>
+    augmentedSixthResolutionRule(analysis),
+  ),
+  "connection.italian-augmented-sixth": statelessRule((analysis) =>
+    augmentedSixthResolutionRule(
+      analysis,
+      "connection.italian-augmented-sixth",
+    ),
+  ),
+  "connection.french-augmented-sixth": statelessRule((analysis) =>
+    augmentedSixthResolutionRule(
+      analysis,
+      "connection.french-augmented-sixth",
+    ),
+  ),
+  "connection.german-augmented-sixth": statelessRule((analysis) =>
+    augmentedSixthResolutionRule(
+      analysis,
+      "connection.german-augmented-sixth",
+    ),
+  ),
+  "function.deceptive-cadence-target": statelessRule(
+    deceptiveCadenceTargetRule,
+  ),
+  "connection.deceptive-voice-leading": statelessRule(
+    deceptiveVoiceLeadingRule,
+  ),
+});

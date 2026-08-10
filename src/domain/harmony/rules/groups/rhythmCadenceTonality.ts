@@ -22,6 +22,7 @@ import {
   diagnostic,
   noteEvidence,
 } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 type CadenceRuleId =
   | "cadence.bass-formula"
@@ -467,3 +468,24 @@ export function tonicizationModulationConflictRule(analysis: HarmonyAnalysis) {
   });
   return diagnostics;
 }
+
+export const RHYTHM_CADENCE_TONALITY_RULE_BINDINGS = defineRuleBindings({
+  "rhythm.harmonic-syncopation": statelessRule(harmonicSyncopationRule),
+  "cadence.cadential64-metric-position": statelessRule(
+    cadential64MetricRule,
+  ),
+  "cadence.bass-formula": statelessRule((analysis) =>
+    cadenceRule(analysis, "cadence.bass-formula"),
+  ),
+  "cadence.perfect-authentic-soprano": statelessRule((analysis) =>
+    cadenceRule(analysis, "cadence.perfect-authentic-soprano"),
+  ),
+  "cadence.unstable-ending": statelessRule((analysis) =>
+    cadenceRule(analysis, "cadence.unstable-ending"),
+  ),
+  "tonality.unmarked-key-change": statelessRule(unmarkedKeyChangeRule),
+  "tonality.pivot-reinterpretation": statelessRule(pivotReinterpretationRule),
+  "tonality.tonicization-modulation-conflict": statelessRule(
+    tonicizationModulationConflictRule,
+  ),
+});

@@ -28,6 +28,7 @@ import {
   noteEvidence,
   supportsTertianResolutionRules,
 } from "../helpers/core";
+import { defineRuleBindings, statefulRule } from "../binding";
 import {
   functionalTargetMatches,
   isCadential64Span,
@@ -716,3 +717,13 @@ export function secondaryDominantStateStep(
   }
   return stateStep(diagnostics, outgoing);
 }
+
+export const STATEFUL_RULE_BINDINGS = defineRuleBindings({
+  "resolution.leading-tone": statefulRule(leadingToneStateStep),
+  "resolution.chord-seventh": statefulRule(seventhStateStep),
+  "resolution.dominant-ninth": statefulRule(dominantNinthStateStep),
+  "resolution.altered-tone": statefulRule(alteredToneStateStep),
+  "function.applied-dominant-target": statefulRule(
+    secondaryDominantStateStep,
+  ),
+});

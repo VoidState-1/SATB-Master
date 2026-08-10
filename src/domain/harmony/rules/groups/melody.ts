@@ -7,6 +7,7 @@ import {
   noteEvidence,
   voiceName,
 } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 function validMelodyTransitions(analysis: HarmonyAnalysis) {
   return analysis.melodyTransitions.filter((transition) => transition.contiguous);
@@ -195,3 +196,27 @@ export function melodicContourRule(
   });
   return diagnostics;
 }
+
+export const MELODY_RULE_BINDINGS = defineRuleBindings({
+  "melody.leap-over-octave": statelessRule((analysis) =>
+    melodicLeapRule(analysis, "melody.leap-over-octave"),
+  ),
+  "melody.large-leap": statelessRule((analysis) =>
+    melodicLeapRule(analysis, "melody.large-leap"),
+  ),
+  "melody.tritone": statelessRule((analysis) =>
+    melodicLeapRule(analysis, "melody.tritone"),
+  ),
+  "melody.augmented-interval": statelessRule((analysis) =>
+    augmentedDiminishedIntervalRule(analysis, "melody.augmented-interval"),
+  ),
+  "melody.diminished-interval": statelessRule((analysis) =>
+    augmentedDiminishedIntervalRule(analysis, "melody.diminished-interval"),
+  ),
+  "melody.leap-recovery": statelessRule((analysis) =>
+    melodicContourRule(analysis, "melody.leap-recovery"),
+  ),
+  "melody.consecutive-leaps": statelessRule((analysis) =>
+    melodicContourRule(analysis, "melody.consecutive-leaps"),
+  ),
+});

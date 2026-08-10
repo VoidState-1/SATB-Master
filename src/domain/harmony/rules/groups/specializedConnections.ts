@@ -25,6 +25,7 @@ import {
   diagnostic,
   noteEvidence,
 } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 type SpecializedRuleId =
   | "connection.dominant-seventh"
@@ -553,3 +554,40 @@ export function secondInversionContextRule(analysis: HarmonyAnalysis) {
   });
   return diagnostics;
 }
+
+export const SPECIALIZED_CONNECTION_RULE_BINDINGS = defineRuleBindings({
+  "function.ambiguous-connection": statelessRule(ambiguousConnectionRule),
+  "connection.dominant-seventh": statelessRule((analysis) =>
+    specializedConnectionRule(analysis, "connection.dominant-seventh"),
+  ),
+  "connection.dominant-ninth": statelessRule((analysis) =>
+    specializedConnectionRule(analysis, "connection.dominant-ninth"),
+  ),
+  "connection.leading-tone-seventh": statelessRule((analysis) =>
+    specializedConnectionRule(analysis, "connection.leading-tone-seventh"),
+  ),
+  "connection.supertonic-seventh": statelessRule((analysis) =>
+    specializedConnectionRule(analysis, "connection.supertonic-seventh"),
+  ),
+  "connection.subdominant-seventh": statelessRule((analysis) =>
+    specializedConnectionRule(analysis, "connection.subdominant-seventh"),
+  ),
+  "connection.double-dominant-seventh": statelessRule((analysis) =>
+    specializedConnectionRule(
+      analysis,
+      "connection.double-dominant-seventh",
+    ),
+  ),
+  "connection.double-dominant-leading-tone": statelessRule((analysis) =>
+    specializedConnectionRule(
+      analysis,
+      "connection.double-dominant-leading-tone",
+    ),
+  ),
+  "connection.neapolitan-sixth": statelessRule((analysis) =>
+    specializedConnectionRule(analysis, "connection.neapolitan-sixth"),
+  ),
+  "connection.second-inversion-context": statelessRule(
+    secondInversionContextRule,
+  ),
+});

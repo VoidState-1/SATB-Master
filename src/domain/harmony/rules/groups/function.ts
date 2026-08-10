@@ -11,6 +11,7 @@ import {
   chordLabel,
   diagnostic,
 } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 export function mixtureSourceRule(analysis: HarmonyAnalysis) {
   const diagnostics: RuleDiagnostic[] = [];
@@ -285,3 +286,10 @@ export function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
   });
   return diagnostics;
 }
+
+export const FUNCTION_RULE_BINDINGS = defineRuleBindings({
+  "function.retrogression": statelessRule(functionalRetrogressionRule),
+  "function.double-dominant-target": statelessRule(doubleDominantTargetRule),
+  "function.cadential64-target": statelessRule(cadential64ResolutionRule),
+  "tonality.mixture-source": statelessRule(mixtureSourceRule),
+});

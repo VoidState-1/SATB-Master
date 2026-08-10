@@ -41,7 +41,7 @@ flowchart LR
 - [`harmony/runtime.ts`](../src/domain/harmony/runtime.ts)：无状态/有状态规则调度与结果收敛。
 - [`harmony/rules/applicability.ts`](../src/domain/harmony/rules/applicability.ts)：特例上下文折叠。
 - [`harmony/rules/diagnosticArbiter.ts`](../src/domain/harmony/rules/diagnosticArbiter.ts)：稳定根因键、合并与父子覆盖。
-- [`harmony/registry.ts`](../src/domain/harmony/registry.ts)：唯一的内置规则聚合入口。
+- [`harmony/registry.ts`](../src/domain/harmony/registry.ts)：内置规则的最终装配与运行入口。具体实现绑定声明在对应 `rules/groups/*.ts` 文件末尾，由 `rules/groups/index.ts` 按组汇总；绑定类型、重复检查和完整性校验位于 `rules/binding.ts`。
 - [`harmony/ruleTypes.ts`](../src/domain/harmony/ruleTypes.ts)：规则类型、目录投影和默认配置公共 API。
 - [`harmony/rules/catalog.ts`](../src/domain/harmony/rules/catalog.ts)：81 条规则目录、配置声明和实现状态。
 
@@ -238,9 +238,10 @@ interface RuleProfile {
 2. 重新运行目录生成器，不手改 `catalog.generated.ts`。
 3. 在 `catalog.ts` 声明 options、依赖、父规则和支持的特例 context。
 4. 使用共享 facts、span 和 connection 实现规则；跨时间结论使用私有状态。
-5. 让诊断引用正确对象，提供稳定 messageKey/rootCauseKey 和结构化证据。
-6. 加入最小违规、合法邻例、同和弦、大小调、书写等音、歧义和配置测试。
-7. 只有实现与金样本完成后才把条目标记为 `implemented`。
+5. 在对应 `rules/groups/*.ts` 文件末尾把规则 ID 绑定到实现；不要在 `registry.ts` 重新建立中央 evaluator 表。
+6. 让诊断引用正确对象，提供稳定 messageKey/rootCauseKey 和结构化证据。
+7. 加入最小违规、合法邻例、同和弦、大小调、书写等音、歧义和配置测试，并由绑定完整性测试覆盖漏绑和重复绑定。
+8. 只有实现与金样本完成后才把条目标记为 `implemented`。
 
 ## 14. 当前完成边界
 

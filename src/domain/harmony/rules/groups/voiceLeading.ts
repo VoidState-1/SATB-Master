@@ -26,6 +26,7 @@ import {
   pitchClass,
   voiceName,
 } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 function chromaticHarmonyLicenses(
   note: AnalysisNote,
@@ -328,3 +329,61 @@ export function voiceLeadingRule(
   });
   return diagnostics;
 }
+
+export const VOICE_LEADING_RULE_BINDINGS = defineRuleBindings({
+  "voice-leading.overlap": statelessRule((analysis) =>
+    voiceLeadingRule(analysis, "voice-leading.overlap"),
+  ),
+  "voice-leading.unequal-fifths-perfect-to-diminished": statelessRule(
+    (analysis, config) =>
+      voiceLeadingRule(
+        analysis,
+        "voice-leading.unequal-fifths-perfect-to-diminished",
+        config,
+      ),
+  ),
+  "voice-leading.unequal-fifths-outer-diminished-to-perfect": statelessRule(
+    (analysis, config) =>
+      voiceLeadingRule(
+        analysis,
+        "voice-leading.unequal-fifths-outer-diminished-to-perfect",
+        config,
+      ),
+  ),
+  "voice-leading.unequal-fifths-inner-diminished-to-perfect": statelessRule(
+    (analysis, config) =>
+      voiceLeadingRule(
+        analysis,
+        "voice-leading.unequal-fifths-inner-diminished-to-perfect",
+        config,
+      ),
+  ),
+  "voice-leading.parallel-fifths": statelessRule((analysis) =>
+    voiceLeadingRule(analysis, "voice-leading.parallel-fifths"),
+  ),
+  "voice-leading.parallel-octaves": statelessRule((analysis) =>
+    voiceLeadingRule(analysis, "voice-leading.parallel-octaves"),
+  ),
+  "voice-leading.hidden-fifth": statelessRule((analysis) =>
+    voiceLeadingRule(analysis, "voice-leading.hidden-fifth"),
+  ),
+  "voice-leading.hidden-octave": statelessRule((analysis) =>
+    voiceLeadingRule(analysis, "voice-leading.hidden-octave"),
+  ),
+  "voice-leading.cross-relation-simultaneous": statelessRule(
+    (analysis, config) =>
+      crossRelationRule(
+        analysis,
+        "voice-leading.cross-relation-simultaneous",
+        config,
+      ),
+  ),
+  "voice-leading.cross-relation-successive": statelessRule(
+    (analysis, config) =>
+      crossRelationRule(
+        analysis,
+        "voice-leading.cross-relation-successive",
+        config,
+      ),
+  ),
+});

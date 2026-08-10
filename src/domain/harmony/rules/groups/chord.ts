@@ -25,6 +25,7 @@ import {
   noteEvidence,
   supportsTertianResolutionRules,
 } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 export function chordSliceRule(
   analysis: HarmonyAnalysis,
@@ -458,3 +459,36 @@ export function chordInterpretationIdentityRule(analysis: HarmonyAnalysis) {
   });
   return diagnostics;
 }
+
+export const CHORD_RULE_BINDINGS = defineRuleBindings({
+  "chord.unclassified-nonchord-tone": statelessRule((analysis) =>
+    chordSliceRule(analysis, "chord.unclassified-nonchord-tone"),
+  ),
+  "chord.incomplete-members": statelessRule((analysis) =>
+    chordSliceRule(analysis, "chord.incomplete-members"),
+  ),
+  "chord.inversion-bass": statelessRule((analysis) =>
+    chordSliceRule(analysis, "chord.inversion-bass"),
+  ),
+  "chord.interpretation-identity-conflict": statelessRule(
+    chordInterpretationIdentityRule,
+  ),
+  "chord.doubled-leading-tone": statelessRule((analysis) =>
+    chordSliceRule(analysis, "chord.doubled-leading-tone"),
+  ),
+  "chord.doubled-seventh": statelessRule((analysis) =>
+    chordSliceRule(analysis, "chord.doubled-seventh"),
+  ),
+  "chord.doubled-altered-tendency-tone": statelessRule((analysis) =>
+    chordSliceRule(analysis, "chord.doubled-altered-tendency-tone"),
+  ),
+  "chord.dominant-ninth-voicing": statelessRule((analysis, config) =>
+    chordSliceRule(analysis, "chord.dominant-ninth-voicing", config),
+  ),
+  "chord.dominant-ninth-root-spacing": statelessRule((analysis, config) =>
+    chordSliceRule(analysis, "chord.dominant-ninth-root-spacing", config),
+  ),
+  "chord.augmented-sixth-voicing": statelessRule((analysis, config) =>
+    chordSliceRule(analysis, "chord.augmented-sixth-voicing", config),
+  ),
+});

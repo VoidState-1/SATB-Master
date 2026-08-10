@@ -13,6 +13,7 @@ import {
   noteEvidence,
   voiceName,
 } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 type NonchordRuleId =
   | "nonchord.passing-tone"
@@ -364,3 +365,30 @@ export function nonchordRoleRule(
   });
   return diagnostics;
 }
+
+export const NONCHORD_RULE_BINDINGS = defineRuleBindings({
+  "nonchord.passing-tone": statelessRule((analysis) =>
+    nonchordRoleRule(analysis, "nonchord.passing-tone"),
+  ),
+  "nonchord.neighbor-tone": statelessRule((analysis) =>
+    nonchordRoleRule(analysis, "nonchord.neighbor-tone"),
+  ),
+  "nonchord.suspension-preparation": statelessRule((analysis) =>
+    nonchordRoleRule(analysis, "nonchord.suspension-preparation"),
+  ),
+  "nonchord.suspension-resolution": statelessRule((analysis) =>
+    nonchordRoleRule(analysis, "nonchord.suspension-resolution"),
+  ),
+  "nonchord.retardation": statelessRule((analysis) =>
+    nonchordRoleRule(analysis, "nonchord.retardation"),
+  ),
+  "nonchord.appoggiatura": statelessRule((analysis) =>
+    nonchordRoleRule(analysis, "nonchord.appoggiatura"),
+  ),
+  "nonchord.anticipation": statelessRule((analysis) =>
+    nonchordRoleRule(analysis, "nonchord.anticipation"),
+  ),
+  "nonchord.pedal-point": statelessRule((analysis) =>
+    nonchordRoleRule(analysis, "nonchord.pedal-point"),
+  ),
+});

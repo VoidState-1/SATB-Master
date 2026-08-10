@@ -22,6 +22,7 @@ import {
   finalSameHarmonySlice,
   noteEvidence,
 } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 const UPPER_VOICES = ["soprano", "alto", "tenor"] as const;
 
@@ -393,3 +394,32 @@ export function basicConnectionRule(
   });
   return diagnostics;
 }
+
+export const BASIC_TEACHING_RULE_BINDINGS = defineRuleBindings({
+  "voice.incomplete-satb": statelessRule(incompleteSatbRule),
+  "voice-leading.all-voices-similar": statelessRule(allVoicesSimilarRule),
+  "chord.triad-root-position-doubling": statelessRule((analysis) =>
+    triadVoicingRule(analysis, "chord.triad-root-position-doubling"),
+  ),
+  "chord.first-inversion-doubling": statelessRule((analysis) =>
+    triadVoicingRule(analysis, "chord.first-inversion-doubling"),
+  ),
+  "chord.second-inversion-voicing": statelessRule((analysis) =>
+    triadVoicingRule(analysis, "chord.second-inversion-voicing"),
+  ),
+  "connection.common-tone-fourth-fifth": statelessRule((analysis) =>
+    basicConnectionRule(analysis, "connection.common-tone-fourth-fifth"),
+  ),
+  "connection.second-relation-contrary-motion": statelessRule((analysis) =>
+    basicConnectionRule(
+      analysis,
+      "connection.second-relation-contrary-motion",
+    ),
+  ),
+  "connection.common-tone-third": statelessRule((analysis) =>
+    basicConnectionRule(analysis, "connection.common-tone-third"),
+  ),
+  "connection.nonparsimonious-motion": statelessRule((analysis) =>
+    basicConnectionRule(analysis, "connection.nonparsimonious-motion"),
+  ),
+});

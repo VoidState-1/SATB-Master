@@ -3,6 +3,7 @@ import type { RuleConfig, RuleDiagnostic } from "../../runtime";
 import { VOICE_CONFIG, VOICE_ORDER, type VoiceId } from "../../../project";
 import { formatSpelledPitch, toMidi } from "../../../pitch";
 import { diagnostic, noteEvidence, voiceName } from "../helpers/core";
+import { defineRuleBindings, statelessRule } from "../binding";
 
 export function voiceRangeRule(analysis: HarmonyAnalysis, config: RuleConfig = {}) {
   const diagnostics: RuleDiagnostic[] = [];
@@ -139,3 +140,14 @@ export function verticalRule(
   });
   return diagnostics;
 }
+
+export const VOICE_RULE_BINDINGS = defineRuleBindings({
+  "voice.range": statelessRule(voiceRangeRule),
+  "voice.polyphonic-overlap": statelessRule(noteOverlapRule),
+  "voice.crossing": statelessRule((analysis) =>
+    verticalRule(analysis, "voice.crossing"),
+  ),
+  "voice.upper-spacing": statelessRule((analysis) =>
+    verticalRule(analysis, "voice.upper-spacing"),
+  ),
+});
