@@ -14,16 +14,12 @@ import {
 
 describe("规则引擎修正基线", () => {
   it("固定当前规则目录及实施数量", () => {
-    const implemented = HARMONY_RULE_DEFINITIONS.filter(
-      (definition) => definition.implemented,
-    );
-    const deferred = HARMONY_RULE_DEFINITIONS.filter(
-      (definition) => !definition.implemented,
-    );
-
     expect(HARMONY_RULE_DEFINITIONS).toHaveLength(81);
-    expect(implemented).toHaveLength(81);
-    expect(deferred).toHaveLength(0);
+    expect(
+      HARMONY_RULE_DEFINITIONS.every(
+        (definition) => "evaluate" in definition || "process" in definition,
+      ),
+    ).toBe(true);
     expect(new Set(HARMONY_RULE_DEFINITIONS.map(({ id }) => id)).size).toBe(81);
   });
 

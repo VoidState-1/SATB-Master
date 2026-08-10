@@ -4,7 +4,8 @@ import {
 } from "../../../chordModel";
 import type { HarmonyAnalysis } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
-import { VOICE_ORDER, type VoiceId } from "../../../project";
+import type { VoiceId } from "../../../project/types";
+import { VOICE_ORDER } from "../../../project/voice";
 import {
   pitchClassEquals,
   pitchClassValue,
@@ -22,7 +23,7 @@ import {
   finalSameHarmonySlice,
   noteEvidence,
 } from "../helpers/core";
-import { defineRuleBindings, statelessRule } from "../binding";
+import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 const UPPER_VOICES = ["soprano", "alto", "tenor"] as const;
 
@@ -395,31 +396,174 @@ export function basicConnectionRule(
   return diagnostics;
 }
 
-export const BASIC_TEACHING_RULE_BINDINGS = defineRuleBindings({
-  "voice.incomplete-satb": statelessRule(incompleteSatbRule),
-  "voice-leading.all-voices-similar": statelessRule(allVoicesSimilarRule),
-  "chord.triad-root-position-doubling": statelessRule((analysis) =>
+export const BASIC_TEACHING_RULES = defineRuleGroup(
+  defineStatelessRule({
+    id: "voice.incomplete-satb",
+    catalogNumber: "A.5",
+    label: "四声部不完整",
+    description: "在启用“严格四声部习题”profile 且和弦区间要求完整配置时，任一 SATB 声部没有有效音符即触发。",
+    rationale: "弱起、分句休止、导入后的未完成片段和自由写作 profile 默认不检查。",
+    group: "voice",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "slice",
+    evaluate: incompleteSatbRule,
+  }),
+  defineStatelessRule({
+    id: "voice-leading.all-voices-similar",
+    catalogNumber: "C.9",
+    label: "四声部同向进行",
+    description: "相邻结构切片中四个 SATB 声部全部实际起奏并向同一方向移动时提示。",
+    rationale: "本条只评价织体独立性；若同时产生平行五八度，只显示更具体的平行诊断为主。",
+    group: "voiceLeading",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "slice",
+    evaluate: allVoicesSimilarRule,
+  }),
+  defineStatelessRule({
+    id: "chord.triad-root-position-doubling",
+    catalogNumber: "D.5",
+    label: "原位三和弦重复音",
+    description: "完整四声部原位三和弦通常应重复根音；重复三音或省略必要构成音时根据和弦级数、调式和连接语境提示。",
+    rationale: "不得与“重复导音”等硬限制重复报警；具体副三和弦允许的重复方式需由 voicing profile 给出。",
+    group: "chord",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches",
+      "chords"
+    ],
+    dependencyScope: "chord",
+    evaluate: (analysis) =>
     triadVoicingRule(analysis, "chord.triad-root-position-doubling"),
-  ),
-  "chord.first-inversion-doubling": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "chord.first-inversion-doubling",
+    catalogNumber: "D.6",
+    label: "六和弦重复音",
+    description: "根据具体功能和级数选择允许/优先的重复音；导音、变化音和不稳定三音不得因一般“自由重复”而被重复。",
+    rationale: "`SII6`、减三和弦、经过六和弦等必须使用各自 profile，不能用一条“所有六和弦都重复低音”的简化规则。",
+    group: "chord",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches",
+      "chords"
+    ],
+    dependencyScope: "chord",
+    evaluate: (analysis) =>
     triadVoicingRule(analysis, "chord.first-inversion-doubling"),
-  ),
-  "chord.second-inversion-voicing": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "chord.second-inversion-voicing",
+    catalogNumber: "D.7",
+    label: "四六和弦配置",
+    description: "检查低音是否为五音、通常是否重复低音，以及该四六和弦是否具有终止、经过、辅助或持续低音等可解释语境。",
+    rationale: "`K46` 使用专用规则；没有角色标注时只提示，不凭单个切片武断判断用途。",
+    group: "chord",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords"
+    ],
+    dependencyScope: "chord",
+    evaluate: (analysis) =>
     triadVoicingRule(analysis, "chord.second-inversion-voicing"),
-  ),
-  "connection.common-tone-fourth-fifth": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.common-tone-fourth-fifth",
+    catalogNumber: "I.1",
+    label: "四五度关系共同音保持",
+    description: "两个原位三和弦根音为四度或五度关系，且不存在旋律或功能例外时，检查上方声部是否保持共同音，其余声部是否采用最近进行。",
+    rationale: "这是初级连接法，不得因为未保持共同音而掩盖一个实际合法连接。",
+    group: "connection",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    supportedExceptionContexts: [
+      "voice-exchange"
+    ],
+    defaultExceptionPolicies: {
+      "voice-exchange": "exempt"
+    },
+    evaluate: (analysis) =>
     basicConnectionRule(analysis, "connection.common-tone-fourth-fifth"),
-  ),
-  "connection.second-relation-contrary-motion": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.second-relation-contrary-motion",
+    catalogNumber: "I.2",
+    label: "二度关系反向进行",
+    description: "两原位三和弦根音相差二度且没有共同音时，检查上三声部整体是否采用与低音相反的最近进行。",
+    rationale: "平行五八度由 C.2/C.3 独立判断；旋律给定题可能采用其他合法配置。",
+    group: "connection",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     basicConnectionRule(
       analysis,
       "connection.second-relation-contrary-motion",
     ),
-  ),
-  "connection.common-tone-third": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.common-tone-third",
+    catalogNumber: "I.3",
+    label: "三度关系共同音保持",
+    description: "两个三和弦根音为三度关系时，提示保留共同音并使其余声部最近进行。",
+    rationale: "属于基础连接方法而非绝对禁令；不得与声部交换或旋律目标冲突。",
+    group: "connection",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    supportedExceptionContexts: [
+      "voice-exchange"
+    ],
+    defaultExceptionPolicies: {
+      "voice-exchange": "exempt"
+    },
+    evaluate: (analysis) =>
     basicConnectionRule(analysis, "connection.common-tone-third"),
-  ),
-  "connection.nonparsimonious-motion": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.nonparsimonious-motion",
+    catalogNumber: "I.4",
+    label: "不必要的声部大幅移动",
+    description: "连接器比较满足硬约束的候选配置；当前配置总移动代价显著高于最近进行候选时提示。",
+    rationale: "旋律线、音域调整、同和弦转换、声部交换和后继准备均可构成合理原因；首版不应自动启用。",
+    group: "connection",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    supportedExceptionContexts: [
+      "same-harmony",
+      "voice-exchange",
+      "pedal-point"
+    ],
+    defaultExceptionPolicies: {
+      "same-harmony": "exempt",
+      "voice-exchange": "exempt",
+      "pedal-point": "exempt"
+    },
+    evaluate: (analysis) =>
     basicConnectionRule(analysis, "connection.nonparsimonious-motion"),
-  ),
-});
+  }),
+);

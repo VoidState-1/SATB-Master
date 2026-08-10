@@ -108,7 +108,11 @@ function hasRule(project: ProjectDocument, ruleId: string) {
 describe("完整规则目录首版实现", () => {
   it("81 条目录规则均有可执行实现", () => {
     expect(HARMONY_RULE_DEFINITIONS).toHaveLength(81);
-    expect(HARMONY_RULE_DEFINITIONS.every((item) => item.implemented)).toBe(true);
+    expect(
+      HARMONY_RULE_DEFINITIONS.every(
+        (item) => "evaluate" in item || "process" in item,
+      ),
+    ).toBe(true);
   });
 
   it("严格四声部、同向进行和原位三和弦重复音均能诊断", () => {

@@ -14,7 +14,7 @@ import type {
   RuleConfig,
   RuleExceptionPolicy,
   RuleInstanceSettings,
-} from "../harmony/ruleTypes";
+} from "../harmony/rules/types";
 import type {
   Alteration,
   DiatonicStep,

@@ -4,8 +4,8 @@ import { VOICE_CONFIG } from "./voice";
 import {
   HARMONY_RULE_CATALOG_REVISION,
   HARMONY_RULE_DEFINITIONS,
-  type RuleInstanceSettings,
-} from "../harmony/ruleTypes";
+} from "../harmony/rules/catalog";
+import type { RuleInstanceSettings } from "../harmony/rules/types";
 
 export function createId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -44,7 +44,7 @@ export function createDefaultRuleProfile(): RuleProfile {
     HARMONY_RULE_DEFINITIONS.map((definition) => [
       definition.id,
       {
-        severity: definition.implemented ? definition.defaultSeverity : "off",
+        severity: definition.defaultSeverity,
         configVersion: definition.configVersion,
         config: structuredClone(definition.defaultConfig),
         exceptions: { ...definition.defaultExceptionPolicies },

@@ -1,9 +1,10 @@
 import type { HarmonyAnalysis } from "../../analysis";
 import type { RuleConfig, RuleDiagnostic } from "../../runtime";
-import { VOICE_CONFIG, VOICE_ORDER, type VoiceId } from "../../../project";
+import type { VoiceId } from "../../../project/types";
+import { VOICE_CONFIG, VOICE_ORDER } from "../../../project/voice";
 import { formatSpelledPitch, toMidi } from "../../../pitch";
 import { diagnostic, noteEvidence, voiceName } from "../helpers/core";
-import { defineRuleBindings, statelessRule } from "../binding";
+import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 export function voiceRangeRule(analysis: HarmonyAnalysis, config: RuleConfig = {}) {
   const diagnostics: RuleDiagnostic[] = [];
@@ -141,13 +142,113 @@ export function verticalRule(
   return diagnostics;
 }
 
-export const VOICE_RULE_BINDINGS = defineRuleBindings({
-  "voice.range": statelessRule(voiceRangeRule),
-  "voice.polyphonic-overlap": statelessRule(noteOverlapRule),
-  "voice.crossing": statelessRule((analysis) =>
+export const VOICE_RULES = defineRuleGroup(
+  defineStatelessRule({
+    id: "voice.range",
+    catalogNumber: "A.1",
+    label: "超出建议音域",
+    description: "SATB 音符低于或高于对应声部 profile 的建议音域时触发；按实际 MIDI 音高判断，书写等音不改变结果。",
+    rationale: "辅助轨不参与；完整钢琴卷帘音域不等于各声部建议音域。",
+    group: "voice",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "note",
+    options: [
+      {
+        "kind": "pitch-range",
+        "key": "soprano",
+        "label": "女高音域",
+        "description": "女高声部的建议音域上下界。",
+        "section": "threshold",
+        "required": true,
+        "defaultValue": {
+          "minMidi": 60,
+          "maxMidi": 81
+        }
+      },
+      {
+        "kind": "pitch-range",
+        "key": "alto",
+        "label": "女低音域",
+        "description": "女低声部的建议音域上下界。",
+        "section": "threshold",
+        "required": true,
+        "defaultValue": {
+          "minMidi": 55,
+          "maxMidi": 74
+        }
+      },
+      {
+        "kind": "pitch-range",
+        "key": "tenor",
+        "label": "男高音域",
+        "description": "男高声部的建议音域上下界。",
+        "section": "threshold",
+        "required": true,
+        "defaultValue": {
+          "minMidi": 48,
+          "maxMidi": 67
+        }
+      },
+      {
+        "kind": "pitch-range",
+        "key": "bass",
+        "label": "男低音域",
+        "description": "男低声部的建议音域上下界。",
+        "section": "threshold",
+        "required": true,
+        "defaultValue": {
+          "minMidi": 40,
+          "maxMidi": 60
+        }
+      }
+    ],
+    evaluate: voiceRangeRule,
+  }),
+  defineStatelessRule({
+    id: "voice.polyphonic-overlap",
+    catalogNumber: "A.2",
+    label: "同声部音符重叠",
+    description: "同一声部两个不同音符的半开时间区间相交，且不是同一音高的合法连音表达时触发。",
+    rationale: "辅助轨允许复调；相邻音符 `endTick === startTick` 不算重叠。",
+    group: "voice",
+    defaultSeverity: "error",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "note",
+    evaluate: noteOverlapRule,
+  }),
+  defineStatelessRule({
+    id: "voice.crossing",
+    catalogNumber: "A.3",
+    label: "声部交叉",
+    description: "同一有效切片中，较高声部低于相邻的较低声部时触发；分别检查 S/A、A/T、T/B。",
+    rationale: "相邻声部同音不算交叉；同和弦转换不豁免。",
+    group: "voice",
+    defaultSeverity: "error",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "slice",
+    evaluate: (analysis) =>
     verticalRule(analysis, "voice.crossing"),
-  ),
-  "voice.upper-spacing": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "voice.upper-spacing",
+    catalogNumber: "A.4",
+    label: "上三声部间距过宽",
+    description: "同一切片中 S-A 或 A-T 的实际音高距离大于 12 半音时触发。",
+    rationale: "T-B 不设八度上限；同和弦转换不豁免。",
+    group: "voice",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "slice",
+    evaluate: (analysis) =>
     verticalRule(analysis, "voice.upper-spacing"),
-  ),
-});
+  }),
+);

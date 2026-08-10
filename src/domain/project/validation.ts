@@ -10,7 +10,7 @@ import {
   type HarmonySemantics,
   type KeyReference,
 } from "../chordModel";
-import { RULE_EXCEPTION_CONTEXTS } from "../harmony/ruleTypes";
+import { RULE_EXCEPTION_CONTEXTS } from "../harmony/rules/types";
 import {
   isSupportedKeySignature,
   toMidi,

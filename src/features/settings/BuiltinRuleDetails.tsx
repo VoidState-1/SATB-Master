@@ -38,9 +38,6 @@ export function BuiltinRuleDetails({
         <div className="rule-details-badges">
           <span className="rule-source-badge">内置规则</span>
           <span className="rule-catalog-badge">{rule.catalogNumber}</span>
-          {!rule.implemented ? (
-            <span className="rule-unimplemented-badge">尚未实现</span>
-          ) : null}
         </div>
         <h3>{rule.label}</h3>
         <code>{rule.id}</code>
@@ -48,11 +45,6 @@ export function BuiltinRuleDetails({
           当前工程命中 {ruleHitCounts[rule.id] ?? 0} 项
         </span>
       </header>
-      {!rule.implemented ? (
-        <div className="rule-implementation-note" role="status">
-          本项已进入规则目录，但尚无可执行实现。设置会随工程保存，当前版本不会运行它。
-        </div>
-      ) : null}
       <section className="rule-details-section">
         <h4>判断说明</h4>
         <p>{rule.description}</p>

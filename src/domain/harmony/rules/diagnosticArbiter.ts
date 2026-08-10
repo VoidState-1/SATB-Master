@@ -4,7 +4,8 @@ import type {
   RuleDefinition,
   RuleDiagnostic,
 } from "../runtime";
-import { VOICE_ORDER, type VoiceId } from "../../project";
+import type { VoiceId } from "../../project/types";
+import { VOICE_ORDER } from "../../project/voice";
 import type { DiagnosticSeverity } from "./types";
 
 const MAX_MESSAGE_LENGTH = 600;

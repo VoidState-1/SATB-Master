@@ -3,20 +3,20 @@ import {
   primaryHarmonyInterpretation,
 } from "../chordModel";
 import {
-  VOICE_ORDER,
   type ChordRegion,
   type HarmonySemantics,
   type KeyEvent,
   type NoteEvent,
   type ProjectDocument,
   type VoiceId,
-} from "../project";
+} from "../project/types";
+import { VOICE_ORDER } from "../project/voice";
 import {
   pitchClassEquals,
   writtenInterval,
   type WrittenInterval,
 } from "../pitch";
-import type { RuleDependencyScope } from "./ruleTypes";
+import type { RuleDependencyScope } from "./rules/types";
 import {
   buildHarmonyConnections,
   buildFunctionalTargetChains,

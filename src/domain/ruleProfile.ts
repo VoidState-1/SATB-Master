@@ -2,9 +2,11 @@ import {
   HARMONY_RULE_DEFINITIONS,
   HARMONY_RULE_DEFINITION_BY_ID,
   HARMONY_RULE_CATALOG_REVISION,
-  RULE_EXCEPTION_CONTEXTS,
   type HarmonyRuleId,
   type HarmonyRuleSeverities,
+} from "./harmony/rules/catalog";
+import {
+  RULE_EXCEPTION_CONTEXTS,
   type HarmonyRuleSeverity,
   type RuleConfig,
   type RuleConfigValue,
@@ -12,7 +14,7 @@ import {
   type RuleExceptionMode,
   type RuleExceptionPolicy,
   type RuleInstanceSettings,
-} from "./harmony/ruleTypes";
+} from "./harmony/rules/types";
 import {
   createDefaultRuleProfile,
   type ProjectDocument,
@@ -257,7 +259,7 @@ function definitionOf(ruleId: HarmonyRuleId) {
 function defaultInstance(ruleId: HarmonyRuleId): RuleInstanceSettings {
   const definition = definitionOf(ruleId);
   return {
-    severity: definition.implemented ? definition.defaultSeverity : "off",
+    severity: definition.defaultSeverity,
     configVersion: definition.configVersion,
     config: structuredClone(definition.defaultConfig),
     exceptions: { ...definition.defaultExceptionPolicies },

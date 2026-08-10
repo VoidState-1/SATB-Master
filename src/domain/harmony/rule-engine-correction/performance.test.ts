@@ -3,7 +3,7 @@ import { createHarmonyRuleScheduler } from "../registry";
 import {
   HARMONY_RULE_DEFINITIONS,
   type HarmonyRuleSeverities,
-} from "../ruleTypes";
+} from "../rules/catalog";
 import {
   createEmptyProject,
   type NoteEvent,

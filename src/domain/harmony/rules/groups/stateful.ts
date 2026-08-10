@@ -11,8 +11,7 @@ import type {
   RuleStepContext,
   RuleStepResult,
 } from "../../runtime";
-import type { HarmonyRuleId } from "../../ruleTypes";
-import type { VoiceId } from "../../../project";
+import type { VoiceId } from "../../../project/types";
 import {
   formatPitchClass,
   pitchClassEquals,
@@ -28,7 +27,7 @@ import {
   noteEvidence,
   supportsTertianResolutionRules,
 } from "../helpers/core";
-import { defineRuleBindings, statefulRule } from "../binding";
+import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import {
   functionalTargetMatches,
   isCadential64Span,
@@ -80,7 +79,7 @@ type SecondaryDominantState = {
 };
 
 function makeRuleState<T extends JsonValue>(
-  ruleId: HarmonyRuleId,
+  ruleId: string,
   context: RuleStepContext,
   id: string,
   payload: T,
@@ -718,12 +717,88 @@ export function secondaryDominantStateStep(
   return stateStep(diagnostics, outgoing);
 }
 
-export const STATEFUL_RULE_BINDINGS = defineRuleBindings({
-  "resolution.leading-tone": statefulRule(leadingToneStateStep),
-  "resolution.chord-seventh": statefulRule(seventhStateStep),
-  "resolution.dominant-ninth": statefulRule(dominantNinthStateStep),
-  "resolution.altered-tone": statefulRule(alteredToneStateStep),
-  "function.applied-dominant-target": statefulRule(
-    secondaryDominantStateStep,
-  ),
-});
+export const STATEFUL_RULES = defineRuleGroup(
+  defineStatefulRule({
+    id: "resolution.leading-tone",
+    catalogNumber: "E.1",
+    label: "导音未解决",
+    description: "规则在导音起奏时创建私有状态，越过同和弦 span 跟踪同一声部的下一有效起奏；未按目标调性上行小二度到主音时触发。",
+    rationale: "内声部在特定不完全属和弦连接中的自由进行、阻碍进行及声部交换需专门金样本；休止中断状态。",
+    group: "resolution",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "phrase",
+    supportedExceptionContexts: [
+      "same-harmony",
+      "voice-exchange",
+      "insufficient-context"
+    ],
+    process: leadingToneStateStep,
+  }),
+  defineStatefulRule({
+    id: "resolution.chord-seventh",
+    catalogNumber: "E.2",
+    label: "和弦七音未解决",
+    description: "七音状态可在同和弦转换内延续；离开 span 后检查同一声部是否下行半音或全音到目标和弦允许音。",
+    rationale: "同和弦内声部交换不能由另一声部替代解决；特殊延迟解决由专用和弦规则声明。",
+    group: "resolution",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords"
+    ],
+    dependencyScope: "phrase",
+    supportedExceptionContexts: [
+      "same-harmony",
+      "insufficient-context"
+    ],
+    process: seventhStateStep,
+  }),
+  defineStatefulRule({
+    id: "resolution.dominant-ninth",
+    catalogNumber: "E.3",
+    label: "属九音未解决",
+    description: "识别 `D9` 的九音并跟踪同一声部，在离开属九 span 时要求级进下行到目标和弦允许音。",
+    rationale: "与通用七音、变化音规则共享证据时使用本条专用诊断；具体转位不在当前产品范围。",
+    group: "resolution",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords"
+    ],
+    dependencyScope: "phrase",
+    process: dominantNinthStateStep,
+  }),
+  defineStatefulRule({
+    id: "resolution.altered-tone",
+    catalogNumber: "E.4",
+    label: "变化音方向性解决",
+    description: "只对和弦模型明确标记为 directional alteration 的构成音建状态；通常升高音向上、降低音向下解决到目标和弦音。",
+    rationale: "不能从 accidental 字符机械推出方向；增六、导音和特定重属音由更具体规则覆盖。",
+    group: "resolution",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords"
+    ],
+    dependencyScope: "phrase",
+    process: alteredToneStateStep,
+  }),
+  defineStatefulRule({
+    id: "function.applied-dominant-target",
+    catalogNumber: "G.2",
+    label: "离调属功能未进入目标",
+    description: "从 interpretation 的 `FunctionalTarget` 建立目标义务，允许同一离调属 span 内转换；离开后首个结构和弦不是目标实体或合法替代时触发。",
+    rationale: "阻碍式解决、插入 `K46` 或延迟解决必须由目标策略显式允许；没有确认 target 时跳过。",
+    group: "function",
+    defaultSeverity: "warning",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    process: secondaryDominantStateStep,
+  }),
+);

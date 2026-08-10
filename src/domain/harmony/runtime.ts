@@ -7,7 +7,8 @@ import {
   type ProjectSnapshot,
   type SliceTransition,
 } from "./analysis";
-import { VOICE_ORDER, type ProjectDocument, type VoiceId } from "../project";
+import type { ProjectDocument, VoiceId } from "../project/types";
+import { VOICE_ORDER } from "../project/voice";
 import { planRuleApplicability } from "./rules/applicability";
 import {
   arbitrateDiagnostics,
@@ -16,14 +17,15 @@ import {
 import {
   type DiagnosticSeverity,
   type HarmonyRuleDefinition,
-  type HarmonyRuleId,
-  type HarmonyRuleSeverities,
+  type HarmonyRuleSeverity,
   type RuleConfig,
   type RuleExceptionContext,
   type RuleExceptionPolicy,
-} from "./ruleTypes";
+} from "./rules/types";
 
-export type { RuleConfig } from "./ruleTypes";
+export type { RuleConfig } from "./rules/types";
+
+type RuntimeRuleSeverities = Record<string, HarmonyRuleSeverity>;
 
 export type DiagnosticEvidenceKind =
   "note" | "chord" | "interval" | "key" | "function";
@@ -133,7 +135,7 @@ export interface RuleEvaluation {
 
 export interface StatelessRuleDefinition
   extends Omit<HarmonyRuleDefinition, "id"> {
-  readonly id: HarmonyRuleId;
+  readonly id: string;
   readonly evaluate: (
     context: ReadonlyRuleContext,
     config: RuleConfig,
@@ -147,7 +149,7 @@ export interface RuleStepResult<T extends JsonValue = JsonValue>
 
 export interface StatefulRuleDefinition<T extends JsonValue = JsonValue>
   extends Omit<HarmonyRuleDefinition, "id"> {
-  readonly id: HarmonyRuleId;
+  readonly id: string;
   readonly process: (
     context: RuleStepContext,
     incoming: readonly RuleStateEnvelope<T>[],
@@ -171,11 +173,11 @@ function isStatefulRule(
 export interface RuleRunRequest {
   project: ProjectDocument;
   analysis?: HarmonyAnalysis;
-  severities: HarmonyRuleSeverities;
+  severities: RuntimeRuleSeverities;
   revision: number;
   signal?: AbortSignal;
-  configs?: Partial<Record<HarmonyRuleId, RuleConfig>>;
-  exceptions?: Partial<Record<HarmonyRuleId, RuleExceptionPolicy>>;
+  configs?: Partial<Record<string, RuleConfig>>;
+  exceptions?: Partial<Record<string, RuleExceptionPolicy>>;
 }
 
 const MAX_DIAGNOSTICS_PER_RULE = 512;
@@ -501,10 +503,10 @@ async function runRule(
 export function runRulesSynchronously(
   definitions: readonly RuleDefinition[],
   project: ProjectDocument,
-  severities: HarmonyRuleSeverities,
+  severities: RuntimeRuleSeverities,
   revision = 0,
-  configs: Partial<Record<HarmonyRuleId, RuleConfig>> = {},
-  exceptions: Partial<Record<HarmonyRuleId, RuleExceptionPolicy>> = {},
+  configs: Partial<Record<string, RuleConfig>> = {},
+  exceptions: Partial<Record<string, RuleExceptionPolicy>> = {},
 ) {
   const analysis = buildHarmonyAnalysis(project, revision);
   const diagnostics: HarmonyDiagnostic[] = [];

@@ -7,7 +7,7 @@ import {
   noteEvidence,
   voiceName,
 } from "../helpers/core";
-import { defineRuleBindings, statelessRule } from "../binding";
+import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 function validMelodyTransitions(analysis: HarmonyAnalysis) {
   return analysis.melodyTransitions.filter((transition) => transition.contiguous);
@@ -197,26 +197,156 @@ export function melodicContourRule(
   return diagnostics;
 }
 
-export const MELODY_RULE_BINDINGS = defineRuleBindings({
-  "melody.leap-over-octave": statelessRule((analysis) =>
+export const MELODY_RULES = defineRuleGroup(
+  defineStatelessRule({
+    id: "melody.leap-over-octave",
+    catalogNumber: "B.1",
+    label: "超过八度的跳进",
+    description: "同一声部的连续起奏音相差大于 12 半音时触发。",
+    rationale: "休止会切断连续旋律；同和弦分解也不豁免超过八度的跳进。",
+    group: "melody",
+    defaultSeverity: "error",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "note",
+    evaluate: (analysis) =>
     melodicLeapRule(analysis, "melody.leap-over-octave"),
-  ),
-  "melody.large-leap": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "melody.large-leap",
+    catalogNumber: "B.2",
+    label: "较大旋律跳进",
+    description: "不同和声之间，同一声部连续起奏音的简单音程大于纯五度并且不超过纯八度时触发。",
+    rationale: "同和弦转换中的分解和弦跳进放宽；六度和八度是否允许由教学 profile 细分。",
+    group: "melody",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "note",
+    supportedExceptionContexts: [
+      "same-harmony",
+      "arpeggiation"
+    ],
+    defaultExceptionPolicies: {
+      "same-harmony": "exempt"
+    },
+    evaluate: (analysis) =>
     melodicLeapRule(analysis, "melody.large-leap"),
-  ),
-  "melody.tritone": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "melody.tritone",
+    catalogNumber: "B.5",
+    label: "三全音旋律进行",
+    description: "这是 B.3/B.4 的专门显示子类；当书写音程为增四度或减五度时提供更具体诊断。",
+    rationale: "与 B.3/B.4 共用证据时只显示本条；同和弦转换中的和弦音跳进按适用性计划放宽。",
+    group: "melody",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "note",
+    coveredRuleIds: [
+      "melody.augmented-interval",
+      "melody.diminished-interval"
+    ],
+    supportedExceptionContexts: [
+      "same-harmony",
+      "arpeggiation"
+    ],
+    defaultExceptionPolicies: {
+      "same-harmony": "exempt"
+    },
+    evaluate: (analysis) =>
     melodicLeapRule(analysis, "melody.tritone"),
-  ),
-  "melody.augmented-interval": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "melody.augmented-interval",
+    catalogNumber: "B.3",
+    label: "旋律增音程",
+    description: "使用字母级数和升降号计算书写音程，连续起奏音形成增一度、增二度、增四度等增音程时触发。",
+    rationale: "同和弦内合法分解和弦、旋律小调特定进行和变化和弦的规范解决由专用规则决定；不能只按半音数判断。",
+    group: "melody",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "note",
+    supportedExceptionContexts: [
+      "same-harmony",
+      "arpeggiation"
+    ],
+    defaultExceptionPolicies: {
+      "same-harmony": "exempt"
+    },
+    evaluate: (analysis) =>
     augmentedDiminishedIntervalRule(analysis, "melody.augmented-interval"),
-  ),
-  "melody.diminished-interval": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "melody.diminished-interval",
+    catalogNumber: "B.4",
+    label: "旋律减音程",
+    description: "连续起奏音形成减音程时触发，并记录后继音以判断是否按规范反向解决。",
+    rationale: "允许的减七度、减四度等解决模式需要按和弦功能建立金样本；待审定前不升级为错误。",
+    group: "melody",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "note",
+    supportedExceptionContexts: [
+      "same-harmony",
+      "arpeggiation"
+    ],
+    defaultExceptionPolicies: {
+      "same-harmony": "exempt"
+    },
+    evaluate: (analysis) =>
     augmentedDiminishedIntervalRule(analysis, "melody.diminished-interval"),
-  ),
-  "melody.leap-recovery": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "melody.leap-recovery",
+    catalogNumber: "B.6",
+    label: "大跳后的反向补偿",
+    description: "大于三度的跳进后，后继起奏音继续同向跳进，或没有在合理窗口内反向级进时触发。",
+    rationale: "同和弦分解、序进、经过性低音和明确的旋律轮廓可豁免；“合理窗口”需金样本校准。",
+    group: "melody",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "note",
+    supportedExceptionContexts: [
+      "same-harmony",
+      "arpeggiation"
+    ],
+    defaultExceptionPolicies: {
+      "same-harmony": "exempt"
+    },
+    evaluate: (analysis) =>
     melodicContourRule(analysis, "melody.leap-recovery"),
-  ),
-  "melody.consecutive-leaps": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "melody.consecutive-leaps",
+    catalogNumber: "B.7",
+    label: "同向连续跳进",
+    description: "至少三次连续起奏形成两个同向跳进，并且总轮廓构成七度、九度或其他不协和音程时触发。",
+    rationale: "同和弦分解、明确序进或总轮廓为和弦协和音程时放宽。",
+    group: "melody",
+    defaultSeverity: "suggestion",
+    requires: [
+      "written-pitches"
+    ],
+    dependencyScope: "note",
+    supportedExceptionContexts: [
+      "same-harmony",
+      "arpeggiation"
+    ],
+    defaultExceptionPolicies: {
+      "same-harmony": "exempt"
+    },
+    evaluate: (analysis) =>
     melodicContourRule(analysis, "melody.consecutive-leaps"),
-  ),
-});
+  }),
+);

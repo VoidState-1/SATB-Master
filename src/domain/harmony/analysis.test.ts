@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createChordRegion } from "../chords";
 import { checkHarmony } from "./registry";
 import { buildHarmonyAnalysis, walkSpans } from "./analysis";
-import { defaultHarmonyRuleSeverities } from "./ruleTypes";
+import { defaultHarmonyRuleSeverities } from "./rules/catalog";
 import {
   createEmptyProject,
   PPQ,

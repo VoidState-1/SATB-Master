@@ -10,9 +10,9 @@ import type {
   RuleDiagnostic,
   RuleEvaluation,
 } from "../../runtime";
-import type { HarmonyRuleId } from "../../ruleTypes";
 import type { HarmonyConnectionAssessment } from "../connector";
-import { VOICE_CONFIG, VOICE_ORDER, type VoiceId } from "../../../project";
+import type { VoiceId } from "../../../project/types";
+import { VOICE_CONFIG, VOICE_ORDER } from "../../../project/voice";
 import {
   formatSpelledPitch,
   pitchClassEquals,
@@ -27,7 +27,7 @@ export function evaluation(diagnostics: RuleDiagnostic[]): RuleEvaluation {
 
 /** 构造标准化、结构化的 RuleDiagnostic 规则诊断对象 */
 export function diagnostic(
-  ruleId: HarmonyRuleId,
+  ruleId: string,
   tick: number,
   endTick: number,
   voiceIds: VoiceId[],

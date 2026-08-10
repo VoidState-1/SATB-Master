@@ -22,7 +22,7 @@ import {
   diagnostic,
   noteEvidence,
 } from "../helpers/core";
-import { defineRuleBindings, statelessRule } from "../binding";
+import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 type CadenceRuleId =
   | "cadence.bass-formula"
@@ -469,23 +469,128 @@ export function tonicizationModulationConflictRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export const RHYTHM_CADENCE_TONALITY_RULE_BINDINGS = defineRuleBindings({
-  "rhythm.harmonic-syncopation": statelessRule(harmonicSyncopationRule),
-  "cadence.cadential64-metric-position": statelessRule(
-    cadential64MetricRule,
-  ),
-  "cadence.bass-formula": statelessRule((analysis) =>
+export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
+  defineStatelessRule({
+    id: "rhythm.harmonic-syncopation",
+    catalogNumber: "J.1",
+    label: "和声切分",
+    description: "沿 `HarmonySpan` 链比较拍位：一个新和声在弱拍/弱位置进入，延续覆盖下一强拍或相对强位置，随后在弱位置离开时触发。",
+    rationale: "持续音、延留音、同一功能内装饰转换、序进和人工确认的切分节奏可豁免；必须按变拍号的实际重音层级计算。",
+    group: "rhythm",
+    defaultSeverity: "warning",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: harmonicSyncopationRule,
+  }),
+  defineStatelessRule({
+    id: "cadence.cadential64-metric-position",
+    catalogNumber: "J.2",
+    label: "K46 拍位不当",
+    description: "根据当前拍号和小节内重音层级，`K46` 应处于强拍或相对强位置，后继 D 处于相对较弱位置。",
+    rationale: "不同拍号、复拍子和乐句尺度需要节拍 profile；没有可靠节拍信息时跳过。",
+    group: "cadence",
+    defaultSeverity: "warning",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: cadential64MetricRule,
+  }),
+  defineStatelessRule({
+    id: "cadence.bass-formula",
+    catalogNumber: "J.3",
+    label: "终止低音不成立",
+    description: "对已确认的完全、半终止、变格或阻碍终止，检查末端功能和低音级数是否符合该终止类型。",
+    rationale: "只有人工标注或高置信度终止候选才检查；未标注乐句不能仅凭最后两个和弦武断报错。",
+    group: "cadence",
+    defaultSeverity: "warning",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     cadenceRule(analysis, "cadence.bass-formula"),
-  ),
-  "cadence.perfect-authentic-soprano": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "cadence.perfect-authentic-soprano",
+    catalogNumber: "J.4",
+    label: "完全终止的旋律位置",
+    description: "`cadenceRole` 明确为完全终止时，验证 D-T 均为规定转位，最终 T 为原位且女高音为主音。",
+    rationale: "不完全终止不适用；名称和具体分类需与中文教材术语最终统一。",
+    group: "cadence",
+    defaultSeverity: "warning",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     cadenceRule(analysis, "cadence.perfect-authentic-soprano"),
-  ),
-  "cadence.unstable-ending": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "cadence.unstable-ending",
+    catalogNumber: "J.5",
+    label: "结束和弦不稳定",
+    description: "在闭合终止的 phrase end 联合检查最终功能、转位和所有仍存的规则私有解决状态。",
+    rationale: "半终止、开放终止和未完成练习不适用；具体倾向音仍由其专用规则生成诊断。",
+    group: "cadence",
+    defaultSeverity: "warning",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     cadenceRule(analysis, "cadence.unstable-ending"),
-  ),
-  "tonality.unmarked-key-change": statelessRule(unmarkedKeyChangeRule),
-  "tonality.pivot-reinterpretation": statelessRule(pivotReinterpretationRule),
-  "tonality.tonicization-modulation-conflict": statelessRule(
-    tonicizationModulationConflictRule,
-  ),
-});
+  }),
+  defineStatelessRule({
+    id: "tonality.unmarked-key-change",
+    catalogNumber: "K.1",
+    label: "调性变化未标注",
+    description: "多个连续 span 的高置信度解释共同指向新调性，且不是短暂离调属或借用和弦时提示用户确认转调。",
+    rationale: "自动分析只能产生候选，绝不写回调号或覆盖人工解释。",
+    group: "tonality",
+    defaultSeverity: "suggestion",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "project",
+    evaluate: unmarkedKeyChangeRule,
+  }),
+  defineStatelessRule({
+    id: "tonality.pivot-reinterpretation",
+    catalogNumber: "K.2",
+    label: "共同和弦重解释不一致",
+    description: "验证共同和弦 interpretations 映射到相同 identity 和转位，并检查进入侧使用旧调解释、离开侧使用新调解释。",
+    rationale: "实体一致性通常应由模型 validator 阻止；连接方向只在已确认转调时检查。",
+    group: "tonality",
+    defaultSeverity: "error",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "project",
+    evaluate: pivotReinterpretationRule,
+  }),
+  defineStatelessRule({
+    id: "tonality.tonicization-modulation-conflict",
+    catalogNumber: "K.3",
+    label: "离调与转调语境冲突",
+    description: "局部调性 span、目标功能义务和人工 modulation 标记给出互斥结论时触发语义冲突。",
+    rationale: "不自动选择其中一个解释；依赖该结论的功能规则暂停。",
+    group: "tonality",
+    defaultSeverity: "warning",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "project",
+    evaluate: tonicizationModulationConflictRule,
+  }),
+);

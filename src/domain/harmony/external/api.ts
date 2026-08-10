@@ -5,11 +5,8 @@ import type {
   RuleDiagnostic,
   SkippedRule,
 } from "../runtime";
-import {
-  VOICE_ORDER,
-  type ProjectDocument,
-  type RuleProfile,
-} from "../../project";
+import type { ProjectDocument, RuleProfile } from "../../project/types";
+import { VOICE_ORDER } from "../../project/voice";
 import {
   RULE_EXCEPTION_CONTEXTS,
   type DiagnosticSeverity,
@@ -21,7 +18,7 @@ import {
   type RuleExceptionMode,
   type RuleExceptionPolicy,
   type RuleOptionDefinition,
-} from "../ruleTypes";
+} from "../rules/types";
 import { normalizeRuleConfig } from "../rules/configSchema";
 import { planRuleApplicability } from "../rules/applicability";
 

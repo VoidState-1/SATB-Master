@@ -175,7 +175,7 @@ export function evaluateExternalRuleSource(options: {
   source: string;
   ruleId: string;
   context: ExternalRuleContext;
-  config: import("../ruleTypes").RuleConfig;
+  config: import("../rules/types").RuleConfig;
   timeoutMs?: number;
   memoryLimitBytes?: number;
 }): Promise<ExternalRuleSandboxEvaluation> {

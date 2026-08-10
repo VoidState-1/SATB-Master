@@ -3,9 +3,9 @@ import {
   HARMONY_RULE_DEFINITIONS,
   chordDependentRuleIds,
   defaultHarmonyRuleSeverities,
-} from "./ruleTypes";
+} from "./catalog";
 
-describe("和声检查规则注册表", () => {
+describe("和声检查规则目录", () => {
   it("不包含重复 ID，且每条规则都有默认严重度", () => {
     const ids = HARMONY_RULE_DEFINITIONS.map((rule) => rule.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -19,7 +19,7 @@ describe("和声检查规则注册表", () => {
     ).toBe(true);
   });
 
-  it("从注册表推导需要和弦标注的规则", () => {
+  it("从规则对象推导需要和弦标注的规则", () => {
     const ids = chordDependentRuleIds();
     expect(ids.length).toBeGreaterThan(40);
     expect(ids).toContain("chord.unclassified-nonchord-tone");

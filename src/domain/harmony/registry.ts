@@ -1,4 +1,4 @@
-import type { ProjectDocument } from "../project";
+import type { ProjectDocument } from "../project/types";
 import {
   RuleScheduler,
   runRulesSynchronously,
@@ -6,19 +6,14 @@ import {
   type RuleConfig,
 } from "./runtime";
 import {
-  HARMONY_RULE_DEFINITIONS,
   defaultHarmonyRuleSeverities,
   type HarmonyRuleId,
   type HarmonyRuleSeverities,
-  type RuleExceptionPolicy,
-} from "./ruleTypes";
-import { bindRuleDefinitions } from "./rules/binding";
-import { BUILTIN_RULE_BINDINGS } from "./rules/groups";
+} from "./rules/catalog";
+import type { RuleExceptionPolicy } from "./rules/types";
+import { BUILTIN_HARMONY_RULES } from "./rules/groups";
 
-export const BUILTIN_HARMONY_RULES = bindRuleDefinitions(
-  HARMONY_RULE_DEFINITIONS,
-  BUILTIN_RULE_BINDINGS,
-);
+export { BUILTIN_HARMONY_RULES };
 
 export function createHarmonyRuleScheduler() {
   return new RuleScheduler(BUILTIN_HARMONY_RULES);

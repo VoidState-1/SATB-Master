@@ -8,7 +8,7 @@ import type {
   HarmonyRuleSeverity,
   RuleConfig,
   RuleExceptionPolicy,
-} from "../ruleTypes";
+} from "../rules/types";
 
 export type ExternalRuleWorkerRequest =
   | {

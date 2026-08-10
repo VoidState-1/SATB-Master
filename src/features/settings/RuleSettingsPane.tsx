@@ -239,7 +239,7 @@ export function RuleSettingsPane({
                   return (
                     <button
                       type="button"
-                      className={`rule-row severity-${severity} ${selectedRuleKey === key ? "is-selected" : ""} ${!rule.implemented ? "is-unimplemented" : ""}`}
+                      className={`rule-row severity-${severity} ${selectedRuleKey === key ? "is-selected" : ""}`}
                       aria-label={`查看“${rule.label}”规则`}
                       data-rule-key={key}
                       key={rule.id}
@@ -253,9 +253,7 @@ export function RuleSettingsPane({
                         <small>{rule.description}</small>
                       </span>
                       <span className="rule-row-status">
-                        {!rule.implemented
-                          ? "尚未实现"
-                          : severityLabel(severity)}
+                        {severityLabel(severity)}
                         {modified ? <b>已修改</b> : null}
                       </span>
                     </button>

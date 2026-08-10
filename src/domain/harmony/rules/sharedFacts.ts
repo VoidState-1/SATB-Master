@@ -6,7 +6,8 @@ import type {
   AnalysisSlice,
   SliceTransition,
 } from "../analysis";
-import { VOICE_ORDER, type VoiceId } from "../../project";
+import type { VoiceId } from "../../project/types";
+import { VOICE_ORDER } from "../../project/voice";
 import {
   pitchClassEquals,
   toMidi,

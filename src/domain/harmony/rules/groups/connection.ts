@@ -4,7 +4,7 @@ import {
 } from "../../../chordModel";
 import type { AnalysisNote, HarmonyAnalysis } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
-import { VOICE_ORDER } from "../../../project";
+import { VOICE_ORDER } from "../../../project/voice";
 import {
   pitchClassEquals,
   scaleDegreePitchClass,
@@ -18,7 +18,7 @@ import {
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
-import { defineRuleBindings, statelessRule } from "../binding";
+import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 export function augmentedSixthResolutionRule(
   analysis: HarmonyAnalysis,
@@ -437,32 +437,124 @@ export function deceptiveVoiceLeadingRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export const CONNECTION_RULE_BINDINGS = defineRuleBindings({
-  "resolution.augmented-sixth": statelessRule((analysis) =>
+export const CONNECTION_RULES = defineRuleGroup(
+  defineStatelessRule({
+    id: "resolution.augmented-sixth",
+    catalogNumber: "E.5",
+    label: "增六音程未反向解决",
+    description: "跟踪增六两端的书写音高，要求低端下行半音、高端上行半音，形成目标属音的八度或进入已确认的 `K46` 过渡。",
+    rationale: "Ger+6 为避免平行五度可能经过 `K46`；具体目标以功能标注为准。",
+    group: "resolution",
+    defaultSeverity: "error",
+    requires: [
+      "written-pitches",
+      "chords"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     augmentedSixthResolutionRule(analysis),
-  ),
-  "connection.italian-augmented-sixth": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.italian-augmented-sixth",
+    catalogNumber: "H.9",
+    label: "It+6 连接",
+    description: "验证增六两端的反向半音解决，并检查第三个构成音的重复和目标和弦配置。",
+    rationale: "E.5 作为通用父规则，在同一证据上由本条覆盖。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    coveredRuleIds: [
+      "resolution.augmented-sixth"
+    ],
+    evaluate: (analysis) =>
     augmentedSixthResolutionRule(
       analysis,
       "connection.italian-augmented-sixth",
     ),
-  ),
-  "connection.french-augmented-sixth": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.french-augmented-sixth",
+    catalogNumber: "H.10",
+    label: "Fr+6 连接",
+    description: "除增六两端外，检查其特有构成音在目标连接中的保持或级进，防止错误拼写造成假平行。",
+    rationale: "必须按书写音程而非 pitch-class 集合识别。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    coveredRuleIds: [
+      "resolution.augmented-sixth"
+    ],
+    evaluate: (analysis) =>
     augmentedSixthResolutionRule(
       analysis,
       "connection.french-augmented-sixth",
     ),
-  ),
-  "connection.german-augmented-sixth": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.german-augmented-sixth",
+    catalogNumber: "H.11",
+    label: "Ger+6 连接",
+    description: "检查增六两端解决，并识别直接进入 D 可能形成的平行五度；优先验证经 `K46` 或教材允许的规避进行。",
+    rationale: "真实平行五度仍由 C.2 报错，本条只解释该和弦特有的解决路径，不重复生成同一根因。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    coveredRuleIds: [
+      "resolution.augmented-sixth"
+    ],
+    evaluate: (analysis) =>
     augmentedSixthResolutionRule(
       analysis,
       "connection.german-augmented-sixth",
     ),
-  ),
-  "function.deceptive-cadence-target": statelessRule(
-    deceptiveCadenceTargetRule,
-  ),
-  "connection.deceptive-voice-leading": statelessRule(
-    deceptiveVoiceLeadingRule,
-  ),
-});
+  }),
+  defineStatelessRule({
+    id: "function.deceptive-cadence-target",
+    catalogNumber: "G.5",
+    label: "阻碍进行目标",
+    description: "仅在人工确认 `cadenceRole: deceptive` 时，验证后继功能、低音和倾向音处理是否符合阻碍进行 profile。",
+    rationale: "普通 `D -> TSVI` 可以是非终止性连接；没有终止角色时不自动称为阻碍终止。",
+    group: "function",
+    defaultSeverity: "warning",
+    requires: [
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: deceptiveCadenceTargetRule,
+  }),
+  defineStatelessRule({
+    id: "connection.deceptive-voice-leading",
+    catalogNumber: "H.12",
+    label: "阻碍进行的声部配置",
+    description: "在 G.5 确认阻碍语境后，验证低音进行、导音解决和目标 `TSVI` 的重复策略。",
+    rationale: "大调、小调和不同 D 形态需要独立样本；本条覆盖通用倾向音诊断的同一证据。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    coveredRuleIds: [
+      "function.deceptive-cadence-target"
+    ],
+    evaluate: deceptiveVoiceLeadingRule,
+  }),
+);

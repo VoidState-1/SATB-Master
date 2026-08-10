@@ -92,7 +92,6 @@ export function buildExternalRuleEntries(
 export function isBuiltinRuleModified(
   rule: {
     id: HarmonyRuleId;
-    implemented: boolean;
     defaultSeverity: HarmonyRuleSeverity;
     defaultConfig: RuleConfig;
     defaultExceptionPolicies: RuleExceptionPolicy;
@@ -102,8 +101,7 @@ export function isBuiltinRuleModified(
   exceptions: Partial<Record<HarmonyRuleId, RuleExceptionPolicy>>,
 ) {
   return (
-    severities[rule.id] !==
-      (rule.implemented ? rule.defaultSeverity : "off") ||
+    severities[rule.id] !== rule.defaultSeverity ||
     !sameValue(configs[rule.id] ?? {}, rule.defaultConfig) ||
     !sameValue(exceptions[rule.id] ?? {}, rule.defaultExceptionPolicies)
   );

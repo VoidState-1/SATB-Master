@@ -10,7 +10,7 @@ import { RuleScheduler, type RuleDefinition } from "./runtime";
 import {
   HARMONY_RULE_DEFINITIONS,
   defaultHarmonyRuleSeverities,
-} from "./ruleTypes";
+} from "./rules/catalog";
 import {
   createEmptyProject,
   PPQ,

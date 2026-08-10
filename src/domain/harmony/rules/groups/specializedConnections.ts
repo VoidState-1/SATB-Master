@@ -10,7 +10,8 @@ import type {
   HarmonySpan,
 } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
-import { VOICE_ORDER, type VoiceId } from "../../../project";
+import type { VoiceId } from "../../../project/types";
+import { VOICE_ORDER } from "../../../project/voice";
 import {
   pitchClassEquals,
   toMidi,
@@ -25,7 +26,7 @@ import {
   diagnostic,
   noteEvidence,
 } from "../helpers/core";
-import { defineRuleBindings, statelessRule } from "../binding";
+import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 type SpecializedRuleId =
   | "connection.dominant-seventh"
@@ -555,39 +556,186 @@ export function secondInversionContextRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export const SPECIALIZED_CONNECTION_RULE_BINDINGS = defineRuleBindings({
-  "function.ambiguous-connection": statelessRule(ambiguousConnectionRule),
-  "connection.dominant-seventh": statelessRule((analysis) =>
+export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
+  defineStatelessRule({
+    id: "function.ambiguous-connection",
+    catalogNumber: "G.6",
+    label: "功能连接语义不足",
+    description: "和弦实体有效，但前后 interpretation 候选导致不同的合法性结论，且没有人工确认主解释时给出提示。",
+    rationale: "这是需要用户确认的语义提示，不得同时产生任何基于任意候选的功能违规。",
+    group: "function",
+    defaultSeverity: "suggestion",
+    requires: [
+      "chords"
+    ],
+    dependencyScope: "phrase",
+    evaluate: ambiguousConnectionRule,
+  }),
+  defineStatelessRule({
+    id: "connection.dominant-seventh",
+    catalogNumber: "H.1",
+    label: "D7 解决配置",
+    description: "综合检查导音上行、七音下行、共同音保持和目标主和弦的完整/不完整配置；根据 `D7/D56/D34/D2` 分别验证低音走向。",
+    rationale: "本条覆盖同一连接上的通用 E.1/E.2 诊断；阻碍解决和转调使用独立 profile。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    coveredRuleIds: [
+      "resolution.leading-tone",
+      "resolution.chord-seventh"
+    ],
+    evaluate: (analysis) =>
     specializedConnectionRule(analysis, "connection.dominant-seventh"),
-  ),
-  "connection.dominant-ninth": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.dominant-ninth",
+    catalogNumber: "H.2",
+    label: "D9 解决配置",
+    description: "在 `D9 -> T` 或确认目标连接中联合验证九音下行、七音下行、导音上行和目标和弦配置。",
+    rationale: "只处理当前支持的原位 `D9`；覆盖 E.1、E.2、E.3 的同源诊断。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    coveredRuleIds: [
+      "resolution.leading-tone",
+      "resolution.chord-seventh",
+      "resolution.dominant-ninth"
+    ],
+    evaluate: (analysis) =>
     specializedConnectionRule(analysis, "connection.dominant-ninth"),
-  ),
-  "connection.leading-tone-seventh": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.leading-tone-seventh",
+    catalogNumber: "H.3",
+    label: "DVII7 解决配置",
+    description: "依据 `DVII7` 种类、转位和目标调性，逐声部检查倾向音级进与目标和弦允许重复音。",
+    rationale: "减七和弦的等音转调必须先确认新解释，不能沿旧调性误判。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     specializedConnectionRule(analysis, "connection.leading-tone-seventh"),
-  ),
-  "connection.supertonic-seventh": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.supertonic-seventh",
+    catalogNumber: "H.4",
+    label: "SII7 进入属功能",
+    description: "根据转位和目标类型检查七音下行、共同音与低音走向，并验证后继属于允许的属功能集合。",
+    rationale: "序进中的 `SII7` 可能采用不同解决；由序进语境豁免。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     specializedConnectionRule(analysis, "connection.supertonic-seventh"),
-  ),
-  "connection.subdominant-seventh": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.subdominant-seventh",
+    catalogNumber: "H.5",
+    label: "S7 进入属功能",
+    description: "依据 IV 级七和弦的具体转位检查进入 D 类或其他已允许目标时的声部进行。",
+    rationale: "`S7` 不能机械复用 `SII7` 的所有低音与重复规则；需要独立金样本。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     specializedConnectionRule(analysis, "connection.subdominant-seventh"),
-  ),
-  "connection.double-dominant-seventh": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.double-dominant-seventh",
+    catalogNumber: "H.6",
+    label: "DD7 解决配置",
+    description: "在 G.3 已确认目标成立后，按 D 调性化语境检查变化导音、七音和各转位低音的进行。",
+    rationale: "目标调性改变时重新建立局部调性，不能沿主调拼写判断。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     specializedConnectionRule(
       analysis,
       "connection.double-dominant-seventh",
     ),
-  ),
-  "connection.double-dominant-leading-tone": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.double-dominant-leading-tone",
+    catalogNumber: "H.7",
+    label: "DDVII7 解决配置",
+    description: "按属调的导七和弦解释检查四个倾向音及后继目标配置。",
+    rationale: "等音转调语境优先；与 H.3 共用算法但使用不同局部目标。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     specializedConnectionRule(
       analysis,
       "connection.double-dominant-leading-tone",
     ),
-  ),
-  "connection.neapolitan-sixth": statelessRule((analysis) =>
+  }),
+  defineStatelessRule({
+    id: "connection.neapolitan-sixth",
+    catalogNumber: "H.8",
+    label: "N6 连接",
+    description: "检查第一转位、通常重复低音所代表的调内 IV 级音，并验证降 II 级音按书写方向进入 D 或经 `K46` 进入 D。",
+    rationale: "调式、旋律位置和是否经过 `K46` 会影响声部走向；具体例外待金样本校准。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: (analysis) =>
     specializedConnectionRule(analysis, "connection.neapolitan-sixth"),
-  ),
-  "connection.second-inversion-context": statelessRule(
-    secondInversionContextRule,
-  ),
-});
+  }),
+  defineStatelessRule({
+    id: "connection.second-inversion-context",
+    catalogNumber: "H.13",
+    label: "六四和弦进入与离开",
+    description: "结合前后 span、低音方向和拍位，验证人工标注的四六类型；经过四六要求低音级进贯穿，辅助四六要求低音保持并回到原和弦。",
+    rationale: "首版只验证人工确认类型，不自动给所有 `T46/S46/D46` 指派用途。",
+    group: "connection",
+    defaultSeverity: "warning",
+    requires: [
+      "written-pitches",
+      "chords",
+      "semantics"
+    ],
+    dependencyScope: "phrase",
+    evaluate: secondInversionContextRule,
+  }),
+);

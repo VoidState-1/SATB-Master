@@ -41,8 +41,8 @@ flowchart LR
 - [`harmony/runtime.ts`](../src/domain/harmony/runtime.ts)：无状态/有状态规则调度与结果收敛。
 - [`harmony/rules/applicability.ts`](../src/domain/harmony/rules/applicability.ts)：特例上下文折叠。
 - [`harmony/rules/diagnosticArbiter.ts`](../src/domain/harmony/rules/diagnosticArbiter.ts)：稳定根因键、合并与父子覆盖。
-- [`harmony/registry.ts`](../src/domain/harmony/registry.ts)：内置规则的最终装配与运行入口。具体实现绑定声明在对应 `rules/groups/*.ts` 文件末尾，由 `rules/groups/index.ts` 按组汇总；绑定类型、重复检查和完整性校验位于 `rules/binding.ts`。
-- [`harmony/ruleTypes.ts`](../src/domain/harmony/ruleTypes.ts)：规则类型、目录投影和默认配置公共 API。
+- [`harmony/registry.ts`](../src/domain/harmony/registry.ts)：内置规则的调度与运行入口。每个 `rules/groups/*.ts` 文件在算法之后声明完整规则对象，由 `rules/groups/index.ts` 按组汇总；构造、重复检查和完整性校验位于 `rules/defineRule.ts`。
+- [`harmony/rules/types.ts`](../src/domain/harmony/rules/types.ts)：不依赖规则实现的纯类型契约；`rules/catalog.ts` 从可执行规则集合派生目录与默认配置公共 API。
 - [`harmony/rules/catalog.ts`](../src/domain/harmony/rules/catalog.ts)：81 条规则目录、配置声明和实现状态。
 
 分析输入是指定 revision 的不可变快照。规则不得修改工程，只能返回原始诊断或结构化 skip。
@@ -147,7 +147,7 @@ interface HarmonyConnectionAssessment {
 
 ## 7. 规则目录与实现
 
-设计清单由 [`harmony-rule-catalog.md`](../DesignDocs/harmony-rule-catalog.md) 维护，并通过 [`generate-rule-catalog.mjs`](../scripts/generate-rule-catalog.mjs) 生成静态目录。`HarmonyRuleDefinition` 包含稳定 ID、目录号、说明、理由、分组、默认严重程度、依赖、配置版本、声明式 options、特例 context、父规则和 `implemented` 状态。
+规则源码是目录的唯一事实来源。每条内置规则在所属 `rules/groups/*.ts` 中以 `defineStatelessRule` 或 `defineStatefulRule` 声明，单个对象同时包含稳定 ID、目录号、说明、理由、分组、默认严重程度、依赖、配置、特例、覆盖关系和执行函数。`rules/catalog.ts` 只从完整规则集合派生有序目录、ID 索引和设置界面所需投影；[`harmony-rule-catalog.md`](../DesignDocs/harmony-rule-catalog.md) 仅作为理论设计参考。
 
 当前目录修订 2 的 81 条内置规则均有可执行实现并进入调度。规则是否产生诊断仍取决于工程严重程度、配置、适用性策略和结构化上下文；缺少人工非和弦音角色、终止类型、局部调性或双重解释时，相关规则保持静默或返回 skip，不使用启发式猜测补齐语意。
 
@@ -235,13 +235,13 @@ interface RuleProfile {
 ## 13. 新增规则流程
 
 1. 在设计清单中确定稳定目录号、ID、默认严重程度、规则口径和反例。
-2. 重新运行目录生成器，不手改 `catalog.generated.ts`。
-3. 在 `catalog.ts` 声明 options、依赖、父规则和支持的特例 context。
-4. 使用共享 facts、span 和 connection 实现规则；跨时间结论使用私有状态。
-5. 在对应 `rules/groups/*.ts` 文件末尾把规则 ID 绑定到实现；不要在 `registry.ts` 重新建立中央 evaluator 表。
+2. 使用共享 facts、span 和 connection 实现算法；跨时间结论使用私有状态。
+3. 在同一个 `rules/groups/*.ts` 文件末尾用 `defineStatelessRule` 或 `defineStatefulRule` 声明完整规则对象，包括 options、依赖、覆盖关系和特例 context。
+4. 将规则对象加入该文件导出的规则组；只有新增组文件时才修改 `rules/groups/index.ts`。
+5. 不在 `catalog.ts` 或 `registry.ts` 重复维护 ID、元数据或 evaluator 表。
 6. 让诊断引用正确对象，提供稳定 messageKey/rootCauseKey 和结构化证据。
-7. 加入最小违规、合法邻例、同和弦、大小调、书写等音、歧义和配置测试，并由绑定完整性测试覆盖漏绑和重复绑定。
-8. 只有实现与金样本完成后才把条目标记为 `implemented`。
+7. 加入最小违规、合法邻例、同和弦、大小调、书写等音、歧义和配置测试，并由规则集合测试覆盖重复 ID、重复目录号和无效引用。
+8. 新规则必须同时提交完整规则对象、执行函数和对应金样本；不存在只有目录项而没有实现的内置规则状态。
 
 ## 14. 当前完成边界
 

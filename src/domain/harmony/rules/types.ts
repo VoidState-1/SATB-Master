@@ -113,7 +113,6 @@ export interface HarmonyRuleDefinition {
   options: readonly RuleOptionDefinition[];
   supportedExceptionContexts: readonly RuleExceptionContext[];
   defaultExceptionPolicies: RuleExceptionPolicy;
-  implemented: boolean;
 }
 
 export interface RuleInstanceSettings {

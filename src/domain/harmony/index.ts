@@ -11,5 +11,6 @@ export type {
   HarmonyDiagnostic,
   RuleDefinition,
 } from "./runtime";
-export * from "./ruleTypes";
+export * from "./rules/catalog";
+export * from "./rules/types";
 export * from "./external/api";

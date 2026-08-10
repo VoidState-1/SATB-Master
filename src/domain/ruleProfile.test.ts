@@ -3,7 +3,7 @@ import {
   EXTERNAL_RULE_API_VERSION,
   type InstalledExternalRulePackage,
 } from "./harmony/external/api";
-import { HARMONY_RULE_DEFINITIONS } from "./harmony/ruleTypes";
+import { HARMONY_RULE_DEFINITIONS } from "./harmony/rules/catalog";
 import { createDefaultRuleProfile } from "./project";
 import {
   createPortableRuleProfile,
@@ -59,15 +59,16 @@ function installedPackage(): InstalledExternalRulePackage {
 }
 
 describe("规则配置档案", () => {
-  it("新工程保存完整目录快照，未实现规则默认关闭", () => {
+  it("新工程保存完整目录快照和每条规则的默认严重程度", () => {
     const profile = createDefaultRuleProfile();
     expect(profile.profileVersion).toBe(2);
     expect(profile.catalogRevision).toBe(2);
     expect(Object.keys(profile.builtin)).toHaveLength(81);
     for (const definition of HARMONY_RULE_DEFINITIONS) {
       expect(profile.builtin[definition.id]).toBeDefined();
-      if (!definition.implemented)
-        expect(profile.builtin[definition.id].severity).toBe("off");
+      expect(profile.builtin[definition.id].severity).toBe(
+        definition.defaultSeverity,
+      );
     }
   });
 

@@ -507,10 +507,6 @@
   background: #fbf2f0;
 }
 
-.rule-row.is-unimplemented .rule-copy {
-  opacity: 0.66;
-}
-
 .rule-row-status {
   display: flex;
   flex-direction: column;
@@ -1037,4 +1033,3 @@
 .external-rule-enabled input:disabled {
   opacity: 0.48;
 }
-
