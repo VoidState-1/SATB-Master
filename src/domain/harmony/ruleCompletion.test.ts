@@ -16,7 +16,6 @@ import type { SpelledPitch } from "../pitch";
 import {
   checkHarmony,
   HARMONY_RULE_DEFINITIONS,
-  HARMONY_RULE_IDS_IMPLEMENTED_IN_REVISION_2,
 } from "./index";
 
 const C_MAJOR = {
@@ -110,8 +109,6 @@ describe("完整规则目录首版实现", () => {
   it("81 条目录规则均有可执行实现", () => {
     expect(HARMONY_RULE_DEFINITIONS).toHaveLength(81);
     expect(HARMONY_RULE_DEFINITIONS.every((item) => item.implemented)).toBe(true);
-    expect(HARMONY_RULE_IDS_IMPLEMENTED_IN_REVISION_2).toHaveLength(37);
-    expect(new Set(HARMONY_RULE_IDS_IMPLEMENTED_IN_REVISION_2).size).toBe(37);
   });
 
   it("严格四声部、同向进行和原位三和弦重复音均能诊断", () => {

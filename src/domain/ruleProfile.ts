@@ -2,7 +2,6 @@ import {
   HARMONY_RULE_DEFINITIONS,
   HARMONY_RULE_DEFINITION_BY_ID,
   HARMONY_RULE_CATALOG_REVISION,
-  HARMONY_RULE_IDS_IMPLEMENTED_IN_REVISION_2,
   RULE_EXCEPTION_CONTEXTS,
   type HarmonyRuleId,
   type HarmonyRuleSeverities,
@@ -31,9 +30,6 @@ import { normalizeRuleConfig } from "./harmony/rules/configSchema";
 export const PORTABLE_RULE_PROFILE_KIND = "satb-rule-profile";
 export const PORTABLE_RULE_PROFILE_VERSION = 2;
 const NEW_PROJECT_RULE_PROFILE_KEY = "satb-master-new-project-rule-profile-v1";
-const REVISION_2_IMPLEMENTED_RULE_IDS = new Set<HarmonyRuleId>(
-  HARMONY_RULE_IDS_IMPLEMENTED_IN_REVISION_2,
-);
 
 export interface PortableRuleProfile {
   kind: typeof PORTABLE_RULE_PROFILE_KIND;
@@ -331,19 +327,9 @@ export function resolveBuiltinRuleProfile(
 
 /** 用户确认目录升级后，才把缺失规则写入工程；新增项始终保持关闭。 */
 export function upgradeBuiltinRuleProfileSnapshot(project: ProjectDocument) {
-  const previousCatalogRevision = project.ruleProfile.catalogRevision;
   for (const definition of HARMONY_RULE_DEFINITIONS) {
     const stored = project.ruleProfile.builtin[definition.id];
-    if (stored) {
-      // 修订 1 已把待实现规则保存为 off；确认升级后将这些占位值替换为正式默认严重性。
-      if (
-        previousCatalogRevision < 2 &&
-        REVISION_2_IMPLEMENTED_RULE_IDS.has(definition.id) &&
-        stored.severity === "off"
-      )
-        stored.severity = definition.defaultSeverity;
-      continue;
-    }
+    if (stored) continue;
     project.ruleProfile.builtin[definition.id] = {
       ...defaultInstance(definition.id),
       severity: "off",
@@ -542,12 +528,7 @@ export function prepareRuleProfileImport(
         keys: [...new Set(normalized.repairs.map((repair) => repair.key))],
       });
     builtin[definition.id] = {
-      severity:
-        portable.catalogRevision < 2 &&
-        imported?.severity === "off" &&
-        REVISION_2_IMPLEMENTED_RULE_IDS.has(definition.id)
-          ? definition.defaultSeverity
-          : imported?.severity ?? "off",
+      severity: imported?.severity ?? "off",
       configVersion: definition.configVersion,
       config:
         definition.id === "voice.range"

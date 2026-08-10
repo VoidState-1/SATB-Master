@@ -12,10 +12,7 @@ import type {
 } from "./types";
 
 export type HarmonyRuleId = (typeof GENERATED_RULE_CATALOG)[number]["id"];
-export type HarmonyRuleSeverities = Record<
-  HarmonyRuleId,
-  HarmonyRuleSeverity
->;
+export type HarmonyRuleSeverities = Record<HarmonyRuleId, HarmonyRuleSeverity>;
 
 // 目录修订号只描述规则配置快照，不等同于工程 schema 版本。
 export const HARMONY_RULE_CATALOG_REVISION = 2;
@@ -37,46 +34,6 @@ export const HARMONY_RULE_GROUPS: readonly {
   { id: "tonality", label: "调性与转调" },
 ] as const;
 
-export const HARMONY_RULE_IDS_IMPLEMENTED_IN_REVISION_2 = [
-  "voice.incomplete-satb",
-  "melody.leap-recovery",
-  "melody.consecutive-leaps",
-  "voice-leading.all-voices-similar",
-  "chord.triad-root-position-doubling",
-  "chord.first-inversion-doubling",
-  "chord.second-inversion-voicing",
-  "nonchord.passing-tone",
-  "nonchord.neighbor-tone",
-  "nonchord.suspension-preparation",
-  "nonchord.suspension-resolution",
-  "nonchord.retardation",
-  "nonchord.appoggiatura",
-  "nonchord.anticipation",
-  "nonchord.pedal-point",
-  "function.ambiguous-connection",
-  "connection.dominant-seventh",
-  "connection.dominant-ninth",
-  "connection.leading-tone-seventh",
-  "connection.supertonic-seventh",
-  "connection.subdominant-seventh",
-  "connection.double-dominant-seventh",
-  "connection.double-dominant-leading-tone",
-  "connection.neapolitan-sixth",
-  "connection.second-inversion-context",
-  "connection.common-tone-fourth-fifth",
-  "connection.second-relation-contrary-motion",
-  "connection.common-tone-third",
-  "connection.nonparsimonious-motion",
-  "rhythm.harmonic-syncopation",
-  "cadence.cadential64-metric-position",
-  "cadence.bass-formula",
-  "cadence.perfect-authentic-soprano",
-  "cadence.unstable-ending",
-  "tonality.unmarked-key-change",
-  "tonality.pivot-reinterpretation",
-  "tonality.tonicization-modulation-conflict",
-] as const satisfies readonly HarmonyRuleId[];
-
 const IMPLEMENTED_RULE_IDS = new Set<HarmonyRuleId>(
   GENERATED_RULE_CATALOG.map((entry) => entry.id),
 );
@@ -84,10 +41,7 @@ const IMPLEMENTED_RULE_IDS = new Set<HarmonyRuleId>(
 const COVERED_RULE_IDS: Partial<
   Record<HarmonyRuleId, readonly HarmonyRuleId[]>
 > = {
-  "melody.tritone": [
-    "melody.augmented-interval",
-    "melody.diminished-interval",
-  ],
+  "melody.tritone": ["melody.augmented-interval", "melody.diminished-interval"],
   "connection.dominant-seventh": [
     "resolution.leading-tone",
     "resolution.chord-seventh",
@@ -100,12 +54,12 @@ const COVERED_RULE_IDS: Partial<
   "connection.italian-augmented-sixth": ["resolution.augmented-sixth"],
   "connection.french-augmented-sixth": ["resolution.augmented-sixth"],
   "connection.german-augmented-sixth": ["resolution.augmented-sixth"],
-  "connection.deceptive-voice-leading": [
-    "function.deceptive-cadence-target",
-  ],
+  "connection.deceptive-voice-leading": ["function.deceptive-cadence-target"],
 };
 
-const RULE_OPTIONS: Partial<Record<HarmonyRuleId, readonly RuleOptionDefinition[]>> = {
+const RULE_OPTIONS: Partial<
+  Record<HarmonyRuleId, readonly RuleOptionDefinition[]>
+> = {
   "voice.range": [
     {
       kind: "pitch-range",
@@ -174,9 +128,7 @@ const EXCEPTION_CONTEXTS: Partial<
     "same-harmony",
     "voice-exchange",
   ],
-  "voice-leading.unequal-fifths-inner-diminished-to-perfect": [
-    "bass-step-up",
-  ],
+  "voice-leading.unequal-fifths-inner-diminished-to-perfect": ["bass-step-up"],
   "voice-leading.hidden-fifth": ["same-harmony"],
   "voice-leading.hidden-octave": ["same-harmony"],
   "voice-leading.cross-relation-simultaneous": [
@@ -193,19 +145,13 @@ const EXCEPTION_CONTEXTS: Partial<
     "voice-exchange",
     "insufficient-context",
   ],
-  "resolution.chord-seventh": [
-    "same-harmony",
-    "insufficient-context",
-  ],
+  "resolution.chord-seventh": ["same-harmony", "insufficient-context"],
   "function.retrogression": [
     "pedal-point",
     "modulation",
     "ambiguous-semantics",
   ],
-  "function.double-dominant-target": [
-    "modulation",
-    "ambiguous-semantics",
-  ],
+  "function.double-dominant-target": ["modulation", "ambiguous-semantics"],
   "connection.common-tone-fourth-fifth": ["voice-exchange"],
   "connection.common-tone-third": ["voice-exchange"],
   "connection.nonparsimonious-motion": [
@@ -300,24 +246,24 @@ function dependencyScopeOf(id: HarmonyRuleId): RuleDependencyScope {
 export const HARMONY_RULE_DEFINITIONS: readonly (HarmonyRuleDefinition & {
   id: HarmonyRuleId;
 })[] = GENERATED_RULE_CATALOG.map((entry) => {
-    const options = RULE_OPTIONS[entry.id] ?? [];
-    const defaultConfig = Object.fromEntries(
-      options.map((option) => [option.key, structuredClone(option.defaultValue)]),
-    ) as RuleConfig;
-    return {
-      ...entry,
-      coveredRuleIds: COVERED_RULE_IDS[entry.id] ?? [],
-      group: groupOf(entry.id),
-      requires: requirementsOf(entry.id),
-      dependencyScope: dependencyScopeOf(entry.id),
-      configVersion: 1,
-      defaultConfig,
-      options,
-      supportedExceptionContexts: EXCEPTION_CONTEXTS[entry.id] ?? [],
-      defaultExceptionPolicies: DEFAULT_EXCEPTION_POLICIES[entry.id] ?? {},
-      implemented: IMPLEMENTED_RULE_IDS.has(entry.id),
-    };
-  });
+  const options = RULE_OPTIONS[entry.id] ?? [];
+  const defaultConfig = Object.fromEntries(
+    options.map((option) => [option.key, structuredClone(option.defaultValue)]),
+  ) as RuleConfig;
+  return {
+    ...entry,
+    coveredRuleIds: COVERED_RULE_IDS[entry.id] ?? [],
+    group: groupOf(entry.id),
+    requires: requirementsOf(entry.id),
+    dependencyScope: dependencyScopeOf(entry.id),
+    configVersion: 1,
+    defaultConfig,
+    options,
+    supportedExceptionContexts: EXCEPTION_CONTEXTS[entry.id] ?? [],
+    defaultExceptionPolicies: DEFAULT_EXCEPTION_POLICIES[entry.id] ?? {},
+    implemented: IMPLEMENTED_RULE_IDS.has(entry.id),
+  };
+});
 
 export const HARMONY_RULE_DEFINITION_BY_ID = new Map(
   HARMONY_RULE_DEFINITIONS.map((definition) => [definition.id, definition]),

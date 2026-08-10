@@ -71,22 +71,6 @@ describe("规则配置档案", () => {
     }
   });
 
-  it("确认目录修订 2 后启用旧工程中的待实现规则占位项", () => {
-    const projectDocument = {
-      ruleProfile: createDefaultRuleProfile(),
-    } as Parameters<typeof upgradeBuiltinRuleProfileSnapshot>[0];
-    projectDocument.ruleProfile.catalogRevision = 1;
-    projectDocument.ruleProfile.builtin["nonchord.passing-tone"].severity = "off";
-    projectDocument.ruleProfile.builtin["voice.range"].severity = "off";
-
-    upgradeBuiltinRuleProfileSnapshot(projectDocument);
-
-    expect(projectDocument.ruleProfile.builtin["nonchord.passing-tone"].severity)
-      .toBe("warning");
-    expect(projectDocument.ruleProfile.builtin["voice.range"].severity).toBe("off");
-    expect(projectDocument.ruleProfile.catalogRevision).toBe(2);
-  });
-
   it("缺失目录项只在用户确认后写回，并始终保持关闭", () => {
     const project = createDefaultRuleProfile();
     delete project.builtin["voice.range"];
