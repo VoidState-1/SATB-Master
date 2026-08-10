@@ -19,7 +19,7 @@ ChordRegion
 - [`chordModel.ts`](../src/domain/chordModel.ts)：实体、解释、草稿、拼写和配器策略。
 - [`functionalHarmonyCatalog.ts`](../src/domain/functionalHarmonyCatalog.ts)：A/B/C 范围唯一词汇注册表与组合操作。
 - [`chords.ts`](../src/domain/chords.ts)：功能、罗马和绝对名称 formatter。
-- [`ChordPalette.tsx`](../src/components/ChordPalette.tsx)：组合式浮动调色盘。
+- [`ChordPalette.tsx`](../src/features/editor/layers/ChordPalette.tsx)：组合式浮动调色盘。
 
 ## 2. 实体结构
 

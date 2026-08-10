@@ -73,7 +73,7 @@ flowchart LR
 
 `src/features` 按用户工作区拆分：
 
-- [`features/editor`](../src/features/editor)：钢琴卷帘、交互联合类型、诊断聚合和统一 tick/MIDI 坐标。`viewport.ts` 是所有轨道共享的坐标源，旧 [`components/PianoRoll.tsx`](../src/components/PianoRoll.tsx) 仅为兼容导出。
+- [`features/editor`](../src/features/editor)：钢琴卷帘、交互联合类型、诊断聚合和统一 tick/MIDI 坐标。`viewport.ts` 是所有轨道共享的坐标源，主组件位于 [`features/editor/PianoRoll.tsx`](../src/features/editor/PianoRoll.tsx)；重构前的 `components/PianoRoll.tsx` 已删除，不再保留兼容入口。
 - [`features/inspector`](../src/features/inspector)：属性面板、和弦语义、时间事件和提交字段。
 - [`features/settings`](../src/features/settings)：设置窗口、规则字段和快捷键/规则配置子区。
 
@@ -89,7 +89,7 @@ hooks 负责把独立状态机接入 React，例如：
 - [`useShortcutBindings.ts`](../src/hooks/useShortcutBindings.ts)：快捷键绑定和本地配置。
 - [`usePanelLayout.ts`](../src/hooks/usePanelLayout.ts)：面板尺寸及本地偏好。
 
-规则设置不再由独立 hook/localStorage 维护。`App.tsx` 通过 `ruleProfile.ts` 的纯命令修改当前 `ProjectDocument.ruleProfile`，并把整个修改作为一次工程历史提交。
+规则设置不再由独立 hook/localStorage 维护。`AppShell` 通过控制器调用 `ruleProfile.ts` 的纯命令修改当前 `ProjectDocument.ruleProfile`，并把整个修改作为一次工程历史提交。
 
 全局样式入口 [`src/styles.css`](../src/styles.css) 只负责保持加载顺序。实际样式按边界分布在 [`src/styles/`](../src/styles)：
 

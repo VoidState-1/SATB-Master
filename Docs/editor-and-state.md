@@ -12,7 +12,7 @@
 | 会话状态 | 当前声部、工具、选择、播放头、打开的弹窗 | 当前应用会话，不随工程持久化或按需本地保存 |
 | 运行时资源 | AudioContext、合成器、Worker、文件 token | 由 service 管理，不可序列化 |
 
-[`src/App.tsx`](../src/App.tsx) 组合这些状态。它是编排入口，不是领域模型的替代品。判断一个值是否应写入 `ProjectDocument` 的简单标准是：关闭并重新打开工程后，它是否仍是作品本身的一部分。
+[`src/App.tsx`](../src/App.tsx) 只是稳定转出入口，实际由 [`src/app/AppShell.tsx`](../src/app/AppShell.tsx) 组合这些状态。`AppShell` 是编排层，不是领域模型的替代品。判断一个值是否应写入 `ProjectDocument` 的简单标准是：关闭并重新打开工程后，它是否仍是作品本身的一部分。
 
 ## 2. 工作区结构
 
@@ -115,7 +115,7 @@ revision 还用于异步规则竞争：分析开始时记录 revision，返回�
 
 ## 6. 钢琴卷帘坐标模型
 
-[`src/components/PianoRoll.tsx`](../src/components/PianoRoll.tsx) 同时处理音乐逻辑坐标和视口位图坐标。
+[`src/features/editor/PianoRoll.tsx`](../src/features/editor/PianoRoll.tsx) 组合钢琴卷帘，纯坐标换算集中在 [`src/features/editor/viewport.ts`](../src/features/editor/viewport.ts)。音乐逻辑坐标和视口位图坐标必须明确区分并通过同一组函数转换。
 
 ### 6.1 时间轴
 
