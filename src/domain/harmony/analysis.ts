@@ -28,6 +28,7 @@ import {
   type HarmonyContextFacts,
 } from "./rules/sharedFacts";
 
+/** 递归深层只读类型映射，用于保证分析快照不可变 */
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown
   ? T
   : T extends readonly (infer Item)[]
@@ -36,11 +37,21 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown
       ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
       : T;
 
+/** 深度只读的工程快照 */
 export type ProjectSnapshot = DeepReadonly<ProjectDocument>;
+/** 深度只读的音符事件 */
 export type AnalysisNote = DeepReadonly<NoteEvent>;
+/** 深度只读的和弦区域 */
 export type AnalysisChord = DeepReadonly<ChordRegion>;
+/** 深度只读的调号事件 */
 export type AnalysisKey = DeepReadonly<KeyEvent>;
 
+/**
+ * 分析切片（AnalysisSlice）
+ *
+ * 在 SATB 音符起止、和弦区域起止、调号变更处切割形成的半开时间区间 [tick, endTick)。
+ * 记录该区间内的活跃音符、本 tick 新起奏声部、当前调号与和弦。
+ */
 export interface AnalysisSlice {
   readonly index: number;
   readonly tick: number;
@@ -53,6 +64,11 @@ export interface AnalysisSlice {
   readonly continuity: "continuous" | "project-start";
 }
 
+/**
+ * 旋律转换（MelodyTransition）
+ *
+ * 记录同一声部中连续两个起奏音符之间的转换事实（包含书写音程、是否连续、是否同调/同和声）。
+ */
 export interface MelodyTransition {
   readonly id: string;
   readonly voiceId: VoiceId;
@@ -64,18 +80,32 @@ export interface MelodyTransition {
   readonly writtenInterval: WrittenInterval;
 }
 
+/**
+ * 切片转换（SliceTransition）
+ *
+ * 记录连续两个分析切片之间的转换关系及发生变化的声部。
+ */
 export interface SliceTransition {
   readonly id: string;
   readonly previousIndex: number;
   readonly currentIndex: number;
   readonly previous: AnalysisSlice;
   readonly current: AnalysisSlice;
+  /** 是否连续（不跨越项目起止或乐句） */
   readonly contiguous: boolean;
+  /** 是否同调 */
   readonly sameKey: boolean;
+  /** 是否同和弦（忽略低音与转位） */
   readonly sameHarmony: boolean;
+  /** 本次转换中起奏并发生变化的声部 */
   readonly changedVoiceIds: readonly VoiceId[];
 }
 
+/**
+ * 和声区段（HarmonySpan）
+ *
+ * 将时间上相连、调性相同、和弦实体一致（忽略低音与转位）且语义解释相同的切片聚合为连续区段。
+ */
 export interface HarmonySpan {
   readonly id: string;
   readonly fromTick: number;
@@ -83,18 +113,30 @@ export interface HarmonySpan {
   readonly regionIds: readonly string[];
   readonly sliceIndices: readonly number[];
   readonly identityKey: string;
+  /** 和声学语意 */
   readonly semantics?: DeepReadonly<HarmonySemantics>;
+  /** 标识当前和声区段的分析置信度与确定性 */
   readonly status: "complete" | "ambiguous";
   readonly entryTransitionIndex?: number;
   readonly exitTransitionIndex?: number;
 }
 
+/**
+ * 分析失效范围（AnalysisInvalidationRange）
+ *
+ * 记录工程变更后受影响的 Tick 时间区间及依赖作用域（用于增量重检）。
+ */
 export interface AnalysisInvalidationRange {
   readonly fromTick: number;
   readonly toTick: number;
   readonly scopes: readonly RuleDependencyScope[];
 }
 
+/**
+ * 和声分析快照（HarmonyAnalysis）
+ *
+ * 整合切片、Span、转换、连接评估与共享事实的完整只读分析上下文。
+ */
 export interface HarmonyAnalysis {
   readonly revision: number;
   readonly project: ProjectSnapshot;
@@ -118,6 +160,7 @@ export interface HarmonyAnalysis {
   };
 }
 
+/** 递归深冻结对象，防止对象属性被突变 */
 function deepFreeze<T>(value: T): DeepReadonly<T> {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.getOwnPropertyNames(value).forEach((key) => {
@@ -129,6 +172,7 @@ function deepFreeze<T>(value: T): DeepReadonly<T> {
   return value as DeepReadonly<T>;
 }
 
+/** 内部辅助：查找指定 tick 处的有效调号事件 */
 function keyAtTick(events: readonly AnalysisKey[], tick: number) {
   let current = events[0];
   for (const event of events) {
@@ -139,10 +183,16 @@ function keyAtTick(events: readonly AnalysisKey[], tick: number) {
   return current;
 }
 
+/**
+ * 获取指定 Tick 处的有效调号事件
+ */
 export function analysisKeyAtTick(analysis: HarmonyAnalysis, tick: number) {
   return keyAtTick(analysis.project.keyEvents, tick);
 }
 
+/**
+ * 获取指定 Tick 处的有效和弦区域
+ */
 export function analysisChordAtTick(
   analysis: Pick<HarmonyAnalysis, "project">,
   tick: number,
@@ -154,10 +204,12 @@ export function analysisChordAtTick(
   );
 }
 
+/** 内部辅助：判断两个调号事件是否同调（主音与调式一致） */
 function sameKey(left: AnalysisKey, right: AnalysisKey) {
   return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
+/** 内部辅助：判断两个和弦的语义上下文是否相同 */
 function sameSemanticContext(
   left: DeepReadonly<HarmonySemantics> | undefined,
   right: DeepReadonly<HarmonySemantics> | undefined,
@@ -173,6 +225,7 @@ function sameSemanticContext(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/** 内部辅助：判断两个和弦的客观实体是否相同（忽略低音与转位） */
 function sameChordIdentityWithoutBass(
   left: AnalysisChord["identity"],
   right: AnalysisChord["identity"],
@@ -194,6 +247,7 @@ function sameChordIdentityWithoutBass(
   );
 }
 
+/** 内部辅助：判断两个和弦区域在时间轴上是否连续 */
 function chordContinuity(previous: AnalysisChord, current: AnalysisChord) {
   return (
     previous.id === current.id ||
@@ -201,6 +255,9 @@ function chordContinuity(previous: AnalysisChord, current: AnalysisChord) {
   );
 }
 
+/**
+ * 判断两个 Tick 处的和弦是否属于同一和声（调性、和弦实体与语义上下文均一致且连续）
+ */
 export function sameHarmonyAtTicks(
   analysis: Pick<HarmonyAnalysis, "project">,
   previousTick: number,
@@ -223,7 +280,12 @@ export function sameHarmonyAtTicks(
   );
 }
 
+/**
+ * 按照所有音符、和弦、调号变更点分割时间轴为分析切片（AnalysisSlice）
+ * 每个切片对应 [tick, endTick) 半开区间
+ */
 function buildSlices(project: ProjectSnapshot) {
+  // 1. 提取关键时间边界
   const boundaries = new Set<number>([0, project.lengthTicks]);
   project.satbTracks.forEach((track) =>
     track.notes.forEach((note) => {
@@ -237,6 +299,7 @@ function buildSlices(project: ProjectSnapshot) {
   });
   project.keyEvents.forEach((event) => boundaries.add(event.tick));
 
+  // 2. 排序去重, 初始化游标
   const ordered = [...boundaries]
     .filter((tick) => tick >= 0 && tick <= project.lengthTicks)
     .sort((left, right) => left - right);
@@ -262,24 +325,29 @@ function buildSlices(project: ProjectSnapshot) {
   let keyIndex = 0;
   const slices: AnalysisSlice[] = [];
 
+  // 3. 线性扫描切片
   for (let index = 0; index < ordered.length - 1; index += 1) {
     const tick = ordered[index];
+    // 3.1 跳过已经结束的和弦
     while (
       chordIndex < chords.length &&
       chords[chordIndex].startTick + chords[chordIndex].durationTicks <= tick
     )
       chordIndex += 1;
+    // 3.2 跳过调号事件
     while (
       keyIndex + 1 < project.keyEvents.length &&
       project.keyEvents[keyIndex + 1].tick <= tick
     )
       keyIndex += 1;
 
+    // 3.3 收集当前切片的音符
     const notes: Partial<Record<VoiceId, AnalysisNote>> = {};
     const attackVoiceIds: VoiceId[] = [];
     VOICE_ORDER.forEach((voiceId) => {
       const source = notesByVoice[voiceId];
       let noteIndex = noteIndexes[voiceId];
+      // 3.3.1 跳过已经结束的音符
       while (
         noteIndex < source.length &&
         source[noteIndex].startTick + source[noteIndex].durationTicks <= tick
@@ -287,16 +355,19 @@ function buildSlices(project: ProjectSnapshot) {
         noteIndex += 1;
       noteIndexes[voiceId] = noteIndex;
       const note = source[noteIndex];
+      // 3.3.2 找到正在持续的音符
       if (
         note &&
         note.startTick <= tick &&
         note.startTick + note.durationTicks > tick
       ) {
         notes[voiceId] = note;
+        // 3.3.3 记录处于启奏状态的音符
         if (note.startTick === tick) attackVoiceIds.push(voiceId);
       }
     });
 
+    // 3.4 封装切片
     const chord = chords[chordIndex];
     slices.push({
       index,
@@ -338,14 +409,14 @@ function buildHarmonySpans(
     const previous = groups.at(-1)?.at(-1);
     const canJoin = Boolean(
       previous &&
-        previous.chord &&
-        previous.endTick === slice.tick &&
-        sameKey(previous.key, slice.key) &&
-        sameChordIdentityWithoutBass(
-          previous.chord.identity,
-          slice.chord.identity,
-        ) &&
-        sameSemanticContext(previous.chord.semantics, slice.chord.semantics),
+      previous.chord &&
+      previous.endTick === slice.tick &&
+      sameKey(previous.key, slice.key) &&
+      sameChordIdentityWithoutBass(
+        previous.chord.identity,
+        slice.chord.identity,
+      ) &&
+      sameSemanticContext(previous.chord.semantics, slice.chord.semantics),
     );
     if (canJoin) groups.at(-1)!.push(slice);
     else groups.push([slice]);
@@ -356,7 +427,9 @@ function buildHarmonySpans(
   const harmonySpans = groups.map((group, groupIndex) => {
     const id = `harmony-span-${groupIndex + 1}`;
     const regionIds = [
-      ...new Set(group.flatMap((slice) => (slice.chord ? [slice.chord.id] : []))),
+      ...new Set(
+        group.flatMap((slice) => (slice.chord ? [slice.chord.id] : [])),
+      ),
     ];
     const sliceIndices = group.map((slice) => slice.index);
     sliceIndices.forEach((index) => sliceSpanIds.set(index, id));
@@ -488,6 +561,9 @@ function entitySignature(value: unknown) {
   return JSON.stringify(value);
 }
 
+/**
+ * 对比新旧工程快照，计算增量重检的受影响 Tick 区间与依赖作用域（RuleDependencyScope）
+ */
 export function computeAnalysisInvalidationRanges(
   previous: ProjectSnapshot | undefined,
   current: ProjectSnapshot,
@@ -646,6 +722,15 @@ export function computeAnalysisInvalidationRanges(
   return merged;
 }
 
+/**
+ * 构建完整的和声分析快照（HarmonyAnalysis）
+ *
+ * 依次完成工程解构、时间切片离散化、Span 聚合、过渡计算、和弦连接评估、目标链识别与共享事实汇集。
+ *
+ * @param project 当前工程文档
+ * @param revision 单调递增的版本号（用于校验异步分析结果时效性）
+ * @param previousSnapshot 可选的上一次分析工程快照（用于计算增量失效范围）
+ */
 export function buildHarmonyAnalysis(
   project: ProjectDocument,
   revision = 0,
@@ -723,6 +808,10 @@ export function buildHarmonyAnalysis(
   });
 }
 
+/**
+ * 获取指定索引的前一个分析切片
+ * @param options.contiguous 是否要求在前一切片末尾与当前切片起点严格连续
+ */
 export function previousSlice(
   analysis: HarmonyAnalysis,
   index: number,
@@ -732,11 +821,14 @@ export function previousSlice(
   if (!current) return undefined;
   const previous = analysis.slices[index - 1];
   if (!previous) return undefined;
-  if (options.contiguous && previous.endTick !== current.tick)
-    return undefined;
+  if (options.contiguous && previous.endTick !== current.tick) return undefined;
   return previous;
 }
 
+/**
+ * 获取指定索引的后一个分析切片
+ * @param options.contiguous 是否要求当前切片末尾与后一切片起点严格连续
+ */
 export function nextSlice(
   analysis: HarmonyAnalysis,
   index: number,
@@ -746,11 +838,13 @@ export function nextSlice(
   if (!current) return undefined;
   const next = analysis.slices[index + 1];
   if (!next) return undefined;
-  if (options.contiguous && current.endTick !== next.tick)
-    return undefined;
+  if (options.contiguous && current.endTick !== next.tick) return undefined;
   return next;
 }
 
+/**
+ * 从指定切片索引开始，沿 forward 或 backward 方向遍历分析切片
+ */
 export function walkSlices(
   analysis: HarmonyAnalysis,
   index: number,
@@ -771,12 +865,18 @@ export function walkSlices(
   return Object.freeze(result);
 }
 
+/**
+ * 获取指定 Tick 处的和声区段 (HarmonySpan)
+ */
 export function harmonySpanAtTick(analysis: HarmonyAnalysis, tick: number) {
   return analysis.harmonySpans.find(
     (span) => span.fromTick <= tick && span.toTick > tick,
   );
 }
 
+/**
+ * 获取指定切片索引对应的和声区段 (HarmonySpan)
+ */
 export function harmonySpanAtSlice(
   analysis: HarmonyAnalysis,
   sliceIndex: number,
@@ -787,6 +887,9 @@ export function harmonySpanAtSlice(
     : undefined;
 }
 
+/**
+ * 从指定 Span 索引开始，沿 forward 或 backward 方向遍历和声区段
+ */
 export function walkSpans(
   analysis: HarmonyAnalysis,
   spanIndex: number,
@@ -807,6 +910,9 @@ export function walkSpans(
   return Object.freeze(result);
 }
 
+/**
+ * 获取指定声部在指定 Tick 之前的最近一个起奏音符
+ */
 export function previousAttack(
   analysis: HarmonyAnalysis,
   voiceId: VoiceId,
@@ -817,12 +923,13 @@ export function previousAttack(
     .at(-1);
 }
 
+/**
+ * 获取指定声部在指定 Tick 或之后的最早一个起奏音符
+ */
 export function nextAttack(
   analysis: HarmonyAnalysis,
   voiceId: VoiceId,
   tick: number,
 ) {
-  return analysis.notesByVoice[voiceId].find(
-    (note) => note.startTick >= tick,
-  );
+  return analysis.notesByVoice[voiceId].find((note) => note.startTick >= tick);
 }
