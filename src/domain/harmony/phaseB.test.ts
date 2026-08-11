@@ -98,7 +98,9 @@ function fSharpMajorRegion(functionAnalysis = false): ChordRegion {
       "major",
       { step: "F", alter: 1 },
     ),
-    semantics: functionAnalysis ? semantics(4, { degreeAlteration: 1 }) : undefined,
+    semantics: functionAnalysis
+      ? semantics(4, { degreeAlteration: 1 })
+      : undefined,
     locked: false,
   };
 }
@@ -307,11 +309,10 @@ describe("Phase B v1 书写与和弦金样本", () => {
         id: "g7",
         startTick: 0,
         durationTicks: PPQ,
-        identity: tertianIdentity(
-          { step: "G", alter: 0 },
-          "dominant7",
-          { step: "G", alter: 0 },
-        ),
+        identity: tertianIdentity({ step: "G", alter: 0 }, "dominant7", {
+          step: "G",
+          alter: 0,
+        }),
         semantics: semantics(5),
         locked: false,
       },
@@ -336,11 +337,10 @@ describe("Phase B v1 书写与和弦金样本", () => {
         id: "g7",
         startTick: 0,
         durationTicks: PPQ,
-        identity: tertianIdentity(
-          { step: "G", alter: 0 },
-          "dominant7",
-          { step: "G", alter: 0 },
-        ),
+        identity: tertianIdentity({ step: "G", alter: 0 }, "dominant7", {
+          step: "G",
+          alter: 0,
+        }),
         semantics: semantics(5),
         locked: false,
       },
@@ -404,7 +404,11 @@ describe("Phase B v1 书写与和弦金样本", () => {
         }),
       ]),
     );
-    expect(result.diagnostics.some((item) => item.ruleId === "function.retrogression")).toBe(false);
+    expect(
+      result.diagnostics.some(
+        (item) => item.ruleId === "function.retrogression",
+      ),
+    ).toBe(false);
   });
 
   it("终止四六必须连续进入属功能", () => {
@@ -415,11 +419,10 @@ describe("Phase B v1 书写与和弦金样本", () => {
         id: "cadential-64",
         startTick: 0,
         durationTicks: PPQ,
-        identity: tertianIdentity(
-          { step: "C", alter: 0 },
-          "major",
-          { step: "G", alter: 0 },
-        ),
+        identity: tertianIdentity({ step: "C", alter: 0 }, "major", {
+          step: "G",
+          alter: 0,
+        }),
         semantics: semantics(1, { cadenceRole: "cadential64" }),
         locked: false,
       },
@@ -427,11 +430,10 @@ describe("Phase B v1 书写与和弦金样本", () => {
         id: "tonic",
         startTick: PPQ,
         durationTicks: PPQ,
-        identity: tertianIdentity(
-          { step: "C", alter: 0 },
-          "major",
-          { step: "C", alter: 0 },
-        ),
+        identity: tertianIdentity({ step: "C", alter: 0 }, "major", {
+          step: "C",
+          alter: 0,
+        }),
         semantics: semantics(1),
         locked: false,
       },

@@ -11,10 +11,7 @@ import type {
   RuleStepResult,
 } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
-import {
-  formatPitchClass,
-  toMidi,
-} from "../../../pitch";
+import { formatPitchClass, toMidi } from "../../../pitch";
 import {
   chordEvidence,
   chordLabel,
@@ -122,7 +119,9 @@ function openedSourceChord<Payload extends JsonValue>(
   environment: ObligationEnvironment<Payload>,
 ) {
   const chordId = environment.obligation.openedBy.chordIds?.[0];
-  return chordId ? environment.context.analysis.chordById.get(chordId) : undefined;
+  return chordId
+    ? environment.context.analysis.chordById.get(chordId)
+    : undefined;
 }
 
 function openedSpanId<Payload extends JsonValue>(
@@ -359,7 +358,11 @@ const leadingToneTransition = decisionTable<
     when(
       "resolve",
       "leading-tone-resolved",
-      all(subjectVoiceAttacked(), leadingTargetUnchanged(), leadingToneResolves()),
+      all(
+        subjectVoiceAttacked(),
+        leadingTargetUnchanged(),
+        leadingToneResolves(),
+      ),
     ),
     when(
       "continue",

@@ -51,7 +51,10 @@ export interface HarmonyContextFacts {
   readonly modulationConnectionIds: readonly string[];
 }
 
-function motion(previous: AnalysisNote, current: AnalysisNote): MotionDirection {
+function motion(
+  previous: AnalysisNote,
+  current: AnalysisNote,
+): MotionDirection {
   const difference = toMidi(current.pitch) - toMidi(previous.pitch);
   return difference > 0 ? "up" : difference < 0 ? "down" : "stationary";
 }
@@ -76,7 +79,11 @@ export function voicePairTransitionFacts(
   transition: SliceTransition,
 ): readonly VoicePairTransitionFact[] {
   const result: VoicePairTransitionFact[] = [];
-  for (let upperIndex = 0; upperIndex < VOICE_ORDER.length - 1; upperIndex += 1) {
+  for (
+    let upperIndex = 0;
+    upperIndex < VOICE_ORDER.length - 1;
+    upperIndex += 1
+  ) {
     for (
       let lowerIndex = upperIndex + 1;
       lowerIndex < VOICE_ORDER.length;
@@ -102,7 +109,10 @@ export function voicePairTransitionFacts(
             previousLower.pitch,
             previousUpper.pitch,
           ),
-          currentInterval: writtenInterval(currentLower.pitch, currentUpper.pitch),
+          currentInterval: writtenInterval(
+            currentLower.pitch,
+            currentUpper.pitch,
+          ),
           upperMotion,
           lowerMotion,
           sameDirection:
@@ -133,8 +143,7 @@ export function chordMemberFacts(
         Object.freeze({
           voiceId,
           note,
-          chordToneIndex:
-            chordToneIndex >= 0 ? chordToneIndex : undefined,
+          chordToneIndex: chordToneIndex >= 0 ? chordToneIndex : undefined,
           isChordTone: chordToneIndex >= 0,
         }),
       ];
@@ -153,9 +162,7 @@ export function buildHarmonyContextFacts(
   >,
 ): HarmonyContextFacts {
   const sliceByTick = (tick: number) =>
-    analysis.slices.find(
-      (slice) => slice.tick <= tick && tick < slice.endTick,
-    );
+    analysis.slices.find((slice) => slice.tick <= tick && tick < slice.endTick);
   const sameHarmonyTransitionIds = [
     ...analysis.sliceTransitions
       .filter((transition) => transition.sameHarmony && transition.contiguous)
@@ -185,7 +192,8 @@ export function buildHarmonyContextFacts(
     .filter((transition) => {
       const changed = transition.changedVoiceIds.filter(
         (voiceId) =>
-          transition.previous.notes[voiceId] && transition.current.notes[voiceId],
+          transition.previous.notes[voiceId] &&
+          transition.current.notes[voiceId],
       );
       return changed.some((left, leftIndex) =>
         changed.slice(leftIndex + 1).some((right) => {
@@ -218,7 +226,9 @@ export function buildHarmonyContextFacts(
       analysis.slices.flatMap((slice) => {
         if (!slice.chord) return [];
         return chordMemberFacts(slice, slice.chord)
-          .filter((fact) => !fact.isChordTone && Boolean(fact.note.nonChordToneRole))
+          .filter(
+            (fact) => !fact.isChordTone && Boolean(fact.note.nonChordToneRole),
+          )
           .map((fact) => fact.note.id);
       }),
     ),

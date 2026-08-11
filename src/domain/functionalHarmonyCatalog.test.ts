@@ -61,17 +61,23 @@ describe("斯波索宾功能标记目录", () => {
       roman: "I",
       absolute: "C",
     });
-    expect(formatChord(functionalDraft("T", "triad", 1), C_MAJOR)).toMatchObject({
+    expect(
+      formatChord(functionalDraft("T", "triad", 1), C_MAJOR),
+    ).toMatchObject({
       functional: "T6",
       roman: "I6",
       absolute: "C/E",
     });
-    expect(formatChord(functionalDraft("D", "seventh", 1), C_MAJOR)).toMatchObject({
+    expect(
+      formatChord(functionalDraft("D", "seventh", 1), C_MAJOR),
+    ).toMatchObject({
       functional: "D56",
       roman: "V6/5",
       absolute: "G7/B",
     });
-    expect(formatChord(functionalDraft("D", "seventh", 2), C_MAJOR)).toMatchObject({
+    expect(
+      formatChord(functionalDraft("D", "seventh", 2), C_MAJOR),
+    ).toMatchObject({
       functional: "D34",
       roman: "V4/3",
       absolute: "G7/D",
@@ -129,7 +135,8 @@ describe("斯波索宾功能标记目录", () => {
       expect(formatChord(draft, C_MAJOR).functional).toBe(id);
       expect(
         chordIdentityToneSpellings(identity).map(
-          (pitch) => `${pitch.step}${pitch.alter === -1 ? "♭" : pitch.alter === 1 ? "♯" : ""}`,
+          (pitch) =>
+            `${pitch.step}${pitch.alter === -1 ? "♭" : pitch.alter === 1 ? "♯" : ""}`,
         ),
       ).toEqual(expected[id]);
     }

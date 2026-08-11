@@ -75,13 +75,14 @@ export function harmonicSyncopationRule(analysis: HarmonyAnalysis) {
       return;
     const entryStrength = metricStrengthAtTick(analysis, span.fromTick);
     const exitStrength = metricStrengthAtTick(analysis, span.toTick);
-    const crossedStrongPosition = buildMeasures(analysis.project).some((measure) =>
-      measure.beatTicks.some(
-        (beatTick) =>
-          span.fromTick < beatTick &&
-          beatTick < span.toTick &&
-          metricStrengthAtTick(analysis, beatTick) >= 2,
-      ),
+    const crossedStrongPosition = buildMeasures(analysis.project).some(
+      (measure) =>
+        measure.beatTicks.some(
+          (beatTick) =>
+            span.fromTick < beatTick &&
+            beatTick < span.toTick &&
+            metricStrengthAtTick(analysis, beatTick) >= 2,
+        ),
     );
     if (entryStrength > 1 || exitStrength > 1 || !crossedStrongPosition) return;
     const chord = spanChord(analysis, span);
@@ -154,7 +155,9 @@ export function cadential64MetricRule(analysis: HarmonyAnalysis) {
 }
 
 function cadenceContext(analysis: HarmonyAnalysis, span: HarmonySpan) {
-  const index = analysis.harmonySpans.findIndex((candidate) => candidate.id === span.id);
+  const index = analysis.harmonySpans.findIndex(
+    (candidate) => candidate.id === span.id,
+  );
   const previousSpan = index > 0 ? analysis.harmonySpans[index - 1] : undefined;
   if (!previousSpan || previousSpan.toTick !== span.fromTick) return undefined;
   const sourceSlice = analysis.slices[previousSpan.sliceIndices.at(-1)!];
@@ -195,19 +198,21 @@ function cadenceRuleContexts(analysis: HarmonyAnalysis) {
       scaleDegreePitchClass(key, degree, 0);
     const sourceFamily = sourceInterpretation?.designation?.primaryFunction;
     const targetFamily = targetInterpretation?.designation?.primaryFunction;
-    return [{
-      cadenceType,
-      sourceSlice,
-      targetSlice,
-      sourceChord,
-      targetChord,
-      sourceBass,
-      targetBass,
-      degreePitch,
-      sourceFamily,
-      targetFamily,
-      targetInterpretation,
-    }];
+    return [
+      {
+        cadenceType,
+        sourceSlice,
+        targetSlice,
+        sourceChord,
+        targetChord,
+        sourceBass,
+        targetBass,
+        degreePitch,
+        sourceFamily,
+        targetFamily,
+        targetInterpretation,
+      },
+    ];
   });
 }
 
@@ -227,12 +232,21 @@ export function cadenceBassFormulaRule(analysis: HarmonyAnalysis) {
           : context.cadenceType === "plagal"
             ? context.sourceFamily === "subdominant" &&
               context.targetFamily === "tonic" &&
-              pitchClassEquals(context.sourceBass.pitch, context.degreePitch(4)) &&
+              pitchClassEquals(
+                context.sourceBass.pitch,
+                context.degreePitch(4),
+              ) &&
               pitchClassEquals(context.targetBass.pitch, context.degreePitch(1))
             : context.sourceFamily === "dominant" &&
               context.targetInterpretation?.degree === 6 &&
-              pitchClassEquals(context.sourceBass.pitch, context.degreePitch(5)) &&
-              pitchClassEquals(context.targetBass.pitch, context.degreePitch(6));
+              pitchClassEquals(
+                context.sourceBass.pitch,
+                context.degreePitch(5),
+              ) &&
+              pitchClassEquals(
+                context.targetBass.pitch,
+                context.degreePitch(6),
+              );
     if (valid) return;
     diagnostics.push(
       diagnostic(
@@ -407,16 +421,27 @@ export function pivotReinterpretationRule(analysis: HarmonyAnalysis) {
   analysis.harmonySpans.forEach((span, index) => {
     const interpretations = span.semantics?.interpretations;
     if (!interpretations || interpretations.length < 2) return;
-    const keys = interpretations.map((item) => interpretationKey(analysis, span, item));
+    const keys = interpretations.map((item) =>
+      interpretationKey(analysis, span, item),
+    );
     if (keys.every((key) => keyEquals(key, keys[0]))) return;
     const previous = analysis.harmonySpans[index - 1];
     const next = analysis.harmonySpans[index + 1];
-    if (!previous || !next || previous.toTick !== span.fromTick || span.toTick !== next.fromTick)
+    if (
+      !previous ||
+      !next ||
+      previous.toTick !== span.fromTick ||
+      span.toTick !== next.fromTick
+    )
       return;
     const previousInterpretation = spanInterpretation(previous);
     const nextInterpretation = spanInterpretation(next);
     if (!previousInterpretation || !nextInterpretation) return;
-    const previousKey = interpretationKey(analysis, previous, previousInterpretation);
+    const previousKey = interpretationKey(
+      analysis,
+      previous,
+      previousInterpretation,
+    );
     const nextKey = interpretationKey(analysis, next, nextInterpretation);
     const entersWithCandidate = keys.some((key) => keyEquals(key, previousKey));
     const exitsWithCandidate = keys.some((key) => keyEquals(key, nextKey));
@@ -455,7 +480,8 @@ export function tonicizationModulationConflictRule(analysis: HarmonyAnalysis) {
     const modulation = interpretations.find(
       (item) => item.localKey && !keyEquals(item.localKey, projectKey),
     );
-    if (!tonicization || !modulation || tonicization.id === modulation.id) return;
+    if (!tonicization || !modulation || tonicization.id === modulation.id)
+      return;
     const chord = spanChord(analysis, span);
     if (!chord) return;
     diagnostics.push(
@@ -494,14 +520,13 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     id: "rhythm.harmonic-syncopation",
     catalogNumber: "J.1",
     label: "和声切分",
-    description: "沿 `HarmonySpan` 链比较拍位：一个新和声在弱拍/弱位置进入，延续覆盖下一强拍或相对强位置，随后在弱位置离开时触发。",
-    rationale: "持续音、延留音、同一功能内装饰转换、序进和人工确认的切分节奏可豁免；必须按变拍号的实际重音层级计算。",
+    description:
+      "沿 `HarmonySpan` 链比较拍位：一个新和声在弱拍/弱位置进入，延续覆盖下一强拍或相对强位置，随后在弱位置离开时触发。",
+    rationale:
+      "持续音、延留音、同一功能内装饰转换、序进和人工确认的切分节奏可豁免；必须按变拍号的实际重音层级计算。",
     group: "rhythm",
     defaultSeverity: "warning",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: harmonicSyncopationRule,
   }),
@@ -509,14 +534,13 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     id: "cadence.cadential64-metric-position",
     catalogNumber: "J.2",
     label: "K46 拍位不当",
-    description: "根据当前拍号和小节内重音层级，`K46` 应处于强拍或相对强位置，后继 D 处于相对较弱位置。",
-    rationale: "不同拍号、复拍子和乐句尺度需要节拍 profile；没有可靠节拍信息时跳过。",
+    description:
+      "根据当前拍号和小节内重音层级，`K46` 应处于强拍或相对强位置，后继 D 处于相对较弱位置。",
+    rationale:
+      "不同拍号、复拍子和乐句尺度需要节拍 profile；没有可靠节拍信息时跳过。",
     group: "cadence",
     defaultSeverity: "warning",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: cadential64MetricRule,
   }),
@@ -524,14 +548,13 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     id: "cadence.bass-formula",
     catalogNumber: "J.3",
     label: "终止低音不成立",
-    description: "对已确认的完全、半终止、变格或阻碍终止，检查末端功能和低音级数是否符合该终止类型。",
-    rationale: "只有人工标注或高置信度终止候选才检查；未标注乐句不能仅凭最后两个和弦武断报错。",
+    description:
+      "对已确认的完全、半终止、变格或阻碍终止，检查末端功能和低音级数是否符合该终止类型。",
+    rationale:
+      "只有人工标注或高置信度终止候选才检查；未标注乐句不能仅凭最后两个和弦武断报错。",
     group: "cadence",
     defaultSeverity: "warning",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: cadenceBassFormulaRule,
   }),
@@ -539,14 +562,12 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     id: "cadence.perfect-authentic-soprano",
     catalogNumber: "J.4",
     label: "完全终止的旋律位置",
-    description: "`cadenceRole` 明确为完全终止时，验证 D-T 均为规定转位，最终 T 为原位且女高音为主音。",
+    description:
+      "`cadenceRole` 明确为完全终止时，验证 D-T 均为规定转位，最终 T 为原位且女高音为主音。",
     rationale: "不完全终止不适用；名称和具体分类需与中文教材术语最终统一。",
     group: "cadence",
     defaultSeverity: "warning",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: perfectAuthenticSopranoRule,
   }),
@@ -554,14 +575,13 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     id: "cadence.unstable-ending",
     catalogNumber: "J.5",
     label: "结束和弦不稳定",
-    description: "在闭合终止的 phrase end 联合检查最终功能、转位和所有仍存的规则私有解决状态。",
-    rationale: "半终止、开放终止和未完成练习不适用；具体倾向音仍由其专用规则生成诊断。",
+    description:
+      "在闭合终止的 phrase end 联合检查最终功能、转位和所有仍存的规则私有解决状态。",
+    rationale:
+      "半终止、开放终止和未完成练习不适用；具体倾向音仍由其专用规则生成诊断。",
     group: "cadence",
     defaultSeverity: "warning",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: unstableEndingRule,
   }),
@@ -569,14 +589,12 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     id: "tonality.unmarked-key-change",
     catalogNumber: "K.1",
     label: "调性变化未标注",
-    description: "多个连续 span 的高置信度解释共同指向新调性，且不是短暂离调属或借用和弦时提示用户确认转调。",
+    description:
+      "多个连续 span 的高置信度解释共同指向新调性，且不是短暂离调属或借用和弦时提示用户确认转调。",
     rationale: "自动分析只能产生候选，绝不写回调号或覆盖人工解释。",
     group: "tonality",
     defaultSeverity: "suggestion",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "project",
     evaluate: unmarkedKeyChangeRule,
   }),
@@ -584,14 +602,13 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     id: "tonality.pivot-reinterpretation",
     catalogNumber: "K.2",
     label: "共同和弦重解释不一致",
-    description: "验证共同和弦 interpretations 映射到相同 identity 和转位，并检查进入侧使用旧调解释、离开侧使用新调解释。",
-    rationale: "实体一致性通常应由模型 validator 阻止；连接方向只在已确认转调时检查。",
+    description:
+      "验证共同和弦 interpretations 映射到相同 identity 和转位，并检查进入侧使用旧调解释、离开侧使用新调解释。",
+    rationale:
+      "实体一致性通常应由模型 validator 阻止；连接方向只在已确认转调时检查。",
     group: "tonality",
     defaultSeverity: "error",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "project",
     evaluate: pivotReinterpretationRule,
   }),
@@ -599,14 +616,12 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     id: "tonality.tonicization-modulation-conflict",
     catalogNumber: "K.3",
     label: "离调与转调语境冲突",
-    description: "局部调性 span、目标功能义务和人工 modulation 标记给出互斥结论时触发语义冲突。",
+    description:
+      "局部调性 span、目标功能义务和人工 modulation 标记给出互斥结论时触发语义冲突。",
     rationale: "不自动选择其中一个解释；依赖该结论的功能规则暂停。",
     group: "tonality",
     defaultSeverity: "warning",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "project",
     evaluate: tonicizationModulationConflictRule,
   }),

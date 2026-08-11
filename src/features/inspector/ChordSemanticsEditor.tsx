@@ -53,18 +53,17 @@ export function ChordSemanticsEditor({
     tonic: keyEvent.tonic,
     mode: keyEvent.mode,
   };
-  const sameInterpretation = (
-    left: typeof primary,
-    right: typeof primary,
-  ) => {
+  const sameInterpretation = (left: typeof primary, right: typeof primary) => {
     const leftKey = left.localKey ?? primaryLocalKey;
     const rightKey = right.localKey ?? primaryLocalKey;
     return (
-      serializePitchClass(leftKey.tonic) === serializePitchClass(rightKey.tonic) &&
+      serializePitchClass(leftKey.tonic) ===
+        serializePitchClass(rightKey.tonic) &&
       leftKey.mode === rightKey.mode &&
       left.degree === right.degree &&
       left.degreeAlteration === right.degreeAlteration &&
-      JSON.stringify(left.appliedTarget) === JSON.stringify(right.appliedTarget) &&
+      JSON.stringify(left.appliedTarget) ===
+        JSON.stringify(right.appliedTarget) &&
       JSON.stringify(left.designation) === JSON.stringify(right.designation)
     );
   };
@@ -132,7 +131,11 @@ export function ChordSemanticsEditor({
         >
           {(definition?.forms ?? [form]).map((item) => (
             <option key={item} value={item}>
-              {item === "triad" ? "三和弦" : item === "seventh" ? "七和弦" : "九和弦"}
+              {item === "triad"
+                ? "三和弦"
+                : item === "seventh"
+                  ? "七和弦"
+                  : "九和弦"}
             </option>
           ))}
         </select>
@@ -143,9 +146,7 @@ export function ChordSemanticsEditor({
           value={draft.inversion}
           onChange={(event) =>
             onChange({
-              inversion: Number(
-                event.target.value,
-              ) as ChordDraft["inversion"],
+              inversion: Number(event.target.value) as ChordDraft["inversion"],
               secondaryInterpretation: undefined,
             })
           }
@@ -186,7 +187,8 @@ export function ChordSemanticsEditor({
           value={draft.mixture ?? ""}
           onChange={(event) =>
             onChange({
-              mixture: (event.target.value || undefined) as ChordDraft["mixture"],
+              mixture: (event.target.value ||
+                undefined) as ChordDraft["mixture"],
             })
           }
         >
@@ -203,8 +205,7 @@ export function ChordSemanticsEditor({
           onChange={(event) =>
             onChange({
               cadenceRole: (event.target.value || undefined) as
-                | NonNullable<ChordDraft["cadenceRole"]>
-                | undefined,
+                NonNullable<ChordDraft["cadenceRole"]> | undefined,
             })
           }
         >
@@ -222,8 +223,7 @@ export function ChordSemanticsEditor({
           onChange={(event) =>
             onChange({
               cadenceType: (event.target.value || undefined) as
-                | NonNullable<ChordDraft["cadenceType"]>
-                | undefined,
+                NonNullable<ChordDraft["cadenceType"]> | undefined,
             })
           }
         >
@@ -246,9 +246,7 @@ export function ChordSemanticsEditor({
           }
           disabled={baseId !== "D" && baseId !== "DD"}
           onChange={(event) => {
-            const [degree, alter] = event.target.value
-              .split(":")
-              .map(Number);
+            const [degree, alter] = event.target.value.split(":").map(Number);
             const altered = Boolean(event.target.value);
             onChange({
               alterations: altered
@@ -295,9 +293,7 @@ export function ChordSemanticsEditor({
                 {
                   ...alteration,
                   tendency: (event.target.value || undefined) as
-                    | "up"
-                    | "down"
-                    | undefined,
+                    "up" | "down" | undefined,
                 },
               ],
               secondaryInterpretation: undefined,
@@ -368,8 +364,7 @@ export function ChordSemanticsEditor({
               return;
             }
             onChange({
-              secondaryInterpretation:
-                secondaryCandidates[0]?.interpretation,
+              secondaryInterpretation: secondaryCandidates[0]?.interpretation,
             });
           }}
         />
@@ -399,13 +394,14 @@ export function ChordSemanticsEditor({
               }}
             >
               {secondaryKeyOptions.map((candidate) => (
-                  <option
-                    key={`${serializePitchClass(candidate.localKey.tonic)}:${candidate.localKey.mode}`}
-                    value={`${serializePitchClass(candidate.localKey.tonic)}:${candidate.localKey.mode}`}
-                  >
-                    {formatPitchClass(candidate.localKey.tonic)} {candidate.localKey.mode === "major" ? "大调" : "小调"}
-                  </option>
-                ))}
+                <option
+                  key={`${serializePitchClass(candidate.localKey.tonic)}:${candidate.localKey.mode}`}
+                  value={`${serializePitchClass(candidate.localKey.tonic)}:${candidate.localKey.mode}`}
+                >
+                  {formatPitchClass(candidate.localKey.tonic)}{" "}
+                  {candidate.localKey.mode === "major" ? "大调" : "小调"}
+                </option>
+              ))}
             </select>
           </label>
           <label>

@@ -12,11 +12,7 @@ import type {
 import type { RuleDiagnostic } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
-import {
-  pitchClassEquals,
-  toMidi,
-  writtenInterval,
-} from "../../../pitch";
+import { pitchClassEquals, toMidi, writtenInterval } from "../../../pitch";
 import {
   activeNotes,
   chordEvidence,
@@ -53,7 +49,11 @@ function isStepMotion(source: AnalysisNote, target: AnalysisNote) {
   );
 }
 
-function toneMembers(slice: AnalysisSlice, chord: AnalysisChord, toneIndex: number) {
+function toneMembers(
+  slice: AnalysisSlice,
+  chord: AnalysisChord,
+  toneIndex: number,
+) {
   const tone = chordIdentityToneSpellings(chord.identity)[toneIndex];
   if (!tone) return [];
   return activeNotes(slice).filter(({ note }) =>
@@ -64,9 +64,9 @@ function toneMembers(slice: AnalysisSlice, chord: AnalysisChord, toneIndex: numb
 function targetContains(target: AnalysisSlice, note: AnalysisNote) {
   return Boolean(
     target.chord &&
-      chordIdentityToneSpellings(target.chord.identity).some((tone) =>
-        pitchClassEquals(note.pitch, tone),
-      ),
+    chordIdentityToneSpellings(target.chord.identity).some((tone) =>
+      pitchClassEquals(note.pitch, tone),
+    ),
   );
 }
 
@@ -91,14 +91,16 @@ function motionProblems(
         : undefined;
       const valid = Boolean(
         next &&
-          targetContains(target, next) &&
-          isStepMotion(member.note, next) &&
-          (check.direction === "step" ||
-            Math.sign(interval!.semitones) ===
-              (check.direction === "up" ? 1 : -1)),
+        targetContains(target, next) &&
+        isStepMotion(member.note, next) &&
+        (check.direction === "step" ||
+          Math.sign(interval!.semitones) ===
+            (check.direction === "up" ? 1 : -1)),
       );
       if (valid) return;
-      problems.push(`${check.label}未${check.direction === "up" ? "上行" : check.direction === "down" ? "下行" : "级进"}解决`);
+      problems.push(
+        `${check.label}未${check.direction === "up" ? "上行" : check.direction === "down" ? "下行" : "级进"}解决`,
+      );
       voices.push(member.voiceId);
       notes.push(member.note, ...(next ? [next] : []));
     });
@@ -111,8 +113,9 @@ function targetConfigurationProblems(target: AnalysisSlice) {
   const tones = chordIdentityToneSpellings(chord.identity);
   const counts = tones.map(
     (tone) =>
-      activeNotes(target).filter(({ note }) => pitchClassEquals(note.pitch, tone))
-        .length,
+      activeNotes(target).filter(({ note }) =>
+        pitchClassEquals(note.pitch, tone),
+      ).length,
   );
   const problems: string[] = [];
   if ((counts[0] ?? 0) === 0) problems.push("目标和弦缺少根音");
@@ -223,9 +226,9 @@ function commonToneProblems(context: SpecializedConnectionContext) {
     const after = context.boundary.target.notes[voiceId];
     return Boolean(
       before &&
-        after &&
-        toMidi(before.pitch) === toMidi(after.pitch) &&
-        common.some((tone) => pitchClassEquals(before.pitch, tone)),
+      after &&
+      toMidi(before.pitch) === toMidi(after.pitch) &&
+      common.some((tone) => pitchClassEquals(before.pitch, tone)),
     );
   });
   return common.length > 0 && !held ? ["共同音没有保持"] : [];
@@ -248,7 +251,10 @@ function dominantSeventhProblems(context: SpecializedConnectionContext) {
     { toneIndex: 1, label: "导音", direction: "up" },
     { toneIndex: 3, label: "七音", direction: "down" },
   ]);
-  const bass = dominantBassProblem(context.boundary.source, context.boundary.target);
+  const bass = dominantBassProblem(
+    context.boundary.source,
+    context.boundary.target,
+  );
   if (bass) result.problems.push(bass);
   result.problems.push(
     ...commonToneProblems(context),
@@ -312,8 +318,7 @@ function neapolitanProblems(context: SpecializedConnectionContext) {
   );
   if (chordInversion(context.sourceChord) !== 1)
     result.problems.push("N6 应使用第一转位");
-  if (counts[1] !== 2)
-    result.problems.push("N6 通常重复低音所代表的 IV 级音");
+  if (counts[1] !== 2) result.problems.push("N6 通常重复低音所代表的 IV 级音");
   toneMembers(context.boundary.source, context.sourceChord, 0).forEach(
     (member) => {
       const next = context.boundary.target.notes[member.voiceId];
@@ -341,11 +346,7 @@ function resolutionCoverageReferences(
   kinds: NonNullable<SpecializedConnectionPolicy["coverageKinds"]>,
 ) {
   return kinds.flatMap(({ kind, toneIndex }) =>
-    toneMembers(
-      context.boundary.source,
-      context.sourceChord,
-      toneIndex,
-    ).map(
+    toneMembers(context.boundary.source, context.sourceChord, toneIndex).map(
       ({ voiceId }) =>
         `resolution.${kind}|${context.connection.connectionKey}|voice:${voiceId}`,
     ),
@@ -562,9 +563,7 @@ export function subdominantSeventhConnectionRule(analysis: HarmonyAnalysis) {
   return evaluateSpecializedConnection(analysis, SUBDOMINANT_SEVENTH_POLICY);
 }
 
-export function doubleDominantSeventhConnectionRule(
-  analysis: HarmonyAnalysis,
-) {
+export function doubleDominantSeventhConnectionRule(analysis: HarmonyAnalysis) {
   return evaluateSpecializedConnection(
     analysis,
     DOUBLE_DOMINANT_SEVENTH_POLICY,
@@ -602,8 +601,8 @@ export function ambiguousConnectionRule(analysis: HarmonyAnalysis) {
       (span): span is HarmonySpan =>
         Boolean(
           span?.semantics &&
-            (span.semantics.interpretations.length > 1 ||
-              (span.semantics.alternatives?.length ?? 0) > 0),
+          (span.semantics.interpretations.length > 1 ||
+            (span.semantics.alternatives?.length ?? 0) > 0),
         ),
     );
     if (candidates.length === 0) return;
@@ -677,9 +676,11 @@ export function secondInversionContextRule(analysis: HarmonyAnalysis) {
         : role === "pedal64"
           ? toMidi(previousSlice.notes.bass.pitch) ===
               toMidi(firstSlice.notes.bass.pitch) &&
-            toMidi(lastSlice.notes.bass.pitch) === toMidi(nextSlice.notes.bass.pitch) &&
+            toMidi(lastSlice.notes.bass.pitch) ===
+              toMidi(nextSlice.notes.bass.pitch) &&
             previousSpan.identityKey === nextSpan.identityKey
-          : toMidi(lastSlice.notes.bass.pitch) === toMidi(nextSlice.notes.bass.pitch) &&
+          : toMidi(lastSlice.notes.bass.pitch) ===
+              toMidi(nextSlice.notes.bass.pitch) &&
             nextInterpretation?.designation?.primaryFunction === "dominant";
     if (valid) return;
     diagnostics.push(
@@ -715,13 +716,13 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     id: "function.ambiguous-connection",
     catalogNumber: "G.6",
     label: "功能连接语义不足",
-    description: "和弦实体有效，但前后 interpretation 候选导致不同的合法性结论，且没有人工确认主解释时给出提示。",
-    rationale: "这是需要用户确认的语义提示，不得同时产生任何基于任意候选的功能违规。",
+    description:
+      "和弦实体有效，但前后 interpretation 候选导致不同的合法性结论，且没有人工确认主解释时给出提示。",
+    rationale:
+      "这是需要用户确认的语义提示，不得同时产生任何基于任意候选的功能违规。",
     group: "function",
     defaultSeverity: "suggestion",
-    requires: [
-      "chords"
-    ],
+    requires: ["chords"],
     dependencyScope: "phrase",
     evaluate: ambiguousConnectionRule,
   }),
@@ -729,40 +730,32 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     id: "connection.dominant-seventh",
     catalogNumber: "H.1",
     label: "D7 解决配置",
-    description: "综合检查导音上行、七音下行、共同音保持和目标主和弦的完整/不完整配置；根据 `D7/D56/D34/D2` 分别验证低音走向。",
-    rationale: "本条覆盖同一连接上的通用 E.1/E.2 诊断；阻碍解决和转调使用独立 profile。",
+    description:
+      "综合检查导音上行、七音下行、共同音保持和目标主和弦的完整/不完整配置；根据 `D7/D56/D34/D2` 分别验证低音走向。",
+    rationale:
+      "本条覆盖同一连接上的通用 E.1/E.2 诊断；阻碍解决和转调使用独立 profile。",
     group: "connection",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
-    coveredRuleIds: [
-      "resolution.leading-tone",
-      "resolution.chord-seventh"
-    ],
+    coveredRuleIds: ["resolution.leading-tone", "resolution.chord-seventh"],
     evaluate: dominantSeventhConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.dominant-ninth",
     catalogNumber: "H.2",
     label: "D9 解决配置",
-    description: "在 `D9 -> T` 或确认目标连接中联合验证九音下行、七音下行、导音上行和目标和弦配置。",
+    description:
+      "在 `D9 -> T` 或确认目标连接中联合验证九音下行、七音下行、导音上行和目标和弦配置。",
     rationale: "只处理当前支持的原位 `D9`；覆盖 E.1、E.2、E.3 的同源诊断。",
     group: "connection",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     coveredRuleIds: [
       "resolution.leading-tone",
       "resolution.chord-seventh",
-      "resolution.dominant-ninth"
+      "resolution.dominant-ninth",
     ],
     evaluate: dominantNinthConnectionRule,
   }),
@@ -770,15 +763,12 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     id: "connection.leading-tone-seventh",
     catalogNumber: "H.3",
     label: "DVII7 解决配置",
-    description: "依据 `DVII7` 种类、转位和目标调性，逐声部检查倾向音级进与目标和弦允许重复音。",
+    description:
+      "依据 `DVII7` 种类、转位和目标调性，逐声部检查倾向音级进与目标和弦允许重复音。",
     rationale: "减七和弦的等音转调必须先确认新解释，不能沿旧调性误判。",
     group: "connection",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: leadingToneSeventhConnectionRule,
   }),
@@ -786,15 +776,12 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     id: "connection.supertonic-seventh",
     catalogNumber: "H.4",
     label: "SII7 进入属功能",
-    description: "根据转位和目标类型检查七音下行、共同音与低音走向，并验证后继属于允许的属功能集合。",
+    description:
+      "根据转位和目标类型检查七音下行、共同音与低音走向，并验证后继属于允许的属功能集合。",
     rationale: "序进中的 `SII7` 可能采用不同解决；由序进语境豁免。",
     group: "connection",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: supertonicSeventhConnectionRule,
   }),
@@ -802,15 +789,13 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     id: "connection.subdominant-seventh",
     catalogNumber: "H.5",
     label: "S7 进入属功能",
-    description: "依据 IV 级七和弦的具体转位检查进入 D 类或其他已允许目标时的声部进行。",
-    rationale: "`S7` 不能机械复用 `SII7` 的所有低音与重复规则；需要独立金样本。",
+    description:
+      "依据 IV 级七和弦的具体转位检查进入 D 类或其他已允许目标时的声部进行。",
+    rationale:
+      "`S7` 不能机械复用 `SII7` 的所有低音与重复规则；需要独立金样本。",
     group: "connection",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: subdominantSeventhConnectionRule,
   }),
@@ -818,15 +803,12 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     id: "connection.double-dominant-seventh",
     catalogNumber: "H.6",
     label: "DD7 解决配置",
-    description: "在 G.3 已确认目标成立后，按 D 调性化语境检查变化导音、七音和各转位低音的进行。",
+    description:
+      "在 G.3 已确认目标成立后，按 D 调性化语境检查变化导音、七音和各转位低音的进行。",
     rationale: "目标调性改变时重新建立局部调性，不能沿主调拼写判断。",
     group: "connection",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: doubleDominantSeventhConnectionRule,
   }),
@@ -838,11 +820,7 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     rationale: "等音转调语境优先；与 H.3 共用算法但使用不同局部目标。",
     group: "connection",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: doubleDominantLeadingToneConnectionRule,
   }),
@@ -850,15 +828,13 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     id: "connection.neapolitan-sixth",
     catalogNumber: "H.8",
     label: "N6 连接",
-    description: "检查第一转位、通常重复低音所代表的调内 IV 级音，并验证降 II 级音按书写方向进入 D 或经 `K46` 进入 D。",
-    rationale: "调式、旋律位置和是否经过 `K46` 会影响声部走向；具体例外待金样本校准。",
+    description:
+      "检查第一转位、通常重复低音所代表的调内 IV 级音，并验证降 II 级音按书写方向进入 D 或经 `K46` 进入 D。",
+    rationale:
+      "调式、旋律位置和是否经过 `K46` 会影响声部走向；具体例外待金样本校准。",
     group: "connection",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: neapolitanSixthConnectionRule,
   }),
@@ -866,15 +842,12 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     id: "connection.second-inversion-context",
     catalogNumber: "H.13",
     label: "六四和弦进入与离开",
-    description: "结合前后 span、低音方向和拍位，验证人工标注的四六类型；经过四六要求低音级进贯穿，辅助四六要求低音保持并回到原和弦。",
+    description:
+      "结合前后 span、低音方向和拍位，验证人工标注的四六类型；经过四六要求低音级进贯穿，辅助四六要求低音保持并回到原和弦。",
     rationale: "首版只验证人工确认类型，不自动给所有 `T46/S46/D46` 指派用途。",
     group: "connection",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: secondInversionContextRule,
   }),

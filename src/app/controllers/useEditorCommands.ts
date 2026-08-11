@@ -58,11 +58,8 @@ export function useEditorCommands({
   const selectionCommands = useSelectionCommands(context);
   const viewCommands = useViewCommands(context);
 
-  const {
-    setToolModifiers,
-    editorInteractionActive,
-    setCancelEditorRequest,
-  } = editor;
+  const { setToolModifiers, editorInteractionActive, setCancelEditorRequest } =
+    editor;
   useEffect(() => {
     const updateModifier = (key: string, pressed: boolean) => {
       if (key === "Control")

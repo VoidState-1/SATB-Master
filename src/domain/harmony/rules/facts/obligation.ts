@@ -19,7 +19,9 @@ export type VoiceObligationPayload = {
 function subjectNote<Payload extends VoiceObligationPayload>(
   environment: ObligationEnvironment<Payload>,
 ) {
-  return environment.context.slice.notes[environment.obligation.payload.voiceId];
+  return environment.context.slice.notes[
+    environment.obligation.payload.voiceId
+  ];
 }
 
 function sourceNote<Payload extends VoiceObligationPayload>(
@@ -29,9 +31,9 @@ function sourceNote<Payload extends VoiceObligationPayload>(
   return noteId ? environment.context.analysis.noteById.get(noteId) : undefined;
 }
 
-export function subjectVoiceAttacked<Payload extends VoiceObligationPayload>(): PredicateNode<
-  ObligationEnvironment<Payload>
-> {
+export function subjectVoiceAttacked<
+  Payload extends VoiceObligationPayload,
+>(): PredicateNode<ObligationEnvironment<Payload>> {
   return fact(
     defineFact({
       id: "obligation.subject-voice-attacked",
@@ -59,9 +61,9 @@ export function subjectVoiceAttacked<Payload extends VoiceObligationPayload>(): 
   );
 }
 
-export function subjectVoiceEnteredRest<Payload extends VoiceObligationPayload>(): PredicateNode<
-  ObligationEnvironment<Payload>
-> {
+export function subjectVoiceEnteredRest<
+  Payload extends VoiceObligationPayload,
+>(): PredicateNode<ObligationEnvironment<Payload>> {
   return fact(
     defineFact({
       id: "obligation.subject-voice-entered-rest",
@@ -102,9 +104,9 @@ export function harmonyChanged<Payload extends JsonValue>(): PredicateNode<
   );
 }
 
-export function subjectHasActiveNote<Payload extends VoiceObligationPayload>(): PredicateNode<
-  ObligationEnvironment<Payload>
-> {
+export function subjectHasActiveNote<
+  Payload extends VoiceObligationPayload,
+>(): PredicateNode<ObligationEnvironment<Payload>> {
   return fact(
     defineFact({
       id: "obligation.subject-has-active-note",
@@ -125,9 +127,9 @@ export function subjectHasActiveNote<Payload extends VoiceObligationPayload>(): 
   );
 }
 
-export function targetChordAvailable<Payload extends JsonValue>(): PredicateNode<
-  ObligationEnvironment<Payload>
-> {
+export function targetChordAvailable<
+  Payload extends JsonValue,
+>(): PredicateNode<ObligationEnvironment<Payload>> {
   return fact(
     defineFact({
       id: "obligation.target-chord-available",
@@ -144,9 +146,9 @@ export function targetChordAvailable<Payload extends JsonValue>(): PredicateNode
   );
 }
 
-export function sameOpenedHarmonySpan<Payload extends JsonValue>(): PredicateNode<
-  ObligationEnvironment<Payload>
-> {
+export function sameOpenedHarmonySpan<
+  Payload extends JsonValue,
+>(): PredicateNode<ObligationEnvironment<Payload>> {
   return fact(
     defineFact({
       id: "obligation.same-opened-harmony-span",

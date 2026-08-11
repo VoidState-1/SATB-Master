@@ -98,10 +98,7 @@ function normalizeOption(
 }
 
 export function normalizeRuleConfig(
-  definition: Pick<
-    HarmonyRuleDefinition,
-    "options" | "defaultConfig"
-  >,
+  definition: Pick<HarmonyRuleDefinition, "options" | "defaultConfig">,
   input: RuleConfig | undefined,
 ): RuleConfigNormalizationResult {
   const config: RuleConfig = {};

@@ -100,7 +100,11 @@ export function inspectChordRegion(
     row("durationTicks", "number", chord.durationTicks),
     row("identity.root.step", "DiatonicStep", chord.identity.root.step),
     row("identity.root.alter", "Alteration", chord.identity.root.alter),
-    row("identity.structure.kind", "ChordStructure.kind", chord.identity.structure.kind),
+    row(
+      "identity.structure.kind",
+      "ChordStructure.kind",
+      chord.identity.structure.kind,
+    ),
   ];
 
   if (chord.identity.structure.kind === "tertian") {

@@ -5,7 +5,10 @@ import {
   Info,
   Lightbulb,
 } from "lucide-react";
-import type { HarmonyCheckResult, HarmonyDiagnostic } from "../../domain/harmony";
+import type {
+  HarmonyCheckResult,
+  HarmonyDiagnostic,
+} from "../../domain/harmony";
 import { formatPosition } from "../../domain/time";
 import type { ProjectDocument } from "../../domain/project";
 

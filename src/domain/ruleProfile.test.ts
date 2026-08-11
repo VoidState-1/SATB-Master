@@ -84,8 +84,12 @@ describe("规则配置档案", () => {
     expect(resolved.severities["voice.range"]).toBe("off");
 
     upgradeBuiltinRuleProfileSnapshot(projectDocument);
-    expect(projectDocument.ruleProfile.builtin["voice.range"].severity).toBe("off");
-    expect(resolveBuiltinRuleProfile(projectDocument).profileUpgradeRequired).toBe(false);
+    expect(projectDocument.ruleProfile.builtin["voice.range"].severity).toBe(
+      "off",
+    );
+    expect(
+      resolveBuiltinRuleProfile(projectDocument).profileUpgradeRequired,
+    ).toBe(false);
   });
 
   it("恢复默认会写入完整实例而不是删除目录项", () => {
@@ -94,7 +98,9 @@ describe("规则配置档案", () => {
     } as Parameters<typeof resetBuiltinRule>[0];
     setBuiltinRuleSeverity(projectDocument, "voice.range", "suggestion");
     resetBuiltinRule(projectDocument, "voice.range");
-    expect(projectDocument.ruleProfile.builtin["voice.range"].severity).toBe("warning");
+    expect(projectDocument.ruleProfile.builtin["voice.range"].severity).toBe(
+      "warning",
+    );
 
     delete projectDocument.ruleProfile.builtin["melody.large-leap"];
     resetAllBuiltinRules(projectDocument);
@@ -181,9 +187,9 @@ describe("规则配置档案", () => {
   });
 
   it("拒绝结构错误和未知格式版本", () => {
-    expect(() => parsePortableRuleProfile({ kind: "satb-rule-profile" })).toThrow(
-      "不是受支持",
-    );
+    expect(() =>
+      parsePortableRuleProfile({ kind: "satb-rule-profile" }),
+    ).toThrow("不是受支持");
     expect(() =>
       parsePortableRuleProfile({
         ...createPortableRuleProfile(createDefaultRuleProfile()),

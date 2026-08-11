@@ -1,12 +1,11 @@
-import { useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import {
-  Download,
-  Link2,
-  RotateCcw,
-  Save,
-  Search,
-  Upload,
-} from "lucide-react";
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
+import { Download, Link2, RotateCcw, Save, Search, Upload } from "lucide-react";
 import { IconButton } from "../../components/IconButton";
 import {
   HARMONY_RULE_DEFINITIONS,
@@ -112,7 +111,9 @@ export function RuleSettingsPane({
         "button[data-rule-key]",
       ),
     ];
-    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const current = buttons.indexOf(
+      document.activeElement as HTMLButtonElement,
+    );
     const offset = event.key === "ArrowDown" ? 1 : -1;
     const next =
       buttons[Math.max(0, Math.min(buttons.length - 1, current + offset))];

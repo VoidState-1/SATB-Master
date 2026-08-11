@@ -1,9 +1,6 @@
 import { useCallback } from "react";
 import { defaultChordDraftAtTick } from "../../domain/chords";
-import {
-  createEmptyProject,
-  type ProjectDocument,
-} from "../../domain/project";
+import { createEmptyProject, type ProjectDocument } from "../../domain/project";
 import { useProjectHistory } from "../../hooks/useProjectHistory";
 import { useEditorState } from "./useEditorState";
 

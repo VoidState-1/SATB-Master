@@ -6,10 +6,7 @@ import type {
   JsonValue,
 } from "../../runtime";
 import type { PredicateEvaluation } from "./facts";
-import type {
-  ObligationDecision,
-  ObligationEnvironment,
-} from "./obligation";
+import type { ObligationDecision, ObligationEnvironment } from "./obligation";
 import type { SubjectRefs } from "./facts";
 
 function diagnosticRefs(refs: SubjectRefs): DiagnosticSubjectRefs {
@@ -46,9 +43,7 @@ export function obligationDiagnosticContext<Payload extends JsonValue>(
   return {
     subjects: {
       origin: diagnosticRefs(environment.obligation.openedBy),
-      failure: diagnosticRefs(
-        decision.selected.evaluation.result.subjectRefs,
-      ),
+      failure: diagnosticRefs(decision.selected.evaluation.result.subjectRefs),
     },
     trace: [
       ...environment.obligation.history,

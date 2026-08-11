@@ -25,9 +25,7 @@ describe("规则引擎修正基线", () => {
 
   it("单个和弦区域内部的调号变化必须切断 HarmonySpan", () => {
     const project = correctionProject(PPQ * 2);
-    project.chordTrack.regions = [
-      correctionChord("tonic-region", 0, PPQ * 2),
-    ];
+    project.chordTrack.regions = [correctionChord("tonic-region", 0, PPQ * 2)];
     project.keyEvents.push({
       id: "key-change",
       tick: PPQ,
@@ -37,7 +35,9 @@ describe("规则引擎修正基线", () => {
 
     const analysis = buildHarmonyAnalysis(project, 1);
     expect(analysis.harmonySpans).toHaveLength(2);
-    expect(analysis.harmonySpans.map((span) => [span.fromTick, span.toTick])).toEqual([
+    expect(
+      analysis.harmonySpans.map((span) => [span.fromTick, span.toTick]),
+    ).toEqual([
       [0, PPQ],
       [PPQ, PPQ * 2],
     ]);
@@ -47,11 +47,7 @@ describe("规则引擎修正基线", () => {
     const project = correctionProject(PPQ * 3);
     setCorrectionVoice(project, "soprano", [
       correctionNote("before-rest", 0, { step: "C", alter: 0, octave: 4 }),
-      correctionNote(
-        "after-rest",
-        PPQ * 2,
-        { step: "C", alter: 0, octave: 6 },
-      ),
+      correctionNote("after-rest", PPQ * 2, { step: "C", alter: 0, octave: 6 }),
     ]);
 
     expect(

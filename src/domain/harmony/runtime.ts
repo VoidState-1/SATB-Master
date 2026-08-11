@@ -121,9 +121,7 @@ export interface ReadonlyRuleContext {
  */
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue =
-  | JsonPrimitive
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+  JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
 export interface RuleStateEnvelope<T extends JsonValue = JsonValue> {
   readonly id: string;
@@ -154,8 +152,10 @@ export interface RuleEvaluation {
   readonly skipped?: readonly Omit<SkippedRule, "ruleId">[];
 }
 
-export interface StatelessRuleDefinition
-  extends Omit<HarmonyRuleDefinition, "id"> {
+export interface StatelessRuleDefinition extends Omit<
+  HarmonyRuleDefinition,
+  "id"
+> {
   readonly id: string;
   readonly evaluate: (
     context: ReadonlyRuleContext,
@@ -163,13 +163,15 @@ export interface StatelessRuleDefinition
   ) => RuleEvaluation | Promise<RuleEvaluation>;
 }
 
-export interface RuleStepResult<T extends JsonValue = JsonValue>
-  extends RuleEvaluation {
+export interface RuleStepResult<
+  T extends JsonValue = JsonValue,
+> extends RuleEvaluation {
   readonly outgoing: readonly RuleStateEnvelope<T>[];
 }
 
-export interface StatefulRuleDefinition<T extends JsonValue = JsonValue>
-  extends Omit<HarmonyRuleDefinition, "id"> {
+export interface StatefulRuleDefinition<
+  T extends JsonValue = JsonValue,
+> extends Omit<HarmonyRuleDefinition, "id"> {
   readonly id: string;
   readonly process: (
     context: RuleStepContext,
@@ -245,7 +247,9 @@ function requirementSkips(
       });
       return skipped;
     }
-    const analyzable = withSemantics.filter((span) => span.status === "complete");
+    const analyzable = withSemantics.filter(
+      (span) => span.status === "complete",
+    );
     if (analyzable.length === 0) {
       skipped.push({
         ruleId: definition.id,
@@ -333,11 +337,12 @@ function collectEvaluation(
         applicability.policy === "deferred"
       )
         return undefined;
-      const effectiveSeverity = applicability.policy === "downgraded"
-        ? severity === "error"
-          ? "warning"
-          : "suggestion"
-        : severity;
+      const effectiveSeverity =
+        applicability.policy === "downgraded"
+          ? severity === "error"
+            ? "warning"
+            : "suggestion"
+          : severity;
       return normalizeBuiltinDiagnostic(
         item,
         definition,
@@ -435,7 +440,8 @@ function validateRuleStates(
       refs?.spanIds?.some((id: string) => !validSpanIds.has(id))
     )
       throw new Error("规则状态引用了不存在的分析对象");
-    if (!isJsonValue(state.payload)) throw new Error("规则状态必须是纯 JSON 数据");
+    if (!isJsonValue(state.payload))
+      throw new Error("规则状态必须是纯 JSON 数据");
     const serialized = JSON.stringify(state.payload);
     if (serialized.length > MAX_RULE_STATE_BYTES)
       throw new Error("单个规则状态超过 16 KiB 限制");
@@ -464,7 +470,9 @@ function runStatefulRuleSynchronously(
   const skipped: Omit<SkippedRule, "ruleId">[] = [];
   let states: readonly RuleStateEnvelope[] = [];
   let lastContext: RuleStepContext | undefined;
-  const spanById = new Map(analysis.harmonySpans.map((span) => [span.id, span]));
+  const spanById = new Map(
+    analysis.harmonySpans.map((span) => [span.id, span]),
+  );
   const validSpanIds = new Set(spanById.keys());
   for (let index = 0; index < analysis.slices.length; index += 1) {
     lastContext = stepContextAt(analysis, index, spanById);
@@ -481,7 +489,8 @@ function runStatefulRuleSynchronously(
   }
   if (definition.finalize) {
     const finalResult = definition.finalize(lastContext, states, config);
-    if (finalResult instanceof Promise) throw new Error("同步入口不支持异步规则");
+    if (finalResult instanceof Promise)
+      throw new Error("同步入口不支持异步规则");
     diagnostics.push(...finalResult.diagnostics);
     skipped.push(...(finalResult.skipped ?? []));
   }
@@ -499,7 +508,9 @@ async function runRule(
   const skipped: Omit<SkippedRule, "ruleId">[] = [];
   let states: readonly RuleStateEnvelope[] = [];
   let lastContext: RuleStepContext | undefined;
-  const spanById = new Map(analysis.harmonySpans.map((span) => [span.id, span]));
+  const spanById = new Map(
+    analysis.harmonySpans.map((span) => [span.id, span]),
+  );
   const validSpanIds = new Set(spanById.keys());
   for (let index = 0; index < analysis.slices.length; index += 1) {
     lastContext = stepContextAt(analysis, index, spanById);
@@ -566,7 +577,13 @@ export function runRulesSynchronously(
       });
     }
   }
-  return completeResult(analysis, diagnostics, skippedRules, false, definitions);
+  return completeResult(
+    analysis,
+    diagnostics,
+    skippedRules,
+    false,
+    definitions,
+  );
 }
 
 export class RuleScheduler {
@@ -596,10 +613,7 @@ export class RuleScheduler {
       chordTrack: project.chordTrack,
       auxiliaryTracks: project.auxiliaryTracks,
     });
-    if (
-      this.cachedAnalysis &&
-      this.cachedAnalysisSignature === signature
-    ) {
+    if (this.cachedAnalysis && this.cachedAnalysisSignature === signature) {
       return Object.freeze({
         ...this.cachedAnalysis,
         revision,
@@ -621,7 +635,8 @@ export class RuleScheduler {
     const token = ++this.runToken;
     await Promise.resolve();
     const analysis =
-      request.analysis ?? this.prepareAnalysis(request.project, request.revision);
+      request.analysis ??
+      this.prepareAnalysis(request.project, request.revision);
     const diagnostics: HarmonyDiagnostic[] = [];
     const skippedRules: SkippedRule[] = [];
     const canReuseRuleResults = analysis.invalidationRanges.length === 0;
@@ -654,7 +669,8 @@ export class RuleScheduler {
         canReuseRuleResults &&
         this.previousRuleSignatures.get(definition.id) === ruleSignature
       ) {
-        const reusedDiagnostics = this.previousRuleDiagnostics.get(definition.id) ?? [];
+        const reusedDiagnostics =
+          this.previousRuleDiagnostics.get(definition.id) ?? [];
         const reusedSkips = this.previousRuleSkips.get(definition.id) ?? [];
         diagnostics.push(...reusedDiagnostics);
         skippedRules.push(...reusedSkips);
@@ -706,10 +722,7 @@ export class RuleScheduler {
       diagnostics.push(...collected.diagnostics);
       skippedRules.push(...collected.skipped);
       nextRuleDiagnostics.set(definition.id, collected.diagnostics);
-      nextRuleSkips.set(definition.id, [
-        ...requirements,
-        ...collected.skipped,
-      ]);
+      nextRuleSkips.set(definition.id, [...requirements, ...collected.skipped]);
     }
 
     this.previousRuleSignatures = nextRuleSignatures;

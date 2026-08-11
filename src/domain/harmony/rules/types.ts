@@ -15,17 +15,10 @@ export type HarmonyRuleGroupId =
   | "tonality";
 
 export type RuleRequirement =
-  | "written-pitches"
-  | "chords"
-  | "semantics"
-  | "complete-satb";
+  "written-pitches" | "chords" | "semantics" | "complete-satb";
 
 export type RuleDependencyScope =
-  | "note"
-  | "slice"
-  | "chord"
-  | "phrase"
-  | "project";
+  "note" | "slice" | "chord" | "phrase" | "project";
 
 export const RULE_EXCEPTION_CONTEXTS = [
   "same-harmony",

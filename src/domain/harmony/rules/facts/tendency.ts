@@ -164,7 +164,8 @@ export const dominantNinthSource: ObligationSource<DominantNinthPayload> = {
     const tones = chordIdentityToneSpellings(chord.identity);
     return moment.attackedVoiceIds.flatMap((voiceId) => {
       const note = context.slice.notes[voiceId];
-      if (!note || !tones[4] || !pitchClassEquals(note.pitch, tones[4])) return [];
+      if (!note || !tones[4] || !pitchClassEquals(note.pitch, tones[4]))
+        return [];
       return [
         {
           partitionKey: `voice:${voiceId}`,
@@ -246,7 +247,8 @@ export function leadingTargetUnchanged(): PredicateNode<
         const payload = environment.obligation.payload;
         const unchanged =
           environment.context.slice.key.tonic.step === payload.sourceKeyStep &&
-          environment.context.slice.key.tonic.alter === payload.sourceKeyAlter &&
+          environment.context.slice.key.tonic.alter ===
+            payload.sourceKeyAlter &&
           environment.context.slice.key.mode === payload.sourceKeyMode;
         return unchanged
           ? factYes("leading-target-unchanged")
@@ -263,13 +265,17 @@ function resolutionOptions<Payload extends VoiceObligationPayload>(
   const source = sourceId
     ? environment.context.analysis.noteById.get(sourceId)
     : undefined;
-  const current = environment.context.slice.notes[environment.obligation.payload.voiceId];
+  const current =
+    environment.context.slice.notes[environment.obligation.payload.voiceId];
   if (!source || !current) return undefined;
   return {
     source,
     current,
     options: {
-      evidence: [noteEvidence(source, "倾向音"), noteEvidence(current, "当前音")],
+      evidence: [
+        noteEvidence(source, "倾向音"),
+        noteEvidence(current, "当前音"),
+      ],
       subjectRefs: {
         voiceIds: [environment.obligation.payload.voiceId],
         noteIds: [source.id, current.id],
@@ -314,7 +320,10 @@ function downwardResolution<Payload extends VoiceObligationPayload>(
   const semitones = toMidi(notes.current.pitch) - sourceMidi;
   const resolves =
     (semitones === -1 || semitones === -2) &&
-    hasExactPitch(notes.current, chordIdentityToneSpellings(targetChord.identity));
+    hasExactPitch(
+      notes.current,
+      chordIdentityToneSpellings(targetChord.identity),
+    );
   const options = {
     ...notes.options,
     subjectRefs: {

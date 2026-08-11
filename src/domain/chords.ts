@@ -27,11 +27,7 @@ import {
   type KeyEvent,
   type ProjectDocument,
 } from "./project";
-import {
-  accidentalSymbol,
-  formatPitchClass,
-  pitchClassValue,
-} from "./pitch";
+import { accidentalSymbol, formatPitchClass, pitchClassValue } from "./pitch";
 import { keyAtTick } from "./time";
 
 export { QUALITY_INTERVALS, isSeventhChord } from "./chordModel";
@@ -63,8 +59,7 @@ export function chordIdentityPitchClasses(identity: ChordIdentity) {
 // 仅供旧检查器维持既有行为；新功能体系不消费此粗粒度分类。
 export function chordFunction(semantics: HarmonySemantics): ChordFunction {
   const legacy = legacyHarmonyProjection(semantics);
-  if (legacy.appliedTarget && [5, 7].includes(legacy.degree))
-    return "dominant";
+  if (legacy.appliedTarget && [5, 7].includes(legacy.degree)) return "dominant";
   if ([1, 3, 6].includes(legacy.degree)) return "tonic";
   if ([2, 4].includes(legacy.degree)) return "subdominant";
   if ([5, 7].includes(legacy.degree)) return "dominant";
@@ -159,7 +154,9 @@ function semanticSummary(semantics?: HarmonySemantics) {
   if (!semantics) return "未解释";
   const interpretation = primaryHarmonyInterpretation(semantics);
   const designation = interpretation.designation;
-  const familyName = (family: NonNullable<typeof designation>["primaryFunction"]) =>
+  const familyName = (
+    family: NonNullable<typeof designation>["primaryFunction"],
+  ) =>
     family === "tonic"
       ? "主功能"
       : family === "subdominant"
@@ -199,10 +196,7 @@ function functionalNameSingle(
   const form = chordFormFromDraft(draft);
   const figures = inversionFigures(form, chordIdentityInversion(identity));
   const base = `${definition.label}${figures}${alterationSuffix(identity)}`;
-  if (
-    interpretation.appliedTarget &&
-    interpretation.appliedTarget.degree !== 5
-  )
+  if (interpretation.appliedTarget && interpretation.appliedTarget.degree !== 5)
     return `${base}->${targetFunctionalLabel(interpretation.appliedTarget)}`;
   return base;
 }
@@ -286,7 +280,9 @@ export function defaultChordDraftAtTick(
   };
 }
 
-export function chordDraftFromRegion(region: ChordRegion): ChordDraft | undefined {
+export function chordDraftFromRegion(
+  region: ChordRegion,
+): ChordDraft | undefined {
   return region.semantics
     ? chordDraftFromIdentity(region.identity, region.semantics)
     : undefined;

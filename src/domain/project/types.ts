@@ -182,15 +182,15 @@ export interface SharedHarmonySettings {
 }
 
 export interface ExternalRuleReferenceV3 {
-    ruleId: string;
-    packageId: string;
-    version: string;
-    contentHash: string;
-    severity: HarmonyRuleSeverity;
-    enabled: boolean;
-    configVersion: number;
-    config: RuleConfig;
-    exceptions: RuleExceptionPolicy;
+  ruleId: string;
+  packageId: string;
+  version: string;
+  contentHash: string;
+  severity: HarmonyRuleSeverity;
+  enabled: boolean;
+  configVersion: number;
+  config: RuleConfig;
+  exceptions: RuleExceptionPolicy;
 }
 
 export interface RuleProfile {

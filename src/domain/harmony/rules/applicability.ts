@@ -75,17 +75,14 @@ function transitionIdsFor(
 function spanIdsFor(diagnostic: RuleDiagnostic, analysis: HarmonyAnalysis) {
   const result = new Set<string>();
   diagnostic.chordIds.forEach((chordId) =>
-    analysis.chordSpanIds
-      .get(chordId)
-      ?.forEach((spanId) => result.add(spanId)),
+    analysis.chordSpanIds.get(chordId)?.forEach((spanId) => result.add(spanId)),
   );
   analysis.harmonySpans.forEach((span) => {
     const overlaps =
       diagnostic.tick === diagnostic.endTick
         ? span.fromTick <= diagnostic.tick && diagnostic.tick <= span.toTick
         : diagnostic.tick < span.toTick && diagnostic.endTick > span.fromTick;
-    if (overlaps)
-      result.add(span.id);
+    if (overlaps) result.add(span.id);
   });
   return result;
 }
@@ -117,17 +114,18 @@ function contextsFor(
       .flatMap((reference) => reference.split("|"))
       .filter((part) => part.startsWith("connection:")),
   );
-  const connectionIds = referencedConnectionIds.size > 0
-    ? referencedConnectionIds
-    : new Set(
-        analysis.connections
-          .filter(
-            (connection) =>
-              spanIds.has(connection.previousSpanId) ||
-              spanIds.has(connection.currentSpanId),
-          )
-          .map((connection) => connection.connectionKey),
-      );
+  const connectionIds =
+    referencedConnectionIds.size > 0
+      ? referencedConnectionIds
+      : new Set(
+          analysis.connections
+            .filter(
+              (connection) =>
+                spanIds.has(connection.previousSpanId) ||
+                spanIds.has(connection.currentSpanId),
+            )
+            .map((connection) => connection.connectionKey),
+        );
   if (intersects(facts.modulationConnectionIds, connectionIds))
     contexts.push("modulation");
   if (
@@ -155,7 +153,9 @@ export function planRuleApplicability(
   const supported = new Set(definition.supportedExceptionContexts);
   const contexts = [
     ...new Set(
-      contextsFor(diagnostic, analysis).filter((context) => supported.has(context)),
+      contextsFor(diagnostic, analysis).filter((context) =>
+        supported.has(context),
+      ),
     ),
   ];
   const effective = {

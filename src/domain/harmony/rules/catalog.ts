@@ -1,8 +1,5 @@
 import { BUILTIN_HARMONY_RULES } from "./groups";
-import type {
-  HarmonyRuleGroupId,
-  HarmonyRuleSeverity,
-} from "./types";
+import type { HarmonyRuleGroupId, HarmonyRuleSeverity } from "./types";
 
 export type HarmonyRuleId = (typeof BUILTIN_HARMONY_RULES)[number]["id"];
 export type HarmonyRuleSeverities = Record<HarmonyRuleId, HarmonyRuleSeverity>;

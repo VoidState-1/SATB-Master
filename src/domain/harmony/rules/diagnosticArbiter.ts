@@ -26,9 +26,11 @@ function evidenceIds(item: Pick<HarmonyDiagnostic, "evidence">) {
 }
 
 function canonicalScope(item: RuleDiagnostic) {
-  if (item.chordIds.length > 0) return `chord:${stable(item.chordIds).join(",")}`;
+  if (item.chordIds.length > 0)
+    return `chord:${stable(item.chordIds).join(",")}`;
   if (item.noteIds.length > 0) return `note:${stable(item.noteIds).join(",")}`;
-  if (item.voiceIds.length > 0) return `voice:${stable(item.voiceIds).join(",")}`;
+  if (item.voiceIds.length > 0)
+    return `voice:${stable(item.voiceIds).join(",")}`;
   return "project";
 }
 
@@ -48,7 +50,8 @@ export function normalizeBuiltinDiagnostic(
   analysis: HarmonyAnalysis,
   severity: DiagnosticSeverity,
 ): HarmonyDiagnostic | undefined {
-  if (item.ruleId !== definition.id || item.source !== "builtin") return undefined;
+  if (item.ruleId !== definition.id || item.source !== "builtin")
+    return undefined;
   if (
     !Number.isInteger(item.tick) ||
     !Number.isInteger(item.endTick) ||
@@ -119,9 +122,7 @@ export function normalizeBuiltinDiagnostic(
     (refs.length <= 32 &&
       refs.every(
         (ref) =>
-          typeof ref === "string" &&
-          ref.trim().length > 0 &&
-          ref.length <= 240,
+          typeof ref === "string" && ref.trim().length > 0 && ref.length <= 240,
       ));
   if (
     !validStructuredRefs(item.causeRefs) ||
@@ -150,7 +151,9 @@ export function normalizeBuiltinDiagnostic(
           ...(item.subjects.origin
             ? {
                 origin: {
-                  voiceIds: stable(item.subjects.origin.voiceIds ?? []) as VoiceId[],
+                  voiceIds: stable(
+                    item.subjects.origin.voiceIds ?? [],
+                  ) as VoiceId[],
                   noteIds: stable(item.subjects.origin.noteIds ?? []),
                   chordIds: stable(item.subjects.origin.chordIds ?? []),
                   spanIds: stable(item.subjects.origin.spanIds ?? []),
@@ -160,7 +163,9 @@ export function normalizeBuiltinDiagnostic(
           ...(item.subjects.failure
             ? {
                 failure: {
-                  voiceIds: stable(item.subjects.failure.voiceIds ?? []) as VoiceId[],
+                  voiceIds: stable(
+                    item.subjects.failure.voiceIds ?? [],
+                  ) as VoiceId[],
                   noteIds: stable(item.subjects.failure.noteIds ?? []),
                   chordIds: stable(item.subjects.failure.chordIds ?? []),
                   spanIds: stable(item.subjects.failure.spanIds ?? []),
@@ -170,7 +175,9 @@ export function normalizeBuiltinDiagnostic(
           ...(item.subjects.context
             ? {
                 context: {
-                  voiceIds: stable(item.subjects.context.voiceIds ?? []) as VoiceId[],
+                  voiceIds: stable(
+                    item.subjects.context.voiceIds ?? [],
+                  ) as VoiceId[],
                   noteIds: stable(item.subjects.context.noteIds ?? []),
                   chordIds: stable(item.subjects.context.chordIds ?? []),
                   spanIds: stable(item.subjects.context.spanIds ?? []),
@@ -256,10 +263,7 @@ export function arbitrateDiagnostics(
   const coveredByRule = new Map<string, ReadonlySet<string>>(
     definitions
       .filter((definition) => definition.coveredRuleIds.length > 0)
-      .map((definition) => [
-        definition.id,
-        new Set(definition.coveredRuleIds),
-      ]),
+      .map((definition) => [definition.id, new Set(definition.coveredRuleIds)]),
   );
   return merged.filter((candidate) => {
     return !merged.some((specific) => {

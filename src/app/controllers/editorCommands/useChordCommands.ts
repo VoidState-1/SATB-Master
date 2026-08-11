@@ -143,12 +143,9 @@ export function useChordCommands({
     [commitResult, project],
   );
 
-  const handleUpdateChordBrush = useCallback(
-    (patch: Partial<ChordDraft>) => {
-      setChordBrush((current) => ({ ...current, ...patch }));
-    },
-    [],
-  );
+  const handleUpdateChordBrush = useCallback((patch: Partial<ChordDraft>) => {
+    setChordBrush((current) => ({ ...current, ...patch }));
+  }, []);
 
   const handleUpdateChordTrack = useCallback(
     (
@@ -174,4 +171,3 @@ export function useChordCommands({
     handleUpdateChordTrack,
   } as const;
 }
-

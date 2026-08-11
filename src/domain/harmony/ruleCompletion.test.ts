@@ -13,10 +13,7 @@ import {
   type VoiceId,
 } from "../project";
 import type { SpelledPitch } from "../pitch";
-import {
-  checkHarmony,
-  HARMONY_RULE_DEFINITIONS,
-} from "./index";
+import { checkHarmony, HARMONY_RULE_DEFINITIONS } from "./index";
 
 const C_MAJOR = {
   tonic: { step: "C", alter: 0 },
@@ -90,7 +87,10 @@ function draft(
     inversion: 0,
     designation: {
       notationSystem: "spasobin",
-      kind: degree === 1 || degree === 4 || degree === 5 ? "primary" : "side-degree",
+      kind:
+        degree === 1 || degree === 4 || degree === 5
+          ? "primary"
+          : "side-degree",
       primaryFunction,
     },
     source: "manual",
@@ -171,8 +171,9 @@ describe("完整规则目录首版实现", () => {
     setVoice(project, "bass", [note("pb", 0, pitch("C", 0, 3), PPQ * 3)]);
 
     expect(hasRule(project, "nonchord.passing-tone")).toBe(true);
-    project.satbTracks.find((track) => track.id === "soprano")!.notes[1]
-      .nonChordToneRole = undefined;
+    project.satbTracks.find(
+      (track) => track.id === "soprano",
+    )!.notes[1].nonChordToneRole = undefined;
     expect(hasRule(project, "nonchord.passing-tone")).toBe(false);
   });
 
@@ -180,11 +181,7 @@ describe("完整规则目录首版实现", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
     project.chordTrack.regions = [
-      functionalChord(
-        "dominant7",
-        0,
-        draft(5, "dominant7", "dominant"),
-      ),
+      functionalChord("dominant7", 0, draft(5, "dominant7", "dominant")),
       functionalChord("tonic", PPQ, draft(1, "major", "tonic")),
     ];
     setVoice(project, "soprano", [
@@ -205,8 +202,12 @@ describe("完整规则目录首版实现", () => {
     ]);
 
     const result = checkHarmony(project).diagnostics;
-    expect(result.some((item) => item.ruleId === "connection.dominant-seventh")).toBe(true);
-    expect(result.some((item) => item.ruleId === "resolution.leading-tone")).toBe(false);
+    expect(
+      result.some((item) => item.ruleId === "connection.dominant-seventh"),
+    ).toBe(true);
+    expect(
+      result.some((item) => item.ruleId === "resolution.leading-tone"),
+    ).toBe(false);
   });
 
   it("显式完全终止标记驱动终止规则，不猜测未标注乐句", () => {
@@ -250,9 +251,21 @@ describe("完整规则目录首版实现", () => {
       mode: "major",
     } as const;
     project.chordTrack.regions = [
-      functionalChord("g-t", 0, draft(1, "major", "tonic", { localKey: G_MAJOR })),
-      functionalChord("g-s", PPQ, draft(4, "major", "subdominant", { localKey: G_MAJOR })),
-      functionalChord("g-d", PPQ * 2, draft(5, "major", "dominant", { localKey: G_MAJOR })),
+      functionalChord(
+        "g-t",
+        0,
+        draft(1, "major", "tonic", { localKey: G_MAJOR }),
+      ),
+      functionalChord(
+        "g-s",
+        PPQ,
+        draft(4, "major", "subdominant", { localKey: G_MAJOR }),
+      ),
+      functionalChord(
+        "g-d",
+        PPQ * 2,
+        draft(5, "major", "dominant", { localKey: G_MAJOR }),
+      ),
     ];
     expect(hasRule(project, "tonality.unmarked-key-change")).toBe(true);
 

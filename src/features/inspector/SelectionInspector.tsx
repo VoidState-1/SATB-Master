@@ -89,13 +89,11 @@ export function SelectionInspector({
                 })
               }
             >
-              {(["C", "D", "E", "F", "G", "A", "B"] as const).map(
-                (step) => (
-                  <option key={step} value={step}>
-                    {step}
-                  </option>
-                ),
-              )}
+              {(["C", "D", "E", "F", "G", "A", "B"] as const).map((step) => (
+                <option key={step} value={step}>
+                  {step}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -239,7 +237,9 @@ export function SelectionInspector({
             和弦 · {formatChordRegion(project, selectedChord).functional}
           </header>
           <div className="computed-chord-name">
-            <strong>{formatChordRegion(project, selectedChord).functional}</strong>
+            <strong>
+              {formatChordRegion(project, selectedChord).functional}
+            </strong>
             <span>
               {formatChordRegion(project, selectedChord).roman} ·{" "}
               {formatChordRegion(project, selectedChord).absolute}
@@ -343,21 +343,27 @@ export function SelectionInspector({
           <header>当前和弦画笔</header>
           <div className="computed-chord-name">
             <strong>
-              {formatChord(
-                chordBrush,
-                keyAtTick(project.keyEvents, playheadTick),
-              ).functional}
+              {
+                formatChord(
+                  chordBrush,
+                  keyAtTick(project.keyEvents, playheadTick),
+                ).functional
+              }
             </strong>
             <span>
-              {formatChord(
-                chordBrush,
-                keyAtTick(project.keyEvents, playheadTick),
-              ).roman}
+              {
+                formatChord(
+                  chordBrush,
+                  keyAtTick(project.keyEvents, playheadTick),
+                ).roman
+              }
               {" · "}
-              {formatChord(
-                chordBrush,
-                keyAtTick(project.keyEvents, playheadTick),
-              ).absolute}
+              {
+                formatChord(
+                  chordBrush,
+                  keyAtTick(project.keyEvents, playheadTick),
+                ).absolute
+              }
             </span>
           </div>
           <ChordSemanticsEditor

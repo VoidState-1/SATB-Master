@@ -88,8 +88,11 @@ describe("声明式事实内核", () => {
       ).result.truth,
     ).toBe("unknown");
     expect(
-      evaluatePredicate(not(constantFact("unknown-d", "unknown")), environment, store)
-        .result.truth,
+      evaluatePredicate(
+        not(constantFact("unknown-d", "unknown")),
+        environment,
+        store,
+      ).result.truth,
     ).toBe("unknown");
   });
 
@@ -119,7 +122,8 @@ describe("声明式义务决策表", () => {
     });
 
     expect(
-      evaluateDecisionTable(table, { cacheKey: "conflict" }, new FactStore()).status,
+      evaluateDecisionTable(table, { cacheKey: "conflict" }, new FactStore())
+        .status,
     ).toBe("conflict");
   });
 
@@ -170,7 +174,11 @@ describe("声明式义务决策表", () => {
     const table = decisionTable<Environment>({
       rows: [
         when("resolve", "not-resolved", constantFact("not-resolved", "no")),
-        otherwiseWhen("violate", "fallback", constantFact("fallback-yes", "yes")),
+        otherwiseWhen(
+          "violate",
+          "fallback",
+          constantFact("fallback-yes", "yes"),
+        ),
       ],
     });
 
@@ -241,21 +249,24 @@ function toyRule(
 function twoAttackAnalysis() {
   const project = createEmptyProject();
   project.lengthTicks = PPQ * 2;
-  project.satbTracks.find((track) => track.id === "soprano")!.notes = [0, 1].map(
-    (index) => ({
-      id: `soprano-${index}`,
-      startTick: index * PPQ,
-      durationTicks: PPQ,
-      pitch: spellMidi(71),
-      velocity: 80,
-      locked: false,
-      spellingSource: "manual" as const,
-    }),
-  );
+  project.satbTracks.find((track) => track.id === "soprano")!.notes = [
+    0, 1,
+  ].map((index) => ({
+    id: `soprano-${index}`,
+    startTick: index * PPQ,
+    durationTicks: PPQ,
+    pitch: spellMidi(71),
+    velocity: 80,
+    locked: false,
+    spellingSource: "manual" as const,
+  }));
   return buildHarmonyAnalysis(project);
 }
 
-function stepContext(analysis: HarmonyAnalysis, sliceIndex: number): RuleStepContext {
+function stepContext(
+  analysis: HarmonyAnalysis,
+  sliceIndex: number,
+): RuleStepContext {
   const spanId = analysis.sliceSpanIds.get(sliceIndex);
   const previousSpanId = analysis.sliceSpanIds.get(sliceIndex - 1);
   const nextSpanId = analysis.sliceSpanIds.get(sliceIndex + 1);
@@ -342,11 +353,7 @@ describe("声明式义务运行时", () => {
         retrigger: "retain-existing",
         transition: decisionTable({
           rows: [
-            when(
-              "continue",
-              "continued",
-              subjectVoiceAttacked<ToyPayload>(),
-            ),
+            when("continue", "continued", subjectVoiceAttacked<ToyPayload>()),
           ],
         }),
         reportViolation: () => undefined,

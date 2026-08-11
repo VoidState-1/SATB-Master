@@ -317,7 +317,10 @@ function parseExternalRuleOptions(
       const duration = candidate.defaultValue;
       const min = optionalFiniteNumber(candidate.min, `配置项“${key}”的 min`);
       const max = optionalFiniteNumber(candidate.max, `配置项“${key}”的 max`);
-      const step = optionalFiniteNumber(candidate.step, `配置项“${key}”的 step`);
+      const step = optionalFiniteNumber(
+        candidate.step,
+        `配置项“${key}”的 step`,
+      );
       if (
         !isRecord(duration) ||
         typeof duration.value !== "number" ||
@@ -342,11 +345,11 @@ function parseExternalRuleOptions(
     }
     const min =
       kind === "pitch"
-        ? optionalFiniteNumber(candidate.min, `配置项“${key}”的 min`) ?? 0
+        ? (optionalFiniteNumber(candidate.min, `配置项“${key}”的 min`) ?? 0)
         : optionalFiniteNumber(candidate.min, `配置项“${key}”的 min`);
     const max =
       kind === "pitch"
-        ? optionalFiniteNumber(candidate.max, `配置项“${key}”的 max`) ?? 127
+        ? (optionalFiniteNumber(candidate.max, `配置项“${key}”的 max`) ?? 127)
         : optionalFiniteNumber(candidate.max, `配置项“${key}”的 max`);
     const step = optionalFiniteNumber(candidate.step, `配置项“${key}”的 step`);
     const defaultValue = candidate.defaultValue;
@@ -367,7 +370,10 @@ function parseExternalRuleOptions(
       min,
       max,
       step,
-      unit: typeof candidate.unit === "string" ? candidate.unit.slice(0, 32) : undefined,
+      unit:
+        typeof candidate.unit === "string"
+          ? candidate.unit.slice(0, 32)
+          : undefined,
     };
   });
 }
@@ -418,7 +424,10 @@ export function normalizeExternalRuleConfig(
     {
       options: rule.options,
       defaultConfig: Object.fromEntries(
-        rule.options.map((option) => [option.key, structuredClone(option.defaultValue)]),
+        rule.options.map((option) => [
+          option.key,
+          structuredClone(option.defaultValue),
+        ]),
       ),
     },
     input,
@@ -549,20 +558,18 @@ export function buildExternalRuleContext(
   const chordMap = new Map(
     analysis.project.chordTrack.regions.map((chord) => [chord.id, chord]),
   );
-  const slices = analysis.slices.map(
-    (slice): ExternalRuleSliceV3 => ({
-      index: slice.index,
-      spanId: analysis.sliceSpanIds.get(slice.index),
-      tick: slice.tick,
-      endTick: slice.endTick,
-      notes: slice.notes,
-      attackVoiceIds: slice.attackVoiceIds,
-      key: slice.key,
-      chord: slice.chord ? chordMap.get(slice.chord.id) : undefined,
-      completeSatb: slice.completeSatb,
-      continuity: slice.continuity,
-    }),
-  );
+  const slices = analysis.slices.map((slice): ExternalRuleSliceV3 => ({
+    index: slice.index,
+    spanId: analysis.sliceSpanIds.get(slice.index),
+    tick: slice.tick,
+    endTick: slice.endTick,
+    notes: slice.notes,
+    attackVoiceIds: slice.attackVoiceIds,
+    key: slice.key,
+    chord: slice.chord ? chordMap.get(slice.chord.id) : undefined,
+    completeSatb: slice.completeSatb,
+    continuity: slice.continuity,
+  }));
   const sliceMap = new Map(slices.map((slice) => [slice.index, slice]));
   // Map 和查询函数不跨越 Worker/QuickJS 边界；V3 发送完整但裁剪过工程隐私的 plain data。
   return {
@@ -682,8 +689,11 @@ function externalCauseRefs(
       value.map((entry, index) => {
         if (!isRecord(entry))
           throw new Error(`第 ${index + 1} 项 causeRef 不是对象`);
-        const kind = requiredString(entry.kind, "causeRef.kind", 32) as
-          ExternalDiagnosticCauseKind;
+        const kind = requiredString(
+          entry.kind,
+          "causeRef.kind",
+          32,
+        ) as ExternalDiagnosticCauseKind;
         const id = requiredString(entry.id, "causeRef.id", 240);
         const valid =
           (kind === "note" && noteIds.has(id)) ||
@@ -723,7 +733,8 @@ function validateExternalRuleStates(
     stateIds.add(id);
     if (entry.ownerRuleId !== rule.id)
       throw new Error(`规则状态“${id}”不属于当前规则`);
-    if (!isRecord(entry.createdAt)) throw new Error(`规则状态“${id}”缺少创建位置`);
+    if (!isRecord(entry.createdAt))
+      throw new Error(`规则状态“${id}”缺少创建位置`);
     if (
       !Number.isInteger(entry.createdAt.tick) ||
       !Number.isInteger(entry.createdAt.sliceIndex) ||
@@ -733,11 +744,26 @@ function validateExternalRuleStates(
     )
       throw new Error(`规则状态“${id}”的创建位置无效`);
     if (entry.subjectRefs !== undefined) {
-      if (!isRecord(entry.subjectRefs)) throw new Error(`规则状态“${id}”的引用无效`);
-      const voiceIds = stringArray(entry.subjectRefs.voiceIds ?? [], "规则状态 voiceIds");
-      const referencedNotes = stringArray(entry.subjectRefs.noteIds ?? [], "规则状态 noteIds");
-      const referencedChords = stringArray(entry.subjectRefs.chordIds ?? [], "规则状态 chordIds");
-      if (voiceIds.some((voiceId) => !VOICE_ORDER.includes(voiceId as (typeof VOICE_ORDER)[number])))
+      if (!isRecord(entry.subjectRefs))
+        throw new Error(`规则状态“${id}”的引用无效`);
+      const voiceIds = stringArray(
+        entry.subjectRefs.voiceIds ?? [],
+        "规则状态 voiceIds",
+      );
+      const referencedNotes = stringArray(
+        entry.subjectRefs.noteIds ?? [],
+        "规则状态 noteIds",
+      );
+      const referencedChords = stringArray(
+        entry.subjectRefs.chordIds ?? [],
+        "规则状态 chordIds",
+      );
+      if (
+        voiceIds.some(
+          (voiceId) =>
+            !VOICE_ORDER.includes(voiceId as (typeof VOICE_ORDER)[number]),
+        )
+      )
         throw new Error(`规则状态“${id}”引用了不存在的声部`);
       if (referencedNotes.some((noteId) => !noteIds.has(noteId)))
         throw new Error(`规则状态“${id}”引用了不存在的音符`);
@@ -792,123 +818,129 @@ export function normalizeExternalRuleDiagnostics(options: {
   );
   const chordIds = new Set(project.chordTrack.regions.map((chord) => chord.id));
 
-  return diagnosticsValue.map((entry, index): HarmonyDiagnostic | undefined => {
-    if (!isRecord(entry)) throw new Error(`第 ${index + 1} 项诊断不是对象`);
-    if (entry.ruleId !== undefined && entry.ruleId !== rule.id)
-      throw new Error(`第 ${index + 1} 项诊断引用了未授权的规则 ID`);
-    if (entry.exceptionContexts !== undefined)
-      throw new Error(`第 ${index + 1} 项诊断不能自行声明 exceptionContexts`);
-    if (entry.coverageRefs !== undefined)
-      throw new Error(`第 ${index + 1} 项外置诊断不能声明 coverageRefs`);
-    if (entry.severity !== undefined)
-      throw new Error(`第 ${index + 1} 项诊断不能自行声明 severity`);
-    const tick = entry.tick;
-    const endTick = entry.endTick ?? tick;
-    if (
-      !Number.isInteger(tick) ||
-      !Number.isInteger(endTick) ||
-      (tick as number) < 0 ||
-      (endTick as number) < (tick as number) ||
-      (endTick as number) > project.lengthTicks
-    )
-      throw new Error(`第 ${index + 1} 项诊断的 tick 范围无效`);
-    const diagnosticNoteIds = stringArray(entry.noteIds ?? [], "诊断 noteIds");
-    const diagnosticChordIds = stringArray(
-      entry.chordIds ?? [],
-      "诊断 chordIds",
-    );
-    const voiceIds = stringArray(entry.voiceIds ?? [], "诊断 voiceIds");
-    if (diagnosticNoteIds.some((id) => !noteIds.has(id)))
-      throw new Error(`第 ${index + 1} 项诊断引用了不存在的音符`);
-    if (diagnosticChordIds.some((id) => !chordIds.has(id)))
-      throw new Error(`第 ${index + 1} 项诊断引用了不存在的和弦`);
-    if (
-      voiceIds.some(
-        (id) => !VOICE_ORDER.includes(id as (typeof VOICE_ORDER)[number]),
+  return diagnosticsValue
+    .map((entry, index): HarmonyDiagnostic | undefined => {
+      if (!isRecord(entry)) throw new Error(`第 ${index + 1} 项诊断不是对象`);
+      if (entry.ruleId !== undefined && entry.ruleId !== rule.id)
+        throw new Error(`第 ${index + 1} 项诊断引用了未授权的规则 ID`);
+      if (entry.exceptionContexts !== undefined)
+        throw new Error(`第 ${index + 1} 项诊断不能自行声明 exceptionContexts`);
+      if (entry.coverageRefs !== undefined)
+        throw new Error(`第 ${index + 1} 项外置诊断不能声明 coverageRefs`);
+      if (entry.severity !== undefined)
+        throw new Error(`第 ${index + 1} 项诊断不能自行声明 severity`);
+      const tick = entry.tick;
+      const endTick = entry.endTick ?? tick;
+      if (
+        !Number.isInteger(tick) ||
+        !Number.isInteger(endTick) ||
+        (tick as number) < 0 ||
+        (endTick as number) < (tick as number) ||
+        (endTick as number) > project.lengthTicks
       )
-    )
-      throw new Error(`第 ${index + 1} 项诊断引用了不存在的 SATB 声部`);
-    const confidence = entry.confidence ?? 1;
-    if (
-      typeof confidence !== "number" ||
-      !Number.isFinite(confidence) ||
-      confidence < 0 ||
-      confidence > 1
-    )
-      throw new Error(`第 ${index + 1} 项诊断的 confidence 无效`);
-    const title = requiredString(entry.title, "诊断标题", 120);
-    const message = requiredString(entry.message, "诊断消息", 600);
-    const messageKey =
-      typeof entry.messageKey === "string" && entry.messageKey.trim()
-        ? requiredString(entry.messageKey, "诊断 messageKey", 120)
-        : "external-diagnostic";
-    const causeRefs = externalCauseRefs(
-      entry.causeRefs,
-      analysis,
-      installedPackage,
-      rule,
-    );
-    const rawDiagnostic: RuleDiagnostic = {
-      ruleId: rule.id,
-      source: "external",
-      tick: tick as number,
-      endTick: endTick as number,
-      voiceIds: voiceIds as HarmonyDiagnostic["voiceIds"],
-      noteIds: diagnosticNoteIds,
-      chordIds: diagnosticChordIds,
-      title,
-      message,
-      messageKey,
-      params: primitiveParams(entry.params),
-      evidence: evidenceItems(entry.evidence),
-      confidence,
-      causeRefs,
-    };
-    const applicability = planRuleApplicability(
-      {
-        id: rule.id,
-        dependencyScope: rule.dependencyScope,
-        supportedExceptionContexts: rule.supportedExceptionContexts,
-        defaultExceptionPolicies: rule.defaultExceptionPolicies,
-      },
-      rawDiagnostic,
-      analysis,
-      exceptionPolicy,
-    );
-    if (
-      applicability.policy === "skip" ||
-      applicability.policy === "deferred"
-    )
-      return undefined;
-    const effectiveSeverity = applicability.policy === "downgraded"
-      ? severity === "error"
-        ? "warning"
-        : "suggestion"
-      : severity;
-    const stableObjects = (items: string[]) => [...items].sort().join(",");
-    return {
-      id: [
-        "external",
-        installedPackage.manifest.packageId,
-        installedPackage.contentHash,
-        rule.id,
+        throw new Error(`第 ${index + 1} 项诊断的 tick 范围无效`);
+      const diagnosticNoteIds = stringArray(
+        entry.noteIds ?? [],
+        "诊断 noteIds",
+      );
+      const diagnosticChordIds = stringArray(
+        entry.chordIds ?? [],
+        "诊断 chordIds",
+      );
+      const voiceIds = stringArray(entry.voiceIds ?? [], "诊断 voiceIds");
+      if (diagnosticNoteIds.some((id) => !noteIds.has(id)))
+        throw new Error(`第 ${index + 1} 项诊断引用了不存在的音符`);
+      if (diagnosticChordIds.some((id) => !chordIds.has(id)))
+        throw new Error(`第 ${index + 1} 项诊断引用了不存在的和弦`);
+      if (
+        voiceIds.some(
+          (id) => !VOICE_ORDER.includes(id as (typeof VOICE_ORDER)[number]),
+        )
+      )
+        throw new Error(`第 ${index + 1} 项诊断引用了不存在的 SATB 声部`);
+      const confidence = entry.confidence ?? 1;
+      if (
+        typeof confidence !== "number" ||
+        !Number.isFinite(confidence) ||
+        confidence < 0 ||
+        confidence > 1
+      )
+        throw new Error(`第 ${index + 1} 项诊断的 confidence 无效`);
+      const title = requiredString(entry.title, "诊断标题", 120);
+      const message = requiredString(entry.message, "诊断消息", 600);
+      const messageKey =
+        typeof entry.messageKey === "string" && entry.messageKey.trim()
+          ? requiredString(entry.messageKey, "诊断 messageKey", 120)
+          : "external-diagnostic";
+      const causeRefs = externalCauseRefs(
+        entry.causeRefs,
+        analysis,
+        installedPackage,
+        rule,
+      );
+      const rawDiagnostic: RuleDiagnostic = {
+        ruleId: rule.id,
+        source: "external",
+        tick: tick as number,
+        endTick: endTick as number,
+        voiceIds: voiceIds as HarmonyDiagnostic["voiceIds"],
+        noteIds: diagnosticNoteIds,
+        chordIds: diagnosticChordIds,
+        title,
+        message,
         messageKey,
-        tick,
-        stableObjects(diagnosticNoteIds),
-        stableObjects(diagnosticChordIds),
-        stableObjects(voiceIds),
-        ...(causeRefs ?? []),
-      ].join(":"),
-      ...rawDiagnostic,
-      severity: effectiveSeverity,
-      exceptionContexts:
-        applicability.contexts.length > 0
-          ? [...applicability.contexts]
-          : undefined,
-    };
-  }).filter(
-    (diagnostic): diagnostic is HarmonyDiagnostic => diagnostic !== undefined,
-  );
+        params: primitiveParams(entry.params),
+        evidence: evidenceItems(entry.evidence),
+        confidence,
+        causeRefs,
+      };
+      const applicability = planRuleApplicability(
+        {
+          id: rule.id,
+          dependencyScope: rule.dependencyScope,
+          supportedExceptionContexts: rule.supportedExceptionContexts,
+          defaultExceptionPolicies: rule.defaultExceptionPolicies,
+        },
+        rawDiagnostic,
+        analysis,
+        exceptionPolicy,
+      );
+      if (
+        applicability.policy === "skip" ||
+        applicability.policy === "deferred"
+      )
+        return undefined;
+      const effectiveSeverity =
+        applicability.policy === "downgraded"
+          ? severity === "error"
+            ? "warning"
+            : "suggestion"
+          : severity;
+      const stableObjects = (items: string[]) => [...items].sort().join(",");
+      return {
+        id: [
+          "external",
+          installedPackage.manifest.packageId,
+          installedPackage.contentHash,
+          rule.id,
+          messageKey,
+          tick,
+          stableObjects(diagnosticNoteIds),
+          stableObjects(diagnosticChordIds),
+          stableObjects(voiceIds),
+          ...(causeRefs ?? []),
+        ].join(":"),
+        ...rawDiagnostic,
+        severity: effectiveSeverity,
+        exceptionContexts:
+          applicability.contexts.length > 0
+            ? [...applicability.contexts]
+            : undefined,
+      };
+    })
+    .filter(
+      (diagnostic): diagnostic is HarmonyDiagnostic => diagnostic !== undefined,
+    );
 }
 
 function severityOrder(severity: HarmonyDiagnostic["severity"]) {

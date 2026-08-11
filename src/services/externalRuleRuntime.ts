@@ -250,7 +250,8 @@ export class ExternalRuleRuntime {
       };
     }
 
-    const analysis = options.analysis ?? buildHarmonyAnalysis(project, revision);
+    const analysis =
+      options.analysis ?? buildHarmonyAnalysis(project, revision);
     if (analysis.revision !== revision)
       throw new Error("外置规则收到的分析 revision 与运行请求不一致");
     const worker = createRuleWorker();

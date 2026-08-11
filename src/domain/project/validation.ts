@@ -555,9 +555,7 @@ export function validateProject(value: unknown): value is ProjectDocument {
       "absolute",
       "functional-absolute",
       "roman-absolute",
-    ].includes(
-      project.chordTrack.displayMode as string,
-    ) ||
+    ].includes(project.chordTrack.displayMode as string) ||
     !Array.isArray(project.chordTrack.regions) ||
     !project.chordTrack.regions.every((region) =>
       validateChordRegion(region, project.lengthTicks as number),

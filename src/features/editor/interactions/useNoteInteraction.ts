@@ -18,10 +18,7 @@ import {
   transposeSpelledPitch,
 } from "../../../domain/pitch";
 import type { EditorDomain, EditorTool } from "../types";
-import type {
-  NoteInteraction,
-  PointerInteraction,
-} from "./types";
+import type { NoteInteraction, PointerInteraction } from "./types";
 import {
   HEADER_HEIGHT,
   MAX_MIDI,

@@ -141,7 +141,10 @@ function parseExceptionPolicy(value: unknown, label: string) {
   return policy;
 }
 
-function parseRuleInstance(value: unknown, label: string): RuleInstanceSettings {
+function parseRuleInstance(
+  value: unknown,
+  label: string,
+): RuleInstanceSettings {
   if (
     !isRecord(value) ||
     !VALID_SEVERITIES.has(value.severity as HarmonyRuleSeverity) ||
@@ -193,13 +196,15 @@ export function parsePortableRuleProfile(value: unknown): PortableRuleProfile {
 
   const builtin: Record<string, RuleInstanceSettings> = {};
   for (const [ruleId, settings] of Object.entries(value.builtin)) {
-    if (!STABLE_ID_PATTERN.test(ruleId)) throw new Error("配置档案包含无效规则 ID");
+    if (!STABLE_ID_PATTERN.test(ruleId))
+      throw new Error("配置档案包含无效规则 ID");
     builtin[ruleId] = parseRuleInstance(settings, `内置规则“${ruleId}”`);
   }
 
   const externalKeys = new Set<string>();
   const external = value.external.map((candidate, index) => {
-    if (!isRecord(candidate)) throw new Error(`第 ${index + 1} 项外置规则引用无效`);
+    if (!isRecord(candidate))
+      throw new Error(`第 ${index + 1} 项外置规则引用无效`);
     const packageId = candidate.packageId;
     const version = candidate.version;
     const contentHash = candidate.contentHash;
@@ -215,7 +220,12 @@ export function parsePortableRuleProfile(value: unknown): PortableRuleProfile {
       !HASH_PATTERN.test(contentHash)
     )
       throw new Error(`第 ${index + 1} 项外置规则标识无效`);
-    const key = externalRuleReferenceKey({ packageId, version, contentHash, ruleId });
+    const key = externalRuleReferenceKey({
+      packageId,
+      version,
+      contentHash,
+      ruleId,
+    });
     if (externalKeys.has(key)) throw new Error(`外置规则引用“${key}”重复`);
     externalKeys.add(key);
     return {
@@ -450,7 +460,9 @@ function completeBuiltinSettings(profile: RuleProfile) {
 }
 
 /** 导出的档案始终展开全部已知内置规则，避免依赖应用版本的隐式默认值。 */
-export function createPortableRuleProfile(profile: RuleProfile): PortableRuleProfile {
+export function createPortableRuleProfile(
+  profile: RuleProfile,
+): PortableRuleProfile {
   return {
     kind: PORTABLE_RULE_PROFILE_KIND,
     formatVersion: PORTABLE_RULE_PROFILE_VERSION,
@@ -488,14 +500,13 @@ function normalizeExceptions(
 
 function profileRuleMap(profile: RuleProfile) {
   return new Map<string, unknown>([
-    ...Object.entries(completeBuiltinSettings(profile)).map(([id, settings]) => [
-      `builtin:${id}`,
-      settings,
-    ] as const),
-    ...profile.external.map((reference) => [
-      `external:${externalRuleReferenceKey(reference)}`,
-      reference,
-    ] as const),
+    ...Object.entries(completeBuiltinSettings(profile)).map(
+      ([id, settings]) => [`builtin:${id}`, settings] as const,
+    ),
+    ...profile.external.map(
+      (reference) =>
+        [`external:${externalRuleReferenceKey(reference)}`, reference] as const,
+    ),
   ]);
 }
 
@@ -505,7 +516,9 @@ function diffRuleProfiles(current: RuleProfile, next: RuleProfile) {
   return {
     addedRuleIds: [...after.keys()].filter((key) => !before.has(key)),
     changedRuleIds: [...after.keys()].filter(
-      (key) => before.has(key) && JSON.stringify(before.get(key)) !== JSON.stringify(after.get(key)),
+      (key) =>
+        before.has(key) &&
+        JSON.stringify(before.get(key)) !== JSON.stringify(after.get(key)),
     ),
     removedRuleIds: [...before.keys()].filter((key) => !after.has(key)),
   };
@@ -551,15 +564,18 @@ export function prepareRuleProfileImport(
 
   const installedByKey = new Map(
     packages.flatMap((installedPackage) =>
-      installedPackage.manifest.rules.map((rule) => [
-        externalRuleReferenceKey({
-          packageId: installedPackage.manifest.packageId,
-          version: installedPackage.manifest.version,
-          contentHash: installedPackage.contentHash,
-          ruleId: rule.id,
-        }),
-        { installedPackage, rule },
-      ] as const),
+      installedPackage.manifest.rules.map(
+        (rule) =>
+          [
+            externalRuleReferenceKey({
+              packageId: installedPackage.manifest.packageId,
+              version: installedPackage.manifest.version,
+              contentHash: installedPackage.contentHash,
+              ruleId: rule.id,
+            }),
+            { installedPackage, rule },
+          ] as const,
+      ),
     ),
   );
   const missingExternalRuleKeys: string[] = [];

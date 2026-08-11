@@ -206,4 +206,3 @@ const GRID_OPTIONS = [
   { label: "1/16", ticks: 240 },
   { label: "1/32", ticks: 120 },
 ];
-

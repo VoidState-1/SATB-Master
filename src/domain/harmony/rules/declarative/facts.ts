@@ -35,7 +35,8 @@ function factResult(
 ): FactResult {
   return {
     truth,
-    confidence: options.confidence ?? (truth === "unknown" ? "unknown" : "certain"),
+    confidence:
+      options.confidence ?? (truth === "unknown" ? "unknown" : "certain"),
     reason,
     evidence: options.evidence ?? [],
     subjectRefs: options.subjectRefs ?? {},
@@ -230,7 +231,8 @@ export class FactStore {
     environment: Environment,
   ) {
     const localKey = definition.cacheKey?.(environment);
-    const cacheKey = localKey === undefined ? undefined : `${definition.id}:${localKey}`;
+    const cacheKey =
+      localKey === undefined ? undefined : `${definition.id}:${localKey}`;
     if (cacheKey !== undefined) {
       const cached = this.cache.get(cacheKey);
       if (cached) {

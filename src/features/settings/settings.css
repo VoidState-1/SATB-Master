@@ -472,7 +472,9 @@
   min-width: 37px;
   margin-right: 5px;
   color: #74786f;
-  font: 9px Consolas, monospace;
+  font:
+    9px Consolas,
+    monospace;
   font-weight: 400;
 }
 

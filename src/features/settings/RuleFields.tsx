@@ -174,9 +174,7 @@ export function RuleOptionFields({
                         [option.key]: {
                           value: nextValue,
                           unit: event.target.value as
-                            | "ticks"
-                            | "beats"
-                            | "measures",
+                            "ticks" | "beats" | "measures",
                         },
                       });
                     }}

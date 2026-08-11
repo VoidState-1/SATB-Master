@@ -18,10 +18,7 @@ export function createViewportMetrics(
   pixelsPerBeat: number,
 ): EditorViewportMetrics {
   const rollHeight = (MAX_MIDI - MIN_MIDI + 1) * ROW_HEIGHT;
-  const timelineWidth = Math.max(
-    920,
-    (lengthTicks / ppq) * pixelsPerBeat,
-  );
+  const timelineWidth = Math.max(920, (lengthTicks / ppq) * pixelsPerBeat);
   return {
     rollHeight,
     timelineWidth,
@@ -65,10 +62,7 @@ export function durationToWidth(
   pixelsPerBeat: number,
   trailingPadding = 0,
 ): number {
-  return Math.max(
-    0,
-    (durationTicks / ppq) * pixelsPerBeat - trailingPadding,
-  );
+  return Math.max(0, (durationTicks / ppq) * pixelsPerBeat - trailingPadding);
 }
 
 /**

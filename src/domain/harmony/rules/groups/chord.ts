@@ -38,14 +38,16 @@ interface ChordSliceFact {
 function chordSliceFacts(analysis: HarmonyAnalysis) {
   return analysis.slices.flatMap((slice, sliceIndex): ChordSliceFact[] => {
     if (!slice.chord) return [];
-    return [{
-      slice,
-      chord: slice.chord,
-      active: activeNotes(slice),
-      tones: chordIdentityToneSpellings(slice.chord.identity),
-      stableComplete:
-        slice.completeSatb && !finalSameHarmonySlice(analysis, sliceIndex),
-    }];
+    return [
+      {
+        slice,
+        chord: slice.chord,
+        active: activeNotes(slice),
+        tones: chordIdentityToneSpellings(slice.chord.identity),
+        stableComplete:
+          slice.completeSatb && !finalSameHarmonySlice(analysis, sliceIndex),
+      },
+    ];
   });
 }
 
@@ -57,30 +59,32 @@ function standardChordSliceFacts(analysis: HarmonyAnalysis) {
 
 export function unclassifiedNonchordToneRule(analysis: HarmonyAnalysis) {
   const diagnostics: RuleDiagnostic[] = [];
-  standardChordSliceFacts(analysis).forEach(({ slice, chord, active, tones }) => {
-    const outside = active.filter(
-      ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
-    );
-    if (outside.length === 0) return;
-    diagnostics.push(
-      diagnostic(
-        "chord.unclassified-nonchord-tone",
-        slice.tick,
-        slice.endTick,
-        outside.map((item) => item.voiceId),
-        outside.map((item) => item.note),
-        "和弦外音需要确认",
-        `标注和弦 ${chordLabel(chord)} 中存在拼写不属于和弦构成音、且未人工标注角色的音符。`,
-        {
-          chordIds: [chord.id],
-          evidence: [
-            chordEvidence(chord),
-            ...outside.map((item) => noteEvidence(item.note)),
-          ],
-        },
-      ),
-    );
-  });
+  standardChordSliceFacts(analysis).forEach(
+    ({ slice, chord, active, tones }) => {
+      const outside = active.filter(
+        ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
+      );
+      if (outside.length === 0) return;
+      diagnostics.push(
+        diagnostic(
+          "chord.unclassified-nonchord-tone",
+          slice.tick,
+          slice.endTick,
+          outside.map((item) => item.voiceId),
+          outside.map((item) => item.note),
+          "和弦外音需要确认",
+          `标注和弦 ${chordLabel(chord)} 中存在拼写不属于和弦构成音、且未人工标注角色的音符。`,
+          {
+            chordIds: [chord.id],
+            evidence: [
+              chordEvidence(chord),
+              ...outside.map((item) => noteEvidence(item.note)),
+            ],
+          },
+        ),
+      );
+    },
+  );
   return diagnostics;
 }
 
@@ -114,7 +118,8 @@ export function incompleteChordMembersRule(analysis: HarmonyAnalysis) {
     ({ slice, chord, active, tones, stableComplete }) => {
       if (!stableComplete) return;
       const missing = tones.filter(
-        (tone) => !active.some(({ note }) => pitchClassEquals(note.pitch, tone)),
+        (tone) =>
+          !active.some(({ note }) => pitchClassEquals(note.pitch, tone)),
       );
       if (missing.length === 0) return;
       diagnostics.push(
@@ -192,11 +197,7 @@ export function doubledLeadingToneRule(analysis: HarmonyAnalysis) {
   return evaluateRepeatedChordToneRule(analysis, {
     id: "chord.doubled-leading-tone",
     target: ({ slice }) =>
-      scaleDegreePitchClass(
-        slice.key,
-        7,
-        slice.key.mode === "minor" ? 1 : 0,
-      ),
+      scaleDegreePitchClass(slice.key, 7, slice.key.mode === "minor" ? 1 : 0),
     title: "重复导音",
     message: (_chord, target) =>
       `四部和声中通常不应重复局部调性内的书写导音 ${formatPitchClass(target)}。`,
@@ -215,85 +216,88 @@ export function doubledSeventhRule(analysis: HarmonyAnalysis) {
 
 export function doubledAlteredTendencyToneRule(analysis: HarmonyAnalysis) {
   const diagnostics: RuleDiagnostic[] = [];
-  chordSliceFacts(analysis).forEach(({ slice, chord, active, stableComplete }) => {
-    if (!stableComplete || chord.identity.structure.kind !== "tertian") return;
-    const directionalTones: Array<{
-      tone: SpelledPitchClass;
-      tendency: "up" | "down";
-      degree: number;
-    }> = [];
-    chord.identity.structure.alterations.forEach((alteration) => {
-      if (!alteration.tendency) return;
-      const tone = chordIdentityToneSpellingForDegree(
-        chord.identity,
-        alteration.degree,
-      );
-      if (tone)
-        directionalTones.push({
-          tone,
-          tendency: alteration.tendency,
-          degree: alteration.degree,
-        });
-    });
-    const interpretation = chord.semantics
-      ? primaryHarmonyInterpretation(chord.semantics)
-      : undefined;
-    const designationKind = interpretation?.designation?.kind;
-    const targetDegree =
-      interpretation?.appliedTarget?.degree ??
-      (designationKind === "double-dominant" ||
-      designationKind === "double-dominant-leading-tone"
-        ? 5
-        : undefined);
-    if (targetDegree) {
-      const targetTonic = scaleDegreePitchClass(slice.key, targetDegree, 0);
-      const targetLeadingTone = scaleDegreePitchClass(
-        { tonic: targetTonic, mode: "major" },
-        7,
-        0,
-      );
-      if (
-        chordIdentityToneSpellings(chord.identity).some((tone) =>
-          pitchClassEquals(tone, targetLeadingTone),
-        ) &&
-        !directionalTones.some(({ tone }) =>
-          pitchClassEquals(tone, targetLeadingTone),
+  chordSliceFacts(analysis).forEach(
+    ({ slice, chord, active, stableComplete }) => {
+      if (!stableComplete || chord.identity.structure.kind !== "tertian")
+        return;
+      const directionalTones: Array<{
+        tone: SpelledPitchClass;
+        tendency: "up" | "down";
+        degree: number;
+      }> = [];
+      chord.identity.structure.alterations.forEach((alteration) => {
+        if (!alteration.tendency) return;
+        const tone = chordIdentityToneSpellingForDegree(
+          chord.identity,
+          alteration.degree,
+        );
+        if (tone)
+          directionalTones.push({
+            tone,
+            tendency: alteration.tendency,
+            degree: alteration.degree,
+          });
+      });
+      const interpretation = chord.semantics
+        ? primaryHarmonyInterpretation(chord.semantics)
+        : undefined;
+      const designationKind = interpretation?.designation?.kind;
+      const targetDegree =
+        interpretation?.appliedTarget?.degree ??
+        (designationKind === "double-dominant" ||
+        designationKind === "double-dominant-leading-tone"
+          ? 5
+          : undefined);
+      if (targetDegree) {
+        const targetTonic = scaleDegreePitchClass(slice.key, targetDegree, 0);
+        const targetLeadingTone = scaleDegreePitchClass(
+          { tonic: targetTonic, mode: "major" },
+          7,
+          0,
+        );
+        if (
+          chordIdentityToneSpellings(chord.identity).some((tone) =>
+            pitchClassEquals(tone, targetLeadingTone),
+          ) &&
+          !directionalTones.some(({ tone }) =>
+            pitchClassEquals(tone, targetLeadingTone),
+          )
         )
-      )
-        directionalTones.push({
-          tone: targetLeadingTone,
-          tendency: "up",
-          degree: 7,
-        });
-    }
-    directionalTones.forEach(({ tone, tendency, degree }) => {
-      const repeated = active.filter(({ note }) =>
-        pitchClassEquals(note.pitch, tone),
-      );
-      if (repeated.length <= 1) return;
-      diagnostics.push(
-        diagnostic(
-          "chord.doubled-altered-tendency-tone",
-          slice.tick,
-          slice.endTick,
-          [],
-          [],
-          "重复变化倾向音",
-          `${chordLabel(chord)} 的 ${formatPitchClass(tone)} 具有明确的${tendency === "up" ? "上行" : "下行"}倾向，不应重复。`,
-          {
-            chordIds: [chord.id],
-            params: { degree, tendency, count: repeated.length },
-            evidence: [
-              chordEvidence(chord),
-              ...repeated.map(({ note }) =>
-                noteEvidence(note, "重复变化倾向音"),
-              ),
-            ],
-          },
-        ),
-      );
-    });
-  });
+          directionalTones.push({
+            tone: targetLeadingTone,
+            tendency: "up",
+            degree: 7,
+          });
+      }
+      directionalTones.forEach(({ tone, tendency, degree }) => {
+        const repeated = active.filter(({ note }) =>
+          pitchClassEquals(note.pitch, tone),
+        );
+        if (repeated.length <= 1) return;
+        diagnostics.push(
+          diagnostic(
+            "chord.doubled-altered-tendency-tone",
+            slice.tick,
+            slice.endTick,
+            [],
+            [],
+            "重复变化倾向音",
+            `${chordLabel(chord)} 的 ${formatPitchClass(tone)} 具有明确的${tendency === "up" ? "上行" : "下行"}倾向，不应重复。`,
+            {
+              chordIds: [chord.id],
+              params: { degree, tendency, count: repeated.length },
+              evidence: [
+                chordEvidence(chord),
+                ...repeated.map(({ note }) =>
+                  noteEvidence(note, "重复变化倾向音"),
+                ),
+              ],
+            },
+          ),
+        );
+      });
+    },
+  );
   return diagnostics;
 }
 
@@ -419,7 +423,8 @@ export function augmentedSixthVoicingRule(analysis: HarmonyAnalysis) {
           : [1, 1, 1, 1];
       const counts = tones.map(
         (tone) =>
-          active.filter(({ note }) => pitchClassEquals(note.pitch, tone)).length,
+          active.filter(({ note }) => pitchClassEquals(note.pitch, tone))
+            .length,
       );
       if (counts.every((count, index) => count === expected[index])) return;
       const variantLabel =
@@ -511,33 +516,28 @@ export const CHORD_RULES = defineRuleGroup(
     id: "chord.unclassified-nonchord-tone",
     catalogNumber: "D.1",
     label: "未标注的和弦外音",
-    description: "按实际书写音高与当前 `ChordIdentity` 比较；音符不属于构成音集合且没有人工确认角色时触发。",
-    rationale: "持续低音、经过音等只有在角色得到确认后豁免；和弦区域没有可靠 identity 时跳过。",
+    description:
+      "按实际书写音高与当前 `ChordIdentity` 比较；音符不属于构成音集合且没有人工确认角色时触发。",
+    rationale:
+      "持续低音、经过音等只有在角色得到确认后豁免；和弦区域没有可靠 identity 时跳过。",
     group: "chord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
-    supportedExceptionContexts: [
-      "nonchord-tone",
-      "pedal-point"
-    ],
+    supportedExceptionContexts: ["nonchord-tone", "pedal-point"],
     evaluate: unclassifiedNonchordToneRule,
   }),
   defineStatelessRule({
     id: "chord.incomplete-members",
     catalogNumber: "D.2",
     label: "和弦构成音不完整",
-    description: "在同和弦 span 的最后一个完整有效切片，对照 `ChordVoicingPolicy.requiredDegrees` 检查缺失成员。",
-    rationale: "允许省略的和弦音不触发；span 中间转换暂不检查；诊断只归属和弦轨。",
+    description:
+      "在同和弦 span 的最后一个完整有效切片，对照 `ChordVoicingPolicy.requiredDegrees` 检查缺失成员。",
+    rationale:
+      "允许省略的和弦音不触发；span 中间转换暂不检查；诊断只归属和弦轨。",
     group: "chord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: incompleteChordMembersRule,
   }),
@@ -545,14 +545,13 @@ export const CHORD_RULES = defineRuleGroup(
     id: "chord.inversion-bass",
     catalogNumber: "D.3",
     label: "低音与转位不一致",
-    description: "在每个有完整低音的切片中，将男低音书写音高映射到 identity degree，并与和弦转位比较。",
-    rationale: "已确认的持续低音语境由踏板规则接管；无法映射为和弦音时同时属于 D.1，但只保留更具体根因。",
+    description:
+      "在每个有完整低音的切片中，将男低音书写音高映射到 identity degree，并与和弦转位比较。",
+    rationale:
+      "已确认的持续低音语境由踏板规则接管；无法映射为和弦音时同时属于 D.1，但只保留更具体根因。",
     group: "chord",
     defaultSeverity: "error",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: inversionBassRule,
   }),
@@ -560,14 +559,13 @@ export const CHORD_RULES = defineRuleGroup(
     id: "chord.interpretation-identity-conflict",
     catalogNumber: "D.4",
     label: "功能标记与和弦实体冲突",
-    description: "用局部调性和 `FunctionalDesignation` 重新生成规范 identity，与持久化 identity 的书写构成、低音约束和结构类别比较。",
-    rationale: "正常编辑命令应提前阻止该状态；本规则用于导入、迁移、外置工具或损坏数据后的防御诊断。",
+    description:
+      "用局部调性和 `FunctionalDesignation` 重新生成规范 identity，与持久化 identity 的书写构成、低音约束和结构类别比较。",
+    rationale:
+      "正常编辑命令应提前阻止该状态；本规则用于导入、迁移、外置工具或损坏数据后的防御诊断。",
     group: "chord",
     defaultSeverity: "error",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "chord",
     evaluate: chordInterpretationIdentityRule,
   }),
@@ -575,14 +573,13 @@ export const CHORD_RULES = defineRuleGroup(
     id: "chord.doubled-leading-tone",
     catalogNumber: "D.8",
     label: "重复导音",
-    description: "在 span 出口或独立和弦的最后有效配置中，按 `SpelledPitch` 和局部调性识别导音并计数。",
-    rationale: "span 中间的暂时重复延迟判断；共同和弦歧义时只使用已确认局部调性。",
+    description:
+      "在 span 出口或独立和弦的最后有效配置中，按 `SpelledPitch` 和局部调性识别导音并计数。",
+    rationale:
+      "span 中间的暂时重复延迟判断；共同和弦歧义时只使用已确认局部调性。",
     group: "chord",
     defaultSeverity: "error",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: doubledLeadingToneRule,
   }),
@@ -590,14 +587,13 @@ export const CHORD_RULES = defineRuleGroup(
     id: "chord.doubled-seventh",
     catalogNumber: "D.9",
     label: "重复和弦七音",
-    description: "在稳定配置中按 identity degree 识别七音，出现两个或更多时触发。",
-    rationale: "同和弦转换中间切片延迟判断；人工装饰音不能被误算为第二个和弦七音。",
+    description:
+      "在稳定配置中按 identity degree 识别七音，出现两个或更多时触发。",
+    rationale:
+      "同和弦转换中间切片延迟判断；人工装饰音不能被误算为第二个和弦七音。",
     group: "chord",
     defaultSeverity: "error",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: doubledSeventhRule,
   }),
@@ -605,14 +601,13 @@ export const CHORD_RULES = defineRuleGroup(
     id: "chord.doubled-altered-tendency-tone",
     catalogNumber: "D.10",
     label: "重复变化倾向音",
-    description: "根据和弦 identity 和功能目标识别带方向性的变化构成音，稳定配置中重复该音时触发。",
-    rationale: "必须读取结构化 alteration，不能把所有调外音都当作倾向音；具体和弦可覆盖默认策略。",
+    description:
+      "根据和弦 identity 和功能目标识别带方向性的变化构成音，稳定配置中重复该音时触发。",
+    rationale:
+      "必须读取结构化 alteration，不能把所有调外音都当作倾向音；具体和弦可覆盖默认策略。",
     group: "chord",
     defaultSeverity: "error",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: doubledAlteredTendencyToneRule,
   }),
@@ -620,14 +615,13 @@ export const CHORD_RULES = defineRuleGroup(
     id: "chord.dominant-ninth-voicing",
     catalogNumber: "D.11",
     label: "D9 四声部配置",
-    description: "四声部 `D9` 必须恰好实现项目已审定的 `1/3/7/9` 配置；缺少必需音或出现五音时触发。",
-    rationale: "仅适用于本项目支持的原位 `D9`；未来扩展五声部或其他九和弦时不得复用该固定策略。",
+    description:
+      "四声部 `D9` 必须恰好实现项目已审定的 `1/3/7/9` 配置；缺少必需音或出现五音时触发。",
+    rationale:
+      "仅适用于本项目支持的原位 `D9`；未来扩展五声部或其他九和弦时不得复用该固定策略。",
     group: "chord",
     defaultSeverity: "error",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: dominantNinthVoicingRule,
   }),
@@ -635,14 +629,13 @@ export const CHORD_RULES = defineRuleGroup(
     id: "chord.dominant-ninth-root-spacing",
     catalogNumber: "D.12",
     label: "D9 根音与九音间距",
-    description: "在当前支持的原位四声部 `D9` 中，定位唯一根音与九音；九音实际音高必须高于根音 12 个半音以上，并在书写上形成复九度而不是同一八度内的二度。",
-    rationale: "当前 `D9` 固定根音位于男低音且配置为 `1/3/7/9`；如果未来支持省略根音、多个根音、转位九和弦或五声部配置，必须为新结构单独定义策略。",
+    description:
+      "在当前支持的原位四声部 `D9` 中，定位唯一根音与九音；九音实际音高必须高于根音 12 个半音以上，并在书写上形成复九度而不是同一八度内的二度。",
+    rationale:
+      "当前 `D9` 固定根音位于男低音且配置为 `1/3/7/9`；如果未来支持省略根音、多个根音、转位九和弦或五声部配置，必须为新结构单独定义策略。",
     group: "chord",
     defaultSeverity: "error",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: dominantNinthRootSpacingRule,
   }),
@@ -650,14 +643,13 @@ export const CHORD_RULES = defineRuleGroup(
     id: "chord.augmented-sixth-voicing",
     catalogNumber: "D.13",
     label: "增六和弦配置",
-    description: "分别按 It+6、Fr+6、Ger+6 的规范书写构成检查，确保增六两端音存在且不重复具有强烈解决方向的变化音。",
-    rationale: "三种结构不能只按 pitch class 合并；具体允许重复成员需建立调性金样本。",
+    description:
+      "分别按 It+6、Fr+6、Ger+6 的规范书写构成检查，确保增六两端音存在且不重复具有强烈解决方向的变化音。",
+    rationale:
+      "三种结构不能只按 pitch class 合并；具体允许重复成员需建立调性金样本。",
     group: "chord",
     defaultSeverity: "error",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: augmentedSixthVoicingRule,
   }),

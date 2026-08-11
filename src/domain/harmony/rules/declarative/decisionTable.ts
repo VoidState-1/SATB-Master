@@ -8,11 +8,7 @@ import {
 } from "./facts";
 
 export type ObligationOutcome =
-  | "continue"
-  | "resolve"
-  | "violate"
-  | "cancel"
-  | "indeterminate";
+  "continue" | "resolve" | "violate" | "cancel" | "indeterminate";
 
 export interface DecisionRow<Environment> {
   readonly outcome: ObligationOutcome;
@@ -38,8 +34,7 @@ export function otherwiseWhen<Environment>(
 }
 
 export type DecisionConflictPolicy =
-  | "require-exclusive"
-  | { readonly precedence: readonly ObligationOutcome[] };
+  "require-exclusive" | { readonly precedence: readonly ObligationOutcome[] };
 
 export interface DecisionTable<Environment> {
   readonly rows: readonly DecisionRow<Environment>[];
@@ -141,7 +136,9 @@ export function evaluateDecisionTable<Environment>(
     };
   return {
     status:
-      fallbackEvaluation.evaluation.result.truth === "unknown" ? "unknown" : "none",
+      fallbackEvaluation.evaluation.result.truth === "unknown"
+        ? "unknown"
+        : "none",
     evaluated: withFallback,
   };
 }

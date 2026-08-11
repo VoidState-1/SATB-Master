@@ -49,8 +49,7 @@ export function useChordInteraction({
   onOpenChordPalette,
   clearDiagnosticTooltip,
 }: UseChordInteractionProps) {
-  const [chordInteraction, setChordInteraction] =
-    useState<ChordInteraction>();
+  const [chordInteraction, setChordInteraction] = useState<ChordInteraction>();
 
   useEffect(() => {
     setChordInteraction(undefined);
@@ -405,9 +404,7 @@ export function useChordInteraction({
     }
   };
 
-  const finishInteraction = (
-    event: React.PointerEvent<HTMLDivElement>,
-  ) => {
+  const finishInteraction = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!chordInteraction) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);

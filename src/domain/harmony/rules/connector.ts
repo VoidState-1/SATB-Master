@@ -5,10 +5,7 @@ import {
   type HarmonyInterpretation,
   type KeyReference,
 } from "../../chordModel";
-import type {
-  HarmonyAnalysis,
-  HarmonySpan,
-} from "../analysis";
+import type { HarmonyAnalysis, HarmonySpan } from "../analysis";
 import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
 
 export type HarmonyConnectionRelation =
@@ -103,7 +100,10 @@ function combinedConfidence(
   previous: HarmonyInterpretation | undefined,
   current: HarmonyInterpretation | undefined,
 ): HarmonyConnectionAssessment["confidence"] {
-  const values = [previous?.confidence ?? "unknown", current?.confidence ?? "unknown"];
+  const values = [
+    previous?.confidence ?? "unknown",
+    current?.confidence ?? "unknown",
+  ];
   if (values.includes("unknown")) return "unknown";
   if (values.includes("ambiguous")) return "ambiguous";
   if (values.includes("probable")) return "probable";
@@ -114,9 +114,7 @@ function primaryChordAtSpan(
   analysis: Pick<HarmonyAnalysis, "chordById">,
   span: HarmonySpan,
 ) {
-  return span.regionIds
-    .map((id) => analysis.chordById.get(id))
-    .find(Boolean);
+  return span.regionIds.map((id) => analysis.chordById.get(id)).find(Boolean);
 }
 
 function projectKeyAtSpan(
@@ -139,10 +137,7 @@ export function isCadential64Span(span: HarmonySpan) {
 }
 
 export function functionalTargetMatches(
-  analysis: Pick<
-    HarmonyAnalysis,
-    "project" | "harmonySpans" | "chordById"
-  >,
+  analysis: Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById">,
   sourceSpanId: string,
   currentSpanId: string,
   target: FunctionalTarget,
@@ -252,10 +247,7 @@ function assessConnection(
     relation = "deceptive";
   } else if (previousFamily === "dominant" && currentFamily === "tonic") {
     relation = "dominant-to-tonic";
-  } else if (
-    previousFamily === "subdominant" &&
-    currentFamily === "dominant"
-  ) {
+  } else if (previousFamily === "subdominant" && currentFamily === "dominant") {
     relation = "predominant-to-dominant";
   } else if (
     previousFamily === "tonic" &&

@@ -32,7 +32,9 @@ function simplePitchClassDistance(left: number, right: number) {
   return Math.min(direct, 12 - direct);
 }
 
-function isPlainTriad(chord: NonNullable<HarmonyAnalysis["slices"][number]["chord"]>) {
+function isPlainTriad(
+  chord: NonNullable<HarmonyAnalysis["slices"][number]["chord"]>,
+) {
   return (
     chord.identity.structure.kind === "tertian" &&
     chord.identity.structure.extensions.length === 0 &&
@@ -101,7 +103,10 @@ export function allVoicesSimilarRule(analysis: HarmonyAnalysis) {
       const current = transition.current.notes[voiceId]!;
       return Math.sign(toMidi(current.pitch) - toMidi(previous.pitch));
     });
-    if (directions[0] === 0 || !directions.every((item) => item === directions[0]))
+    if (
+      directions[0] === 0 ||
+      !directions.every((item) => item === directions[0])
+    )
       return;
     const notes = VOICE_ORDER.flatMap((voiceId) => [
       transition.previous.notes[voiceId]!,
@@ -117,9 +122,7 @@ export function allVoicesSimilarRule(analysis: HarmonyAnalysis) {
         "四声部同向进行",
         `四个声部在同一结构位置全部向${directions[0] > 0 ? "上" : "下"}移动，织体独立性较弱。`,
         {
-          causeRefs: [
-            `voice-leading.all-voices-similar|${transition.id}`,
-          ],
+          causeRefs: [`voice-leading.all-voices-similar|${transition.id}`],
           evidence: VOICE_ORDER.map((voiceId) =>
             noteEvidence(
               transition.current.notes[voiceId]!,
@@ -275,9 +278,9 @@ function commonToneState(
     const after = target.notes[voiceId];
     return Boolean(
       before &&
-        after &&
-        toMidi(before.pitch) === toMidi(after.pitch) &&
-        common.some((tone) => pitchClassEquals(before.pitch, tone)),
+      after &&
+      toMidi(before.pitch) === toMidi(after.pitch) &&
+      common.some((tone) => pitchClassEquals(before.pitch, tone)),
     );
   });
   return { common, heldVoices };
@@ -311,7 +314,10 @@ function basicConnectionFacts(analysis: HarmonyAnalysis) {
       stepIndex(boundary.source.chord!.identity.root.step) -
         stepIndex(boundary.target.chord!.identity.root.step),
     );
-    const writtenRootDistance = Math.min(writtenRootDirect, 7 - writtenRootDirect);
+    const writtenRootDistance = Math.min(
+      writtenRootDirect,
+      7 - writtenRootDirect,
+    );
     const { common, heldVoices } = commonToneState(
       boundary.source,
       boundary.target,
@@ -325,16 +331,18 @@ function basicConnectionFacts(analysis: HarmonyAnalysis) {
     const bassMotion =
       toMidi(boundary.target.notes.bass!.pitch) -
       toMidi(boundary.source.notes.bass!.pitch);
-    return [{
-      connection,
-      boundary,
-      rootDistance,
-      writtenRootDistance,
-      common,
-      heldVoices,
-      upperMotion,
-      bassMotion,
-    }];
+    return [
+      {
+        connection,
+        boundary,
+        rootDistance,
+        writtenRootDistance,
+        common,
+        heldVoices,
+        upperMotion,
+        bassMotion,
+      },
+    ];
   });
 }
 
@@ -464,7 +472,8 @@ export function nonparsimoniousMotionRule(analysis: HarmonyAnalysis) {
     const largeMovers = fact.upperMotion.filter(
       ({ semitones }) => Math.abs(semitones) > 4,
     );
-    const failedCommonTone = fact.common.length > 0 && fact.heldVoices.length === 0;
+    const failedCommonTone =
+      fact.common.length > 0 && fact.heldVoices.length === 0;
     if (
       largeMovers.length < 2 ||
       totalMotion < 12 ||
@@ -488,13 +497,13 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     id: "voice.incomplete-satb",
     catalogNumber: "A.5",
     label: "四声部不完整",
-    description: "在启用“严格四声部习题”profile 且和弦区间要求完整配置时，任一 SATB 声部没有有效音符即触发。",
-    rationale: "弱起、分句休止、导入后的未完成片段和自由写作 profile 默认不检查。",
+    description:
+      "在启用“严格四声部习题”profile 且和弦区间要求完整配置时，任一 SATB 声部没有有效音符即触发。",
+    rationale:
+      "弱起、分句休止、导入后的未完成片段和自由写作 profile 默认不检查。",
     group: "voice",
     defaultSeverity: "suggestion",
-    requires: [
-      "written-pitches"
-    ],
+    requires: ["written-pitches"],
     dependencyScope: "slice",
     evaluate: incompleteSatbRule,
   }),
@@ -502,13 +511,13 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     id: "voice-leading.all-voices-similar",
     catalogNumber: "C.9",
     label: "四声部同向进行",
-    description: "相邻结构切片中四个 SATB 声部全部实际起奏并向同一方向移动时提示。",
-    rationale: "本条只评价织体独立性；若同时产生平行五八度，只显示更具体的平行诊断为主。",
+    description:
+      "相邻结构切片中四个 SATB 声部全部实际起奏并向同一方向移动时提示。",
+    rationale:
+      "本条只评价织体独立性；若同时产生平行五八度，只显示更具体的平行诊断为主。",
     group: "voiceLeading",
     defaultSeverity: "suggestion",
-    requires: [
-      "written-pitches"
-    ],
+    requires: ["written-pitches"],
     dependencyScope: "slice",
     evaluate: allVoicesSimilarRule,
   }),
@@ -516,14 +525,13 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     id: "chord.triad-root-position-doubling",
     catalogNumber: "D.5",
     label: "原位三和弦重复音",
-    description: "完整四声部原位三和弦通常应重复根音；重复三音或省略必要构成音时根据和弦级数、调式和连接语境提示。",
-    rationale: "不得与“重复导音”等硬限制重复报警；具体副三和弦允许的重复方式需由 voicing profile 给出。",
+    description:
+      "完整四声部原位三和弦通常应重复根音；重复三音或省略必要构成音时根据和弦级数、调式和连接语境提示。",
+    rationale:
+      "不得与“重复导音”等硬限制重复报警；具体副三和弦允许的重复方式需由 voicing profile 给出。",
     group: "chord",
     defaultSeverity: "suggestion",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: rootPositionTriadDoublingRule,
   }),
@@ -531,14 +539,13 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     id: "chord.first-inversion-doubling",
     catalogNumber: "D.6",
     label: "六和弦重复音",
-    description: "根据具体功能和级数选择允许/优先的重复音；导音、变化音和不稳定三音不得因一般“自由重复”而被重复。",
-    rationale: "`SII6`、减三和弦、经过六和弦等必须使用各自 profile，不能用一条“所有六和弦都重复低音”的简化规则。",
+    description:
+      "根据具体功能和级数选择允许/优先的重复音；导音、变化音和不稳定三音不得因一般“自由重复”而被重复。",
+    rationale:
+      "`SII6`、减三和弦、经过六和弦等必须使用各自 profile，不能用一条“所有六和弦都重复低音”的简化规则。",
     group: "chord",
     defaultSeverity: "suggestion",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: firstInversionTriadDoublingRule,
   }),
@@ -546,14 +553,13 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     id: "chord.second-inversion-voicing",
     catalogNumber: "D.7",
     label: "四六和弦配置",
-    description: "检查低音是否为五音、通常是否重复低音，以及该四六和弦是否具有终止、经过、辅助或持续低音等可解释语境。",
-    rationale: "`K46` 使用专用规则；没有角色标注时只提示，不凭单个切片武断判断用途。",
+    description:
+      "检查低音是否为五音、通常是否重复低音，以及该四六和弦是否具有终止、经过、辅助或持续低音等可解释语境。",
+    rationale:
+      "`K46` 使用专用规则；没有角色标注时只提示，不凭单个切片武断判断用途。",
     group: "chord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
     evaluate: secondInversionTriadVoicingRule,
   }),
@@ -561,21 +567,16 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     id: "connection.common-tone-fourth-fifth",
     catalogNumber: "I.1",
     label: "四五度关系共同音保持",
-    description: "两个原位三和弦根音为四度或五度关系，且不存在旋律或功能例外时，检查上方声部是否保持共同音，其余声部是否采用最近进行。",
+    description:
+      "两个原位三和弦根音为四度或五度关系，且不存在旋律或功能例外时，检查上方声部是否保持共同音，其余声部是否采用最近进行。",
     rationale: "这是初级连接法，不得因为未保持共同音而掩盖一个实际合法连接。",
     group: "connection",
     defaultSeverity: "suggestion",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
-    supportedExceptionContexts: [
-      "voice-exchange"
-    ],
+    supportedExceptionContexts: ["voice-exchange"],
     defaultExceptionPolicies: {
-      "voice-exchange": "exempt"
+      "voice-exchange": "exempt",
     },
     evaluate: commonToneFourthFifthRule,
   }),
@@ -583,15 +584,13 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     id: "connection.second-relation-contrary-motion",
     catalogNumber: "I.2",
     label: "二度关系反向进行",
-    description: "两原位三和弦根音相差二度且没有共同音时，检查上三声部整体是否采用与低音相反的最近进行。",
-    rationale: "平行五八度由 C.2/C.3 独立判断；旋律给定题可能采用其他合法配置。",
+    description:
+      "两原位三和弦根音相差二度且没有共同音时，检查上三声部整体是否采用与低音相反的最近进行。",
+    rationale:
+      "平行五八度由 C.2/C.3 独立判断；旋律给定题可能采用其他合法配置。",
     group: "connection",
     defaultSeverity: "suggestion",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: secondRelationContraryMotionRule,
   }),
@@ -599,21 +598,16 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     id: "connection.common-tone-third",
     catalogNumber: "I.3",
     label: "三度关系共同音保持",
-    description: "两个三和弦根音为三度关系时，提示保留共同音并使其余声部最近进行。",
+    description:
+      "两个三和弦根音为三度关系时，提示保留共同音并使其余声部最近进行。",
     rationale: "属于基础连接方法而非绝对禁令；不得与声部交换或旋律目标冲突。",
     group: "connection",
     defaultSeverity: "suggestion",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
-    supportedExceptionContexts: [
-      "voice-exchange"
-    ],
+    supportedExceptionContexts: ["voice-exchange"],
     defaultExceptionPolicies: {
-      "voice-exchange": "exempt"
+      "voice-exchange": "exempt",
     },
     evaluate: commonToneThirdRule,
   }),
@@ -621,25 +615,23 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     id: "connection.nonparsimonious-motion",
     catalogNumber: "I.4",
     label: "不必要的声部大幅移动",
-    description: "连接器比较满足硬约束的候选配置；当前配置总移动代价显著高于最近进行候选时提示。",
-    rationale: "旋律线、音域调整、同和弦转换、声部交换和后继准备均可构成合理原因；首版不应自动启用。",
+    description:
+      "连接器比较满足硬约束的候选配置；当前配置总移动代价显著高于最近进行候选时提示。",
+    rationale:
+      "旋律线、音域调整、同和弦转换、声部交换和后继准备均可构成合理原因；首版不应自动启用。",
     group: "connection",
     defaultSeverity: "suggestion",
-    requires: [
-      "written-pitches",
-      "chords",
-      "semantics"
-    ],
+    requires: ["written-pitches", "chords", "semantics"],
     dependencyScope: "phrase",
     supportedExceptionContexts: [
       "same-harmony",
       "voice-exchange",
-      "pedal-point"
+      "pedal-point",
     ],
     defaultExceptionPolicies: {
       "same-harmony": "exempt",
       "voice-exchange": "exempt",
-      "pedal-point": "exempt"
+      "pedal-point": "exempt",
     },
     evaluate: nonparsimoniousMotionRule,
   }),

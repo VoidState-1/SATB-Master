@@ -143,7 +143,9 @@ export function ShortcutSettingsPane({
                         <span>等待输入</span>
                       ) : commandBindings.length > 0 ? (
                         commandBindings.map((binding) => (
-                          <kbd key={binding}>{formatShortcutBinding(binding)}</kbd>
+                          <kbd key={binding}>
+                            {formatShortcutBinding(binding)}
+                          </kbd>
                         ))
                       ) : (
                         <span className="shortcut-unassigned">未设置</span>

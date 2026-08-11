@@ -148,7 +148,9 @@ export function TimelineRuler({
               });
             }}
           >
-            {group.tempo ? <span className="tempo">♩={group.tempo.bpm}</span> : null}
+            {group.tempo ? (
+              <span className="tempo">♩={group.tempo.bpm}</span>
+            ) : null}
             {group.meter ? (
               <span className="meter">
                 {group.meter.numerator}/{group.meter.denominator}

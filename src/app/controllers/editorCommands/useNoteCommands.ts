@@ -229,4 +229,3 @@ export function useNoteCommands({
     handleUpdateTrack,
   } as const;
 }
-

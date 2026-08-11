@@ -5,11 +5,7 @@ import {
   type ChordDraft,
   type ChordQuality,
 } from "../../chordModel";
-import {
-  legacyTonicSpelling,
-  spellMidi,
-  type Alteration,
-} from "../../pitch";
+import { legacyTonicSpelling, spellMidi, type Alteration } from "../../pitch";
 import { createDefaultRuleProfile } from "../defaults";
 import { normalizeProject } from "../normalize";
 import type { KeyEvent, ProjectDocument } from "../types";

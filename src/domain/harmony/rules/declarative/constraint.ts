@@ -1,10 +1,7 @@
 import type { HarmonyAnalysis } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import type { RuleConfig, RuleRequirement } from "../types";
-import {
-  defineStatelessRule,
-  type RuleMetadataInput,
-} from "../defineRule";
+import { defineStatelessRule, type RuleMetadataInput } from "../defineRule";
 import {
   evaluatePredicate,
   FactStore,
@@ -38,8 +35,10 @@ export interface ConstraintEnvironment<Candidate> {
 
 type UnknownPolicy = "ignore" | "violate";
 
-export interface ConstraintRuleInput<Id extends string, Candidate>
-  extends RuleMetadataInput<Id> {
+export interface ConstraintRuleInput<
+  Id extends string,
+  Candidate,
+> extends RuleMetadataInput<Id> {
   readonly forEach: ConstraintCandidateProvider<Candidate>;
   readonly assert: PredicateNode<ConstraintEnvironment<Candidate>>;
   readonly unknownPolicy?: UnknownPolicy;
@@ -56,7 +55,9 @@ function assertRequirements(
 ) {
   for (const requirement of required) {
     if (!declared.includes(requirement))
-      throw new Error(`规则“${ruleId}”的声明式事实依赖未声明：“${requirement}”`);
+      throw new Error(
+        `规则“${ruleId}”的声明式事实依赖未声明：“${requirement}”`,
+      );
   }
 }
 
@@ -70,11 +71,10 @@ export function defineConstraintRule<const Id extends string, Candidate>(
     report,
     ...metadata
   } = input;
-  assertRequirements(
-    metadata.id,
-    metadata.requires,
-    [...forEach.requires, ...predicateRequirements(assert)],
-  );
+  assertRequirements(metadata.id, metadata.requires, [
+    ...forEach.requires,
+    ...predicateRequirements(assert),
+  ]);
 
   return defineStatelessRule({
     ...metadata,

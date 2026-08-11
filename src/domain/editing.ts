@@ -304,7 +304,8 @@ function hasValidChordDraft(draft: ChordDraft) {
     Number.isInteger(draft.inversion) &&
     draft.inversion >= 0 &&
     draft.inversion <= maximumInversion &&
-    (requiredInversion === undefined || draft.inversion === requiredInversion) &&
+    (requiredInversion === undefined ||
+      draft.inversion === requiredInversion) &&
     (draft.appliedTarget === undefined ||
       (Number.isInteger(draft.appliedTarget) &&
         draft.appliedTarget >= 1 &&
@@ -412,8 +413,7 @@ export function updateChordRegion(
     ...directPatch,
   };
   if (current.semantics || draftPatch) {
-    if (!current.semantics)
-      return { project, error: "和弦缺少可编辑的语义" };
+    if (!current.semantics) return { project, error: "和弦缺少可编辑的语义" };
     const draft = {
       ...chordDraftFromIdentity(current.identity, current.semantics),
       ...draftPatch,

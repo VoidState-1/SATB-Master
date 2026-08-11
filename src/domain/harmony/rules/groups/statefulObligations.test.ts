@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChordRegion, NoteEvent, VoiceId } from "../../../project";
 import { createEmptyProject, PPQ } from "../../../project";
 import type { SpelledPitch } from "../../../pitch";
-import {
-  buildHarmonyAnalysis,
-  type HarmonyAnalysis,
-} from "../../analysis";
+import { buildHarmonyAnalysis, type HarmonyAnalysis } from "../../analysis";
 import type {
   RuleStateEnvelope,
   RuleStepContext,
@@ -92,7 +89,10 @@ function projectFor(
   return project;
 }
 
-function stepContext(analysis: HarmonyAnalysis, sliceIndex: number): RuleStepContext {
+function stepContext(
+  analysis: HarmonyAnalysis,
+  sliceIndex: number,
+): RuleStepContext {
   const spanId = analysis.sliceSpanIds.get(sliceIndex);
   const previousSpanId = analysis.sliceSpanIds.get(sliceIndex - 1);
   const nextSpanId = analysis.sliceSpanIds.get(sliceIndex + 1);
@@ -111,7 +111,9 @@ function stepContext(analysis: HarmonyAnalysis, sliceIndex: number): RuleStepCon
 }
 
 interface InspectableObligationRule extends StatefulRuleDefinition {
-  inspectTrace(analysis: HarmonyAnalysis): readonly ObligationRuntimeTraceEntry[];
+  inspectTrace(
+    analysis: HarmonyAnalysis,
+  ): readonly ObligationRuntimeTraceEntry[];
 }
 
 function obligationRule(ruleId: string): InspectableObligationRule {
@@ -121,7 +123,10 @@ function obligationRule(ruleId: string): InspectableObligationRule {
   return definition as InspectableObligationRule;
 }
 
-function traceReasons(ruleId: string, project: ReturnType<typeof createEmptyProject>) {
+function traceReasons(
+  ruleId: string,
+  project: ReturnType<typeof createEmptyProject>,
+) {
   const analysis = buildHarmonyAnalysis(project);
   const rule = obligationRule(ruleId);
   let states: readonly RuleStateEnvelope[] = [];
@@ -134,8 +139,7 @@ function traceReasons(ruleId: string, project: ReturnType<typeof createEmptyProj
   return rule.inspectTrace(analysis).map((entry) => entry.reason);
 }
 
-const V = () =>
-  tertianRegion("dominant", 0, { step: "G", alter: 0 }, "major");
+const V = () => tertianRegion("dominant", 0, { step: "G", alter: 0 }, "major");
 const V_AGAIN = () =>
   tertianRegion("dominant-again", 1, { step: "G", alter: 0 }, "major");
 const V7 = () =>
@@ -158,7 +162,8 @@ const V9_AGAIN = () =>
     [9],
   );
 const I = () => tertianRegion("tonic", 1, { step: "C", alter: 0 }, "major");
-const VI = () => tertianRegion("submediant", 1, { step: "A", alter: 0 }, "minor");
+const VI = () =>
+  tertianRegion("submediant", 1, { step: "A", alter: 0 }, "minor");
 
 interface TendencyReasonCases {
   ruleId: string;
@@ -178,21 +183,18 @@ const CASES: readonly TendencyReasonCases[] = [
       "leading-tone-moved-elsewhere",
       "leading-tone-context-ended",
     ],
-    sameHarmony: projectFor(
-      [V(), V_AGAIN()],
-      "alto",
-      [pitch("B", 0, 4), pitch("G", 0, 4)],
-    ),
-    resolved: projectFor(
-      [V(), I()],
-      "alto",
-      [pitch("B", 0, 4), pitch("C", 0, 5)],
-    ),
-    violated: projectFor(
-      [V(), I()],
-      "alto",
-      [pitch("B", 0, 4), pitch("A", 0, 4)],
-    ),
+    sameHarmony: projectFor([V(), V_AGAIN()], "alto", [
+      pitch("B", 0, 4),
+      pitch("G", 0, 4),
+    ]),
+    resolved: projectFor([V(), I()], "alto", [
+      pitch("B", 0, 4),
+      pitch("C", 0, 5),
+    ]),
+    violated: projectFor([V(), I()], "alto", [
+      pitch("B", 0, 4),
+      pitch("A", 0, 4),
+    ]),
     cancelled: projectFor([V(), I()], "alto", [pitch("B", 0, 4)]),
   },
   {
@@ -203,21 +205,18 @@ const CASES: readonly TendencyReasonCases[] = [
       "chord-seventh-moved-elsewhere",
       "chord-seventh-context-ended",
     ],
-    sameHarmony: projectFor(
-      [V7(), V7_AGAIN()],
-      "alto",
-      [pitch("F", 0, 4), pitch("A", 0, 4)],
-    ),
-    resolved: projectFor(
-      [V7(), I()],
-      "alto",
-      [pitch("F", 0, 4), pitch("E", 0, 4)],
-    ),
-    violated: projectFor(
-      [V7(), I()],
-      "alto",
-      [pitch("F", 0, 4), pitch("G", 0, 4)],
-    ),
+    sameHarmony: projectFor([V7(), V7_AGAIN()], "alto", [
+      pitch("F", 0, 4),
+      pitch("A", 0, 4),
+    ]),
+    resolved: projectFor([V7(), I()], "alto", [
+      pitch("F", 0, 4),
+      pitch("E", 0, 4),
+    ]),
+    violated: projectFor([V7(), I()], "alto", [
+      pitch("F", 0, 4),
+      pitch("G", 0, 4),
+    ]),
     cancelled: projectFor([V7(), I()], "alto", [pitch("F", 0, 4)]),
   },
   {
@@ -228,21 +227,18 @@ const CASES: readonly TendencyReasonCases[] = [
       "dominant-ninth-moved-elsewhere",
       "dominant-ninth-context-ended",
     ],
-    sameHarmony: projectFor(
-      [V9(), V9_AGAIN()],
-      "alto",
-      [pitch("A", 0, 4), pitch("B", 0, 4)],
-    ),
-    resolved: projectFor(
-      [V9(), I()],
-      "alto",
-      [pitch("A", 0, 4), pitch("G", 0, 4)],
-    ),
-    violated: projectFor(
-      [V9(), I()],
-      "alto",
-      [pitch("A", 0, 4), pitch("B", 0, 4)],
-    ),
+    sameHarmony: projectFor([V9(), V9_AGAIN()], "alto", [
+      pitch("A", 0, 4),
+      pitch("B", 0, 4),
+    ]),
+    resolved: projectFor([V9(), I()], "alto", [
+      pitch("A", 0, 4),
+      pitch("G", 0, 4),
+    ]),
+    violated: projectFor([V9(), I()], "alto", [
+      pitch("A", 0, 4),
+      pitch("B", 0, 4),
+    ]),
     cancelled: projectFor([V9(), I()], "alto", [pitch("A", 0, 4)]),
   },
   {
@@ -258,21 +254,17 @@ const CASES: readonly TendencyReasonCases[] = [
       "alto",
       [pitch("G", 1, 4), pitch("G", 0, 4)],
     ),
-    resolved: projectFor(
-      [alteredRegion("altered", 0), VI()],
-      "alto",
-      [pitch("G", 1, 4), pitch("A", 0, 4)],
-    ),
-    violated: projectFor(
-      [alteredRegion("altered", 0), I()],
-      "alto",
-      [pitch("G", 1, 4), pitch("G", 0, 4)],
-    ),
-    cancelled: projectFor(
-      [alteredRegion("altered", 0), I()],
-      "alto",
-      [pitch("G", 1, 4)],
-    ),
+    resolved: projectFor([alteredRegion("altered", 0), VI()], "alto", [
+      pitch("G", 1, 4),
+      pitch("A", 0, 4),
+    ]),
+    violated: projectFor([alteredRegion("altered", 0), I()], "alto", [
+      pitch("G", 1, 4),
+      pitch("G", 0, 4),
+    ]),
+    cancelled: projectFor([alteredRegion("altered", 0), I()], "alto", [
+      pitch("G", 1, 4),
+    ]),
   },
 ];
 

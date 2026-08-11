@@ -267,4 +267,3 @@ export function useTimingCommands({
     handleDeleteTimingEvent,
   } as const;
 }
-

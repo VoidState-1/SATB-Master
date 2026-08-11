@@ -27,7 +27,9 @@ export interface AnalysisMoment {
 export function analysisMoment(context: RuleStepContext): AnalysisMoment {
   const previous = context.previous;
   const current = context.slice;
-  const previousSpanId = context.analysis.sliceSpanIds.get(context.sliceIndex - 1);
+  const previousSpanId = context.analysis.sliceSpanIds.get(
+    context.sliceIndex - 1,
+  );
   const currentSpanId = context.analysis.sliceSpanIds.get(context.sliceIndex);
   const releasedVoiceIds = previous
     ? VOICE_ORDER.filter(
@@ -44,8 +46,8 @@ export function analysisMoment(context: RuleStepContext): AnalysisMoment {
   const harmonyChanged = Boolean(previous) && previousSpanId !== currentSpanId;
   const keyChanged = Boolean(
     previous &&
-      (previous.key.mode !== current.key.mode ||
-        !pitchClassEquals(previous.key.tonic, current.key.tonic)),
+    (previous.key.mode !== current.key.mode ||
+      !pitchClassEquals(previous.key.tonic, current.key.tonic)),
   );
   return Object.freeze({
     tick: current.tick,
@@ -57,7 +59,9 @@ export function analysisMoment(context: RuleStepContext): AnalysisMoment {
           harmonyChange: Object.freeze({
             ...(previousSpanId ? { previousSpanId } : {}),
             ...(currentSpanId ? { currentSpanId } : {}),
-            ...(previous?.chord?.id ? { previousChordId: previous.chord.id } : {}),
+            ...(previous?.chord?.id
+              ? { previousChordId: previous.chord.id }
+              : {}),
             ...(current.chord?.id ? { currentChordId: current.chord.id } : {}),
           }),
         }

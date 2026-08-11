@@ -127,11 +127,7 @@ export function usePlaybackController({
       if (audioEngine.isSoundFontChangeCurrent(generation))
         reportSoundFontProgress(progress);
     };
-    void ensureSoundFontLoaded(
-      initialSoundFont,
-      generation,
-      reportProgress,
-    )
+    void ensureSoundFontLoaded(initialSoundFont, generation, reportProgress)
       .then((soundFont) => {
         if (soundFont && soundFont !== "already-loaded")
           setSoundFontSizeBytes(soundFont.sizeBytes);

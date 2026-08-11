@@ -68,7 +68,8 @@ export function ExternalRuleSettingsPane({
           <div>
             <dt>摘要</dt>
             <dd>
-              {(entry.installedPackage?.contentHash ??
+              {(
+                entry.installedPackage?.contentHash ??
                 entry.reference?.contentHash ??
                 ""
               ).slice(0, 16)}
@@ -176,9 +177,7 @@ export function ExternalRuleSettingsPane({
             type="button"
             className="command-button danger-button"
             aria-label={`移除规则包“${entry.installedPackage.manifest.packageId}”的本机副本`}
-            onClick={() =>
-              onRemoveExternalRulePackage(entry.installedPackage!)
-            }
+            onClick={() => onRemoveExternalRulePackage(entry.installedPackage!)}
           >
             <Trash2 aria-hidden="true" />
             移除本机副本

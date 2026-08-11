@@ -44,7 +44,14 @@ function installedPackage(): InstalledExternalRulePackage {
       apiVersion: 3,
       packageId: "org.example.safe",
       version: "1.0.0",
-      rules: [{ id: "safe-rule", label: "安全示例", group: "custom", configVersion: 1 }],
+      rules: [
+        {
+          id: "safe-rule",
+          label: "安全示例",
+          group: "custom",
+          configVersion: 1,
+        },
+      ],
     }),
     contentHash: "a".repeat(64),
     sourcePath: "safe.satb-rule.js",
@@ -59,7 +66,9 @@ describe("Phase C 外置规则 manifest", () => {
       apiVersion: 3,
       packageId: "org.example.rules",
       version: "1.2.0",
-      rules: [{ id: "example", label: "示例", group: "custom", configVersion: 1 }],
+      rules: [
+        { id: "example", label: "示例", group: "custom", configVersion: 1 },
+      ],
     });
     expect(manifest.rules[0]).toMatchObject({
       description: "外置检查规则",
@@ -80,7 +89,9 @@ describe("Phase C 外置规则 manifest", () => {
         apiVersion: 1,
         packageId: "org.example.legacy",
         version: "1.0.0",
-        rules: [{ id: "legacy", label: "旧规则", group: "custom", configVersion: 1 }],
+        rules: [
+          { id: "legacy", label: "旧规则", group: "custom", configVersion: 1 },
+        ],
       }),
     ).toThrow("API v3");
   });

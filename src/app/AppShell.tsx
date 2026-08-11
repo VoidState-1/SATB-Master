@@ -81,7 +81,10 @@ function formatByteSize(bytes: number) {
 }
 
 function AppShell() {
-  const initialProject = useMemo(() => createProjectWithRuleProfileTemplate(), []);
+  const initialProject = useMemo(
+    () => createProjectWithRuleProfileTemplate(),
+    [],
+  );
   const { history, project, editor, resetWorkspace } =
     useProjectController(initialProject);
   const {
@@ -312,7 +315,9 @@ function AppShell() {
             <IconButton
               className="window-control"
               label={windowController.isMaximized ? "还原" : "最大化"}
-              icon={windowController.isMaximized ? <Minimize2 /> : <Maximize2 />}
+              icon={
+                windowController.isMaximized ? <Minimize2 /> : <Maximize2 />
+              }
               onClick={() => void windowController.toggleMaximize()}
             />
             <IconButton

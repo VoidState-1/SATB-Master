@@ -45,8 +45,7 @@ export interface AugmentedSixthChordStructure {
 }
 
 export type ChordStructure =
-  | TertianChordStructure
-  | AugmentedSixthChordStructure;
+  TertianChordStructure | AugmentedSixthChordStructure;
 
 export interface KeyReference {
   tonic: SpelledPitchClass;
@@ -56,10 +55,7 @@ export interface KeyReference {
 export type ScaleDegree = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export type SemanticConfidence =
-  | "certain"
-  | "probable"
-  | "ambiguous"
-  | "unknown";
+  "certain" | "probable" | "ambiguous" | "unknown";
 
 export type FunctionalFamily = "tonic" | "subdominant" | "dominant";
 
@@ -360,10 +356,7 @@ function augmentedSixthToneSpellings(
 export function chordIdentityToneSpellings(identity: ChordIdentity) {
   return identity.structure.kind === "tertian"
     ? tertianToneSpellings(identity.root, identity.structure)
-    : augmentedSixthToneSpellings(
-        identity.root,
-        identity.structure.variant,
-      );
+    : augmentedSixthToneSpellings(identity.root, identity.structure.variant);
 }
 
 export function chordIdentityToneSpellingForDegree(
@@ -385,7 +378,9 @@ export function chordStructureQuality(
     : undefined;
 }
 
-export function chordVoicingPolicy(identity: ChordIdentity): ChordVoicingPolicy {
+export function chordVoicingPolicy(
+  identity: ChordIdentity,
+): ChordVoicingPolicy {
   if (
     identity.structure.kind === "tertian" &&
     identity.structure.quality === "dominant7" &&
@@ -472,9 +467,7 @@ export function semanticsFromChordDraft(draft: ChordDraft): HarmonySemantics {
   return {
     interpretations: [
       primary,
-      ...(draft.secondaryInterpretation
-        ? [draft.secondaryInterpretation]
-        : []),
+      ...(draft.secondaryInterpretation ? [draft.secondaryInterpretation] : []),
     ],
     primaryInterpretationId: primaryId,
     alternatives: draft.alternatives,
@@ -488,12 +481,11 @@ export function semanticsFromChordDraft(draft: ChordDraft): HarmonySemantics {
 export function chordIdentityInversion(identity: ChordIdentity) {
   if (identity.structure.kind === "augmented-sixth") return 0;
   const tones = chordIdentityToneSpellings(identity);
-  const index = tones.findIndex((tone) => pitchClassEquals(tone, identity.bass));
+  const index = tones.findIndex((tone) =>
+    pitchClassEquals(tone, identity.bass),
+  );
   return Math.max(0, Math.min(index < 0 ? 0 : index, tones.length - 1)) as
-    | 0
-    | 1
-    | 2
-    | 3;
+    0 | 1 | 2 | 3;
 }
 
 export function chordDraftFromIdentity(

@@ -27,7 +27,10 @@ import {
   upgradeBuiltinRuleProfileSnapshot,
 } from "../../domain/ruleProfile";
 import { useExternalRuleLibrary } from "../../hooks/useExternalRuleLibrary";
-import { openRuleProfileFile, saveRuleProfileFile } from "../../services/desktop";
+import {
+  openRuleProfileFile,
+  saveRuleProfileFile,
+} from "../../services/desktop";
 import {
   ExternalRuleRuntime,
   mergeHarmonyWithExternalRules,
@@ -241,11 +244,7 @@ export function useHarmonyController({
       patch: Partial<
         Pick<
           RuleProfile["external"][number],
-          | "enabled"
-          | "severity"
-          | "configVersion"
-          | "config"
-          | "exceptions"
+          "enabled" | "severity" | "configVersion" | "config" | "exceptions"
         >
       >,
     ) => {
@@ -441,7 +440,9 @@ export function useHarmonyController({
           : "规则配置档案已导入",
       );
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "规则配置档案导入失败");
+      showNotice(
+        error instanceof Error ? error.message : "规则配置档案导入失败",
+      );
     }
   }, [
     externalRuleLibrary.packages,
@@ -457,7 +458,9 @@ export function useHarmonyController({
       const result = await saveRuleProfileFile(portable, project.title);
       if (!result.canceled) showNotice("规则配置档案已导出");
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "规则配置档案导出失败");
+      showNotice(
+        error instanceof Error ? error.message : "规则配置档案导出失败",
+      );
     }
   }, [project, showNotice]);
 

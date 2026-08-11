@@ -93,7 +93,7 @@ describe("和弦实体拼写", () => {
         inversion: 1,
         appliedTarget: 5,
         source: "manual",
-      confidence: "certain",
+        confidence: "certain",
       },
       cMajor,
     );

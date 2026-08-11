@@ -255,13 +255,7 @@ function functionalChord(
   index: number,
   draft: Parameters<typeof createChordRegion>[3],
 ) {
-  return createChordRegion(
-    project,
-    index * PPQ,
-    PPQ,
-    draft,
-    id,
-  );
+  return createChordRegion(project, index * PPQ, PPQ, draft, id);
 }
 
 const manualCertain = {
@@ -311,12 +305,22 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     expect(diagnosticFor(bassStepUp, ruleId)).toBeUndefined();
 
     const severities = defaultHarmonyRuleSeverities();
-    const strict = checkHarmony(bassStepUp, severities, {}, {
-      [ruleId]: { "bass-step-up": "strict" },
-    }).diagnostics.find((diagnostic) => diagnostic.ruleId === ruleId);
-    const downgraded = checkHarmony(bassStepUp, severities, {}, {
-      [ruleId]: { "bass-step-up": "downgrade" },
-    }).diagnostics.find((diagnostic) => diagnostic.ruleId === ruleId);
+    const strict = checkHarmony(
+      bassStepUp,
+      severities,
+      {},
+      {
+        [ruleId]: { "bass-step-up": "strict" },
+      },
+    ).diagnostics.find((diagnostic) => diagnostic.ruleId === ruleId);
+    const downgraded = checkHarmony(
+      bassStepUp,
+      severities,
+      {},
+      {
+        [ruleId]: { "bass-step-up": "downgrade" },
+      },
+    ).diagnostics.find((diagnostic) => diagnostic.ruleId === ruleId);
     expect(strict?.severity).toBe("warning");
     expect(downgraded?.severity).toBe("suggestion");
   });
@@ -570,9 +574,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
       bass: [pitch("G", 0, 2), pitch("C", 0, 3)],
     });
     project.chordTrack.regions = [sourceA, sourceB, target];
-    expect(
-      diagnosticFor(project, "resolution.dominant-ninth"),
-    ).toBeUndefined();
+    expect(diagnosticFor(project, "resolution.dominant-ninth")).toBeUndefined();
   });
 
   it("只对明确标注方向且书写一致的重复变化音报告 D.10", () => {
@@ -622,8 +624,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     setLine(project, "tenor", [pitch("A", 0, 3)]);
     setLine(project, "bass", [pitch("D", 0, 3)]);
     expect(
-      diagnosticFor(project, "chord.doubled-altered-tendency-tone")
-        ?.severity,
+      diagnosticFor(project, "chord.doubled-altered-tendency-tone")?.severity,
     ).toBe("error");
 
     project.satbTracks.find((track) => track.id === "soprano")!.notes[0].pitch =
@@ -713,10 +714,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
             },
             ...manualCertain,
           });
-      project.chordTrack.regions = [
-        augmentedSixthRegion("italian"),
-        target,
-      ];
+      project.chordTrack.regions = [augmentedSixthRegion("italian"), target];
       setLine(project, "soprano", [pitch("F", 1, 4), pitch("G", 0, 4)]);
       setLine(
         project,
@@ -769,10 +767,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     setLine(project, "tenor", [pitch("C", 0, 3), pitch("B", 0, 2)]);
     setLine(project, "bass", [pitch("A", -1, 2), pitch("A", 0, 2)]);
 
-    const result = diagnosticFor(
-      project,
-      "connection.italian-augmented-sixth",
-    );
+    const result = diagnosticFor(project, "connection.italian-augmented-sixth");
     expect(result?.severity).toBe("warning");
     expect(result?.chordIds).toEqual([
       "augmented-sixth-italian",
@@ -801,10 +796,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
         },
         ...manualCertain,
       });
-      project.chordTrack.regions = [
-        augmentedSixthRegion("french"),
-        target,
-      ];
+      project.chordTrack.regions = [augmentedSixthRegion("french"), target];
       setLine(project, "soprano", [pitch("F", 1, 4), pitch("G", 0, 4)]);
       setLine(project, "alto", [pitch("C", 0, 4), pitch("B", 0, 3)]);
       setLine(project, "tenor", [pitch("D", 0, 3), targetTenor]);
@@ -841,10 +833,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
         cadenceRole: "cadential64",
         ...manualCertain,
       });
-      project.chordTrack.regions = [
-        augmentedSixthRegion("german"),
-        target,
-      ];
+      project.chordTrack.regions = [augmentedSixthRegion("german"), target];
       setLine(project, "soprano", [pitch("F", 1, 4), targetSoprano]);
       setLine(project, "alto", [pitch("C", 0, 4), pitch("C", 0, 4)]);
       setLine(project, "tenor", [pitch("E", -1, 3), pitch("E", 0, 3)]);
@@ -926,10 +915,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
       marked: true,
       target: "tonic",
     });
-    const result = diagnosticFor(
-      project,
-      "function.deceptive-cadence-target",
-    );
+    const result = diagnosticFor(project, "function.deceptive-cadence-target");
     expect(result?.severity).toBe("warning");
     expect(result?.chordIds).toEqual(["deceptive-dominant", "plain-tonic"]);
   });
@@ -940,10 +926,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
       target: "submediant",
       doubleThird: false,
     });
-    const result = diagnosticFor(
-      project,
-      "connection.deceptive-voice-leading",
-    );
+    const result = diagnosticFor(project, "connection.deceptive-voice-leading");
     expect(result?.severity).toBe("warning");
     expect(result?.chordIds).toEqual([
       "deceptive-dominant",
@@ -1005,9 +988,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
         ...manualCertain,
       }),
     ];
-    expect(
-      diagnosticFor(project, "tonality.mixture-source"),
-    ).toBeUndefined();
+    expect(diagnosticFor(project, "tonality.mixture-source")).toBeUndefined();
   });
 
   it("功能解释与实体一致时不报告防御性冲突", () => {
@@ -1124,10 +1105,7 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     };
 
     expect(
-      diagnosticFor(
-        makeProject("dominant"),
-        "function.double-dominant-target",
-      ),
+      diagnosticFor(makeProject("dominant"), "function.double-dominant-target"),
     ).toBeUndefined();
     expect(
       diagnosticFor(

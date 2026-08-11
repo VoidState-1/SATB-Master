@@ -1,8 +1,5 @@
 import type { HarmonyDiagnostic } from "../../../domain/harmony";
-import {
-  formatChord,
-  formatChordRegion,
-} from "../../../domain/chords";
+import { formatChord, formatChordRegion } from "../../../domain/chords";
 import { keyAtTick } from "../../../domain/time";
 import type { ChordDraft, ProjectDocument } from "../../../domain/project";
 import { primaryDiagnostic } from "../geometry";
@@ -163,10 +160,7 @@ export function ChordTrack({
         <div
           className="chord-marquee"
           style={{
-            left: Math.min(
-              chordInteraction.originX,
-              chordInteraction.currentX,
-            ),
+            left: Math.min(chordInteraction.originX, chordInteraction.currentX),
             width: Math.abs(
               chordInteraction.currentX - chordInteraction.originX,
             ),

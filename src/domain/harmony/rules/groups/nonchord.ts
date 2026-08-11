@@ -34,9 +34,9 @@ function sliceAtTick(analysis: HarmonyAnalysis, tick: number) {
 function isChordTone(note: AnalysisNote, slice: AnalysisSlice | undefined) {
   return Boolean(
     slice?.chord &&
-      chordIdentityToneSpellings(slice.chord.identity).some((tone) =>
-        pitchClassEquals(note.pitch, tone),
-      ),
+    chordIdentityToneSpellings(slice.chord.identity).some((tone) =>
+      pitchClassEquals(note.pitch, tone),
+    ),
   );
 }
 
@@ -61,7 +61,9 @@ function noteContext(
   return {
     previous,
     next,
-    previousSlice: previous ? sliceAtTick(analysis, previous.startTick) : undefined,
+    previousSlice: previous
+      ? sliceAtTick(analysis, previous.startTick)
+      : undefined,
     currentSlice: sliceAtTick(analysis, note.startTick),
     nextSlice: next ? sliceAtTick(analysis, next.startTick) : undefined,
   };
@@ -86,16 +88,17 @@ function suspensionEntry(
   const previousAttack = noteIndex > 0 ? line[noteIndex - 1] : undefined;
   const preparedByHeldNote = Boolean(
     previousSlice?.chord &&
-      previousSlice.endTick === current.tick &&
-      previousSlice.notes[voiceId]?.id === note.id &&
-      isChordTone(note, previousSlice),
+    previousSlice.endTick === current.tick &&
+    previousSlice.notes[voiceId]?.id === note.id &&
+    isChordTone(note, previousSlice),
   );
   const preparedByReattack = Boolean(
     previousSlice?.chord &&
-      previousAttack &&
-      previousAttack.startTick + previousAttack.durationTicks === note.startTick &&
-      toMidi(previousAttack.pitch) === toMidi(note.pitch) &&
-      isChordTone(previousAttack, previousSlice),
+    previousAttack &&
+    previousAttack.startTick + previousAttack.durationTicks ===
+      note.startTick &&
+    toMidi(previousAttack.pitch) === toMidi(note.pitch) &&
+    isChordTone(previousAttack, previousSlice),
   );
   return {
     current,
@@ -137,85 +140,77 @@ function pushRoleDiagnostic(
   );
 }
 
-function roleNoteFacts(
-  analysis: HarmonyAnalysis,
-  role: NonChordToneRole,
-) {
-  return (["soprano", "alto", "tenor", "bass"] as const).flatMap(
-    (voiceId) =>
-      analysis.notesByVoice[voiceId]
-        .filter((note) => note.nonChordToneRole === role)
-        .map((note) => ({
-          voiceId,
-          note,
-          context: noteContext(analysis, voiceId, note),
-        })),
+function roleNoteFacts(analysis: HarmonyAnalysis, role: NonChordToneRole) {
+  return (["soprano", "alto", "tenor", "bass"] as const).flatMap((voiceId) =>
+    analysis.notesByVoice[voiceId]
+      .filter((note) => note.nonChordToneRole === role)
+      .map((note) => ({
+        voiceId,
+        note,
+        context: noteContext(analysis, voiceId, note),
+      })),
   );
 }
 
 export function passingToneRule(analysis: HarmonyAnalysis) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, "passing").forEach(
-    ({ voiceId, note, context }) => {
-      const { previous, next, previousSlice, currentSlice, nextSlice } = context;
-      if (!previous || !next || !currentSlice?.chord) return;
-      const entering = writtenInterval(previous.pitch, note.pitch);
-      const leaving = writtenInterval(note.pitch, next.pitch);
-      const valid =
-        !isChordTone(note, currentSlice) &&
-        isChordTone(previous, previousSlice) &&
-        isChordTone(next, nextSlice) &&
-        isStep(previous, note) &&
-        isStep(note, next) &&
-        Math.sign(entering.semitones) === Math.sign(leaving.semitones);
-      if (!valid)
-        pushRoleDiagnostic(
-          diagnostics,
-          analysis,
-          "nonchord.passing-tone",
-          voiceId,
-          note,
-          "经过音角色不成立",
-          "经过音应在两个结构音之间同向级进进入和离开。",
-          [previous, next],
-          currentSlice,
-        );
-    },
-  );
+  roleNoteFacts(analysis, "passing").forEach(({ voiceId, note, context }) => {
+    const { previous, next, previousSlice, currentSlice, nextSlice } = context;
+    if (!previous || !next || !currentSlice?.chord) return;
+    const entering = writtenInterval(previous.pitch, note.pitch);
+    const leaving = writtenInterval(note.pitch, next.pitch);
+    const valid =
+      !isChordTone(note, currentSlice) &&
+      isChordTone(previous, previousSlice) &&
+      isChordTone(next, nextSlice) &&
+      isStep(previous, note) &&
+      isStep(note, next) &&
+      Math.sign(entering.semitones) === Math.sign(leaving.semitones);
+    if (!valid)
+      pushRoleDiagnostic(
+        diagnostics,
+        analysis,
+        "nonchord.passing-tone",
+        voiceId,
+        note,
+        "经过音角色不成立",
+        "经过音应在两个结构音之间同向级进进入和离开。",
+        [previous, next],
+        currentSlice,
+      );
+  });
   return diagnostics;
 }
 
 export function neighborToneRule(analysis: HarmonyAnalysis) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, "neighbor").forEach(
-    ({ voiceId, note, context }) => {
-      const { previous, next, previousSlice, currentSlice, nextSlice } = context;
-      if (!previous || !next || !currentSlice?.chord) return;
-      const entering = writtenInterval(previous.pitch, note.pitch);
-      const leaving = writtenInterval(note.pitch, next.pitch);
-      const valid =
-        !isChordTone(note, currentSlice) &&
-        isChordTone(previous, previousSlice) &&
-        isChordTone(next, nextSlice) &&
-        isStep(previous, note) &&
-        isStep(note, next) &&
-        Math.sign(entering.semitones) === -Math.sign(leaving.semitones) &&
-        toMidi(previous.pitch) === toMidi(next.pitch) &&
-        pitchClassEquals(previous.pitch, next.pitch);
-      if (!valid)
-        pushRoleDiagnostic(
-          diagnostics,
-          analysis,
-          "nonchord.neighbor-tone",
-          voiceId,
-          note,
-          "辅助音角色不成立",
-          "辅助音应级进离开结构音，并反向级进回到同一书写音高。",
-          [previous, next],
-          currentSlice,
-        );
-    },
-  );
+  roleNoteFacts(analysis, "neighbor").forEach(({ voiceId, note, context }) => {
+    const { previous, next, previousSlice, currentSlice, nextSlice } = context;
+    if (!previous || !next || !currentSlice?.chord) return;
+    const entering = writtenInterval(previous.pitch, note.pitch);
+    const leaving = writtenInterval(note.pitch, next.pitch);
+    const valid =
+      !isChordTone(note, currentSlice) &&
+      isChordTone(previous, previousSlice) &&
+      isChordTone(next, nextSlice) &&
+      isStep(previous, note) &&
+      isStep(note, next) &&
+      Math.sign(entering.semitones) === -Math.sign(leaving.semitones) &&
+      toMidi(previous.pitch) === toMidi(next.pitch) &&
+      pitchClassEquals(previous.pitch, next.pitch);
+    if (!valid)
+      pushRoleDiagnostic(
+        diagnostics,
+        analysis,
+        "nonchord.neighbor-tone",
+        voiceId,
+        note,
+        "辅助音角色不成立",
+        "辅助音应级进离开结构音，并反向级进回到同一书写音高。",
+        [previous, next],
+        currentSlice,
+      );
+  });
   return diagnostics;
 }
 
@@ -252,31 +247,29 @@ function evaluateSuspensionResolution(
   policy: SuspensionResolutionPolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, policy.role).forEach(
-    ({ voiceId, note, context }) => {
-      const { next, nextSlice } = context;
-      const entry = suspensionEntry(analysis, voiceId, note);
-      if (!entry || !next || !nextSlice?.chord) return;
-      const interval = writtenInterval(note.pitch, next.pitch);
-      const valid =
-        entry.prepared &&
-        isStep(note, next) &&
-        Math.sign(interval.semitones) === policy.direction &&
-        isChordTone(next, nextSlice);
-      if (!valid)
-        pushRoleDiagnostic(
-          diagnostics,
-          analysis,
-          policy.id,
-          voiceId,
-          note,
-          policy.title,
-          policy.message,
-          [next],
-          entry.current,
-        );
-    },
-  );
+  roleNoteFacts(analysis, policy.role).forEach(({ voiceId, note, context }) => {
+    const { next, nextSlice } = context;
+    const entry = suspensionEntry(analysis, voiceId, note);
+    if (!entry || !next || !nextSlice?.chord) return;
+    const interval = writtenInterval(note.pitch, next.pitch);
+    const valid =
+      entry.prepared &&
+      isStep(note, next) &&
+      Math.sign(interval.semitones) === policy.direction &&
+      isChordTone(next, nextSlice);
+    if (!valid)
+      pushRoleDiagnostic(
+        diagnostics,
+        analysis,
+        policy.id,
+        voiceId,
+        note,
+        policy.title,
+        policy.message,
+        [next],
+        entry.current,
+      );
+  });
   return diagnostics;
 }
 
@@ -347,9 +340,9 @@ export function anticipationRule(analysis: HarmonyAnalysis) {
       if (!targetSlice?.chord) return;
       const repeatedByNext = Boolean(
         next &&
-          note.startTick + note.durationTicks === next.startTick &&
-          next.startTick === targetSlice.tick &&
-          toMidi(next.pitch) === toMidi(note.pitch),
+        note.startTick + note.durationTicks === next.startTick &&
+        next.startTick === targetSlice.tick &&
+        toMidi(next.pitch) === toMidi(note.pitch),
       );
       const heldIntoTarget =
         note.startTick + note.durationTicks > targetSlice.tick;
@@ -412,14 +405,13 @@ export const NONCHORD_RULES = defineRuleGroup(
     id: "nonchord.passing-tone",
     catalogNumber: "F.1",
     label: "经过音角色不成立",
-    description: "同一声部前后结构音存在，经过音以级进进入并以同方向级进离开，连接三度范围内的两个结构音；节拍类型按角色子类判断。",
-    rationale: "半音经过音允许不同 accidental；缺少任一侧上下文时返回上下文不足。",
+    description:
+      "同一声部前后结构音存在，经过音以级进进入并以同方向级进离开，连接三度范围内的两个结构音；节拍类型按角色子类判断。",
+    rationale:
+      "半音经过音允许不同 accidental；缺少任一侧上下文时返回上下文不足。",
     group: "nonchord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     evaluate: passingToneRule,
   }),
@@ -427,14 +419,12 @@ export const NONCHORD_RULES = defineRuleGroup(
     id: "nonchord.neighbor-tone",
     catalogNumber: "F.2",
     label: "辅助音角色不成立",
-    description: "要求级进进入、反向级进离开，并回到相同书写音级或确认的等音目标。",
+    description:
+      "要求级进进入、反向级进离开，并回到相同书写音级或确认的等音目标。",
     rationale: "双辅助音和变音辅助音应作为后续子类型，不由首版规则猜测。",
     group: "nonchord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     evaluate: neighborToneRule,
   }),
@@ -442,14 +432,13 @@ export const NONCHORD_RULES = defineRuleGroup(
     id: "nonchord.suspension-preparation",
     catalogNumber: "F.3",
     label: "挂留音准备不正确",
-    description: "同一声部前一结构音必须与当前挂留音同高并跨越和声边界保持或合法重奏，且在准备和弦中属于协和构成。",
-    rationale: "无准备的不协和音应标为倚音而非挂留音；是否允许重奏需教学 profile 审定。",
+    description:
+      "同一声部前一结构音必须与当前挂留音同高并跨越和声边界保持或合法重奏，且在准备和弦中属于协和构成。",
+    rationale:
+      "无准备的不协和音应标为倚音而非挂留音；是否允许重奏需教学 profile 审定。",
     group: "nonchord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     evaluate: suspensionPreparationRule,
   }),
@@ -457,14 +446,13 @@ export const NONCHORD_RULES = defineRuleGroup(
     id: "nonchord.suspension-resolution",
     catalogNumber: "F.4",
     label: "挂留音未解决",
-    description: "挂留状态跨切片传递，要求在截止点前通常下行级进到当前和弦音；`4-3`、`7-6`、`9-8` 等由结构化角色参数给出目标。",
-    rationale: "转位挂留、装饰性延迟解决和链式挂留由角色配置决定，不能使用固定“下一音”窗口。",
+    description:
+      "挂留状态跨切片传递，要求在截止点前通常下行级进到当前和弦音；`4-3`、`7-6`、`9-8` 等由结构化角色参数给出目标。",
+    rationale:
+      "转位挂留、装饰性延迟解决和链式挂留由角色配置决定，不能使用固定“下一音”窗口。",
     group: "nonchord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     evaluate: suspensionResolutionRule,
   }),
@@ -476,10 +464,7 @@ export const NONCHORD_RULES = defineRuleGroup(
     rationale: "术语和允许类型需与最终教材用语统一。",
     group: "nonchord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     evaluate: retardationRule,
   }),
@@ -487,14 +472,13 @@ export const NONCHORD_RULES = defineRuleGroup(
     id: "nonchord.appoggiatura",
     catalogNumber: "F.6",
     label: "倚音角色不成立",
-    description: "倚音通常位于相对强位，以跳进或非准备方式进入，并以级进解决到和弦音；方向由角色参数或上下文确定。",
-    rationale: "教材对自由倚音范围有差异，首版只验证人工标注，不自动判定所有强拍外音。",
+    description:
+      "倚音通常位于相对强位，以跳进或非准备方式进入，并以级进解决到和弦音；方向由角色参数或上下文确定。",
+    rationale:
+      "教材对自由倚音范围有差异，首版只验证人工标注，不自动判定所有强拍外音。",
     group: "nonchord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     evaluate: appoggiaturaRule,
   }),
@@ -502,14 +486,12 @@ export const NONCHORD_RULES = defineRuleGroup(
     id: "nonchord.anticipation",
     catalogNumber: "F.7",
     label: "先现音角色不成立",
-    description: "当前音在当前和弦中为外音，但在紧邻后继和弦中属于构成音，并由同一声部保持或重复。",
+    description:
+      "当前音在当前和弦中为外音，但在紧邻后继和弦中属于构成音，并由同一声部保持或重复。",
     rationale: "跨休止或跨越无关和弦不能认作先现。",
     group: "nonchord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     evaluate: anticipationRule,
   }),
@@ -517,14 +499,13 @@ export const NONCHORD_RULES = defineRuleGroup(
     id: "nonchord.pedal-point",
     catalogNumber: "F.8",
     label: "持续音语境不成立",
-    description: "持续音应在 span 起点属于和弦构成，期间可成为和弦外音，并在结束处重新获得明确和声归属；上方声部独立形成可分析和声。",
-    rationale: "主持续音、属持续音和内部持续音可使用不同 profile；持续音期间不以 D.1 重复报警。",
+    description:
+      "持续音应在 span 起点属于和弦构成，期间可成为和弦外音，并在结束处重新获得明确和声归属；上方声部独立形成可分析和声。",
+    rationale:
+      "主持续音、属持续音和内部持续音可使用不同 profile；持续音期间不以 D.1 重复报警。",
     group: "nonchord",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     evaluate: pedalPointRule,
   }),

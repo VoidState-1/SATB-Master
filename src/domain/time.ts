@@ -70,13 +70,11 @@ export function snapTickForward(
   return Math.min(safeMaximum, snappedTick);
 }
 
-export function buildMeasures(
-  project: {
-    readonly ppq: number;
-    readonly meterEvents: readonly MeterEvent[];
-    readonly lengthTicks: number;
-  },
-): MeasureInfo[] {
+export function buildMeasures(project: {
+  readonly ppq: number;
+  readonly meterEvents: readonly MeterEvent[];
+  readonly lengthTicks: number;
+}): MeasureInfo[] {
   const meters = [...project.meterEvents].sort((a, b) => a.tick - b.tick);
   const measures: MeasureInfo[] = [];
   let tick = 0;
@@ -144,7 +142,9 @@ export function durationToTicksAt(
   const value = Math.max(0, Number(duration.value));
   if (!Number.isFinite(value) || value === 0) return 0;
   if (duration.unit === "ticks") return Math.round(value);
-  const meters = [...project.meterEvents].sort((left, right) => left.tick - right.tick);
+  const meters = [...project.meterEvents].sort(
+    (left, right) => left.tick - right.tick,
+  );
   let cursor = Math.max(0, startTick);
   let remaining = value;
   while (remaining > 0) {

@@ -6,34 +6,14 @@ import {
   pitchClassEquals,
   scaleDegreePitchClass,
 } from "../../../pitch";
-import {
-  chordEvidence,
-  chordLabel,
-  diagnostic,
-} from "../helpers/core";
+import { chordEvidence, chordLabel, diagnostic } from "../helpers/core";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 export function mixtureSourceRule(analysis: HarmonyAnalysis) {
   const diagnostics: RuleDiagnostic[] = [];
   const qualities = {
-    major: [
-      "major",
-      "minor",
-      "minor",
-      "major",
-      "major",
-      "minor",
-      "diminished",
-    ],
-    minor: [
-      "minor",
-      "diminished",
-      "major",
-      "minor",
-      "minor",
-      "major",
-      "major",
-    ],
+    major: ["major", "minor", "minor", "major", "major", "minor", "diminished"],
+    minor: ["minor", "diminished", "major", "minor", "minor", "major", "major"],
   } as const;
   analysis.project.chordTrack.regions.forEach((chord) => {
     const mixture = chord.semantics?.mixture;
@@ -45,10 +25,9 @@ export function mixtureSourceRule(analysis: HarmonyAnalysis) {
     )
       return;
     const interpretation = primaryHarmonyInterpretation(chord.semantics!);
-    const localKey = interpretation.localKey ??
-      analysisKeyAtTick(analysis, chord.startTick);
-    const sourceMode =
-      mixture === "parallel-major" ? "major" : "minor";
+    const localKey =
+      interpretation.localKey ?? analysisKeyAtTick(analysis, chord.startTick);
+    const sourceMode = mixture === "parallel-major" ? "major" : "minor";
     const sourceKey = { tonic: localKey.tonic, mode: sourceMode } as const;
     const expectedRoot = scaleDegreePitchClass(
       sourceKey,
@@ -141,9 +120,7 @@ export function functionalRetrogressionRule(analysis: HarmonyAnalysis) {
             },
           ],
           confidence: connection.confidence === "certain" ? 1 : 0.8,
-          causeRefs: [
-            `function.retrogression|${connection.connectionKey}`,
-          ],
+          causeRefs: [`function.retrogression|${connection.connectionKey}`],
         },
       ),
     );
@@ -246,9 +223,9 @@ export function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
       return;
     const resolves = Boolean(
       connection.relation === "cadential64-target" &&
-        connection.targetMatched &&
-        connection.contiguous &&
-        connection.sameKey,
+      connection.targetMatched &&
+      connection.contiguous &&
+      connection.sameKey,
     );
     if (resolves) return;
     diagnostics.push(
@@ -292,19 +269,18 @@ export const FUNCTION_RULES = defineRuleGroup(
     id: "function.retrogression",
     catalogNumber: "G.1",
     label: "逆功能进行",
-    description: "专用和弦连接器确认前一 span 为 D 类、后一 span 为 S 类，并且不存在序进、共同和弦重解释、转调、持续低音或其他已确认例外时触发。",
-    rationale: "不再使用粗粒度 `FunctionalClass` 字符比较；`D -> S` 只是连接图中的一种违规结果。",
+    description:
+      "专用和弦连接器确认前一 span 为 D 类、后一 span 为 S 类，并且不存在序进、共同和弦重解释、转调、持续低音或其他已确认例外时触发。",
+    rationale:
+      "不再使用粗粒度 `FunctionalClass` 字符比较；`D -> S` 只是连接图中的一种违规结果。",
     group: "function",
     defaultSeverity: "warning",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     supportedExceptionContexts: [
       "pedal-point",
       "modulation",
-      "ambiguous-semantics"
+      "ambiguous-semantics",
     ],
     evaluate: functionalRetrogressionRule,
   }),
@@ -312,21 +288,16 @@ export const FUNCTION_RULES = defineRuleGroup(
     id: "function.double-dominant-target",
     catalogNumber: "G.3",
     label: "重属功能未进入属功能",
-    description: "重属 span 结束后应进入 `D`、其合法转位/扩展，或作为中介进入 `K46 -> D`；其他目标触发。",
+    description:
+      "重属 span 结束后应进入 `D`、其合法转位/扩展，或作为中介进入 `K46 -> D`；其他目标触发。",
     rationale: "转调后 `DD` 被共同和弦重新解释时由转调语境接管。",
     group: "function",
     defaultSeverity: "warning",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
-    supportedExceptionContexts: [
-      "modulation",
-      "ambiguous-semantics"
-    ],
+    supportedExceptionContexts: ["modulation", "ambiguous-semantics"],
     defaultExceptionPolicies: {
-      "modulation": "exempt"
+      modulation: "exempt",
     },
     evaluate: doubleDominantTargetRule,
   }),
@@ -334,14 +305,13 @@ export const FUNCTION_RULES = defineRuleGroup(
     id: "function.cadential64-target",
     catalogNumber: "G.4",
     label: "终止四六未进入属功能",
-    description: "`K46` 后继结构和弦必须为 D 类，通常保持属音低音，并实现 6-5、4-3 的声部解决关系。",
-    rationale: "中间允许由同一 `K46` span 的转换构成，不能跨休止或无关和弦追认。",
+    description:
+      "`K46` 后继结构和弦必须为 D 类，通常保持属音低音，并实现 6-5、4-3 的声部解决关系。",
+    rationale:
+      "中间允许由同一 `K46` span 的转换构成，不能跨休止或无关和弦追认。",
     group: "function",
     defaultSeverity: "error",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     evaluate: cadential64ResolutionRule,
   }),
@@ -349,14 +319,13 @@ export const FUNCTION_RULES = defineRuleGroup(
     id: "tonality.mixture-source",
     catalogNumber: "K.4",
     label: "借用和弦来源不一致",
-    description: "依据 `mixture` 来源调式生成规范构成，与 identity 和 designation 比较。",
-    rationale: "变化和弦与借用和弦必须先由结构化语义区分，不能按调外音数量猜测。",
+    description:
+      "依据 `mixture` 来源调式生成规范构成，与 identity 和 designation 比较。",
+    rationale:
+      "变化和弦与借用和弦必须先由结构化语义区分，不能按调外音数量猜测。",
     group: "tonality",
     defaultSeverity: "error",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "project",
     evaluate: mixtureSourceRule,
   }),

@@ -26,9 +26,9 @@ describe("和声检查规则目录", () => {
     expect(ids).toContain("tonality.pivot-reinterpretation");
     expect(
       ids.every((id) =>
-        HARMONY_RULE_DEFINITIONS.find((rule) => rule.id === id)?.requires.includes(
-          "chords",
-        ),
+        HARMONY_RULE_DEFINITIONS.find(
+          (rule) => rule.id === id,
+        )?.requires.includes("chords"),
       ),
     ).toBe(true);
   });

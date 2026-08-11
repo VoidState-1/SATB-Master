@@ -6,10 +6,7 @@ import type {
   RuleStepContext,
 } from "../../runtime";
 import type { RuleConfig, RuleRequirement } from "../types";
-import {
-  defineStatefulRule,
-  type RuleMetadataInput,
-} from "../defineRule";
+import { defineStatefulRule, type RuleMetadataInput } from "../defineRule";
 import {
   decisionTableRequirements,
   evaluateDecisionTable,
@@ -21,10 +18,7 @@ import { FactStore, type SubjectRefs } from "./facts";
 import { analysisMoment, type AnalysisMoment } from "./moments";
 
 export type RetriggerPolicy =
-  | "retain-existing"
-  | "refresh-source"
-  | "fork"
-  | "reject";
+  "retain-existing" | "refresh-source" | "fork" | "reject";
 
 export interface ObligationCandidate<Payload extends JsonValue> {
   readonly partitionKey: string;
@@ -207,7 +201,9 @@ function assertRequirements(
 ) {
   for (const requirement of required) {
     if (!declared.includes(requirement))
-      throw new Error(`规则“${ruleId}”的声明式事实依赖未声明：“${requirement}”`);
+      throw new Error(
+        `规则“${ruleId}”的声明式事实依赖未声明：“${requirement}”`,
+      );
   }
 }
 
@@ -238,11 +234,10 @@ export function defineObligationRule<
     reportViolation,
     ...metadata
   } = input;
-  assertRequirements(
-    metadata.id,
-    metadata.requires,
-    [...source.requires, ...decisionTableRequirements(transition)],
-  );
+  assertRequirements(metadata.id, metadata.requires, [
+    ...source.requires,
+    ...decisionTableRequirements(transition),
+  ]);
   const stores = new WeakMap<HarmonyAnalysis, FactStore>();
   const traces = new WeakMap<HarmonyAnalysis, ObligationRuntimeTraceEntry[]>();
   const appendTrace = (

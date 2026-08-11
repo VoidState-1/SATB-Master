@@ -3,11 +3,7 @@ import {
   chordDraftFromRegion,
   defaultChordDraftAtTick,
 } from "../../domain/chords";
-import {
-  buildMeasures,
-  keyAtTick,
-  snapTickBackward,
-} from "../../domain/time";
+import { buildMeasures, keyAtTick, snapTickBackward } from "../../domain/time";
 import type { HarmonyDiagnostic } from "../../domain/harmony";
 import {
   buildTimelineRulerTicks,

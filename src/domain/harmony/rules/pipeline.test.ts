@@ -341,9 +341,7 @@ describe("共享事实与诊断仲裁", () => {
       title: "属七和弦解决",
       message: "联合诊断",
       messageKey: "dominant-seventh-resolution",
-      causeRefs: [
-        "connection.dominant-seventh|connection:span-a->span-b",
-      ],
+      causeRefs: ["connection.dominant-seventh|connection:span-a->span-b"],
       coverageRefs: [leadingCause, seventhCause],
     };
 

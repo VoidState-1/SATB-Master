@@ -105,7 +105,8 @@ describe("斯波索宾基础规则检查", () => {
     const result = checkHarmony(project);
     expect(
       result.diagnostics.some(
-        (item) => item.ruleId === "voice-leading.parallel-fifths" && item.tick === PPQ,
+        (item) =>
+          item.ruleId === "voice-leading.parallel-fifths" && item.tick === PPQ,
       ),
     ).toBe(true);
   });
@@ -433,10 +434,7 @@ describe("斯波索宾基础规则检查", () => {
     const analysis = buildHarmonyAnalysis(project);
     const spans = analysis.harmonySpans;
     expect(spans).toHaveLength(2);
-    expect(spans.map((span) => span.status)).toEqual([
-      "complete",
-      "ambiguous",
-    ]);
+    expect(spans.map((span) => span.status)).toEqual(["complete", "ambiguous"]);
     expect(walkSpans(analysis, 0, "forward")).toEqual([spans[1]]);
   });
 
@@ -682,7 +680,8 @@ describe("斯波索宾基础规则检查", () => {
     );
     expect(
       overlaps.some(
-        (item) => item.noteIds.includes("long") && item.noteIds.includes("late"),
+        (item) =>
+          item.noteIds.includes("long") && item.noteIds.includes("late"),
       ),
     ).toBe(true);
   });
