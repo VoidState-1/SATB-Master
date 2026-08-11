@@ -23,10 +23,13 @@ flowchart LR
   F --> S["AnalysisSlice"]
   S --> T["旋律与切片转换"]
   S --> H["HarmonySpan"]
+  S --> M["AnalysisMoment"]
   H --> C["HarmonyConnectionAssessment"]
   T --> X["共享事实"]
+  M --> X
+  X --> Q["FactStore + 三值谓词 AST"]
   C --> R["规则运行时"]
-  X --> R
+  Q --> R
   R --> A["RuleApplicabilityPlanner"]
   A --> V["校验与严重程度"]
   V --> D["DiagnosticArbiter"]
@@ -37,6 +40,8 @@ flowchart LR
 
 - [`harmony/analysis.ts`](../src/domain/harmony/analysis.ts)：冻结快照、切片、转换、span、索引和失效范围。
 - [`harmony/rules/sharedFacts.ts`](../src/domain/harmony/rules/sharedFacts.ts)：书写音程、声部对、低音运动和和弦成员事实。
+- [`harmony/rules/declarative`](../src/domain/harmony/rules/declarative)：三值事实组合器、候选提供器、决策表、局部约束和义务运行时。
+- [`harmony/rules/facts`](../src/domain/harmony/rules/facts)：可复用的声部、音高、和弦与倾向音领域事实。
 - [`harmony/rules/connector.ts`](../src/domain/harmony/rules/connector.ts)：精确 span 连接。
 - [`harmony/runtime.ts`](../src/domain/harmony/runtime.ts)：无状态/有状态规则调度与结果收敛。
 - [`harmony/rules/applicability.ts`](../src/domain/harmony/rules/applicability.ts)：特例上下文折叠。
@@ -143,11 +148,13 @@ interface HarmonyConnectionAssessment {
 - `chordMemberFacts`：每个活跃音符是否属于当前 `ChordIdentity`，以及对应构成音索引。
 - `HarmonyContextFacts`：同和弦、分解和弦、声部交换、内声部、低音上行级进、已标注非和弦音、持续低音、终止与转调连接的稳定 ID 集合。
 
+声明式规则进一步把事实封装为 `yes/no/unknown` 三值谓词 AST。每个事实携带稳定原因、置信度、对象引用、证据和依赖；`all/any/not` 按固定三值逻辑传播 unknown，不能把缺失上下文机械当作不成立。`FactStore` 在同一 analysis revision 内按事实 ID 和稳定对象键记忆化结果。
+
 平行五八度、不等五度、隐伏进行和对斜等规则必须共享书写音高口径，避免各自按 MIDI 半音重新推导而产生互相矛盾的结果。
 
 ## 7. 规则目录与实现
 
-规则源码是目录的唯一事实来源。每条内置规则在所属 `rules/groups/*.ts` 中以 `defineStatelessRule` 或 `defineStatefulRule` 声明，单个对象同时包含稳定 ID、目录号、说明、理由、分组、默认严重程度、依赖、配置、特例、覆盖关系和执行函数。`rules/catalog.ts` 只从完整规则集合派生有序目录、ID 索引和设置界面所需投影；[`harmony-rule-catalog.md`](../DesignDocs/harmony-rule-catalog.md) 仅作为理论设计参考。
+规则源码是目录的唯一事实来源。每条内置规则在所属 `rules/groups/*.ts` 中以 `defineConstraintRule`、`defineObligationRule` 或 `defineAlgorithmicRule` 表达主要执行模型；迁移期仍兼容底层 `defineStatelessRule/defineStatefulRule`。单个对象同时包含稳定 ID、目录号、说明、理由、分组、默认严重程度、依赖、配置、特例、覆盖关系和执行定义。`rules/catalog.ts` 只从完整规则集合派生有序目录、ID 索引和设置界面所需投影；[`harmony-rule-catalog.md`](../DesignDocs/harmony-rule-catalog.md) 仅作为理论设计参考。
 
 每条无状态规则直接引用一个具名 evaluator。相近规则可以共享事实提取、遍历原语或类型化策略内核，但不能把 `ruleId` 作为行为分支；规则 ID 在公共辅助函数中只允许作为诊断归属数据。这样规则对象、算法入口和测试目标保持一一对应。
 
@@ -155,7 +162,7 @@ interface HarmonyConnectionAssessment {
 
 ## 8. 规则私有状态
 
-跨切片规则使用通用 `RuleStateEnvelope`：
+底层跨切片协议仍使用通用 `RuleStateEnvelope`：
 
 ```ts
 interface RuleStateEnvelope<T extends JsonValue = JsonValue> {
@@ -172,7 +179,20 @@ interface RuleStateEnvelope<T extends JsonValue = JsonValue> {
 }
 ```
 
-每条规则只能读取并返回自己的状态。`payload` 是规则私有 JSON；宿主只校验所有权、引用、时间、数量和大小，不解释“导音”“七音”“挂留”等类型，也不决定何时满足。典型流程是：
+每条规则只能读取并返回自己的状态。`payload` 是纯 JSON；宿主校验所有权、引用、时间、数量和大小。遗留的专用状态规则仍可直接使用信封，新的时间规则优先使用 `defineObligationRule`，由义务运行时统一管理信封、分区、去重、重触发和最小轨迹。
+
+声明式义务显式声明：
+
+- `source`：从当前 `AnalysisMoment` 提取开启候选；
+- `partitionKey`：确定同一项音乐义务；
+- `retrigger`：重复触发时保留、刷新、分叉或拒绝；
+- `transition`：通过可检查决策表产生 continue、resolve、violate、cancel 或 indeterminate；
+- `onUnknown/onEnd`：上下文不足和工程结束策略；
+- `reportViolation`：只负责该规则的诊断文案。
+
+决策表默认要求普通分支互斥；确有同 tick 音乐学优先级时必须声明 precedence。显式 fallback 仅在普通条件全部明确为 no 后执行，unknown 不会落入误报分支。
+
+兼容层中的典型流程仍是：
 
 ```text
 process 当前 step
@@ -182,7 +202,7 @@ process 当前 step
 -> 工程末尾由 finalize 处理剩余状态
 ```
 
-这种“包裹盒”允许导音、七音、延迟解决、和声切分等规则各自定义结束条件，同时共享相同横向传递协议。
+导音、七音、属九音和方向性变化音已经迁移到义务运行时。导音连续性按声部、来源 span、书写音高、来源调性和固定解决目标判断，因此 `V -> V7` 的实体变化不会自动结算重复导音；七音、九音和变化音当前仍通过具名事实显式采用各自的来源 span 结算口径。
 
 ## 9. 适用性计划
 
@@ -205,7 +225,7 @@ process 当前 step
 
 稳定根因键优先使用结构化 `causeRefs`，并结合规则 ID、规范对象范围、时间与 `rootCauseKey/messageKey`。自然语言消息不应承担去重身份。外置诊断在内置仲裁结束后合并，且不能声明 `coverageRefs`，因此不能隐藏内置诊断。
 
-和弦整体问题必须归属 `chordIds`，避免在四个音符上重复显示；旋律和声部进行问题才归属对应音符。UI 根据对象引用显示悬停诊断与证据。
+和弦整体问题必须归属 `chordIds`，避免在四个音符上重复显示；旋律和声部进行问题才归属对应音符。诊断可额外提供 `subjects.origin/failure/context` 与最小 `trace`：公共 `noteIds/chordIds` 继续参与仲裁和选择，钢琴卷帘优先只在 failure 对象上绘制警示标记，避免把来源证据显示成第二次报错。
 
 ## 11. 工程 RuleProfile
 
@@ -237,16 +257,17 @@ interface RuleProfile {
 ## 13. 新增规则流程
 
 1. 在设计清单中确定稳定目录号、ID、默认严重程度、规则口径和反例。
-2. 为规则建立具名 evaluator；使用共享 facts、span、connection 或显式策略复用算法，不能通过 `ruleId` 分支复用规则入口。跨时间结论使用私有状态。
-3. 在同一个 `rules/groups/*.ts` 文件末尾用 `defineStatelessRule` 或 `defineStatefulRule` 声明完整规则对象，包括 options、依赖、覆盖关系和特例 context。
-4. 将规则对象加入该文件导出的规则组；只有新增组文件时才修改 `rules/groups/index.ts`。
-5. 不在 `catalog.ts` 或 `registry.ts` 重复维护 ID、元数据或 evaluator 表。
-6. 让诊断引用正确对象，提供稳定 messageKey/rootCauseKey 和结构化证据。
-7. 加入最小违规、合法邻例、同和弦、大小调、书写等音、歧义和配置测试，并由规则集合测试覆盖重复 ID、重复目录号和无效引用。
-8. 新规则必须同时提交完整规则对象、执行函数和对应金样本；不存在只有目录项而没有实现的内置规则状态。
+2. 优先从 `rules/facts` 选择具名事实和受控候选提供器；重复的底层导航或音乐关系先下沉为事实，不能通过 `ruleId` 分支复用规则入口。
+3. 局部命题优先使用 `defineConstraintRule`，跨时间结论优先使用 `defineObligationRule`；复杂全局搜索使用具名 evaluator 和 `defineAlgorithmicRule` 逃生口。
+4. 在同一个 `rules/groups/*.ts` 文件末尾声明完整规则对象，包括 options、依赖、覆盖关系和特例 context。
+5. 将规则对象加入该文件导出的规则组；只有新增组文件时才修改 `rules/groups/index.ts`。
+6. 不在 `catalog.ts` 或 `registry.ts` 重复维护 ID、元数据或 evaluator 表。
+7. 让诊断引用正确对象，提供稳定 messageKey/rootCauseKey、origin/failure 分层和结构化证据。
+8. 加入最小违规、合法邻例、同和弦、大小调、书写等音、歧义、配置和变形测试；义务规则必须覆盖每个状态原因。
+9. 新规则必须同时提交完整规则对象、执行定义和对应金样本；不存在只有目录项而没有实现的内置规则状态。
 
 ## 14. 当前完成边界
 
-规则目录、完整工程 profile、共享事实、span、目标链、连接器、适用性、多规则覆盖仲裁、设置页、分析复用和外置 API v3 已落地。目录修订 2 已为全部 81 条规则提供首版实现；新增模块分别承载基础教学规则、非和弦音角色、专用功能和弦连接，以及节奏、终止与调性规则。
+规则目录、完整工程 profile、共享事实、span、目标链、连接器、适用性、多规则覆盖仲裁、设置页、分析复用和外置 API v3 已落地。目录修订 2 已为全部 81 条规则提供首版实现；声明式事实内核、义务运行时、局部约束运行时、算法逃生口、决策轨迹、诊断上下文生成器和诊断对象分层也已落地。`voice.range` 已迁移为首条声明式局部约束，`voice.polyphonic-overlap` 明确标记为算法规则，四条倾向音解决规则已迁移为声明式义务。
 
 首版实现遵循保守判断：非和弦音只验证人工角色；终止规则只消费显式 `cadenceType`；转调规则只消费连续局部调性、双重解释或人工确认冲突；专用连接规则只在明确功能和连续 span 上执行。教材例题校准不足的规则仍可能需要调整阈值或细化转位口径，但不会用缺失上下文伪造确定结论。

@@ -13,7 +13,7 @@ import type {
   RuleOptionDefinition,
 } from "./types";
 
-type RuleMetadataInput<Id extends string> = Omit<
+export type RuleMetadataInput<Id extends string> = Omit<
   HarmonyRuleDefinition,
   | "id"
   | "configVersion"

@@ -1,5 +1,6 @@
 import type { HarmonyAnalysis } from "../analysis";
 import type {
+  DiagnosticSubjectRefs,
   HarmonyDiagnostic,
   RuleDefinition,
   RuleDiagnostic,
@@ -10,6 +11,7 @@ import type { DiagnosticSeverity } from "./types";
 
 const MAX_MESSAGE_LENGTH = 600;
 const MAX_EVIDENCE_ITEMS = 16;
+const MAX_TRACE_ITEMS = 64;
 
 function stable(items: readonly string[]) {
   return [...new Set(items)].sort();
@@ -77,6 +79,41 @@ export function normalizeBuiltinDiagnostic(
     item.evidence.length > MAX_EVIDENCE_ITEMS
   )
     return undefined;
+  const validSubjectRefs = (refs: DiagnosticSubjectRefs | undefined) => {
+    if (!refs) return true;
+    return (
+      (refs.voiceIds?.length ?? 0) <= 8 &&
+      (refs.noteIds?.length ?? 0) <= 32 &&
+      (refs.chordIds?.length ?? 0) <= 16 &&
+      (refs.spanIds?.length ?? 0) <= 16 &&
+      (refs.voiceIds ?? []).every((id) => VOICE_ORDER.includes(id)) &&
+      (refs.noteIds ?? []).every((id) => analysis.noteById.has(id)) &&
+      (refs.chordIds ?? []).every((id) => analysis.chordById.has(id)) &&
+      (refs.spanIds ?? []).every((id) =>
+        analysis.harmonySpans.some((span) => span.id === id),
+      )
+    );
+  };
+  if (
+    item.subjects &&
+    (!validSubjectRefs(item.subjects.origin) ||
+      !validSubjectRefs(item.subjects.failure) ||
+      !validSubjectRefs(item.subjects.context))
+  )
+    return undefined;
+  if (
+    item.trace &&
+    (item.trace.length > MAX_TRACE_ITEMS ||
+      item.trace.some(
+        (entry) =>
+          !Number.isInteger(entry.tick) ||
+          entry.tick < 0 ||
+          entry.tick > analysis.project.lengthTicks ||
+          !entry.reason.trim() ||
+          entry.reason.length > 120,
+      ))
+  )
+    return undefined;
   const validStructuredRefs = (refs: readonly string[] | undefined) =>
     refs === undefined ||
     (refs.length <= 32 &&
@@ -108,6 +145,41 @@ export function normalizeBuiltinDiagnostic(
       item.coverageRefs && item.coverageRefs.length > 0
         ? stable(item.coverageRefs)
         : undefined,
+    subjects: item.subjects
+      ? {
+          ...(item.subjects.origin
+            ? {
+                origin: {
+                  voiceIds: stable(item.subjects.origin.voiceIds ?? []) as VoiceId[],
+                  noteIds: stable(item.subjects.origin.noteIds ?? []),
+                  chordIds: stable(item.subjects.origin.chordIds ?? []),
+                  spanIds: stable(item.subjects.origin.spanIds ?? []),
+                },
+              }
+            : {}),
+          ...(item.subjects.failure
+            ? {
+                failure: {
+                  voiceIds: stable(item.subjects.failure.voiceIds ?? []) as VoiceId[],
+                  noteIds: stable(item.subjects.failure.noteIds ?? []),
+                  chordIds: stable(item.subjects.failure.chordIds ?? []),
+                  spanIds: stable(item.subjects.failure.spanIds ?? []),
+                },
+              }
+            : {}),
+          ...(item.subjects.context
+            ? {
+                context: {
+                  voiceIds: stable(item.subjects.context.voiceIds ?? []) as VoiceId[],
+                  noteIds: stable(item.subjects.context.noteIds ?? []),
+                  chordIds: stable(item.subjects.context.chordIds ?? []),
+                  spanIds: stable(item.subjects.context.spanIds ?? []),
+                },
+              }
+            : {}),
+        }
+      : undefined,
+    trace: item.trace?.map((entry) => ({ ...entry })),
   };
   return normalized;
 }

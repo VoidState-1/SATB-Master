@@ -1,58 +1,46 @@
 import type { HarmonyAnalysis } from "../../analysis";
-import type { RuleConfig, RuleDiagnostic } from "../../runtime";
+import type { RuleDiagnostic } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
-import { VOICE_CONFIG, VOICE_ORDER } from "../../../project/voice";
+import { VOICE_ORDER } from "../../../project/voice";
 import { formatSpelledPitch, toMidi } from "../../../pitch";
 import { diagnostic, noteEvidence, voiceName } from "../helpers/core";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import {
+  defineAlgorithmicRule,
+  defineConstraintRule,
+  eachNote,
+  constraintDiagnosticContext,
+  type PredicateEvaluation,
+} from "../declarative";
+import {
+  configuredVoiceRange,
+  noteWithinConfiguredRange,
+  type VoiceRangeEnvironment,
+} from "../facts/voice";
 
-export function voiceRangeRule(analysis: HarmonyAnalysis, config: RuleConfig = {}) {
-  const diagnostics: RuleDiagnostic[] = [];
-  VOICE_ORDER.forEach((voiceId) =>
-    analysis.notesByVoice[voiceId].forEach((note) => {
-      const range = VOICE_CONFIG[voiceId];
-      const configuredRange = config[voiceId];
-      const configuredMin =
-        configuredRange &&
-        typeof configuredRange === "object" &&
-        "minMidi" in configuredRange
-          ? configuredRange.minMidi
-          : undefined;
-      const configuredMax =
-        configuredRange &&
-        typeof configuredRange === "object" &&
-        "maxMidi" in configuredRange
-          ? configuredRange.maxMidi
-          : undefined;
-      const minimum =
-        typeof configuredMin === "number" && Number.isFinite(configuredMin)
-          ? configuredMin
-          : range.min;
-      const maximum =
-        typeof configuredMax === "number" && Number.isFinite(configuredMax)
-          ? configuredMax
-          : range.max;
-      const midi = toMidi(note.pitch);
-      if (midi < minimum || midi > maximum) {
-        diagnostics.push(
-          diagnostic(
-            "voice.range",
-            note.startTick,
-            note.startTick + note.durationTicks,
-            [voiceId],
-            [note],
-            "超出建议音域",
-            `${voiceName(analysis, voiceId)}建议使用 MIDI ${minimum}-${maximum}，当前音高为 ${formatSpelledPitch(note.pitch)}（MIDI ${midi}）。`,
-            {
-              params: { midi, minimum, maximum },
-              evidence: [noteEvidence(note)],
-            },
-          ),
-        );
-      }
-    }),
+function voiceRangeDiagnostic(
+  environment: VoiceRangeEnvironment,
+  assertion: PredicateEvaluation,
+) {
+  const { analysis, candidate } = environment;
+  const declarative = constraintDiagnosticContext(assertion);
+  const { voiceId, note } = candidate;
+  const { minimum, maximum } = configuredVoiceRange(environment);
+  const midi = toMidi(note.pitch);
+  return diagnostic(
+    "voice.range",
+    note.startTick,
+    note.startTick + note.durationTicks,
+    [voiceId],
+    [note],
+    "超出建议音域",
+    `${voiceName(analysis, voiceId)}建议使用 MIDI ${minimum}-${maximum}，当前音高为 ${formatSpelledPitch(note.pitch)}（MIDI ${midi}）。`,
+    {
+      params: { midi, minimum, maximum },
+      evidence: declarative.evidence,
+      subjects: declarative.subjects,
+    },
   );
-  return diagnostics;
 }
 
 export function noteOverlapRule(analysis: HarmonyAnalysis) {
@@ -194,7 +182,7 @@ export function upperVoiceSpacingRule(analysis: HarmonyAnalysis) {
 }
 
 export const VOICE_RULES = defineRuleGroup(
-  defineStatelessRule({
+  defineConstraintRule({
     id: "voice.range",
     catalogNumber: "A.1",
     label: "超出建议音域",
@@ -256,9 +244,12 @@ export const VOICE_RULES = defineRuleGroup(
         }
       }
     ],
-    evaluate: voiceRangeRule,
+    forEach: eachNote,
+    assert: noteWithinConfiguredRange(),
+    unknownPolicy: "ignore",
+    report: voiceRangeDiagnostic,
   }),
-  defineStatelessRule({
+  defineAlgorithmicRule({
     id: "voice.polyphonic-overlap",
     catalogNumber: "A.2",
     label: "同声部音符重叠",

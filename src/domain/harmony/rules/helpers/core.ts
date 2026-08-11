@@ -7,6 +7,8 @@ import type {
 } from "../../analysis";
 import type {
   DiagnosticEvidence,
+  DiagnosticSubjects,
+  DiagnosticTraceEntry,
   RuleDiagnostic,
   RuleEvaluation,
 } from "../../runtime";
@@ -42,6 +44,8 @@ export function diagnostic(
     confidence?: number;
     causeRefs?: string[];
     coverageRefs?: string[];
+    subjects?: DiagnosticSubjects;
+    trace?: DiagnosticTraceEntry[];
   } = {},
 ): RuleDiagnostic {
   return {
@@ -60,6 +64,8 @@ export function diagnostic(
     confidence: options.confidence ?? 1,
     causeRefs: options.causeRefs,
     coverageRefs: options.coverageRefs,
+    subjects: options.subjects,
+    trace: options.trace,
   };
 }
 

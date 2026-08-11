@@ -310,7 +310,28 @@ describe("斯波索宾基础规则检查", () => {
     project.lengthTicks = PPQ * 2;
     addPair(project, "soprano", [71, 69]);
 
-    expect(ruleIds(project)).toContain("resolution.leading-tone");
+    const result = checkHarmony(project).diagnostics.find(
+      (item) => item.ruleId === "resolution.leading-tone",
+    );
+    expect(result?.subjects).toEqual({
+      origin: {
+        voiceIds: ["soprano"],
+        noteIds: ["soprano-0"],
+        chordIds: [],
+        spanIds: [],
+      },
+      failure: {
+        voiceIds: ["soprano"],
+        noteIds: ["soprano-1"],
+        chordIds: [],
+        spanIds: [],
+      },
+    });
+    expect(result?.trace?.at(-1)).toEqual({
+      tick: PPQ,
+      outcome: "violate",
+      reason: "leading-tone-moved-elsewhere",
+    });
   });
 
   it("小调自然七级不被误判为升高导音", () => {
@@ -483,25 +504,94 @@ describe("斯波索宾基础规则检查", () => {
     expect(diagnostic?.tick).toBe(PPQ * 2);
   });
 
-  it("和弦性质变化不作为同和弦转换", () => {
+  it("V 到 V7 会切断和弦 span，但重复导音义务延续到最终解决", () => {
     const project = createEmptyProject();
-    project.lengthTicks = PPQ * 2;
-    addChord(project, "dominant", 0, {
+    project.lengthTicks = PPQ * 4;
+    project.keyEvents[0] = {
+      ...project.keyEvents[0],
+      tonic: { step: "E", alter: -1 },
+      mode: "major",
+    };
+    const dominant: TestChordDraft = {
       degree: 5,
       degreeAlteration: 0,
       quality: "major",
       inversion: 0,
-    });
-    addChord(project, "dominant-seventh", 1, {
+    };
+    addChord(project, "dominant-1", 0, dominant);
+    addChord(project, "dominant-2", 1, dominant);
+    addChord(project, "dominant-seventh", 2, {
       degree: 5,
       degreeAlteration: 0,
       quality: "dominant7",
       inversion: 0,
     });
-    addLine(project, "tenor", [59, 59]);
+    addChord(project, "tonic", 3, {
+      degree: 1,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+    });
+    addLine(project, "alto", [62, 62, 62, 63]);
+    project.satbTracks.find((track) => track.id === "alto")!.notes[3].pitch = {
+      step: "E",
+      alter: -1,
+      octave: 4,
+    };
 
-    expect(ruleIds(project)).toContain("resolution.leading-tone");
+    const analysis = buildHarmonyAnalysis(project);
+    expect(analysis.harmonySpans).toHaveLength(3);
+    expect(analysis.harmonySpans[0].regionIds).toEqual([
+      "dominant-1",
+      "dominant-2",
+    ]);
+    expect(analysis.harmonySpans[1].regionIds).toEqual(["dominant-seventh"]);
+    expect(
+      checkHarmony(project).diagnostics.filter(
+        (item) => item.ruleId === "resolution.leading-tone",
+      ),
+    ).toEqual([]);
   });
+
+  it.each([1, 2, 3, 5])(
+    "合法解决前插入 %i 次导音起奏不改变规则结果",
+    (repeatCount) => {
+      const project = createEmptyProject();
+      project.lengthTicks = PPQ * (repeatCount + 1);
+      project.keyEvents[0] = {
+        ...project.keyEvents[0],
+        tonic: { step: "E", alter: -1 },
+        mode: "major",
+      };
+      for (let index = 0; index < repeatCount; index += 1) {
+        addChord(project, `dominant-${index}`, index, {
+          degree: 5,
+          degreeAlteration: 0,
+          quality: index === repeatCount - 1 ? "dominant7" : "major",
+          inversion: 0,
+        });
+      }
+      addChord(project, "tonic-after-repetitions", repeatCount, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+      });
+      addLine(project, "alto", [
+        ...Array.from({ length: repeatCount }, () => 62),
+        63,
+      ]);
+      project.satbTracks.find((track) => track.id === "alto")!.notes[
+        repeatCount
+      ].pitch = {
+        step: "E",
+        alter: -1,
+        octave: 4,
+      };
+
+      expect(ruleIds(project)).not.toContain("resolution.leading-tone");
+    },
+  );
 
   it("七和弦七音级进下行解决时通过", () => {
     const project = createEmptyProject();

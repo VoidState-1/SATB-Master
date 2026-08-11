@@ -15,10 +15,14 @@ export const DIAGNOSTIC_LABEL: Record<HarmonyDiagnostic["severity"], string> = {
 export function groupDiagnostics(
   diagnostics: HarmonyDiagnostic[],
   key: "noteIds" | "chordIds",
+  role: "all" | "failure" = "all",
 ) {
   const grouped = new Map<string, HarmonyDiagnostic[]>();
   diagnostics.forEach((diagnostic) =>
-    diagnostic[key].forEach((targetId) => {
+    (role === "failure" && diagnostic.subjects?.failure
+      ? (diagnostic.subjects.failure[key] ?? [])
+      : diagnostic[key]
+    ).forEach((targetId) => {
       const targetDiagnostics = grouped.get(targetId) ?? [];
       targetDiagnostics.push(diagnostic);
       grouped.set(targetId, targetDiagnostics);

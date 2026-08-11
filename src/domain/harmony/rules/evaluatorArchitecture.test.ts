@@ -25,4 +25,20 @@ describe("规则 evaluator 架构", () => {
       expect(source, filename).not.toMatch(/switch\s*\(\s*ruleId\s*\)/);
     }
   });
+
+  it("四条倾向音规则由声明式义务运行时管理状态", () => {
+    const stateful = sources["./groups/stateful.ts"];
+    expect(stateful).toBeDefined();
+    expect(stateful.match(/defineObligationRule\s*\(/g)).toHaveLength(4);
+    expect(stateful).not.toMatch(/function\s+leadingToneStateStep\s*\(/);
+    expect(stateful).not.toMatch(/function\s+seventhStateStep\s*\(/);
+    expect(stateful).not.toMatch(/function\s+dominantNinthStateStep\s*\(/);
+    expect(stateful).not.toMatch(/function\s+alteredToneStateStep\s*\(/);
+  });
+
+  it("局部约束与算法逃生口使用不同定义器", () => {
+    const voice = sources["./groups/voice.ts"];
+    expect(voice).toContain("defineConstraintRule({");
+    expect(voice).toContain("defineAlgorithmicRule({");
+  });
 });

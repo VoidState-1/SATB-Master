@@ -37,6 +37,25 @@ export interface DiagnosticEvidence {
   value: string;
 }
 
+export interface DiagnosticSubjectRefs {
+  voiceIds?: VoiceId[];
+  noteIds?: string[];
+  chordIds?: string[];
+  spanIds?: string[];
+}
+
+export interface DiagnosticSubjects {
+  origin?: DiagnosticSubjectRefs;
+  failure?: DiagnosticSubjectRefs;
+  context?: DiagnosticSubjectRefs;
+}
+
+export interface DiagnosticTraceEntry {
+  tick: number;
+  outcome: "continue" | "resolve" | "violate" | "cancel" | "indeterminate";
+  reason: string;
+}
+
 export interface HarmonyDiagnostic {
   id: string;
   ruleId: string;
@@ -60,6 +79,8 @@ export interface HarmonyDiagnostic {
   evidence: DiagnosticEvidence[];
   confidence: number;
   exceptionContexts?: RuleExceptionContext[];
+  subjects?: DiagnosticSubjects;
+  trace?: DiagnosticTraceEntry[];
 }
 
 export type RuleDiagnostic = Omit<
