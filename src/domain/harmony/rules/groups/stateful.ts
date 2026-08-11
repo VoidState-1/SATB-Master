@@ -28,10 +28,7 @@ import {
   supportsTertianResolutionRules,
 } from "../helpers/core";
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
-import {
-  functionalTargetMatches,
-  isCadential64Span,
-} from "../connector";
+import { functionalTargetMatches, isCadential64Span } from "../connector";
 
 type LeadingToneState = {
   voiceId: VoiceId;
@@ -115,11 +112,7 @@ function supportsTendencyResolutionRules(
 
 function resolutionCauseRef(
   context: RuleStepContext,
-  kind:
-    | "leading-tone"
-    | "chord-seventh"
-    | "dominant-ninth"
-    | "altered-tone",
+  kind: "leading-tone" | "chord-seventh" | "dominant-ninth" | "altered-tone",
   sourceSpanId: string | undefined,
   currentSpanId: string | undefined,
   voiceId: VoiceId,
@@ -156,6 +149,7 @@ function leadingToneExpectation(context: RuleStepContext) {
   };
 }
 
+/** 导音应上行解决 */
 export function leadingToneStateStep(
   context: RuleStepContext,
   incoming: readonly RuleStateEnvelope[],
@@ -179,8 +173,8 @@ export function leadingToneStateStep(
         : undefined;
     const sameSpan = Boolean(
       payload.sourceSpanId &&
-        currentSpanId &&
-        payload.sourceSpanId === currentSpanId,
+      currentSpanId &&
+      payload.sourceSpanId === currentSpanId,
     );
     if (!current || sameSpan) {
       outgoing.push(state);
@@ -297,8 +291,8 @@ export function seventhStateStep(
         : undefined;
     const sameSpan = Boolean(
       payload.sourceSpanId &&
-        currentSpanId &&
-        payload.sourceSpanId === currentSpanId,
+      currentSpanId &&
+      payload.sourceSpanId === currentSpanId,
     );
     if (!current || sameSpan) {
       outgoing.push(state);
@@ -403,8 +397,8 @@ export function dominantNinthStateStep(
     if (context.previous?.notes[payload.voiceId] && !active) return;
     const sameSpan = Boolean(
       payload.sourceSpanId &&
-        currentSpanId &&
-        payload.sourceSpanId === currentSpanId,
+      currentSpanId &&
+      payload.sourceSpanId === currentSpanId,
     );
     if (sameSpan || !active) {
       outgoing.push(state);
@@ -513,8 +507,8 @@ export function alteredToneStateStep(
     if (context.previous?.notes[payload.voiceId] && !active) return;
     const sameSpan = Boolean(
       payload.sourceSpanId &&
-        currentSpanId &&
-        payload.sourceSpanId === currentSpanId,
+      currentSpanId &&
+      payload.sourceSpanId === currentSpanId,
     );
     if (sameSpan || !active) {
       outgoing.push(state);
@@ -582,7 +576,9 @@ export function alteredToneStateStep(
         if (!note || !pitchClassEquals(note.pitch, tone)) return;
         const alreadyPending = outgoing.some((state) => {
           const payload = state.payload as AlteredToneState;
-          return payload.voiceId === voiceId && payload.degree === alteration.degree;
+          return (
+            payload.voiceId === voiceId && payload.degree === alteration.degree
+          );
         });
         if (alreadyPending) return;
         outgoing.push(
@@ -722,18 +718,18 @@ export const STATEFUL_RULES = defineRuleGroup(
     id: "resolution.leading-tone",
     catalogNumber: "E.1",
     label: "导音未解决",
-    description: "规则在导音起奏时创建私有状态，越过同和弦 span 跟踪同一声部的下一有效起奏；未按目标调性上行小二度到主音时触发。",
-    rationale: "内声部在特定不完全属和弦连接中的自由进行、阻碍进行及声部交换需专门金样本；休止中断状态。",
+    description:
+      "规则在导音起奏时创建私有状态，越过同和弦 span 跟踪同一声部的下一有效起奏；未按目标调性上行小二度到主音时触发。",
+    rationale:
+      "内声部在特定不完全属和弦连接中的自由进行、阻碍进行及声部交换需专门金样本；休止中断状态。",
     group: "resolution",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches"
-    ],
+    requires: ["written-pitches"],
     dependencyScope: "phrase",
     supportedExceptionContexts: [
       "same-harmony",
       "voice-exchange",
-      "insufficient-context"
+      "insufficient-context",
     ],
     process: leadingToneStateStep,
   }),
@@ -741,33 +737,28 @@ export const STATEFUL_RULES = defineRuleGroup(
     id: "resolution.chord-seventh",
     catalogNumber: "E.2",
     label: "和弦七音未解决",
-    description: "七音状态可在同和弦转换内延续；离开 span 后检查同一声部是否下行半音或全音到目标和弦允许音。",
-    rationale: "同和弦内声部交换不能由另一声部替代解决；特殊延迟解决由专用和弦规则声明。",
+    description:
+      "七音状态可在同和弦转换内延续；离开 span 后检查同一声部是否下行半音或全音到目标和弦允许音。",
+    rationale:
+      "同和弦内声部交换不能由另一声部替代解决；特殊延迟解决由专用和弦规则声明。",
     group: "resolution",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
-    supportedExceptionContexts: [
-      "same-harmony",
-      "insufficient-context"
-    ],
+    supportedExceptionContexts: ["same-harmony", "insufficient-context"],
     process: seventhStateStep,
   }),
   defineStatefulRule({
     id: "resolution.dominant-ninth",
     catalogNumber: "E.3",
     label: "属九音未解决",
-    description: "识别 `D9` 的九音并跟踪同一声部，在离开属九 span 时要求级进下行到目标和弦允许音。",
-    rationale: "与通用七音、变化音规则共享证据时使用本条专用诊断；具体转位不在当前产品范围。",
+    description:
+      "识别 `D9` 的九音并跟踪同一声部，在离开属九 span 时要求级进下行到目标和弦允许音。",
+    rationale:
+      "与通用七音、变化音规则共享证据时使用本条专用诊断；具体转位不在当前产品范围。",
     group: "resolution",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     process: dominantNinthStateStep,
   }),
@@ -775,14 +766,13 @@ export const STATEFUL_RULES = defineRuleGroup(
     id: "resolution.altered-tone",
     catalogNumber: "E.4",
     label: "变化音方向性解决",
-    description: "只对和弦模型明确标记为 directional alteration 的构成音建状态；通常升高音向上、降低音向下解决到目标和弦音。",
-    rationale: "不能从 accidental 字符机械推出方向；增六、导音和特定重属音由更具体规则覆盖。",
+    description:
+      "只对和弦模型明确标记为 directional alteration 的构成音建状态；通常升高音向上、降低音向下解决到目标和弦音。",
+    rationale:
+      "不能从 accidental 字符机械推出方向；增六、导音和特定重属音由更具体规则覆盖。",
     group: "resolution",
     defaultSeverity: "warning",
-    requires: [
-      "written-pitches",
-      "chords"
-    ],
+    requires: ["written-pitches", "chords"],
     dependencyScope: "phrase",
     process: alteredToneStateStep,
   }),
@@ -790,14 +780,13 @@ export const STATEFUL_RULES = defineRuleGroup(
     id: "function.applied-dominant-target",
     catalogNumber: "G.2",
     label: "离调属功能未进入目标",
-    description: "从 interpretation 的 `FunctionalTarget` 建立目标义务，允许同一离调属 span 内转换；离开后首个结构和弦不是目标实体或合法替代时触发。",
-    rationale: "阻碍式解决、插入 `K46` 或延迟解决必须由目标策略显式允许；没有确认 target 时跳过。",
+    description:
+      "从 interpretation 的 `FunctionalTarget` 建立目标义务，允许同一离调属 span 内转换；离开后首个结构和弦不是目标实体或合法替代时触发。",
+    rationale:
+      "阻碍式解决、插入 `K46` 或延迟解决必须由目标策略显式允许；没有确认 target 时跳过。",
     group: "function",
     defaultSeverity: "warning",
-    requires: [
-      "chords",
-      "semantics"
-    ],
+    requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     process: secondaryDominantStateStep,
   }),
