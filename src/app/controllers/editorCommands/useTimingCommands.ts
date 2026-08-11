@@ -148,6 +148,9 @@ export function useTimingCommands({
               tick,
               numerator: current.numerator,
               denominator: current.denominator,
+              beatGrouping: current.beatGrouping
+                ? [...current.beatGrouping]
+                : undefined,
             });
             draft.meterEvents.sort((a, b) => a.tick - b.tick);
           } else {
@@ -191,14 +194,25 @@ export function useTimingCommands({
               : 4;
             draft.meterEvents = draft.meterEvents.map((event) =>
               event.id === id
-                ? {
-                    ...event,
-                    numerator: Math.max(
+                ? (() => {
+                    const numerator = Math.max(
                       1,
                       Math.min(12, Number(patch.numerator)),
-                    ),
-                    denominator,
-                  }
+                    );
+                    const beatGrouping =
+                      event.beatGrouping?.reduce(
+                        (total, value) => total + value,
+                        0,
+                      ) === numerator
+                        ? event.beatGrouping
+                        : undefined;
+                    return {
+                      ...event,
+                      numerator,
+                      denominator,
+                      beatGrouping,
+                    };
+                  })()
                 : event,
             );
           } else {

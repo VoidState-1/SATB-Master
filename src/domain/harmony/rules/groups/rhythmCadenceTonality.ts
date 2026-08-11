@@ -9,7 +9,10 @@ import {
   type HarmonySpan,
 } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
-import { buildMeasures, ticksPerBeat } from "../../../time";
+import {
+  metricPositionAt,
+  strongestMetricPositionBetween,
+} from "../../../rhythm/metric";
 import {
   formatPitchClass,
   pitchClassEquals,
@@ -23,6 +26,24 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import {
+  all,
+  constraintDiagnosticContext,
+  defineConstraintRule,
+  eachCadential64Transition,
+  eachHarmonySpan,
+  mergeDiagnosticEvidence,
+  not,
+  type Cadential64TransitionCandidate,
+  type HarmonySpanCandidate,
+  type PredicateEvaluation,
+} from "../declarative";
+import type { ConstraintEnvironment } from "../declarative/constraint";
+import {
+  cadential64StartsOnStrongMetricPosition,
+  cadential64StartsStrongerThanTarget,
+  spanFormsHarmonicSyncopation,
+} from "../facts/rhythm";
 
 function keyEquals(left: KeyReference, right: KeyReference) {
   return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
@@ -38,120 +59,92 @@ function spanInterpretation(span: HarmonySpan) {
     : undefined;
 }
 
-function metricStrengthAtTick(analysis: HarmonyAnalysis, tick: number) {
-  const measures = buildMeasures(analysis.project);
-  const safeTick = Math.max(0, Math.min(tick, analysis.project.lengthTicks));
-  const measure =
-    measures.find(
-      (item) => item.startTick <= safeTick && safeTick < item.endTick,
-    ) ?? measures.at(-1);
-  if (!measure) return 0;
-  const beatLength = ticksPerBeat(analysis.project.ppq, measure.denominator);
-  const offset = safeTick - measure.startTick;
-  const beatPosition = offset / beatLength;
-  if (Math.abs(beatPosition - Math.round(beatPosition)) > 1e-6) return 0;
-  const beatIndex = Math.round(beatPosition);
-  if (beatIndex === 0) return 3;
-  if (measure.denominator === 8 && measure.numerator >= 6) {
-    return beatIndex % 3 === 0 ? 2 : 1;
-  }
-  if (measure.numerator === 4 && beatIndex === 2) return 2;
-  return 1;
+function harmonicSyncopationDiagnostic(
+  environment: ConstraintEnvironment<HarmonySpanCandidate>,
+  assertion: PredicateEvaluation,
+) {
+  const { analysis, candidate } = environment;
+  const { span } = candidate;
+  const chord = spanChord(analysis, span);
+  if (!chord) return undefined;
+  const entry = metricPositionAt(analysis.metricTimeline, span.fromTick);
+  const exit = metricPositionAt(analysis.metricTimeline, span.toTick);
+  const crossed = strongestMetricPositionBetween(
+    analysis.metricTimeline,
+    span.fromTick,
+    span.toTick,
+    { boundaries: "open" },
+  );
+  const declarative = constraintDiagnosticContext(assertion);
+  return diagnostic(
+    "rhythm.harmonic-syncopation",
+    span.fromTick,
+    span.toTick,
+    [],
+    [],
+    "和声切分",
+    `${chordLabel(chord)} 在弱位进入，并延续跨越了后继更强拍位。`,
+    {
+      chordIds: [...span.regionIds],
+      params: {
+        entryStrength: entry?.level ?? -1,
+        exitStrength: exit?.level ?? -1,
+        crossedStrength: crossed?.level ?? -1,
+        entryMetricRole: entry?.role ?? "unknown",
+        crossedMetricRole: crossed?.role ?? "unknown",
+      },
+      evidence: mergeDiagnosticEvidence(
+        declarative.evidence,
+        [chordEvidence(chord)],
+      ),
+      subjects: declarative.subjects,
+    },
+  );
 }
 
-export function harmonicSyncopationRule(analysis: HarmonyAnalysis) {
-  const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((span, index) => {
-    const previous = analysis.harmonySpans[index - 1];
-    const next = analysis.harmonySpans[index + 1];
-    if (
-      !previous ||
-      !next ||
-      previous.toTick !== span.fromTick ||
-      span.toTick !== next.fromTick ||
-      span.semantics?.pedalContext ||
-      span.semantics?.cadenceRole
-    )
-      return;
-    const entryStrength = metricStrengthAtTick(analysis, span.fromTick);
-    const exitStrength = metricStrengthAtTick(analysis, span.toTick);
-    const crossedStrongPosition = buildMeasures(analysis.project).some(
-      (measure) =>
-        measure.beatTicks.some(
-          (beatTick) =>
-            span.fromTick < beatTick &&
-            beatTick < span.toTick &&
-            metricStrengthAtTick(analysis, beatTick) >= 2,
-        ),
-    );
-    if (entryStrength > 1 || exitStrength > 1 || !crossedStrongPosition) return;
-    const chord = spanChord(analysis, span);
-    if (!chord) return;
-    diagnostics.push(
-      diagnostic(
-        "rhythm.harmonic-syncopation",
-        span.fromTick,
-        span.toTick,
-        [],
-        [],
-        "和声切分",
-        `${chordLabel(chord)} 在弱位进入，跨越后继强位，并在另一弱位才离开。`,
-        {
-          chordIds: [...span.regionIds],
-          params: { entryStrength, exitStrength },
-          evidence: [chordEvidence(chord)],
-        },
+function cadential64MetricDiagnostic(
+  environment: ConstraintEnvironment<Cadential64TransitionCandidate>,
+  assertion: PredicateEvaluation,
+) {
+  const { analysis, candidate } = environment;
+  const chord = spanChord(analysis, candidate.sourceSpan);
+  const target = spanChord(analysis, candidate.targetSpan);
+  if (!chord) return undefined;
+  const sourcePosition = metricPositionAt(
+    analysis.metricTimeline,
+    candidate.sourceSpan.fromTick,
+  );
+  const targetPosition = metricPositionAt(
+    analysis.metricTimeline,
+    candidate.targetSpan.fromTick,
+  );
+  const declarative = constraintDiagnosticContext(assertion);
+  return diagnostic(
+    "cadence.cadential64-metric-position",
+    candidate.sourceSpan.fromTick,
+    candidate.sourceSpan.toTick,
+    [],
+    [],
+    "K46 拍位不当",
+    "终止四六应位于强拍或相对强位置，并比后继属和弦更强。",
+    {
+      chordIds: target ? [chord.id, target.id] : [chord.id],
+      params: {
+        sourceStrength: sourcePosition?.level ?? -1,
+        targetStrength: targetPosition?.level ?? -1,
+        sourceMetricRole: sourcePosition?.role ?? "unknown",
+        targetMetricRole: targetPosition?.role ?? "unknown",
+      },
+      evidence: mergeDiagnosticEvidence(
+        declarative.evidence,
+        [
+          chordEvidence(chord),
+          ...(target ? [chordEvidence(target)] : []),
+        ],
       ),
-    );
-  });
-  return diagnostics;
-}
-
-export function cadential64MetricRule(analysis: HarmonyAnalysis) {
-  const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((span) => {
-    const interpretation = spanInterpretation(span);
-    if (
-      interpretation?.designation?.kind !== "cadential64" &&
-      span.semantics?.cadenceRole !== "cadential64"
-    )
-      return;
-    const connection = analysis.connections.find(
-      (candidate) => candidate.previousSpanId === span.id,
-    );
-    const targetSpan = connection
-      ? analysis.harmonySpans.find(
-          (candidate) => candidate.id === connection.currentSpanId,
-        )
-      : undefined;
-    if (!connection?.contiguous || !targetSpan) return;
-    const sourceStrength = metricStrengthAtTick(analysis, span.fromTick);
-    const targetStrength = metricStrengthAtTick(analysis, targetSpan.fromTick);
-    if (sourceStrength >= 2 && sourceStrength > targetStrength) return;
-    const chord = spanChord(analysis, span);
-    const target = spanChord(analysis, targetSpan);
-    if (!chord) return;
-    diagnostics.push(
-      diagnostic(
-        "cadence.cadential64-metric-position",
-        span.fromTick,
-        span.toTick,
-        [],
-        [],
-        "K46 拍位不当",
-        "终止四六应位于强拍或相对强位置，并比后继属和弦更强。",
-        {
-          chordIds: target ? [chord.id, target.id] : [chord.id],
-          params: { sourceStrength, targetStrength },
-          evidence: [
-            chordEvidence(chord),
-            ...(target ? [chordEvidence(target)] : []),
-          ],
-        },
-      ),
-    );
-  });
-  return diagnostics;
+      subjects: declarative.subjects,
+    },
+  );
 }
 
 function cadenceContext(analysis: HarmonyAnalysis, span: HarmonySpan) {
@@ -516,21 +509,23 @@ export function tonicizationModulationConflictRule(analysis: HarmonyAnalysis) {
 }
 
 export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
-  defineStatelessRule({
+  defineConstraintRule({
     id: "rhythm.harmonic-syncopation",
     catalogNumber: "J.1",
     label: "和声切分",
     description:
-      "沿 `HarmonySpan` 链比较拍位：一个新和声在弱拍/弱位置进入，延续覆盖下一强拍或相对强位置，随后在弱位置离开时触发。",
+      "沿 `HarmonySpan` 链比较拍位：一个新和声在弱拍或弱位置进入，并延续覆盖下一强拍或相对更强位置时触发。",
     rationale:
       "持续音、延留音、同一功能内装饰转换、序进和人工确认的切分节奏可豁免；必须按变拍号的实际重音层级计算。",
     group: "rhythm",
     defaultSeverity: "warning",
-    requires: ["chords", "semantics"],
+    requires: ["chords", "semantics", "meter"],
     dependencyScope: "phrase",
-    evaluate: harmonicSyncopationRule,
+    forEach: eachHarmonySpan,
+    assert: not(spanFormsHarmonicSyncopation()),
+    report: harmonicSyncopationDiagnostic,
   }),
-  defineStatelessRule({
+  defineConstraintRule({
     id: "cadence.cadential64-metric-position",
     catalogNumber: "J.2",
     label: "K46 拍位不当",
@@ -540,9 +535,14 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
       "不同拍号、复拍子和乐句尺度需要节拍 profile；没有可靠节拍信息时跳过。",
     group: "cadence",
     defaultSeverity: "warning",
-    requires: ["chords", "semantics"],
+    requires: ["chords", "semantics", "meter"],
     dependencyScope: "phrase",
-    evaluate: cadential64MetricRule,
+    forEach: eachCadential64Transition,
+    assert: all(
+      cadential64StartsOnStrongMetricPosition(),
+      cadential64StartsStrongerThanTarget(),
+    ),
+    report: cadential64MetricDiagnostic,
   }),
   defineStatelessRule({
     id: "cadence.bass-formula",

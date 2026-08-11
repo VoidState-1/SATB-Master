@@ -586,6 +586,33 @@ describe("Phase B RuleScheduler", () => {
     ]);
   });
 
+  it("拍号变化使依赖节拍层级的规则结果失效", async () => {
+    const scheduler = createHarmonyRuleScheduler();
+    const severities = defaultHarmonyRuleSeverities();
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 8;
+    await scheduler.run({ project, severities, revision: 1 });
+    const edited = structuredClone(project);
+    edited.meterEvents[0] = {
+      ...edited.meterEvents[0],
+      numerator: 3,
+    };
+
+    const result = await scheduler.run({
+      project: edited,
+      severities,
+      revision: 2,
+    });
+
+    expect(result.invalidationRanges).toEqual([
+      {
+        fromTick: 0,
+        toTick: PPQ * 8,
+        scopes: ["phrase", "project"],
+      },
+    ]);
+  });
+
   it("单条规则异常不会中断其余规则", async () => {
     const base = BUILTIN_HARMONY_RULES.find(
       (definition) => definition.id === "voice.range",

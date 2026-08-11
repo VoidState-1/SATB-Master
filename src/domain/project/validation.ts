@@ -523,7 +523,15 @@ export function validateProject(value: unknown): value is ProjectDocument {
         hasString(event, "id") &&
         isInteger(event.tick, 0) &&
         isInteger(event.numerator, 1, 32) &&
-        [2, 4, 8, 16].includes(event.denominator as number),
+        [2, 4, 8, 16].includes(event.denominator as number) &&
+        (event.beatGrouping === undefined ||
+          (Array.isArray(event.beatGrouping) &&
+            event.beatGrouping.length > 0 &&
+            event.beatGrouping.every((value) => isInteger(value, 1, 32)) &&
+            event.beatGrouping.reduce(
+              (total, value) => total + (value as number),
+              0,
+            ) === event.numerator)),
     ) ||
     !project.meterEvents.some((event) => isRecord(event) && event.tick === 0)
   )

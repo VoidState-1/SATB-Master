@@ -138,6 +138,23 @@ describe("工程文件校验", () => {
     expect(validateProject(createEmptyProject())).toBe(true);
   });
 
+  it("拍组之和必须与拍号分子一致", () => {
+    const project = createEmptyProject();
+    project.meterEvents[0] = {
+      ...project.meterEvents[0],
+      numerator: 5,
+      denominator: 8,
+      beatGrouping: [2, 3],
+    };
+    expect(validateProject(project)).toBe(true);
+
+    project.meterEvents[0] = {
+      ...project.meterEvents[0],
+      beatGrouping: [3, 3],
+    };
+    expect(validateProject(project)).toBe(false);
+  });
+
   it("拒绝旧的浅层结构伪装成完整工程", () => {
     const project = createEmptyProject() as unknown as Record<string, unknown>;
     delete project.audio;

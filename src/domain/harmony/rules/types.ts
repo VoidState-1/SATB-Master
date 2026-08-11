@@ -15,7 +15,11 @@ export type HarmonyRuleGroupId =
   | "tonality";
 
 export type RuleRequirement =
-  "written-pitches" | "chords" | "semantics" | "complete-satb";
+  | "written-pitches"
+  | "chords"
+  | "semantics"
+  | "complete-satb"
+  | "meter";
 
 export type RuleDependencyScope =
   "note" | "slice" | "chord" | "phrase" | "project";

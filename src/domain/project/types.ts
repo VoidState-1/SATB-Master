@@ -129,6 +129,8 @@ export interface MeterEvent {
   tick: number;
   numerator: number;
   denominator: 2 | 4 | 8 | 16;
+  /** 可选的拍组划分，例如 5/8 的 [2, 3] 或 7/8 的 [2, 2, 3]。 */
+  beatGrouping?: readonly number[];
 }
 
 export interface KeyEvent {

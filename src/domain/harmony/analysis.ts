@@ -16,6 +16,10 @@ import {
   writtenInterval,
   type WrittenInterval,
 } from "../pitch";
+import {
+  buildMetricTimeline,
+  type MetricTimeline,
+} from "../rhythm/metric";
 import type { RuleDependencyScope } from "./rules/types";
 import {
   buildHarmonyConnections,
@@ -140,6 +144,7 @@ export interface AnalysisInvalidationRange {
 export interface HarmonyAnalysis {
   readonly revision: number;
   readonly project: ProjectSnapshot;
+  readonly metricTimeline: MetricTimeline;
   readonly slices: readonly AnalysisSlice[];
   readonly harmonySpans: readonly HarmonySpan[];
   readonly sliceSpanIds: ReadonlyMap<number, string>;
@@ -694,6 +699,12 @@ export function computeAnalysisInvalidationRanges(
       ]),
     );
   }
+  if (
+    entitySignature(previous.meterEvents) !==
+    entitySignature(current.meterEvents)
+  ) {
+    ranges.push(changeRange(0, current.lengthTicks, ["phrase", "project"]));
+  }
   if (previous.lengthTicks !== current.lengthTicks) {
     ranges.push(
       changeRange(
@@ -738,6 +749,7 @@ export function buildHarmonyAnalysis(
 ): HarmonyAnalysis {
   // 调度器只向规则暴露冻结后的克隆，避免内置或未来外置规则意外改写编辑器状态。
   const snapshot = deepFreeze(structuredClone(project));
+  const metricTimeline = buildMetricTimeline(snapshot);
   const analysisShell = { project: snapshot } as Pick<
     HarmonyAnalysis,
     "project"
@@ -782,6 +794,7 @@ export function buildHarmonyAnalysis(
   return Object.freeze({
     revision,
     project: snapshot,
+    metricTimeline,
     slices,
     harmonySpans,
     sliceSpanIds,
