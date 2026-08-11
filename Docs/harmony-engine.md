@@ -149,6 +149,8 @@ interface HarmonyConnectionAssessment {
 
 规则源码是目录的唯一事实来源。每条内置规则在所属 `rules/groups/*.ts` 中以 `defineStatelessRule` 或 `defineStatefulRule` 声明，单个对象同时包含稳定 ID、目录号、说明、理由、分组、默认严重程度、依赖、配置、特例、覆盖关系和执行函数。`rules/catalog.ts` 只从完整规则集合派生有序目录、ID 索引和设置界面所需投影；[`harmony-rule-catalog.md`](../DesignDocs/harmony-rule-catalog.md) 仅作为理论设计参考。
 
+每条无状态规则直接引用一个具名 evaluator。相近规则可以共享事实提取、遍历原语或类型化策略内核，但不能把 `ruleId` 作为行为分支；规则 ID 在公共辅助函数中只允许作为诊断归属数据。这样规则对象、算法入口和测试目标保持一一对应。
+
 当前目录修订 2 的 81 条内置规则均有可执行实现并进入调度。规则是否产生诊断仍取决于工程严重程度、配置、适用性策略和结构化上下文；缺少人工非和弦音角色、终止类型、局部调性或双重解释时，相关规则保持静默或返回 skip，不使用启发式猜测补齐语意。
 
 ## 8. 规则私有状态
@@ -235,7 +237,7 @@ interface RuleProfile {
 ## 13. 新增规则流程
 
 1. 在设计清单中确定稳定目录号、ID、默认严重程度、规则口径和反例。
-2. 使用共享 facts、span 和 connection 实现算法；跨时间结论使用私有状态。
+2. 为规则建立具名 evaluator；使用共享 facts、span、connection 或显式策略复用算法，不能通过 `ruleId` 分支复用规则入口。跨时间结论使用私有状态。
 3. 在同一个 `rules/groups/*.ts` 文件末尾用 `defineStatelessRule` 或 `defineStatefulRule` 声明完整规则对象，包括 options、依赖、覆盖关系和特例 context。
 4. 将规则对象加入该文件导出的规则组；只有新增组文件时才修改 `rules/groups/index.ts`。
 5. 不在 `catalog.ts` 或 `registry.ts` 重复维护 ID、元数据或 evaluator 表。

@@ -133,99 +133,128 @@ export function allVoicesSimilarRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function triadVoicingRule(
-  analysis: HarmonyAnalysis,
-  ruleId:
-    | "chord.triad-root-position-doubling"
-    | "chord.first-inversion-doubling"
-    | "chord.second-inversion-voicing",
-) {
-  const diagnostics: RuleDiagnostic[] = [];
-  analysis.slices.forEach((slice, sliceIndex) => {
+function triadVoicingFacts(analysis: HarmonyAnalysis, inversion: 0 | 1 | 2) {
+  return analysis.slices.flatMap((slice, sliceIndex) => {
     const chord = slice.chord;
     if (
       !chord ||
       !slice.completeSatb ||
       finalSameHarmonySlice(analysis, sliceIndex) ||
-      !isPlainTriad(chord)
+      !isPlainTriad(chord) ||
+      chordInversion(chord) !== inversion
     )
-      return;
-    const inversion = chordInversion(chord);
-    if (
-      (ruleId === "chord.triad-root-position-doubling" && inversion !== 0) ||
-      (ruleId === "chord.first-inversion-doubling" && inversion !== 1) ||
-      (ruleId === "chord.second-inversion-voicing" && inversion !== 2)
-    )
-      return;
+      return [];
     const tones = chordIdentityToneSpellings(chord.identity);
     const { active, counts } = chordToneCounts(slice, tones);
-    if (counts.some((count) => count === 0)) return;
+    if (counts.some((count) => count === 0)) return [];
+    return [{ slice, chord, tones, active, counts, inversion }];
+  });
+}
 
-    let valid = true;
-    let explanation = "";
-    if (ruleId === "chord.triad-root-position-doubling") {
-      if (
-        chord.identity.structure.kind === "tertian" &&
-        chord.identity.structure.quality === "diminished"
+function triadVoicingDiagnostic(
+  fact: ReturnType<typeof triadVoicingFacts>[number],
+  ruleId:
+    | "chord.triad-root-position-doubling"
+    | "chord.first-inversion-doubling"
+    | "chord.second-inversion-voicing",
+  title: string,
+  explanation: string,
+) {
+  return diagnostic(
+    ruleId,
+    fact.slice.tick,
+    fact.slice.endTick,
+    [],
+    [],
+    title,
+    `${chordLabel(fact.chord)}：${explanation}`,
+    {
+      chordIds: [fact.chord.id],
+      params: { counts: fact.counts.join("/"), inversion: fact.inversion },
+      evidence: [
+        chordEvidence(fact.chord),
+        ...fact.active.map(({ note }) => noteEvidence(note, "当前配置")),
+      ],
+    },
+  );
+}
+
+export function rootPositionTriadDoublingRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  triadVoicingFacts(analysis, 0).forEach((fact) => {
+    if (
+      fact.chord.identity.structure.kind === "tertian" &&
+      fact.chord.identity.structure.quality === "diminished"
+    )
+      return;
+    const leadingTone = scaleDegreePitchClass(
+      fact.slice.key,
+      7,
+      fact.slice.key.mode === "minor" ? 1 : 0,
+    );
+    if (
+      fact.counts.some(
+        (count, index) =>
+          count > 1 && pitchClassEquals(fact.tones[index], leadingTone),
       )
-        return;
-      const leadingTone = scaleDegreePitchClass(
-        slice.key,
-        7,
-        slice.key.mode === "minor" ? 1 : 0,
-      );
-      // 重复导音由更严格的 D.8 负责，避免在同一配置上再给一条教学建议。
-      if (
-        counts.some(
-          (count, index) =>
-            count > 1 && pitchClassEquals(tones[index], leadingTone),
-        )
-      )
-        return;
-      valid = counts[0] === 2;
-      explanation = "完整的原位大、小三和弦通常重复根音。";
-    } else if (ruleId === "chord.first-inversion-doubling") {
-      const interpretation = chord.semantics
-        ? primaryHarmonyInterpretation(chord.semantics)
-        : undefined;
-      const preferBass =
-        chord.identity.structure.kind === "tertian" &&
-        (chord.identity.structure.quality === "diminished" ||
-          interpretation?.degree === 2);
-      valid = preferBass
-        ? counts[1] === 2
-        : counts[0] === 2 || counts[2] === 2;
-      explanation = preferBass
-        ? "减三和弦或 SII6 通常重复六和弦低音。"
-        : "一般六和弦优先重复根音或五音；重复三音需要明确的连接理由。";
-    } else {
-      const role = chord.semantics?.cadenceRole;
-      valid =
-        counts[2] === 2 &&
-        (role === "cadential64" || role === "passing64" || role === "pedal64");
-      explanation =
-        "四六和弦通常重复低音，并应明确标注为终止、经过或辅助四六。";
-    }
+    )
+      return;
+    if (fact.counts[0] === 2) return;
+    diagnostics.push(
+      triadVoicingDiagnostic(
+        fact,
+        "chord.triad-root-position-doubling",
+        "三和弦重复音不符合常用配置",
+        "完整的原位大、小三和弦通常重复根音。",
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function firstInversionTriadDoublingRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  triadVoicingFacts(analysis, 1).forEach((fact) => {
+    const interpretation = fact.chord.semantics
+      ? primaryHarmonyInterpretation(fact.chord.semantics)
+      : undefined;
+    const preferBass =
+      fact.chord.identity.structure.kind === "tertian" &&
+      (fact.chord.identity.structure.quality === "diminished" ||
+        interpretation?.degree === 2);
+    const valid = preferBass
+      ? fact.counts[1] === 2
+      : fact.counts[0] === 2 || fact.counts[2] === 2;
     if (valid) return;
     diagnostics.push(
-      diagnostic(
-        ruleId,
-        slice.tick,
-        slice.endTick,
-        [],
-        [],
-        ruleId === "chord.second-inversion-voicing"
-          ? "四六和弦配置缺少依据"
-          : "三和弦重复音不符合常用配置",
-        `${chordLabel(chord)}：${explanation}`,
-        {
-          chordIds: [chord.id],
-          params: { counts: counts.join("/"), inversion },
-          evidence: [
-            chordEvidence(chord),
-            ...active.map(({ note }) => noteEvidence(note, "当前配置")),
-          ],
-        },
+      triadVoicingDiagnostic(
+        fact,
+        "chord.first-inversion-doubling",
+        "三和弦重复音不符合常用配置",
+        preferBass
+          ? "减三和弦或 SII6 通常重复六和弦低音。"
+          : "一般六和弦优先重复根音或五音；重复三音需要明确的连接理由。",
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function secondInversionTriadVoicingRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  triadVoicingFacts(analysis, 2).forEach((fact) => {
+    const role = fact.chord.semantics?.cadenceRole;
+    if (
+      fact.counts[2] === 2 &&
+      (role === "cadential64" || role === "passing64" || role === "pedal64")
+    )
+      return;
+    diagnostics.push(
+      triadVoicingDiagnostic(
+        fact,
+        "chord.second-inversion-voicing",
+        "四六和弦配置缺少依据",
+        "四六和弦通常重复低音，并应明确标注为终止、经过或辅助四六。",
       ),
     );
   });
@@ -254,16 +283,8 @@ function commonToneState(
   return { common, heldVoices };
 }
 
-export function basicConnectionRule(
-  analysis: HarmonyAnalysis,
-  ruleId:
-    | "connection.common-tone-fourth-fifth"
-    | "connection.second-relation-contrary-motion"
-    | "connection.common-tone-third"
-    | "connection.nonparsimonious-motion",
-) {
-  const diagnostics: RuleDiagnostic[] = [];
-  analysis.connections.forEach((connection) => {
+function basicConnectionFacts(analysis: HarmonyAnalysis) {
+  return analysis.connections.flatMap((connection) => {
     if (
       !connection.contiguous ||
       !connection.sameKey ||
@@ -271,7 +292,7 @@ export function basicConnectionRule(
       connection.confidence === "unknown" ||
       connection.relation === "same-harmony"
     )
-      return;
+      return [];
     const boundary = connectionBoundarySlices(analysis, connection);
     if (
       !boundary ||
@@ -282,7 +303,7 @@ export function basicConnectionRule(
       chordInversion(boundary.source.chord!) !== 0 ||
       chordInversion(boundary.target.chord!) !== 0
     )
-      return;
+      return [];
     const sourceRoot = pitchClassValue(boundary.source.chord!.identity.root);
     const targetRoot = pitchClassValue(boundary.target.chord!.identity.root);
     const rootDistance = simplePitchClassDistance(sourceRoot, targetRoot);
@@ -290,10 +311,7 @@ export function basicConnectionRule(
       stepIndex(boundary.source.chord!.identity.root.step) -
         stepIndex(boundary.target.chord!.identity.root.step),
     );
-    const writtenRootDistance = Math.min(
-      writtenRootDirect,
-      7 - writtenRootDirect,
-    );
+    const writtenRootDistance = Math.min(writtenRootDirect, 7 - writtenRootDirect);
     const { common, heldVoices } = commonToneState(
       boundary.source,
       boundary.target,
@@ -307,89 +325,158 @@ export function basicConnectionRule(
     const bassMotion =
       toMidi(boundary.target.notes.bass!.pitch) -
       toMidi(boundary.source.notes.bass!.pitch);
-    let matches = false;
-    let title = "";
-    let message = "";
+    return [{
+      connection,
+      boundary,
+      rootDistance,
+      writtenRootDistance,
+      common,
+      heldVoices,
+      upperMotion,
+      bassMotion,
+    }];
+  });
+}
 
-    if (ruleId === "connection.common-tone-fourth-fifth") {
-      if (
-        rootDistance !== 5 ||
-        writtenRootDistance !== 3 ||
-        common.length === 0
-      )
-        return;
-      matches = heldVoices.length === 0;
-      title = "四五度关系连接未保持共同音";
-      message = "两个原位三和弦相距四、五度时，通常由同一上方声部保持共同音。";
-    } else if (ruleId === "connection.second-relation-contrary-motion") {
-      if (
-        (rootDistance !== 1 && rootDistance !== 2) ||
-        writtenRootDistance !== 1 ||
-        common.length > 0
-      )
-        return;
-      const bassDirection = Math.sign(bassMotion);
-      matches =
-        bassDirection !== 0 &&
-        upperMotion.some(
-          ({ semitones }) =>
-            Math.sign(semitones) !== -bassDirection || Math.abs(semitones) > 4,
-        );
-      title = "二度关系连接未采用反向最近进行";
-      message = "无共同音的二度关系三和弦，通常让上三声部与低音反向并采用最近进行。";
-    } else if (ruleId === "connection.common-tone-third") {
-      if (
-        (rootDistance !== 3 && rootDistance !== 4) ||
-        writtenRootDistance !== 2 ||
-        common.length < 2
-      )
-        return;
-      matches = heldVoices.length < 2;
-      title = "三度关系连接未充分保持共同音";
-      message = "三度关系三和弦通常保持两个共同音，仅移动其余声部。";
-    } else {
-      const totalMotion = upperMotion.reduce(
-        (sum, item) => sum + Math.abs(item.semitones),
-        0,
-      );
-      const largeMovers = upperMotion.filter(
-        ({ semitones }) => Math.abs(semitones) > 4,
-      );
-      const failedCommonTone = common.length > 0 && heldVoices.length === 0;
-      matches =
-        largeMovers.length >= 2 &&
-        totalMotion >= 12 &&
-        (failedCommonTone || totalMotion >= 16);
-      title = "存在不必要的大幅声部移动";
-      message = `当前上三声部总移动 ${totalMotion} 个半音，且多个声部进行了可避免的大幅移动。`;
-    }
-    if (!matches) return;
-    const notes = VOICE_ORDER.flatMap((voiceId) => [
-      boundary.source.notes[voiceId]!,
-      boundary.target.notes[voiceId]!,
-    ]);
+type BasicConnectionFact = ReturnType<typeof basicConnectionFacts>[number];
+
+function basicConnectionDiagnostic(
+  fact: BasicConnectionFact,
+  ruleId:
+    | "connection.common-tone-fourth-fifth"
+    | "connection.second-relation-contrary-motion"
+    | "connection.common-tone-third"
+    | "connection.nonparsimonious-motion",
+  title: string,
+  message: string,
+) {
+  const notes = VOICE_ORDER.flatMap((voiceId) => [
+    fact.boundary.source.notes[voiceId]!,
+    fact.boundary.target.notes[voiceId]!,
+  ]);
+  return diagnostic(
+    ruleId,
+    fact.boundary.target.tick,
+    fact.boundary.target.endTick,
+    [...UPPER_VOICES] as VoiceId[],
+    notes,
+    title,
+    message,
+    {
+      chordIds: [
+        fact.boundary.source.chord!.id,
+        fact.boundary.target.chord!.id,
+      ],
+      params: {
+        rootDistance: fact.rootDistance,
+        commonTones: fact.common.length,
+        heldCommonTones: fact.heldVoices.length,
+      },
+      causeRefs: [`${ruleId}|${fact.connection.connectionKey}`],
+      evidence: [
+        chordEvidence(fact.boundary.source.chord!),
+        chordEvidence(fact.boundary.target.chord!),
+      ],
+    },
+  );
+}
+
+export function commonToneFourthFifthRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  basicConnectionFacts(analysis).forEach((fact) => {
+    if (
+      fact.rootDistance !== 5 ||
+      fact.writtenRootDistance !== 3 ||
+      fact.common.length === 0 ||
+      fact.heldVoices.length > 0
+    )
+      return;
     diagnostics.push(
-      diagnostic(
-        ruleId,
-        boundary.target.tick,
-        boundary.target.endTick,
-        [...UPPER_VOICES] as VoiceId[],
-        notes,
-        title,
-        message,
-        {
-          chordIds: [boundary.source.chord!.id, boundary.target.chord!.id],
-          params: {
-            rootDistance,
-            commonTones: common.length,
-            heldCommonTones: heldVoices.length,
-          },
-          causeRefs: [`${ruleId}|${connection.connectionKey}`],
-          evidence: [
-            chordEvidence(boundary.source.chord!),
-            chordEvidence(boundary.target.chord!),
-          ],
-        },
+      basicConnectionDiagnostic(
+        fact,
+        "connection.common-tone-fourth-fifth",
+        "四五度关系连接未保持共同音",
+        "两个原位三和弦相距四、五度时，通常由同一上方声部保持共同音。",
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function secondRelationContraryMotionRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  basicConnectionFacts(analysis).forEach((fact) => {
+    if (
+      (fact.rootDistance !== 1 && fact.rootDistance !== 2) ||
+      fact.writtenRootDistance !== 1 ||
+      fact.common.length > 0
+    )
+      return;
+    const bassDirection = Math.sign(fact.bassMotion);
+    const violates =
+      bassDirection !== 0 &&
+      fact.upperMotion.some(
+        ({ semitones }) =>
+          Math.sign(semitones) !== -bassDirection || Math.abs(semitones) > 4,
+      );
+    if (!violates) return;
+    diagnostics.push(
+      basicConnectionDiagnostic(
+        fact,
+        "connection.second-relation-contrary-motion",
+        "二度关系连接未采用反向最近进行",
+        "无共同音的二度关系三和弦，通常让上三声部与低音反向并采用最近进行。",
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function commonToneThirdRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  basicConnectionFacts(analysis).forEach((fact) => {
+    if (
+      (fact.rootDistance !== 3 && fact.rootDistance !== 4) ||
+      fact.writtenRootDistance !== 2 ||
+      fact.common.length < 2 ||
+      fact.heldVoices.length >= 2
+    )
+      return;
+    diagnostics.push(
+      basicConnectionDiagnostic(
+        fact,
+        "connection.common-tone-third",
+        "三度关系连接未充分保持共同音",
+        "三度关系三和弦通常保持两个共同音，仅移动其余声部。",
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function nonparsimoniousMotionRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  basicConnectionFacts(analysis).forEach((fact) => {
+    const totalMotion = fact.upperMotion.reduce(
+      (sum, item) => sum + Math.abs(item.semitones),
+      0,
+    );
+    const largeMovers = fact.upperMotion.filter(
+      ({ semitones }) => Math.abs(semitones) > 4,
+    );
+    const failedCommonTone = fact.common.length > 0 && fact.heldVoices.length === 0;
+    if (
+      largeMovers.length < 2 ||
+      totalMotion < 12 ||
+      (!failedCommonTone && totalMotion < 16)
+    )
+      return;
+    diagnostics.push(
+      basicConnectionDiagnostic(
+        fact,
+        "connection.nonparsimonious-motion",
+        "存在不必要的大幅声部移动",
+        `当前上三声部总移动 ${totalMotion} 个半音，且多个声部进行了可避免的大幅移动。`,
       ),
     );
   });
@@ -438,8 +525,7 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis) =>
-    triadVoicingRule(analysis, "chord.triad-root-position-doubling"),
+    evaluate: rootPositionTriadDoublingRule,
   }),
   defineStatelessRule({
     id: "chord.first-inversion-doubling",
@@ -454,8 +540,7 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis) =>
-    triadVoicingRule(analysis, "chord.first-inversion-doubling"),
+    evaluate: firstInversionTriadDoublingRule,
   }),
   defineStatelessRule({
     id: "chord.second-inversion-voicing",
@@ -470,8 +555,7 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis) =>
-    triadVoicingRule(analysis, "chord.second-inversion-voicing"),
+    evaluate: secondInversionTriadVoicingRule,
   }),
   defineStatelessRule({
     id: "connection.common-tone-fourth-fifth",
@@ -493,8 +577,7 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     defaultExceptionPolicies: {
       "voice-exchange": "exempt"
     },
-    evaluate: (analysis) =>
-    basicConnectionRule(analysis, "connection.common-tone-fourth-fifth"),
+    evaluate: commonToneFourthFifthRule,
   }),
   defineStatelessRule({
     id: "connection.second-relation-contrary-motion",
@@ -510,11 +593,7 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    basicConnectionRule(
-      analysis,
-      "connection.second-relation-contrary-motion",
-    ),
+    evaluate: secondRelationContraryMotionRule,
   }),
   defineStatelessRule({
     id: "connection.common-tone-third",
@@ -536,8 +615,7 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     defaultExceptionPolicies: {
       "voice-exchange": "exempt"
     },
-    evaluate: (analysis) =>
-    basicConnectionRule(analysis, "connection.common-tone-third"),
+    evaluate: commonToneThirdRule,
   }),
   defineStatelessRule({
     id: "connection.nonparsimonious-motion",
@@ -563,7 +641,6 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
       "voice-exchange": "exempt",
       "pedal-point": "exempt"
     },
-    evaluate: (analysis) =>
-    basicConnectionRule(analysis, "connection.nonparsimonious-motion"),
+    evaluate: nonparsimoniousMotionRule,
   }),
 );

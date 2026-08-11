@@ -6,7 +6,7 @@ import {
   primaryHarmonyInterpretation,
 } from "../../../chordModel";
 import { analysisKeyAtTick, type HarmonyAnalysis } from "../../analysis";
-import type { RuleConfig, RuleDiagnostic } from "../../runtime";
+import type { RuleDiagnostic } from "../../runtime";
 import {
   formatPitchClass,
   pitchClassEquals,
@@ -27,232 +27,392 @@ import {
 } from "../helpers/core";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
-export function chordSliceRule(
+interface ChordSliceFact {
+  slice: HarmonyAnalysis["slices"][number];
+  chord: NonNullable<HarmonyAnalysis["slices"][number]["chord"]>;
+  active: ReturnType<typeof activeNotes>;
+  tones: ReturnType<typeof chordIdentityToneSpellings>;
+  stableComplete: boolean;
+}
+
+function chordSliceFacts(analysis: HarmonyAnalysis) {
+  return analysis.slices.flatMap((slice, sliceIndex): ChordSliceFact[] => {
+    if (!slice.chord) return [];
+    return [{
+      slice,
+      chord: slice.chord,
+      active: activeNotes(slice),
+      tones: chordIdentityToneSpellings(slice.chord.identity),
+      stableComplete:
+        slice.completeSatb && !finalSameHarmonySlice(analysis, sliceIndex),
+    }];
+  });
+}
+
+function standardChordSliceFacts(analysis: HarmonyAnalysis) {
+  return chordSliceFacts(analysis).filter(({ chord }) =>
+    supportsTertianResolutionRules(chord),
+  );
+}
+
+export function unclassifiedNonchordToneRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  standardChordSliceFacts(analysis).forEach(({ slice, chord, active, tones }) => {
+    const outside = active.filter(
+      ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
+    );
+    if (outside.length === 0) return;
+    diagnostics.push(
+      diagnostic(
+        "chord.unclassified-nonchord-tone",
+        slice.tick,
+        slice.endTick,
+        outside.map((item) => item.voiceId),
+        outside.map((item) => item.note),
+        "和弦外音需要确认",
+        `标注和弦 ${chordLabel(chord)} 中存在拼写不属于和弦构成音、且未人工标注角色的音符。`,
+        {
+          chordIds: [chord.id],
+          evidence: [
+            chordEvidence(chord),
+            ...outside.map((item) => noteEvidence(item.note)),
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function inversionBassRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  standardChordSliceFacts(analysis).forEach(({ slice, chord, active }) => {
+    const bass = active.find((item) => item.voiceId === "bass");
+    if (!bass || pitchClassEquals(bass.note.pitch, chord.identity.bass)) return;
+    diagnostics.push(
+      diagnostic(
+        "chord.inversion-bass",
+        slice.tick,
+        slice.endTick,
+        ["bass"],
+        [bass.note],
+        "低音与转位不一致",
+        `${chordLabel(chord)} 要求低音写作 ${formatPitchClass(chord.identity.bass)}，当前为 ${formatPitchClass(bass.note.pitch)}。`,
+        {
+          chordIds: [chord.id],
+          evidence: [chordEvidence(chord), noteEvidence(bass.note, "男低音")],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function incompleteChordMembersRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  standardChordSliceFacts(analysis).forEach(
+    ({ slice, chord, active, tones, stableComplete }) => {
+      if (!stableComplete) return;
+      const missing = tones.filter(
+        (tone) => !active.some(({ note }) => pitchClassEquals(note.pitch, tone)),
+      );
+      if (missing.length === 0) return;
+      diagnostics.push(
+        diagnostic(
+          "chord.incomplete-members",
+          slice.tick,
+          slice.endTick,
+          [],
+          [],
+          "和弦构成音不完整",
+          `${chordLabel(chord)} 缺少 ${missing.map(formatPitchClass).join("、")}。`,
+          {
+            chordIds: [chord.id],
+            params: { missing: missing.map(formatPitchClass).join(",") },
+            evidence: [
+              chordEvidence(chord),
+              {
+                kind: "chord",
+                id: chord.id,
+                label: "缺少构成音",
+                value: missing.map(formatPitchClass).join("、"),
+              },
+            ],
+          },
+        ),
+      );
+    },
+  );
+  return diagnostics;
+}
+
+interface RepeatedChordTonePolicy {
+  id: "chord.doubled-leading-tone" | "chord.doubled-seventh";
+  target(fact: ChordSliceFact): SpelledPitchClass | undefined;
+  title: string;
+  message(chord: ChordSliceFact["chord"], target: SpelledPitchClass): string;
+}
+
+function evaluateRepeatedChordToneRule(
   analysis: HarmonyAnalysis,
-  ruleId:
-    | "chord.unclassified-nonchord-tone"
-    | "chord.incomplete-members"
-    | "chord.inversion-bass"
-    | "chord.doubled-leading-tone"
-    | "chord.doubled-seventh"
-    | "chord.doubled-altered-tendency-tone"
-    | "chord.dominant-ninth-voicing"
-    | "chord.dominant-ninth-root-spacing"
-    | "chord.augmented-sixth-voicing",
-  config: RuleConfig = {},
+  policy: RepeatedChordTonePolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.slices.forEach((slice, sliceIndex) => {
-    const chord = slice.chord;
-    if (!chord) return;
-    const specializedVoicingRule =
-      ruleId === "chord.dominant-ninth-voicing" ||
-      ruleId === "chord.dominant-ninth-root-spacing" ||
-      ruleId === "chord.augmented-sixth-voicing" ||
-      ruleId === "chord.doubled-altered-tendency-tone";
-    if (!specializedVoicingRule && !supportsTertianResolutionRules(chord))
-      return;
-    const active = activeNotes(slice);
-    const tones = chordIdentityToneSpellings(chord.identity);
-    const intermediate = finalSameHarmonySlice(analysis, sliceIndex);
+  standardChordSliceFacts(analysis).forEach((fact) => {
+    if (!fact.stableComplete) return;
+    const target = policy.target(fact);
+    if (!target) return;
+    const repeated = fact.active.filter(({ note }) =>
+      pitchClassEquals(note.pitch, target),
+    );
+    if (repeated.length <= 1) return;
+    diagnostics.push(
+      diagnostic(
+        policy.id,
+        fact.slice.tick,
+        fact.slice.endTick,
+        repeated.map((item) => item.voiceId),
+        repeated.map((item) => item.note),
+        policy.title,
+        policy.message(fact.chord, target),
+        {
+          chordIds: [fact.chord.id],
+          evidence: [
+            chordEvidence(fact.chord),
+            ...repeated.map((item) => noteEvidence(item.note)),
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
 
-    if (ruleId === "chord.unclassified-nonchord-tone") {
-      const outside = active.filter(
-        ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
+export function doubledLeadingToneRule(analysis: HarmonyAnalysis) {
+  return evaluateRepeatedChordToneRule(analysis, {
+    id: "chord.doubled-leading-tone",
+    target: ({ slice }) =>
+      scaleDegreePitchClass(
+        slice.key,
+        7,
+        slice.key.mode === "minor" ? 1 : 0,
+      ),
+    title: "重复导音",
+    message: (_chord, target) =>
+      `四部和声中通常不应重复局部调性内的书写导音 ${formatPitchClass(target)}。`,
+  });
+}
+
+export function doubledSeventhRule(analysis: HarmonyAnalysis) {
+  return evaluateRepeatedChordToneRule(analysis, {
+    id: "chord.doubled-seventh",
+    target: ({ tones }) => (tones.length === 4 ? tones[3] : undefined),
+    title: "重复和弦七音",
+    message: (chord, target) =>
+      `${chordLabel(chord)} 的七音 ${formatPitchClass(target)} 不应重复。`,
+  });
+}
+
+export function doubledAlteredTendencyToneRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  chordSliceFacts(analysis).forEach(({ slice, chord, active, stableComplete }) => {
+    if (!stableComplete || chord.identity.structure.kind !== "tertian") return;
+    const directionalTones: Array<{
+      tone: SpelledPitchClass;
+      tendency: "up" | "down";
+      degree: number;
+    }> = [];
+    chord.identity.structure.alterations.forEach((alteration) => {
+      if (!alteration.tendency) return;
+      const tone = chordIdentityToneSpellingForDegree(
+        chord.identity,
+        alteration.degree,
       );
-      if (outside.length > 0) {
-        diagnostics.push(
-          diagnostic(
-            ruleId,
-            slice.tick,
-            slice.endTick,
-            outside.map((item) => item.voiceId),
-            outside.map((item) => item.note),
-            "和弦外音需要确认",
-            `标注和弦 ${chordLabel(chord)} 中存在拼写不属于和弦构成音、且未人工标注角色的音符。`,
-            {
-              chordIds: [chord.id],
-              evidence: [
-                chordEvidence(chord),
-                ...outside.map((item) => noteEvidence(item.note)),
-              ],
-            },
-          ),
-        );
-      }
-      return;
-    }
-
-    if (ruleId === "chord.inversion-bass") {
-      const bass = active.find((item) => item.voiceId === "bass");
-      if (bass && !pitchClassEquals(bass.note.pitch, chord.identity.bass)) {
-        diagnostics.push(
-          diagnostic(
-            ruleId,
-            slice.tick,
-            slice.endTick,
-            ["bass"],
-            [bass.note],
-            "低音与转位不一致",
-            `${chordLabel(chord)} 要求低音写作 ${formatPitchClass(chord.identity.bass)}，当前为 ${formatPitchClass(bass.note.pitch)}。`,
-            {
-              chordIds: [chord.id],
-              evidence: [
-                chordEvidence(chord),
-                noteEvidence(bass.note, "男低音"),
-              ],
-            },
-          ),
-        );
-      }
-      return;
-    }
-
-    if (!slice.completeSatb || intermediate) return;
-
-    const isDominantNinth =
-      chord.identity.structure.kind === "tertian" &&
-      chord.identity.structure.quality === "dominant7" &&
-      chord.identity.structure.extensions.includes(9);
-
-    if (ruleId === "chord.doubled-altered-tendency-tone") {
-      if (chord.identity.structure.kind !== "tertian") return;
-      const directionalTones: Array<{
-        tone: SpelledPitchClass;
-        tendency: "up" | "down";
-        degree: number;
-      }> = [];
-      chord.identity.structure.alterations.forEach((alteration) => {
-        if (!alteration.tendency) return;
-        const tone = chordIdentityToneSpellingForDegree(
-          chord.identity,
-          alteration.degree,
-        );
-        if (!tone) return;
+      if (tone)
         directionalTones.push({
           tone,
           tendency: alteration.tendency,
           degree: alteration.degree,
         });
-      });
-      const interpretation = chord.semantics
-        ? primaryHarmonyInterpretation(chord.semantics)
-        : undefined;
-      const designationKind = interpretation?.designation?.kind;
-      const targetDegree =
-        interpretation?.appliedTarget?.degree ??
-        (designationKind === "double-dominant" ||
-        designationKind === "double-dominant-leading-tone"
-          ? 5
-          : undefined);
-      if (targetDegree) {
-        const targetTonic = scaleDegreePitchClass(slice.key, targetDegree, 0);
-        const targetLeadingTone = scaleDegreePitchClass(
-          { tonic: targetTonic, mode: "major" },
-          7,
-          0,
-        );
-        if (
-          chordIdentityToneSpellings(chord.identity).some((tone) =>
-            pitchClassEquals(tone, targetLeadingTone),
-          ) &&
-          !directionalTones.some(({ tone }) =>
-            pitchClassEquals(tone, targetLeadingTone),
-          )
-        ) {
-          directionalTones.push({
-            tone: targetLeadingTone,
-            tendency: "up",
-            degree: 7,
-          });
-        }
-      }
-      directionalTones.forEach(({ tone, tendency, degree }) => {
-        const repeated = active.filter(({ note }) =>
-          pitchClassEquals(note.pitch, tone),
-        );
-        if (repeated.length <= 1) return;
-        diagnostics.push(
-          diagnostic(
-            ruleId,
-            slice.tick,
-            slice.endTick,
-            [],
-            [],
-            "重复变化倾向音",
-            `${chordLabel(chord)} 的 ${formatPitchClass(tone)} 具有明确的${tendency === "up" ? "上行" : "下行"}倾向，不应重复。`,
-            {
-              chordIds: [chord.id],
-              params: {
-                degree,
-                tendency,
-                count: repeated.length,
-              },
-              evidence: [
-                chordEvidence(chord),
-                ...repeated.map(({ note }) =>
-                  noteEvidence(note, "重复变化倾向音"),
-                ),
-              ],
-            },
-          ),
-        );
-      });
-      return;
-    }
-    if (
-      (ruleId === "chord.dominant-ninth-voicing" ||
-        ruleId === "chord.dominant-ninth-root-spacing") &&
-      !isDominantNinth
-    )
-      return;
-
-    if (ruleId === "chord.dominant-ninth-voicing") {
-      const tones = chordIdentityToneSpellings(chord.identity);
-      const counts = tones.map(
-        (tone) =>
-          active.filter(({ note }) => pitchClassEquals(note.pitch, tone)).length,
+    });
+    const interpretation = chord.semantics
+      ? primaryHarmonyInterpretation(chord.semantics)
+      : undefined;
+    const designationKind = interpretation?.designation?.kind;
+    const targetDegree =
+      interpretation?.appliedTarget?.degree ??
+      (designationKind === "double-dominant" ||
+      designationKind === "double-dominant-leading-tone"
+        ? 5
+        : undefined);
+    if (targetDegree) {
+      const targetTonic = scaleDegreePitchClass(slice.key, targetDegree, 0);
+      const targetLeadingTone = scaleDegreePitchClass(
+        { tonic: targetTonic, mode: "major" },
+        7,
+        0,
       );
-      const required = chordVoicingPolicy(chord.identity).requiredDegrees;
-      const missing = required
-        .map((degree) => {
-          const index = degree === 1 ? 0 : degree === 3 ? 1 : degree === 5 ? 2 : degree === 7 ? 3 : 4;
-          return counts[index] === 0 ? tones[index] : undefined;
-        })
-        .filter((tone): tone is SpelledPitchClass => Boolean(tone));
-      const fifthPresent = counts[2] > 0;
-      if (missing.length > 0 || fifthPresent) {
-        const problems = [
-          ...(missing.length > 0
-            ? [`缺少 ${missing.map(formatPitchClass).join("、")}`]
-            : []),
-          ...(fifthPresent ? ["不应出现五音"] : []),
-        ];
-        diagnostics.push(
-          diagnostic(
-            ruleId,
-            slice.tick,
-            slice.endTick,
-            [],
-            [],
-            "属九和弦配置不符合四声部要求",
-            `${chordLabel(chord)} ${problems.join("，")}。四声部 D9 默认采用 1/3/7/9。`,
-            {
-              chordIds: [chord.id],
-              params: {
-                missing: missing.map(formatPitchClass).join(","),
-                fifthPresent,
-              },
-              evidence: [chordEvidence(chord)],
-            },
-          ),
-        );
-      }
-      return;
+      if (
+        chordIdentityToneSpellings(chord.identity).some((tone) =>
+          pitchClassEquals(tone, targetLeadingTone),
+        ) &&
+        !directionalTones.some(({ tone }) =>
+          pitchClassEquals(tone, targetLeadingTone),
+        )
+      )
+        directionalTones.push({
+          tone: targetLeadingTone,
+          tendency: "up",
+          degree: 7,
+        });
     }
+    directionalTones.forEach(({ tone, tendency, degree }) => {
+      const repeated = active.filter(({ note }) =>
+        pitchClassEquals(note.pitch, tone),
+      );
+      if (repeated.length <= 1) return;
+      diagnostics.push(
+        diagnostic(
+          "chord.doubled-altered-tendency-tone",
+          slice.tick,
+          slice.endTick,
+          [],
+          [],
+          "重复变化倾向音",
+          `${chordLabel(chord)} 的 ${formatPitchClass(tone)} 具有明确的${tendency === "up" ? "上行" : "下行"}倾向，不应重复。`,
+          {
+            chordIds: [chord.id],
+            params: { degree, tendency, count: repeated.length },
+            evidence: [
+              chordEvidence(chord),
+              ...repeated.map(({ note }) =>
+                noteEvidence(note, "重复变化倾向音"),
+              ),
+            ],
+          },
+        ),
+      );
+    });
+  });
+  return diagnostics;
+}
 
-    if (ruleId === "chord.augmented-sixth-voicing") {
-      if (chord.identity.structure.kind !== "augmented-sixth") return;
+function dominantNinthFacts(analysis: HarmonyAnalysis) {
+  return chordSliceFacts(analysis).filter(
+    ({ chord, stableComplete }) =>
+      stableComplete &&
+      chord.identity.structure.kind === "tertian" &&
+      chord.identity.structure.quality === "dominant7" &&
+      chord.identity.structure.extensions.includes(9),
+  );
+}
+
+export function dominantNinthVoicingRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  dominantNinthFacts(analysis).forEach(({ slice, chord, active, tones }) => {
+    const counts = tones.map(
+      (tone) =>
+        active.filter(({ note }) => pitchClassEquals(note.pitch, tone)).length,
+    );
+    const required = chordVoicingPolicy(chord.identity).requiredDegrees;
+    const missing = required
+      .map((degree) => {
+        const index =
+          degree === 1
+            ? 0
+            : degree === 3
+              ? 1
+              : degree === 5
+                ? 2
+                : degree === 7
+                  ? 3
+                  : 4;
+        return counts[index] === 0 ? tones[index] : undefined;
+      })
+      .filter((tone): tone is SpelledPitchClass => Boolean(tone));
+    const fifthPresent = counts[2] > 0;
+    if (missing.length === 0 && !fifthPresent) return;
+    const problems = [
+      ...(missing.length > 0
+        ? [`缺少 ${missing.map(formatPitchClass).join("、")}`]
+        : []),
+      ...(fifthPresent ? ["不应出现五音"] : []),
+    ];
+    diagnostics.push(
+      diagnostic(
+        "chord.dominant-ninth-voicing",
+        slice.tick,
+        slice.endTick,
+        [],
+        [],
+        "属九和弦配置不符合四声部要求",
+        `${chordLabel(chord)} ${problems.join("，")}。四声部 D9 默认采用 1/3/7/9。`,
+        {
+          chordIds: [chord.id],
+          params: {
+            missing: missing.map(formatPitchClass).join(","),
+            fifthPresent,
+          },
+          evidence: [chordEvidence(chord)],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function dominantNinthRootSpacingRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  dominantNinthFacts(analysis).forEach(({ slice, chord, active, tones }) => {
+    const root = active.find(
+      ({ voiceId, note }) =>
+        voiceId === "bass" && pitchClassEquals(note.pitch, tones[0]),
+    );
+    const ninth = active.find(({ note }) =>
+      pitchClassEquals(note.pitch, tones[4]),
+    );
+    const minimumSemitones = 12;
+    if (!root || !ninth) return;
+    const interval = writtenInterval(root.note.pitch, ninth.note.pitch);
+    if (interval.semitones > minimumSemitones && interval.diatonicSteps >= 8)
+      return;
+    diagnostics.push(
+      diagnostic(
+        "chord.dominant-ninth-root-spacing",
+        slice.tick,
+        slice.endTick,
+        ["bass"],
+        [root.note, ninth.note],
+        "属九和弦根音与九音间距不足",
+        `${chordLabel(chord)} 的九音必须位于根音上方超过八度。`,
+        {
+          chordIds: [chord.id],
+          params: {
+            distance: interval.semitones,
+            diatonicSteps: interval.diatonicSteps,
+            minimumSemitones,
+          },
+          evidence: [
+            chordEvidence(chord),
+            noteEvidence(root.note, "根音"),
+            noteEvidence(ninth.note, "九音"),
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function augmentedSixthVoicingRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  chordSliceFacts(analysis).forEach(
+    ({ slice, chord, active, tones, stableComplete }) => {
+      if (
+        !stableComplete ||
+        chord.identity.structure.kind !== "augmented-sixth"
+      )
+        return;
       const expected =
         chord.identity.structure.variant === "italian"
           ? [1, 2, 1]
@@ -270,7 +430,7 @@ export function chordSliceRule(
             : "Ger+6";
       diagnostics.push(
         diagnostic(
-          ruleId,
+          "chord.augmented-sixth-voicing",
           slice.tick,
           slice.endTick,
           [],
@@ -291,122 +451,8 @@ export function chordSliceRule(
           },
         ),
       );
-      return;
-    }
-
-    if (ruleId === "chord.dominant-ninth-root-spacing") {
-      const tones = chordIdentityToneSpellings(chord.identity);
-      const root = active.find(
-        ({ voiceId, note }) =>
-          voiceId === "bass" && pitchClassEquals(note.pitch, tones[0]),
-      );
-      const ninth = active.find(({ note }) =>
-        pitchClassEquals(note.pitch, tones[4]),
-      );
-      const minimumSemitones = 12;
-      if (root && ninth) {
-        const interval = writtenInterval(root.note.pitch, ninth.note.pitch);
-        const isCompoundNinth =
-          interval.semitones > minimumSemitones && interval.diatonicSteps >= 8;
-        if (isCompoundNinth) return;
-        diagnostics.push(
-          diagnostic(
-            ruleId,
-            slice.tick,
-            slice.endTick,
-            ["bass"],
-            [root.note, ninth.note],
-            "属九和弦根音与九音间距不足",
-            `${chordLabel(chord)} 的九音必须位于根音上方超过八度。`,
-            {
-              chordIds: [chord.id],
-              params: {
-                distance: interval.semitones,
-                diatonicSteps: interval.diatonicSteps,
-                minimumSemitones,
-              },
-              evidence: [
-                chordEvidence(chord),
-                noteEvidence(root.note, "根音"),
-                noteEvidence(ninth.note, "九音"),
-              ],
-            },
-          ),
-        );
-      }
-      return;
-    }
-
-    if (ruleId === "chord.incomplete-members") {
-      const missing = tones.filter(
-        (tone) =>
-          !active.some(({ note }) => pitchClassEquals(note.pitch, tone)),
-      );
-      if (missing.length > 0) {
-        diagnostics.push(
-          diagnostic(
-            ruleId,
-            slice.tick,
-            slice.endTick,
-            [],
-            [],
-            "和弦构成音不完整",
-            `${chordLabel(chord)} 缺少 ${missing.map(formatPitchClass).join("、")}。`,
-            {
-              chordIds: [chord.id],
-              params: { missing: missing.map(formatPitchClass).join(",") },
-              evidence: [
-                chordEvidence(chord),
-                {
-                  kind: "chord",
-                  id: chord.id,
-                  label: "缺少构成音",
-                  value: missing.map(formatPitchClass).join("、"),
-                },
-              ],
-            },
-          ),
-        );
-      }
-      return;
-    }
-
-    const target =
-      ruleId === "chord.doubled-leading-tone"
-        ? scaleDegreePitchClass(
-            slice.key,
-            7,
-            slice.key.mode === "minor" ? 1 : 0,
-          )
-        : tones.length === 4
-          ? tones[3]
-          : undefined;
-    if (!target) return;
-    const repeated = active.filter(({ note }) =>
-      pitchClassEquals(note.pitch, target),
-    );
-    if (repeated.length <= 1) return;
-    diagnostics.push(
-      diagnostic(
-        ruleId,
-        slice.tick,
-        slice.endTick,
-        repeated.map((item) => item.voiceId),
-        repeated.map((item) => item.note),
-        ruleId === "chord.doubled-leading-tone" ? "重复导音" : "重复和弦七音",
-        ruleId === "chord.doubled-leading-tone"
-          ? `四部和声中通常不应重复局部调性内的书写导音 ${formatPitchClass(target)}。`
-          : `${chordLabel(chord)} 的七音 ${formatPitchClass(target)} 不应重复。`,
-        {
-          chordIds: [chord.id],
-          evidence: [
-            chordEvidence(chord),
-            ...repeated.map((item) => noteEvidence(item.note)),
-          ],
-        },
-      ),
-    );
-  });
+    },
+  );
   return diagnostics;
 }
 
@@ -478,8 +524,7 @@ export const CHORD_RULES = defineRuleGroup(
       "nonchord-tone",
       "pedal-point"
     ],
-    evaluate: (analysis) =>
-    chordSliceRule(analysis, "chord.unclassified-nonchord-tone"),
+    evaluate: unclassifiedNonchordToneRule,
   }),
   defineStatelessRule({
     id: "chord.incomplete-members",
@@ -494,8 +539,7 @@ export const CHORD_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis) =>
-    chordSliceRule(analysis, "chord.incomplete-members"),
+    evaluate: incompleteChordMembersRule,
   }),
   defineStatelessRule({
     id: "chord.inversion-bass",
@@ -510,8 +554,7 @@ export const CHORD_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis) =>
-    chordSliceRule(analysis, "chord.inversion-bass"),
+    evaluate: inversionBassRule,
   }),
   defineStatelessRule({
     id: "chord.interpretation-identity-conflict",
@@ -541,8 +584,7 @@ export const CHORD_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis) =>
-    chordSliceRule(analysis, "chord.doubled-leading-tone"),
+    evaluate: doubledLeadingToneRule,
   }),
   defineStatelessRule({
     id: "chord.doubled-seventh",
@@ -557,8 +599,7 @@ export const CHORD_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis) =>
-    chordSliceRule(analysis, "chord.doubled-seventh"),
+    evaluate: doubledSeventhRule,
   }),
   defineStatelessRule({
     id: "chord.doubled-altered-tendency-tone",
@@ -573,8 +614,7 @@ export const CHORD_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis) =>
-    chordSliceRule(analysis, "chord.doubled-altered-tendency-tone"),
+    evaluate: doubledAlteredTendencyToneRule,
   }),
   defineStatelessRule({
     id: "chord.dominant-ninth-voicing",
@@ -589,8 +629,7 @@ export const CHORD_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis, config) =>
-    chordSliceRule(analysis, "chord.dominant-ninth-voicing", config),
+    evaluate: dominantNinthVoicingRule,
   }),
   defineStatelessRule({
     id: "chord.dominant-ninth-root-spacing",
@@ -605,8 +644,7 @@ export const CHORD_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis, config) =>
-    chordSliceRule(analysis, "chord.dominant-ninth-root-spacing", config),
+    evaluate: dominantNinthRootSpacingRule,
   }),
   defineStatelessRule({
     id: "chord.augmented-sixth-voicing",
@@ -621,7 +659,6 @@ export const CHORD_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "chord",
-    evaluate: (analysis, config) =>
-    chordSliceRule(analysis, "chord.augmented-sixth-voicing", config),
+    evaluate: augmentedSixthVoicingRule,
   }),
 );

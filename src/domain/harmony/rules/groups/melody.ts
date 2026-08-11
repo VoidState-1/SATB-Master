@@ -13,44 +13,43 @@ function validMelodyTransitions(analysis: HarmonyAnalysis) {
   return analysis.melodyTransitions.filter((transition) => transition.contiguous);
 }
 
-export function melodicLeapRule(
+type MelodyTransition = HarmonyAnalysis["melodyTransitions"][number];
+type NamedInterval = ReturnType<typeof intervalName>;
+
+interface MelodyTransitionRulePolicy {
+  id:
+    | "melody.leap-over-octave"
+    | "melody.large-leap"
+    | "melody.tritone";
+  matches(interval: number, named: NamedInterval): boolean;
+  title: string;
+  message(
+    analysis: HarmonyAnalysis,
+    transition: MelodyTransition,
+    interval: number,
+  ): string;
+  evidenceLabel: string;
+  evidenceValue(interval: number, named: NamedInterval): string;
+}
+
+function evaluateMelodyTransitionRule(
   analysis: HarmonyAnalysis,
-  ruleId: "melody.leap-over-octave" | "melody.large-leap" | "melody.tritone",
+  policy: MelodyTransitionRulePolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
   validMelodyTransitions(analysis).forEach((transition) => {
     const interval = Math.abs(transition.writtenInterval.semitones);
     const writtenName = intervalName(transition.writtenInterval);
-    const matches =
-      ruleId === "melody.leap-over-octave"
-        ? interval > 12
-        : ruleId === "melody.large-leap"
-          ? interval > 7 && interval <= 12
-          : writtenName.altered &&
-            ((writtenName.number === 4 && writtenName.quality === "增") ||
-              (writtenName.number === 5 && writtenName.quality === "减"));
-    if (!matches) return;
-    const title =
-      ruleId === "melody.leap-over-octave"
-        ? "旋律跳进过大"
-        : ruleId === "melody.large-leap"
-          ? "较大旋律跳进"
-          : "旋律三全音";
-    const message =
-      ruleId === "melody.leap-over-octave"
-        ? `${voiceName(analysis, transition.voiceId)}出现超过八度的跳进（${interval} 个半音）。`
-        : ruleId === "melody.large-leap"
-          ? `${voiceName(analysis, transition.voiceId)}出现大于纯五度的跳进，需检查前后旋律方向。`
-          : `${voiceName(analysis, transition.voiceId)}出现三全音跳进。`;
+    if (!policy.matches(interval, writtenName)) return;
     diagnostics.push(
       diagnostic(
-        ruleId,
+        policy.id,
         transition.current.startTick,
         transition.current.startTick + transition.current.durationTicks,
         [transition.voiceId],
         [transition.previous, transition.current],
-        title,
-        message,
+        policy.title,
+        policy.message(analysis, transition, interval),
         {
           params: { semitones: interval },
           evidence: [
@@ -58,11 +57,8 @@ export function melodicLeapRule(
             noteEvidence(transition.current, "当前音"),
             {
               kind: "interval",
-              label: ruleId === "melody.tritone" ? "书写音程" : "音程",
-              value:
-                ruleId === "melody.tritone"
-                  ? writtenName.label
-                  : `${interval} 个半音`,
+              label: policy.evidenceLabel,
+              value: policy.evidenceValue(interval, writtenName),
             },
           ],
         },
@@ -72,15 +68,59 @@ export function melodicLeapRule(
   return diagnostics;
 }
 
-export function augmentedDiminishedIntervalRule(
+const LEAP_OVER_OCTAVE_POLICY: MelodyTransitionRulePolicy = {
+  id: "melody.leap-over-octave",
+  matches: (interval) => interval > 12,
+  title: "旋律跳进过大",
+  message: (analysis, transition, interval) =>
+    `${voiceName(analysis, transition.voiceId)}出现超过八度的跳进（${interval} 个半音）。`,
+  evidenceLabel: "音程",
+  evidenceValue: (interval) => `${interval} 个半音`,
+};
+
+const LARGE_LEAP_POLICY: MelodyTransitionRulePolicy = {
+  id: "melody.large-leap",
+  matches: (interval) => interval > 7 && interval <= 12,
+  title: "较大旋律跳进",
+  message: (analysis, transition) =>
+    `${voiceName(analysis, transition.voiceId)}出现大于纯五度的跳进，需检查前后旋律方向。`,
+  evidenceLabel: "音程",
+  evidenceValue: (interval) => `${interval} 个半音`,
+};
+
+const TRITONE_POLICY: MelodyTransitionRulePolicy = {
+  id: "melody.tritone",
+  matches: (_interval, named) =>
+    named.altered &&
+    ((named.number === 4 && named.quality === "增") ||
+      (named.number === 5 && named.quality === "减")),
+  title: "旋律三全音",
+  message: (analysis, transition) =>
+    `${voiceName(analysis, transition.voiceId)}出现三全音跳进。`,
+  evidenceLabel: "书写音程",
+  evidenceValue: (_interval, named) => named.label,
+};
+
+export function leapOverOctaveRule(analysis: HarmonyAnalysis) {
+  return evaluateMelodyTransitionRule(analysis, LEAP_OVER_OCTAVE_POLICY);
+}
+
+export function largeLeapRule(analysis: HarmonyAnalysis) {
+  return evaluateMelodyTransitionRule(analysis, LARGE_LEAP_POLICY);
+}
+
+export function tritoneRule(analysis: HarmonyAnalysis) {
+  return evaluateMelodyTransitionRule(analysis, TRITONE_POLICY);
+}
+
+function alteredIntervalRule(
   analysis: HarmonyAnalysis,
   ruleId: "melody.augmented-interval" | "melody.diminished-interval",
+  expectedQuality: "增" | "减",
 ) {
   const diagnostics: RuleDiagnostic[] = [];
   validMelodyTransitions(analysis).forEach((transition) => {
     const named = intervalName(transition.writtenInterval);
-    const expectedQuality =
-      ruleId === "melody.augmented-interval" ? "增" : "减";
     if (
       !named.altered ||
       named.quality !== expectedQuality ||
@@ -115,11 +155,27 @@ export function augmentedDiminishedIntervalRule(
   return diagnostics;
 }
 
-export function melodicContourRule(
-  analysis: HarmonyAnalysis,
-  ruleId: "melody.leap-recovery" | "melody.consecutive-leaps",
-) {
-  const diagnostics: RuleDiagnostic[] = [];
+export function augmentedIntervalRule(analysis: HarmonyAnalysis) {
+  return alteredIntervalRule(analysis, "melody.augmented-interval", "增");
+}
+
+export function diminishedIntervalRule(analysis: HarmonyAnalysis) {
+  return alteredIntervalRule(analysis, "melody.diminished-interval", "减");
+}
+
+interface MelodicContourFact {
+  voiceId: "soprano" | "alto" | "tenor" | "bass";
+  first: MelodyTransition;
+  second: MelodyTransition;
+  firstIsLeap: boolean;
+  secondIsLeap: boolean;
+  sameDirection: boolean;
+  recoveredByOppositeStep: boolean;
+  consonantOutline: boolean;
+}
+
+function melodicContourFacts(analysis: HarmonyAnalysis) {
+  const facts: MelodicContourFact[] = [];
   const byVoice = new Map(
     (["soprano", "alto", "tenor", "bass"] as const).map((voiceId) => [
       voiceId,
@@ -145,54 +201,92 @@ export function melodicContourRule(
       const sameDirection =
         Math.sign(firstSemitones) !== 0 &&
         Math.sign(firstSemitones) === Math.sign(secondSemitones);
-      // 连续同和弦构成音属于明确的分解和弦语境，不在此处限制轮廓。
       if (first.sameHarmony && second.sameHarmony) continue;
-
-      let matches = false;
-      if (ruleId === "melody.leap-recovery") {
-        const recoveredByOppositeStep =
-          Math.sign(secondSemitones) === -Math.sign(firstSemitones) &&
-          Math.abs(second.writtenInterval.diatonicSteps) === 1 &&
-          Math.abs(secondSemitones) <= 2;
-        matches = firstIsLeap && !recoveredByOppositeStep;
-      } else {
-        const outline =
-          toMidi(second.current.pitch) - toMidi(first.previous.pitch);
-        const simpleOutline = Math.abs(outline) % 12;
-        const consonantOutline = [0, 3, 4, 5, 7, 8, 9].includes(simpleOutline);
-        matches =
-          firstIsLeap &&
-          secondIsLeap &&
-          sameDirection &&
-          !consonantOutline;
-      }
-      if (!matches) continue;
-      diagnostics.push(
-        diagnostic(
-          ruleId,
-          second.current.startTick,
-          second.current.startTick + second.current.durationTicks,
-          [voiceId],
-          [first.previous, first.current, second.current],
-          ruleId === "melody.leap-recovery"
-            ? "大跳后没有反向补偿"
-            : "同向连续跳进形成不协和轮廓",
-          ruleId === "melody.leap-recovery"
-            ? `${voiceName(analysis, voiceId)}在大跳后通常应以反向级进收束旋律。`
-            : `${voiceName(analysis, voiceId)}连续同向跳进，并形成不协和的总体音程轮廓。`,
-          {
-            causeRefs: [
-              `${ruleId}|${first.id}|${second.id}`,
-            ],
-            evidence: [
-              noteEvidence(first.previous, "轮廓起点"),
-              noteEvidence(first.current, "轮廓中点"),
-              noteEvidence(second.current, "轮廓终点"),
-            ],
-          },
-        ),
+      const recoveredByOppositeStep =
+        Math.sign(secondSemitones) === -Math.sign(firstSemitones) &&
+        Math.abs(second.writtenInterval.diatonicSteps) === 1 &&
+        Math.abs(secondSemitones) <= 2;
+      const outline = toMidi(second.current.pitch) - toMidi(first.previous.pitch);
+      const consonantOutline = [0, 3, 4, 5, 7, 8, 9].includes(
+        Math.abs(outline) % 12,
       );
+      facts.push({
+        voiceId,
+        first,
+        second,
+        firstIsLeap,
+        secondIsLeap,
+        sameDirection,
+        recoveredByOppositeStep,
+        consonantOutline,
+      });
     }
+  });
+  return facts;
+}
+
+function contourDiagnostic(
+  analysis: HarmonyAnalysis,
+  fact: MelodicContourFact,
+  ruleId: "melody.leap-recovery" | "melody.consecutive-leaps",
+  title: string,
+  message: string,
+) {
+  return diagnostic(
+    ruleId,
+    fact.second.current.startTick,
+    fact.second.current.startTick + fact.second.current.durationTicks,
+    [fact.voiceId],
+    [fact.first.previous, fact.first.current, fact.second.current],
+    title,
+    message,
+    {
+      causeRefs: [`${ruleId}|${fact.first.id}|${fact.second.id}`],
+      evidence: [
+        noteEvidence(fact.first.previous, "轮廓起点"),
+        noteEvidence(fact.first.current, "轮廓中点"),
+        noteEvidence(fact.second.current, "轮廓终点"),
+      ],
+    },
+  );
+}
+
+export function leapRecoveryRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  melodicContourFacts(analysis).forEach((fact) => {
+    if (!fact.firstIsLeap || fact.recoveredByOppositeStep) return;
+    diagnostics.push(
+      contourDiagnostic(
+        analysis,
+        fact,
+        "melody.leap-recovery",
+        "大跳后没有反向补偿",
+        `${voiceName(analysis, fact.voiceId)}在大跳后通常应以反向级进收束旋律。`,
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function consecutiveLeapsRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  melodicContourFacts(analysis).forEach((fact) => {
+    if (
+      !fact.firstIsLeap ||
+      !fact.secondIsLeap ||
+      !fact.sameDirection ||
+      fact.consonantOutline
+    )
+      return;
+    diagnostics.push(
+      contourDiagnostic(
+        analysis,
+        fact,
+        "melody.consecutive-leaps",
+        "同向连续跳进形成不协和轮廓",
+        `${voiceName(analysis, fact.voiceId)}连续同向跳进，并形成不协和的总体音程轮廓。`,
+      ),
+    );
   });
   return diagnostics;
 }
@@ -210,8 +304,7 @@ export const MELODY_RULES = defineRuleGroup(
       "written-pitches"
     ],
     dependencyScope: "note",
-    evaluate: (analysis) =>
-    melodicLeapRule(analysis, "melody.leap-over-octave"),
+    evaluate: leapOverOctaveRule,
   }),
   defineStatelessRule({
     id: "melody.large-leap",
@@ -232,8 +325,7 @@ export const MELODY_RULES = defineRuleGroup(
     defaultExceptionPolicies: {
       "same-harmony": "exempt"
     },
-    evaluate: (analysis) =>
-    melodicLeapRule(analysis, "melody.large-leap"),
+    evaluate: largeLeapRule,
   }),
   defineStatelessRule({
     id: "melody.tritone",
@@ -258,8 +350,7 @@ export const MELODY_RULES = defineRuleGroup(
     defaultExceptionPolicies: {
       "same-harmony": "exempt"
     },
-    evaluate: (analysis) =>
-    melodicLeapRule(analysis, "melody.tritone"),
+    evaluate: tritoneRule,
   }),
   defineStatelessRule({
     id: "melody.augmented-interval",
@@ -280,8 +371,7 @@ export const MELODY_RULES = defineRuleGroup(
     defaultExceptionPolicies: {
       "same-harmony": "exempt"
     },
-    evaluate: (analysis) =>
-    augmentedDiminishedIntervalRule(analysis, "melody.augmented-interval"),
+    evaluate: augmentedIntervalRule,
   }),
   defineStatelessRule({
     id: "melody.diminished-interval",
@@ -302,8 +392,7 @@ export const MELODY_RULES = defineRuleGroup(
     defaultExceptionPolicies: {
       "same-harmony": "exempt"
     },
-    evaluate: (analysis) =>
-    augmentedDiminishedIntervalRule(analysis, "melody.diminished-interval"),
+    evaluate: diminishedIntervalRule,
   }),
   defineStatelessRule({
     id: "melody.leap-recovery",
@@ -324,8 +413,7 @@ export const MELODY_RULES = defineRuleGroup(
     defaultExceptionPolicies: {
       "same-harmony": "exempt"
     },
-    evaluate: (analysis) =>
-    melodicContourRule(analysis, "melody.leap-recovery"),
+    evaluate: leapRecoveryRule,
   }),
   defineStatelessRule({
     id: "melody.consecutive-leaps",
@@ -346,7 +434,6 @@ export const MELODY_RULES = defineRuleGroup(
     defaultExceptionPolicies: {
       "same-harmony": "exempt"
     },
-    evaluate: (analysis) =>
-    melodicContourRule(analysis, "melody.consecutive-leaps"),
+    evaluate: consecutiveLeapsRule,
   }),
 );

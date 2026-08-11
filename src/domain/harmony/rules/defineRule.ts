@@ -53,10 +53,7 @@ function completeMetadata<Id extends string>(
   const defaultExceptionPolicies = input.defaultExceptionPolicies ?? {};
   const coveredRuleIds = input.coveredRuleIds ?? [];
   const defaultConfig = Object.fromEntries(
-    options.map((option) => [
-      option.key,
-      structuredClone(option.defaultValue),
-    ]),
+    options.map((option) => [option.key, structuredClone(option.defaultValue)]),
   ) as RuleConfig;
   return {
     ...input,
@@ -69,6 +66,9 @@ function completeMetadata<Id extends string>(
   };
 }
 
+/**
+ * 定义无状态规则。
+ */
 export function defineStatelessRule<const Id extends string>(
   input: StatelessRuleInput<Id>,
 ): StatelessRuleDefinition & { readonly id: Id } {
@@ -81,6 +81,9 @@ export function defineStatelessRule<const Id extends string>(
   };
 }
 
+/**
+ * 定义有状态规则。
+ */
 export function defineStatefulRule<const Id extends string>(
   input: StatefulRuleInput<Id>,
 ): StatefulRuleDefinition & { readonly id: Id } {
@@ -123,7 +126,11 @@ export function defineRuleCollection<
       optionKeys.add(option.key);
     }
     for (const context of Object.keys(rule.defaultExceptionPolicies)) {
-      if (!rule.supportedExceptionContexts.includes(context as RuleExceptionContext))
+      if (
+        !rule.supportedExceptionContexts.includes(
+          context as RuleExceptionContext,
+        )
+      )
         throw new Error(`规则“${rule.id}”的默认特例“${context}”未声明支持`);
     }
   }

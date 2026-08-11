@@ -93,51 +93,102 @@ export function noteOverlapRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function verticalRule(
-  analysis: HarmonyAnalysis,
-  ruleId: "voice.crossing" | "voice.upper-spacing",
-) {
-  const diagnostics: RuleDiagnostic[] = [];
+interface AdjacentVoicePairFact {
+  upperId: VoiceId;
+  lowerId: VoiceId;
+  upper: NonNullable<HarmonyAnalysis["slices"][number]["notes"][VoiceId]>;
+  lower: NonNullable<HarmonyAnalysis["slices"][number]["notes"][VoiceId]>;
+  tick: number;
+  endTick: number;
+  distance: number;
+}
+
+function adjacentVoicePairFacts(analysis: HarmonyAnalysis) {
+  const facts: AdjacentVoicePairFact[] = [];
   const adjacent: Array<[VoiceId, VoiceId]> = [
     ["soprano", "alto"],
     ["alto", "tenor"],
     ["tenor", "bass"],
   ];
   analysis.slices.forEach((slice) => {
-    adjacent.forEach(([upperId, lowerId], index) => {
+    adjacent.forEach(([upperId, lowerId]) => {
       const upper = slice.notes[upperId];
       const lower = slice.notes[lowerId];
       if (!upper || !lower) return;
-      const distance = toMidi(upper.pitch) - toMidi(lower.pitch);
-      const matches =
-        ruleId === "voice.crossing" ? distance < 0 : index < 2 && distance > 12;
-      if (!matches) return;
-      diagnostics.push(
-        diagnostic(
-          ruleId,
-          slice.tick,
-          slice.endTick,
-          [upperId, lowerId],
-          [upper, lower],
-          ruleId === "voice.crossing" ? "声部交叉" : "上三声部间距过宽",
-          ruleId === "voice.crossing"
-            ? "较高声部低于相邻的较低声部。"
-            : "S-A 与 A-T 的相邻声部间距通常不应超过八度。",
-          {
-            params: { semitones: Math.abs(distance) },
-            evidence: [
-              noteEvidence(upper, voiceName(analysis, upperId)),
-              noteEvidence(lower, voiceName(analysis, lowerId)),
-              {
-                kind: "interval",
-                label: "垂直间距",
-                value: `${Math.abs(distance)} 个半音`,
-              },
-            ],
-          },
-        ),
-      );
+      facts.push({
+        upperId,
+        lowerId,
+        upper,
+        lower,
+        tick: slice.tick,
+        endTick: slice.endTick,
+        distance: toMidi(upper.pitch) - toMidi(lower.pitch),
+      });
     });
+  });
+  return facts;
+}
+
+function verticalDiagnostic(
+  analysis: HarmonyAnalysis,
+  fact: AdjacentVoicePairFact,
+  ruleId: "voice.crossing" | "voice.upper-spacing",
+  title: string,
+  message: string,
+) {
+  return diagnostic(
+    ruleId,
+    fact.tick,
+    fact.endTick,
+    [fact.upperId, fact.lowerId],
+    [fact.upper, fact.lower],
+    title,
+    message,
+    {
+      params: { semitones: Math.abs(fact.distance) },
+      evidence: [
+        noteEvidence(fact.upper, voiceName(analysis, fact.upperId)),
+        noteEvidence(fact.lower, voiceName(analysis, fact.lowerId)),
+        {
+          kind: "interval",
+          label: "垂直间距",
+          value: `${Math.abs(fact.distance)} 个半音`,
+        },
+      ],
+    },
+  );
+}
+
+export function voiceCrossingRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  adjacentVoicePairFacts(analysis).forEach((fact) => {
+    if (fact.distance >= 0) return;
+    diagnostics.push(
+      verticalDiagnostic(
+        analysis,
+        fact,
+        "voice.crossing",
+        "声部交叉",
+        "较高声部低于相邻的较低声部。",
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function upperVoiceSpacingRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  adjacentVoicePairFacts(analysis).forEach((fact) => {
+    if (fact.lowerId === "bass" || fact.distance <= 12) return;
+    diagnostics.push(
+      verticalDiagnostic(
+        analysis,
+        fact,
+        "voice.upper-spacing",
+        "上三声部间距过宽",
+        "S-A 与 A-T 的相邻声部间距通常不应超过八度。",
+      ),
+    );
   });
   return diagnostics;
 }
@@ -233,8 +284,7 @@ export const VOICE_RULES = defineRuleGroup(
       "written-pitches"
     ],
     dependencyScope: "slice",
-    evaluate: (analysis) =>
-    verticalRule(analysis, "voice.crossing"),
+    evaluate: voiceCrossingRule,
   }),
   defineStatelessRule({
     id: "voice.upper-spacing",
@@ -248,7 +298,6 @@ export const VOICE_RULES = defineRuleGroup(
       "written-pitches"
     ],
     dependencyScope: "slice",
-    evaluate: (analysis) =>
-    verticalRule(analysis, "voice.upper-spacing"),
+    evaluate: upperVoiceSpacingRule,
   }),
 );

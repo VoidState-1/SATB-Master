@@ -144,94 +144,444 @@ function dominantBassProblem(source: AnalysisSlice, target: AnalysisSlice) {
     : `低音不符合 ${["D7", "D56", "D34", "D2"][inversion]} 的常用解决公式`;
 }
 
-function coverageReferences(
-  ruleId: SpecializedRuleId,
-  connectionKey: string,
-  source: AnalysisSlice,
-  sourceChord: AnalysisChord,
-) {
-  const result: string[] = [];
-  const add = (kind: string, toneIndex: number) =>
-    toneMembers(source, sourceChord, toneIndex).forEach(({ voiceId }) =>
-      result.push(`resolution.${kind}|${connectionKey}|voice:${voiceId}`),
+type SpecializedBoundary = NonNullable<
+  ReturnType<typeof connectionBoundarySlices>
+>;
+
+interface SpecializedConnectionContext {
+  connection: HarmonyAnalysis["connections"][number];
+  sourceSpan: HarmonySpan;
+  targetSpan: HarmonySpan;
+  boundary: SpecializedBoundary;
+  sourceChord: AnalysisChord;
+  targetChord: AnalysisChord;
+}
+
+interface SpecializedProblems {
+  problems: string[];
+  voices: VoiceId[];
+  notes: AnalysisNote[];
+}
+
+interface SpecializedConnectionPolicy {
+  id: SpecializedRuleId;
+  sourceMatches(span: HarmonySpan, chord: AnalysisChord): boolean;
+  targetAllowed(span: HarmonySpan): boolean;
+  collectProblems(context: SpecializedConnectionContext): SpecializedProblems;
+  coverageKinds?: readonly {
+    kind: "leading-tone" | "chord-seventh" | "dominant-ninth";
+    toneIndex: number;
+  }[];
+}
+
+function emptyProblems(): SpecializedProblems {
+  return { problems: [], voices: [], notes: [] };
+}
+
+function hasSeventh(chord: AnalysisChord) {
+  return (
+    chord.identity.structure.kind === "tertian" &&
+    chordIdentityToneSpellings(chord.identity).length >= 4
+  );
+}
+
+function hasNinth(chord: AnalysisChord) {
+  return (
+    chord.identity.structure.kind === "tertian" &&
+    chord.identity.structure.extensions.includes(9)
+  );
+}
+
+function tonicTarget(span: HarmonySpan) {
+  const interpretation = interpretationOf(span);
+  return (
+    interpretation?.designation?.primaryFunction === "tonic" &&
+    interpretation.degree === 1
+  );
+}
+
+function dominantTarget(span: HarmonySpan) {
+  return interpretationOf(span)?.designation?.primaryFunction === "dominant";
+}
+
+function dominantOrCadential64Target(span: HarmonySpan) {
+  const interpretation = interpretationOf(span);
+  return (
+    interpretation?.designation?.primaryFunction === "dominant" ||
+    interpretation?.designation?.kind === "cadential64"
+  );
+}
+
+function commonToneProblems(context: SpecializedConnectionContext) {
+  const sourceTones = chordIdentityToneSpellings(context.sourceChord.identity);
+  const targetTones = chordIdentityToneSpellings(context.targetChord.identity);
+  const common = sourceTones.filter((tone) =>
+    targetTones.some((candidate) => pitchClassEquals(tone, candidate)),
+  );
+  const held = VOICE_ORDER.some((voiceId) => {
+    const before = context.boundary.source.notes[voiceId];
+    const after = context.boundary.target.notes[voiceId];
+    return Boolean(
+      before &&
+        after &&
+        toMidi(before.pitch) === toMidi(after.pitch) &&
+        common.some((tone) => pitchClassEquals(before.pitch, tone)),
     );
-  if (
-    ruleId === "connection.dominant-seventh" ||
-    ruleId === "connection.dominant-ninth"
-  ) {
-    add("leading-tone", 1);
-    add("chord-seventh", 3);
-  }
-  if (ruleId === "connection.dominant-ninth") add("dominant-ninth", 4);
+  });
+  return common.length > 0 && !held ? ["共同音没有保持"] : [];
+}
+
+function motionProblemSet(
+  context: SpecializedConnectionContext,
+  checks: Parameters<typeof motionProblems>[3],
+) {
+  return motionProblems(
+    context.boundary.source,
+    context.boundary.target,
+    context.sourceChord,
+    checks,
+  );
+}
+
+function dominantSeventhProblems(context: SpecializedConnectionContext) {
+  const result = motionProblemSet(context, [
+    { toneIndex: 1, label: "导音", direction: "up" },
+    { toneIndex: 3, label: "七音", direction: "down" },
+  ]);
+  const bass = dominantBassProblem(context.boundary.source, context.boundary.target);
+  if (bass) result.problems.push(bass);
+  result.problems.push(
+    ...commonToneProblems(context),
+    ...targetConfigurationProblems(context.boundary.target),
+  );
   return result;
 }
 
-function sourceMatches(
-  ruleId: SpecializedRuleId,
-  span: HarmonySpan,
-  chord: AnalysisChord,
+function dominantNinthProblems(context: SpecializedConnectionContext) {
+  const motion = motionProblemSet(context, [
+    { toneIndex: 1, label: "导音", direction: "up" },
+    { toneIndex: 3, label: "七音", direction: "down" },
+    { toneIndex: 4, label: "九音", direction: "down" },
+  ]);
+  const result = emptyProblems();
+  if (chordInversion(context.sourceChord) !== 0)
+    result.problems.push("当前仅支持原位 D9");
+  result.problems.push(
+    ...motion.problems,
+    ...commonToneProblems(context),
+    ...targetConfigurationProblems(context.boundary.target),
+  );
+  result.voices.push(...motion.voices);
+  result.notes.push(...motion.notes);
+  return result;
+}
+
+function leadingToneSeventhProblems(context: SpecializedConnectionContext) {
+  const result = motionProblemSet(
+    context,
+    chordIdentityToneSpellings(context.sourceChord.identity).map(
+      (_, toneIndex) => ({
+        toneIndex,
+        label: toneIndex === 0 ? "导音" : `构成音 ${toneIndex + 1}`,
+        direction: toneIndex === 0 ? ("up" as const) : ("step" as const),
+      }),
+    ),
+  );
+  result.problems.push(...targetConfigurationProblems(context.boundary.target));
+  return result;
+}
+
+function seventhDownAndCommonToneProblems(
+  context: SpecializedConnectionContext,
 ) {
-  const interpretation = interpretationOf(span);
-  const structure = chord.identity.structure;
-  const hasSeventh =
-    structure.kind === "tertian" &&
-    chordIdentityToneSpellings(chord.identity).length >= 4;
-  const hasNinth =
-    structure.kind === "tertian" && structure.extensions.includes(9);
-  const kind = interpretation?.designation?.kind;
-  const family = interpretation?.designation?.primaryFunction;
-  if (ruleId === "connection.dominant-seventh")
+  const result = motionProblemSet(context, [
+    { toneIndex: 3, label: "七音", direction: "down" },
+  ]);
+  result.problems.push(...commonToneProblems(context));
+  return result;
+}
+
+function neapolitanProblems(context: SpecializedConnectionContext) {
+  const result = emptyProblems();
+  const tones = chordIdentityToneSpellings(context.sourceChord.identity);
+  const counts = tones.map(
+    (tone) =>
+      activeNotes(context.boundary.source).filter(({ note }) =>
+        pitchClassEquals(note.pitch, tone),
+      ).length,
+  );
+  if (chordInversion(context.sourceChord) !== 1)
+    result.problems.push("N6 应使用第一转位");
+  if (counts[1] !== 2)
+    result.problems.push("N6 通常重复低音所代表的 IV 级音");
+  toneMembers(context.boundary.source, context.sourceChord, 0).forEach(
+    (member) => {
+      const next = context.boundary.target.notes[member.voiceId];
+      const interval = next
+        ? writtenInterval(member.note.pitch, next.pitch)
+        : undefined;
+      if (
+        !next ||
+        !targetContains(context.boundary.target, next) ||
+        !interval ||
+        interval.semitones >= 0 ||
+        Math.abs(interval.semitones) > 3
+      ) {
+        result.problems.push("降 II 级音未按书写方向下行进入目标");
+        result.voices.push(member.voiceId);
+        result.notes.push(member.note, ...(next ? [next] : []));
+      }
+    },
+  );
+  return result;
+}
+
+function resolutionCoverageReferences(
+  context: SpecializedConnectionContext,
+  kinds: NonNullable<SpecializedConnectionPolicy["coverageKinds"]>,
+) {
+  return kinds.flatMap(({ kind, toneIndex }) =>
+    toneMembers(
+      context.boundary.source,
+      context.sourceChord,
+      toneIndex,
+    ).map(
+      ({ voiceId }) =>
+        `resolution.${kind}|${context.connection.connectionKey}|voice:${voiceId}`,
+    ),
+  );
+}
+
+function evaluateSpecializedConnection(
+  analysis: HarmonyAnalysis,
+  policy: SpecializedConnectionPolicy,
+) {
+  const diagnostics: RuleDiagnostic[] = [];
+  analysis.connections.forEach((connection) => {
+    if (
+      !connection.contiguous ||
+      !connection.sameKey ||
+      connection.confidence === "ambiguous" ||
+      connection.confidence === "unknown"
+    )
+      return;
+    const sourceSpan = analysis.harmonySpans.find(
+      (span) => span.id === connection.previousSpanId,
+    );
+    const targetSpan = analysis.harmonySpans.find(
+      (span) => span.id === connection.currentSpanId,
+    );
+    const boundary = connectionBoundarySlices(analysis, connection);
+    if (
+      !sourceSpan ||
+      !targetSpan ||
+      !boundary ||
+      !boundary.source.completeSatb ||
+      !boundary.target.completeSatb ||
+      !policy.sourceMatches(sourceSpan, boundary.source.chord!)
+    )
+      return;
+    const context: SpecializedConnectionContext = {
+      connection,
+      sourceSpan,
+      targetSpan,
+      boundary,
+      sourceChord: boundary.source.chord!,
+      targetChord: boundary.target.chord!,
+    };
+    const result = policy.collectProblems(context);
+    if (!policy.targetAllowed(targetSpan))
+      result.problems.unshift("后继功能不符合该和弦的目标集合");
+    if (result.problems.length === 0) return;
+    const allNotes = [
+      ...activeNotes(boundary.source).map(({ note }) => note),
+      ...activeNotes(boundary.target).map(({ note }) => note),
+      ...result.notes,
+    ];
+    diagnostics.push(
+      diagnostic(
+        policy.id,
+        boundary.target.tick,
+        boundary.target.endTick,
+        [...new Set(result.voices)],
+        [...new Map(allNotes.map((note) => [note.id, note])).values()],
+        `${chordLabel(context.sourceChord)} 连接配置不规范`,
+        `${chordLabel(context.sourceChord)} -> ${chordLabel(context.targetChord)}：${[
+          ...new Set(result.problems),
+        ].join("；")}。`,
+        {
+          chordIds: [context.sourceChord.id, context.targetChord.id],
+          causeRefs: [`${policy.id}|${connection.connectionKey}`],
+          coverageRefs: policy.coverageKinds
+            ? resolutionCoverageReferences(context, policy.coverageKinds)
+            : [],
+          evidence: [
+            chordEvidence(context.sourceChord),
+            chordEvidence(context.targetChord),
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+const DOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
+  id: "connection.dominant-seventh",
+  sourceMatches: (span, chord) => {
+    const interpretation = interpretationOf(span);
+    const kind = interpretation?.designation?.kind;
     return (
-      hasSeventh &&
-      !hasNinth &&
+      hasSeventh(chord) &&
+      !hasNinth(chord) &&
       interpretation?.degree === 5 &&
-      family === "dominant" &&
+      interpretation.designation?.primaryFunction === "dominant" &&
       kind !== "applied-dominant" &&
       kind !== "double-dominant"
     );
-  if (ruleId === "connection.dominant-ninth")
+  },
+  targetAllowed: tonicTarget,
+  collectProblems: dominantSeventhProblems,
+  coverageKinds: [
+    { kind: "leading-tone", toneIndex: 1 },
+    { kind: "chord-seventh", toneIndex: 3 },
+  ],
+};
+
+const DOMINANT_NINTH_POLICY: SpecializedConnectionPolicy = {
+  id: "connection.dominant-ninth",
+  sourceMatches: (span, chord) => {
+    const interpretation = interpretationOf(span);
+    const kind = interpretation?.designation?.kind;
     return (
-      hasNinth &&
+      hasNinth(chord) &&
       interpretation?.degree === 5 &&
-      family === "dominant" &&
+      interpretation.designation?.primaryFunction === "dominant" &&
       kind !== "applied-dominant" &&
       kind !== "double-dominant"
     );
-  if (ruleId === "connection.leading-tone-seventh")
+  },
+  targetAllowed: tonicTarget,
+  collectProblems: dominantNinthProblems,
+  coverageKinds: [
+    { kind: "leading-tone", toneIndex: 1 },
+    { kind: "chord-seventh", toneIndex: 3 },
+    { kind: "dominant-ninth", toneIndex: 4 },
+  ],
+};
+
+const LEADING_TONE_SEVENTH_POLICY: SpecializedConnectionPolicy = {
+  id: "connection.leading-tone-seventh",
+  sourceMatches: (span, chord) => {
+    const interpretation = interpretationOf(span);
+    const kind = interpretation?.designation?.kind;
     return (
-      hasSeventh &&
+      hasSeventh(chord) &&
       interpretation?.degree === 7 &&
-      family === "dominant" &&
+      interpretation.designation?.primaryFunction === "dominant" &&
       kind !== "applied-leading-tone" &&
       kind !== "double-dominant-leading-tone"
     );
-  if (ruleId === "connection.supertonic-seventh")
-    return hasSeventh && interpretation?.degree === 2 && family === "subdominant";
-  if (ruleId === "connection.subdominant-seventh")
-    return hasSeventh && interpretation?.degree === 4 && family === "subdominant";
-  if (ruleId === "connection.double-dominant-seventh")
-    return hasSeventh && kind === "double-dominant";
-  if (ruleId === "connection.double-dominant-leading-tone")
-    return hasSeventh && kind === "double-dominant-leading-tone";
-  return kind === "neapolitan";
+  },
+  targetAllowed: tonicTarget,
+  collectProblems: leadingToneSeventhProblems,
+};
+
+const SUPERTONIC_SEVENTH_POLICY: SpecializedConnectionPolicy = {
+  id: "connection.supertonic-seventh",
+  sourceMatches: (span, chord) => {
+    const interpretation = interpretationOf(span);
+    return (
+      hasSeventh(chord) &&
+      interpretation?.degree === 2 &&
+      interpretation.designation?.primaryFunction === "subdominant"
+    );
+  },
+  targetAllowed: dominantTarget,
+  collectProblems: seventhDownAndCommonToneProblems,
+};
+
+const SUBDOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
+  id: "connection.subdominant-seventh",
+  sourceMatches: (span, chord) => {
+    const interpretation = interpretationOf(span);
+    return (
+      hasSeventh(chord) &&
+      interpretation?.degree === 4 &&
+      interpretation.designation?.primaryFunction === "subdominant"
+    );
+  },
+  targetAllowed: dominantTarget,
+  collectProblems: seventhDownAndCommonToneProblems,
+};
+
+const DOUBLE_DOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
+  id: "connection.double-dominant-seventh",
+  sourceMatches: (span, chord) =>
+    hasSeventh(chord) &&
+    interpretationOf(span)?.designation?.kind === "double-dominant",
+  targetAllowed: dominantOrCadential64Target,
+  collectProblems: seventhDownAndCommonToneProblems,
+};
+
+const DOUBLE_DOMINANT_LEADING_TONE_POLICY: SpecializedConnectionPolicy = {
+  id: "connection.double-dominant-leading-tone",
+  sourceMatches: (span, chord) =>
+    hasSeventh(chord) &&
+    interpretationOf(span)?.designation?.kind ===
+      "double-dominant-leading-tone",
+  targetAllowed: dominantOrCadential64Target,
+  collectProblems: leadingToneSeventhProblems,
+};
+
+const NEAPOLITAN_POLICY: SpecializedConnectionPolicy = {
+  id: "connection.neapolitan-sixth",
+  sourceMatches: (span) =>
+    interpretationOf(span)?.designation?.kind === "neapolitan",
+  targetAllowed: dominantOrCadential64Target,
+  collectProblems: neapolitanProblems,
+};
+
+export function dominantSeventhConnectionRule(analysis: HarmonyAnalysis) {
+  return evaluateSpecializedConnection(analysis, DOMINANT_SEVENTH_POLICY);
 }
 
-function allowedTarget(ruleId: SpecializedRuleId, targetSpan: HarmonySpan) {
-  const interpretation = interpretationOf(targetSpan);
-  const family = interpretation?.designation?.primaryFunction;
-  const kind = interpretation?.designation?.kind;
-  if (
-    ruleId === "connection.dominant-seventh" ||
-    ruleId === "connection.dominant-ninth" ||
-    ruleId === "connection.leading-tone-seventh"
-  )
-    return family === "tonic" && interpretation?.degree === 1;
-  if (
-    ruleId === "connection.supertonic-seventh" ||
-    ruleId === "connection.subdominant-seventh"
-  )
-    return family === "dominant";
-  return family === "dominant" || kind === "cadential64";
+export function dominantNinthConnectionRule(analysis: HarmonyAnalysis) {
+  return evaluateSpecializedConnection(analysis, DOMINANT_NINTH_POLICY);
+}
+
+export function leadingToneSeventhConnectionRule(analysis: HarmonyAnalysis) {
+  return evaluateSpecializedConnection(analysis, LEADING_TONE_SEVENTH_POLICY);
+}
+
+export function supertonicSeventhConnectionRule(analysis: HarmonyAnalysis) {
+  return evaluateSpecializedConnection(analysis, SUPERTONIC_SEVENTH_POLICY);
+}
+
+export function subdominantSeventhConnectionRule(analysis: HarmonyAnalysis) {
+  return evaluateSpecializedConnection(analysis, SUBDOMINANT_SEVENTH_POLICY);
+}
+
+export function doubleDominantSeventhConnectionRule(
+  analysis: HarmonyAnalysis,
+) {
+  return evaluateSpecializedConnection(
+    analysis,
+    DOUBLE_DOMINANT_SEVENTH_POLICY,
+  );
+}
+
+export function doubleDominantLeadingToneConnectionRule(
+  analysis: HarmonyAnalysis,
+) {
+  return evaluateSpecializedConnection(
+    analysis,
+    DOUBLE_DOMINANT_LEADING_TONE_POLICY,
+  );
+}
+
+export function neapolitanSixthConnectionRule(analysis: HarmonyAnalysis) {
+  return evaluateSpecializedConnection(analysis, NEAPOLITAN_POLICY);
 }
 
 export function ambiguousConnectionRule(analysis: HarmonyAnalysis) {
@@ -281,202 +631,6 @@ export function ambiguousConnectionRule(analysis: HarmonyAnalysis) {
                 (span.semantics?.alternatives?.length ?? 0),
             ),
           })),
-        },
-      ),
-    );
-  });
-  return diagnostics;
-}
-
-export function specializedConnectionRule(
-  analysis: HarmonyAnalysis,
-  ruleId: SpecializedRuleId,
-) {
-  const diagnostics: RuleDiagnostic[] = [];
-  analysis.connections.forEach((connection) => {
-    if (
-      !connection.contiguous ||
-      !connection.sameKey ||
-      connection.confidence === "ambiguous" ||
-      connection.confidence === "unknown"
-    )
-      return;
-    const sourceSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.previousSpanId,
-    );
-    const targetSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.currentSpanId,
-    );
-    const boundary = connectionBoundarySlices(analysis, connection);
-    if (
-      !sourceSpan ||
-      !targetSpan ||
-      !boundary ||
-      !boundary.source.completeSatb ||
-      !boundary.target.completeSatb ||
-      !sourceMatches(ruleId, sourceSpan, boundary.source.chord!)
-    )
-      return;
-    const sourceChord = boundary.source.chord!;
-    const targetChord = boundary.target.chord!;
-    const problems: string[] = [];
-    const relatedVoices: VoiceId[] = [];
-    const relatedNotes: AnalysisNote[] = [];
-
-    if (!allowedTarget(ruleId, targetSpan)) problems.push("后继功能不符合该和弦的目标集合");
-
-    const addMotions = (
-      checks: Parameters<typeof motionProblems>[3],
-    ) => {
-      const result = motionProblems(
-        boundary.source,
-        boundary.target,
-        sourceChord,
-        checks,
-      );
-      problems.push(...result.problems);
-      relatedVoices.push(...result.voices);
-      relatedNotes.push(...result.notes);
-    };
-
-    if (ruleId === "connection.dominant-seventh") {
-      addMotions([
-        { toneIndex: 1, label: "导音", direction: "up" },
-        { toneIndex: 3, label: "七音", direction: "down" },
-      ]);
-      const bass = dominantBassProblem(boundary.source, boundary.target);
-      if (bass) problems.push(bass);
-      const sourceTones = chordIdentityToneSpellings(sourceChord.identity);
-      const targetTones = chordIdentityToneSpellings(targetChord.identity);
-      const common = sourceTones.filter((tone) =>
-        targetTones.some((candidate) => pitchClassEquals(tone, candidate)),
-      );
-      const held = VOICE_ORDER.some((voiceId) => {
-        const before = boundary.source.notes[voiceId];
-        const after = boundary.target.notes[voiceId];
-        return Boolean(
-          before &&
-            after &&
-            toMidi(before.pitch) === toMidi(after.pitch) &&
-            common.some((tone) => pitchClassEquals(before.pitch, tone)),
-        );
-      });
-      if (common.length > 0 && !held) problems.push("共同音没有保持");
-      problems.push(...targetConfigurationProblems(boundary.target));
-    } else if (ruleId === "connection.dominant-ninth") {
-      if (chordInversion(sourceChord) !== 0) problems.push("当前仅支持原位 D9");
-      addMotions([
-        { toneIndex: 1, label: "导音", direction: "up" },
-        { toneIndex: 3, label: "七音", direction: "down" },
-        { toneIndex: 4, label: "九音", direction: "down" },
-      ]);
-      const sourceTones = chordIdentityToneSpellings(sourceChord.identity);
-      const targetTones = chordIdentityToneSpellings(targetChord.identity);
-      const common = sourceTones.filter((tone) =>
-        targetTones.some((candidate) => pitchClassEquals(tone, candidate)),
-      );
-      const held = VOICE_ORDER.some((voiceId) => {
-        const before = boundary.source.notes[voiceId];
-        const after = boundary.target.notes[voiceId];
-        return Boolean(
-          before &&
-            after &&
-            toMidi(before.pitch) === toMidi(after.pitch) &&
-            common.some((tone) => pitchClassEquals(before.pitch, tone)),
-        );
-      });
-      if (common.length > 0 && !held) problems.push("共同音没有保持");
-      problems.push(...targetConfigurationProblems(boundary.target));
-    } else if (
-      ruleId === "connection.leading-tone-seventh" ||
-      ruleId === "connection.double-dominant-leading-tone"
-    ) {
-      addMotions(
-        chordIdentityToneSpellings(sourceChord.identity).map((_, toneIndex) => ({
-          toneIndex,
-          label: toneIndex === 0 ? "导音" : `构成音 ${toneIndex + 1}`,
-          direction: toneIndex === 0 ? ("up" as const) : ("step" as const),
-        })),
-      );
-      problems.push(...targetConfigurationProblems(boundary.target));
-    } else if (
-      ruleId === "connection.supertonic-seventh" ||
-      ruleId === "connection.subdominant-seventh" ||
-      ruleId === "connection.double-dominant-seventh"
-    ) {
-      addMotions([{ toneIndex: 3, label: "七音", direction: "down" }]);
-      const commonSource = chordIdentityToneSpellings(sourceChord.identity);
-      const commonTarget = chordIdentityToneSpellings(targetChord.identity);
-      const common = commonSource.filter((tone) =>
-        commonTarget.some((candidate) => pitchClassEquals(tone, candidate)),
-      );
-      const held = VOICE_ORDER.some((voiceId) => {
-        const before = boundary.source.notes[voiceId];
-        const after = boundary.target.notes[voiceId];
-        return Boolean(
-          before &&
-            after &&
-            toMidi(before.pitch) === toMidi(after.pitch) &&
-            common.some((tone) => pitchClassEquals(before.pitch, tone)),
-        );
-      });
-      if (common.length > 0 && !held) problems.push("共同音没有保持");
-    } else {
-      const tones = chordIdentityToneSpellings(sourceChord.identity);
-      const counts = tones.map(
-        (tone) =>
-          activeNotes(boundary.source).filter(({ note }) =>
-            pitchClassEquals(note.pitch, tone),
-          ).length,
-      );
-      if (chordInversion(sourceChord) !== 1) problems.push("N6 应使用第一转位");
-      if (counts[1] !== 2) problems.push("N6 通常重复低音所代表的 IV 级音");
-      toneMembers(boundary.source, sourceChord, 0).forEach((member) => {
-        const next = boundary.target.notes[member.voiceId];
-        const interval = next
-          ? writtenInterval(member.note.pitch, next.pitch)
-          : undefined;
-        if (
-          !next ||
-          !targetContains(boundary.target, next) ||
-          !interval ||
-          interval.semitones >= 0 ||
-          Math.abs(interval.semitones) > 3
-        ) {
-          problems.push("降 II 级音未按书写方向下行进入目标");
-          relatedVoices.push(member.voiceId);
-          relatedNotes.push(member.note, ...(next ? [next] : []));
-        }
-      });
-    }
-    if (problems.length === 0) return;
-
-    const allNotes = [
-      ...activeNotes(boundary.source).map(({ note }) => note),
-      ...activeNotes(boundary.target).map(({ note }) => note),
-      ...relatedNotes,
-    ];
-    diagnostics.push(
-      diagnostic(
-        ruleId,
-        boundary.target.tick,
-        boundary.target.endTick,
-        [...new Set(relatedVoices)],
-        [...new Map(allNotes.map((note) => [note.id, note])).values()],
-        `${chordLabel(sourceChord)} 连接配置不规范`,
-        `${chordLabel(sourceChord)} -> ${chordLabel(targetChord)}：${[
-          ...new Set(problems),
-        ].join("；")}。`,
-        {
-          chordIds: [sourceChord.id, targetChord.id],
-          causeRefs: [`${ruleId}|${connection.connectionKey}`],
-          coverageRefs: coverageReferences(
-            ruleId,
-            connection.connectionKey,
-            boundary.source,
-            sourceChord,
-          ),
-          evidence: [chordEvidence(sourceChord), chordEvidence(targetChord)],
         },
       ),
     );
@@ -589,8 +743,7 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
       "resolution.leading-tone",
       "resolution.chord-seventh"
     ],
-    evaluate: (analysis) =>
-    specializedConnectionRule(analysis, "connection.dominant-seventh"),
+    evaluate: dominantSeventhConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.dominant-ninth",
@@ -611,8 +764,7 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
       "resolution.chord-seventh",
       "resolution.dominant-ninth"
     ],
-    evaluate: (analysis) =>
-    specializedConnectionRule(analysis, "connection.dominant-ninth"),
+    evaluate: dominantNinthConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.leading-tone-seventh",
@@ -628,8 +780,7 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    specializedConnectionRule(analysis, "connection.leading-tone-seventh"),
+    evaluate: leadingToneSeventhConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.supertonic-seventh",
@@ -645,8 +796,7 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    specializedConnectionRule(analysis, "connection.supertonic-seventh"),
+    evaluate: supertonicSeventhConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.subdominant-seventh",
@@ -662,8 +812,7 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    specializedConnectionRule(analysis, "connection.subdominant-seventh"),
+    evaluate: subdominantSeventhConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.double-dominant-seventh",
@@ -679,11 +828,7 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    specializedConnectionRule(
-      analysis,
-      "connection.double-dominant-seventh",
-    ),
+    evaluate: doubleDominantSeventhConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.double-dominant-leading-tone",
@@ -699,11 +844,7 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    specializedConnectionRule(
-      analysis,
-      "connection.double-dominant-leading-tone",
-    ),
+    evaluate: doubleDominantLeadingToneConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.neapolitan-sixth",
@@ -719,8 +860,7 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    specializedConnectionRule(analysis, "connection.neapolitan-sixth"),
+    evaluate: neapolitanSixthConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.second-inversion-context",

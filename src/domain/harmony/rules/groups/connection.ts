@@ -20,13 +20,20 @@ import {
 } from "../helpers/core";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
-export function augmentedSixthResolutionRule(
-  analysis: HarmonyAnalysis,
-  ruleId:
+interface AugmentedSixthResolutionPolicy {
+  id:
     | "resolution.augmented-sixth"
     | "connection.italian-augmented-sixth"
     | "connection.french-augmented-sixth"
-    | "connection.german-augmented-sixth" = "resolution.augmented-sixth",
+    | "connection.german-augmented-sixth";
+  expectedVariant?: "italian" | "french" | "german";
+  checkCharacteristicTone: boolean;
+  generic: boolean;
+}
+
+function evaluateAugmentedSixthResolution(
+  analysis: HarmonyAnalysis,
+  policy: AugmentedSixthResolutionPolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
   analysis.harmonySpans.forEach((sourceSpan) => {
@@ -34,17 +41,9 @@ export function augmentedSixthResolutionRule(
       .map((id) => analysis.chordById.get(id))
       .find(Boolean);
     if (sourceSpanChord?.identity.structure.kind !== "augmented-sixth") return;
-    const expectedVariant =
-      ruleId === "connection.italian-augmented-sixth"
-        ? "italian"
-        : ruleId === "connection.french-augmented-sixth"
-          ? "french"
-          : ruleId === "connection.german-augmented-sixth"
-            ? "german"
-            : undefined;
     if (
-      expectedVariant &&
-      sourceSpanChord.identity.structure.variant !== expectedVariant
+      policy.expectedVariant &&
+      sourceSpanChord.identity.structure.variant !== policy.expectedVariant
     )
       return;
     const connection = analysis.connections.find(
@@ -121,7 +120,7 @@ export function augmentedSixthResolutionRule(
     let characteristicResolves = true;
     let characteristicSource: AnalysisNote | undefined;
     let characteristicTarget: AnalysisNote | undefined;
-    if (ruleId === "connection.french-augmented-sixth") {
+    if (policy.checkCharacteristicTone) {
       const candidates = sourceNotes.filter(({ note }) =>
         pitchClassEquals(note.pitch, tones[2]),
       );
@@ -179,15 +178,15 @@ export function augmentedSixthResolutionRule(
         : "增六和弦";
     const genericCause =
       `resolution.augmented-sixth|${connection.connectionKey}`;
-    const specificCause = `${ruleId}|${connection.connectionKey}`;
+    const specificCause = `${policy.id}|${connection.connectionKey}`;
     diagnostics.push(
       diagnostic(
-        ruleId,
+        policy.id,
         targetSlice.tick,
         targetSlice.endTick,
         [...VOICE_ORDER],
         [...sourceAllNotes, ...targetAllNotes],
-        ruleId === "resolution.augmented-sixth"
+        policy.generic
           ? "增六音程未按反向半音解决"
           : `${variantLabel} 连接不正确`,
         `${chordLabel(sourceChord)}：${problems.join("；")}。`,
@@ -214,14 +213,53 @@ export function augmentedSixthResolutionRule(
           ],
           causeRefs: [specificCause],
           coverageRefs:
-            ruleId === "resolution.augmented-sixth"
-              ? undefined
-              : [genericCause],
+            policy.generic ? undefined : [genericCause],
         },
       ),
     );
   });
   return diagnostics;
+}
+
+export function augmentedSixthResolutionRule(analysis: HarmonyAnalysis) {
+  return evaluateAugmentedSixthResolution(analysis, {
+    id: "resolution.augmented-sixth",
+    checkCharacteristicTone: false,
+    generic: true,
+  });
+}
+
+export function italianAugmentedSixthConnectionRule(
+  analysis: HarmonyAnalysis,
+) {
+  return evaluateAugmentedSixthResolution(analysis, {
+    id: "connection.italian-augmented-sixth",
+    expectedVariant: "italian",
+    checkCharacteristicTone: false,
+    generic: false,
+  });
+}
+
+export function frenchAugmentedSixthConnectionRule(
+  analysis: HarmonyAnalysis,
+) {
+  return evaluateAugmentedSixthResolution(analysis, {
+    id: "connection.french-augmented-sixth",
+    expectedVariant: "french",
+    checkCharacteristicTone: true,
+    generic: false,
+  });
+}
+
+export function germanAugmentedSixthConnectionRule(
+  analysis: HarmonyAnalysis,
+) {
+  return evaluateAugmentedSixthResolution(analysis, {
+    id: "connection.german-augmented-sixth",
+    expectedVariant: "german",
+    checkCharacteristicTone: false,
+    generic: false,
+  });
 }
 
 export function deceptiveCadenceTargetRule(analysis: HarmonyAnalysis) {
@@ -451,8 +489,7 @@ export const CONNECTION_RULES = defineRuleGroup(
       "chords"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    augmentedSixthResolutionRule(analysis),
+    evaluate: augmentedSixthResolutionRule,
   }),
   defineStatelessRule({
     id: "connection.italian-augmented-sixth",
@@ -471,11 +508,7 @@ export const CONNECTION_RULES = defineRuleGroup(
     coveredRuleIds: [
       "resolution.augmented-sixth"
     ],
-    evaluate: (analysis) =>
-    augmentedSixthResolutionRule(
-      analysis,
-      "connection.italian-augmented-sixth",
-    ),
+    evaluate: italianAugmentedSixthConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.french-augmented-sixth",
@@ -494,11 +527,7 @@ export const CONNECTION_RULES = defineRuleGroup(
     coveredRuleIds: [
       "resolution.augmented-sixth"
     ],
-    evaluate: (analysis) =>
-    augmentedSixthResolutionRule(
-      analysis,
-      "connection.french-augmented-sixth",
-    ),
+    evaluate: frenchAugmentedSixthConnectionRule,
   }),
   defineStatelessRule({
     id: "connection.german-augmented-sixth",
@@ -517,11 +546,7 @@ export const CONNECTION_RULES = defineRuleGroup(
     coveredRuleIds: [
       "resolution.augmented-sixth"
     ],
-    evaluate: (analysis) =>
-    augmentedSixthResolutionRule(
-      analysis,
-      "connection.german-augmented-sixth",
-    ),
+    evaluate: germanAugmentedSixthConnectionRule,
   }),
   defineStatelessRule({
     id: "function.deceptive-cadence-target",

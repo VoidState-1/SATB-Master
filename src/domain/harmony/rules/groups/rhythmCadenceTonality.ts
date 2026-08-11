@@ -24,11 +24,6 @@ import {
 } from "../helpers/core";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
-type CadenceRuleId =
-  | "cadence.bass-formula"
-  | "cadence.perfect-authentic-soprano"
-  | "cadence.unstable-ending";
-
 function keyEquals(left: KeyReference, right: KeyReference) {
   return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
@@ -178,13 +173,12 @@ function cadenceContext(analysis: HarmonyAnalysis, span: HarmonySpan) {
   };
 }
 
-export function cadenceRule(analysis: HarmonyAnalysis, ruleId: CadenceRuleId) {
-  const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((span) => {
+function cadenceRuleContexts(analysis: HarmonyAnalysis) {
+  return analysis.harmonySpans.flatMap((span) => {
     const cadenceType = span.semantics?.cadenceType;
-    if (!cadenceType || cadenceType === "open") return;
+    if (!cadenceType || cadenceType === "open") return [];
     const context = cadenceContext(analysis, span);
-    if (!context) return;
+    if (!context) return [];
     const {
       sourceSlice,
       targetSlice,
@@ -196,107 +190,133 @@ export function cadenceRule(analysis: HarmonyAnalysis, ruleId: CadenceRuleId) {
     const key = targetInterpretation?.localKey ?? targetSlice.key;
     const sourceBass = sourceSlice.notes.bass;
     const targetBass = targetSlice.notes.bass;
-    if (!sourceBass || !targetBass) return;
+    if (!sourceBass || !targetBass) return [];
     const degreePitch = (degree: 1 | 4 | 5 | 6) =>
       scaleDegreePitchClass(key, degree, 0);
     const sourceFamily = sourceInterpretation?.designation?.primaryFunction;
     const targetFamily = targetInterpretation?.designation?.primaryFunction;
+    return [{
+      cadenceType,
+      sourceSlice,
+      targetSlice,
+      sourceChord,
+      targetChord,
+      sourceBass,
+      targetBass,
+      degreePitch,
+      sourceFamily,
+      targetFamily,
+      targetInterpretation,
+    }];
+  });
+}
 
-    if (ruleId === "cadence.bass-formula") {
-      const valid =
-        cadenceType === "perfect-authentic" ||
-        cadenceType === "imperfect-authentic"
-          ? sourceFamily === "dominant" &&
-            targetFamily === "tonic" &&
-            pitchClassEquals(sourceBass.pitch, degreePitch(5)) &&
-            pitchClassEquals(targetBass.pitch, degreePitch(1))
-          : cadenceType === "half"
-            ? targetFamily === "dominant" &&
-              pitchClassEquals(targetBass.pitch, degreePitch(5))
-            : cadenceType === "plagal"
-              ? sourceFamily === "subdominant" &&
-                targetFamily === "tonic" &&
-                pitchClassEquals(sourceBass.pitch, degreePitch(4)) &&
-                pitchClassEquals(targetBass.pitch, degreePitch(1))
-              : sourceFamily === "dominant" &&
-                targetInterpretation?.degree === 6 &&
-                pitchClassEquals(sourceBass.pitch, degreePitch(5)) &&
-                pitchClassEquals(targetBass.pitch, degreePitch(6));
-      if (valid) return;
-      diagnostics.push(
-        diagnostic(
-          ruleId,
-          targetSlice.tick,
-          targetSlice.endTick,
-          ["bass"],
-          [sourceBass, targetBass],
-          "终止低音公式不成立",
-          `标注的 ${cadenceType} 终止与末端功能或低音级数不一致。`,
-          {
-            chordIds: [sourceChord.id, targetChord.id],
-            evidence: [
-              chordEvidence(sourceChord),
-              chordEvidence(targetChord),
-              noteEvidence(sourceBass, "终止前低音"),
-              noteEvidence(targetBass, "终止低音"),
-            ],
-          },
-        ),
-      );
-      return;
-    }
-
-    if (ruleId === "cadence.perfect-authentic-soprano") {
-      if (cadenceType !== "perfect-authentic") return;
-      const soprano = targetSlice.notes.soprano;
-      if (!soprano) return;
-      const valid =
-        sourceFamily === "dominant" &&
-        targetFamily === "tonic" &&
-        chordInversion(sourceChord) === 0 &&
-        chordInversion(targetChord) === 0 &&
-        pitchClassEquals(soprano.pitch, degreePitch(1));
-      if (valid) return;
-      diagnostics.push(
-        diagnostic(
-          ruleId,
-          targetSlice.tick,
-          targetSlice.endTick,
-          ["soprano", "bass"],
-          [sourceBass, targetBass, soprano],
-          "完全终止的旋律位置不成立",
-          "完全终止要求原位 D 进入原位 T，并由女高音落在主音。",
-          {
-            chordIds: [sourceChord.id, targetChord.id],
-            evidence: [
-              chordEvidence(sourceChord),
-              chordEvidence(targetChord),
-              noteEvidence(soprano, "终止女高音"),
-            ],
-          },
-        ),
-      );
-      return;
-    }
-
-    if (cadenceType === "half" || cadenceType === "deceptive") return;
+export function cadenceBassFormulaRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  cadenceRuleContexts(analysis).forEach((context) => {
     const valid =
-      targetFamily === "tonic" && chordInversion(targetChord) === 0;
+      context.cadenceType === "perfect-authentic" ||
+      context.cadenceType === "imperfect-authentic"
+        ? context.sourceFamily === "dominant" &&
+          context.targetFamily === "tonic" &&
+          pitchClassEquals(context.sourceBass.pitch, context.degreePitch(5)) &&
+          pitchClassEquals(context.targetBass.pitch, context.degreePitch(1))
+        : context.cadenceType === "half"
+          ? context.targetFamily === "dominant" &&
+            pitchClassEquals(context.targetBass.pitch, context.degreePitch(5))
+          : context.cadenceType === "plagal"
+            ? context.sourceFamily === "subdominant" &&
+              context.targetFamily === "tonic" &&
+              pitchClassEquals(context.sourceBass.pitch, context.degreePitch(4)) &&
+              pitchClassEquals(context.targetBass.pitch, context.degreePitch(1))
+            : context.sourceFamily === "dominant" &&
+              context.targetInterpretation?.degree === 6 &&
+              pitchClassEquals(context.sourceBass.pitch, context.degreePitch(5)) &&
+              pitchClassEquals(context.targetBass.pitch, context.degreePitch(6));
     if (valid) return;
     diagnostics.push(
       diagnostic(
-        ruleId,
-        targetSlice.tick,
-        targetSlice.endTick,
+        "cadence.bass-formula",
+        context.targetSlice.tick,
+        context.targetSlice.endTick,
         ["bass"],
-        [targetBass],
+        [context.sourceBass, context.targetBass],
+        "终止低音公式不成立",
+        `标注的 ${context.cadenceType} 终止与末端功能或低音级数不一致。`,
+        {
+          chordIds: [context.sourceChord.id, context.targetChord.id],
+          evidence: [
+            chordEvidence(context.sourceChord),
+            chordEvidence(context.targetChord),
+            noteEvidence(context.sourceBass, "终止前低音"),
+            noteEvidence(context.targetBass, "终止低音"),
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function perfectAuthenticSopranoRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  cadenceRuleContexts(analysis).forEach((context) => {
+    if (context.cadenceType !== "perfect-authentic") return;
+    const soprano = context.targetSlice.notes.soprano;
+    if (!soprano) return;
+    const valid =
+      context.sourceFamily === "dominant" &&
+      context.targetFamily === "tonic" &&
+      chordInversion(context.sourceChord) === 0 &&
+      chordInversion(context.targetChord) === 0 &&
+      pitchClassEquals(soprano.pitch, context.degreePitch(1));
+    if (valid) return;
+    diagnostics.push(
+      diagnostic(
+        "cadence.perfect-authentic-soprano",
+        context.targetSlice.tick,
+        context.targetSlice.endTick,
+        ["soprano", "bass"],
+        [context.sourceBass, context.targetBass, soprano],
+        "完全终止的旋律位置不成立",
+        "完全终止要求原位 D 进入原位 T，并由女高音落在主音。",
+        {
+          chordIds: [context.sourceChord.id, context.targetChord.id],
+          evidence: [
+            chordEvidence(context.sourceChord),
+            chordEvidence(context.targetChord),
+            noteEvidence(soprano, "终止女高音"),
+          ],
+        },
+      ),
+    );
+  });
+  return diagnostics;
+}
+
+export function unstableEndingRule(analysis: HarmonyAnalysis) {
+  const diagnostics: RuleDiagnostic[] = [];
+  cadenceRuleContexts(analysis).forEach((context) => {
+    if (context.cadenceType === "half" || context.cadenceType === "deceptive")
+      return;
+    const valid =
+      context.targetFamily === "tonic" &&
+      chordInversion(context.targetChord) === 0;
+    if (valid) return;
+    diagnostics.push(
+      diagnostic(
+        "cadence.unstable-ending",
+        context.targetSlice.tick,
+        context.targetSlice.endTick,
+        ["bass"],
+        [context.targetBass],
         "结束和弦不稳定",
         "闭合终止的末端应落在原位主功能和弦。",
         {
-          chordIds: [targetChord.id],
+          chordIds: [context.targetChord.id],
           evidence: [
-            chordEvidence(targetChord),
-            noteEvidence(targetBass, "结束低音"),
+            chordEvidence(context.targetChord),
+            noteEvidence(context.targetBass, "结束低音"),
           ],
         },
       ),
@@ -513,8 +533,7 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    cadenceRule(analysis, "cadence.bass-formula"),
+    evaluate: cadenceBassFormulaRule,
   }),
   defineStatelessRule({
     id: "cadence.perfect-authentic-soprano",
@@ -529,8 +548,7 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    cadenceRule(analysis, "cadence.perfect-authentic-soprano"),
+    evaluate: perfectAuthenticSopranoRule,
   }),
   defineStatelessRule({
     id: "cadence.unstable-ending",
@@ -545,8 +563,7 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
       "semantics"
     ],
     dependencyScope: "phrase",
-    evaluate: (analysis) =>
-    cadenceRule(analysis, "cadence.unstable-ending"),
+    evaluate: unstableEndingRule,
   }),
   defineStatelessRule({
     id: "tonality.unmarked-key-change",
