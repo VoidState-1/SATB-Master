@@ -13,6 +13,7 @@ import { createChordRegion, formatChord, formatChordIdentity } from "./chords";
 import { checkHarmony } from "./harmony";
 import {
   FUNCTIONAL_BASE_DEFINITIONS,
+  applyCadenceRole,
   applyFunctionalDefinition,
   applyFunctionalForm,
   applyFunctionalTarget,
@@ -99,6 +100,29 @@ describe("斯波索宾功能标记目录", () => {
     expect(chordIdentityEquals(tonicIdentity, cadentialIdentity)).toBe(true);
     expect(formatChord(tonic64, C_MAJOR).functional).toBe("T46");
     expect(formatChord(cadential64, C_MAJOR).functional).toBe("K46");
+  });
+
+  it("统一终止四六编辑结果并兼容旧式矛盾语义", () => {
+    const legacy = {
+      ...functionalDraft("T", "triad", 2),
+      cadenceRole: "cadential64" as const,
+    };
+    const normalized = applyCadenceRole(
+      functionalDraft("T"),
+      "cadential64",
+      "major",
+    );
+
+    expect(formatChord(legacy, C_MAJOR).functional).toBe("K46");
+    expect(normalized).toMatchObject({
+      degree: 1,
+      inversion: 2,
+      designation: {
+        kind: "cadential64",
+        primaryFunction: "dominant",
+      },
+      cadenceRole: "cadential64",
+    });
   });
 
   it("离调目标和重属使用结构化目标而不是名称字符串", () => {

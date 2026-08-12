@@ -1,4 +1,5 @@
 import {
+  chordStructureQuality,
   harmonySemanticsConfidence,
   primaryHarmonyInterpretation,
   type FunctionalFamily,
@@ -6,6 +7,7 @@ import {
   type HarmonyInterpretation,
   type KeyReference,
 } from "../../chordModel";
+import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import type { HarmonyAnalysis, HarmonySpan } from "../analysis";
 import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
 
@@ -71,20 +73,33 @@ function sameKey(left: KeyReference, right: KeyReference) {
   return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
+function designationOf(
+  span: HarmonySpan,
+  chord: ReturnType<typeof representativeChordAtSpan>,
+) {
+  if (!interpretationOf(span) || !span.semantics) return undefined;
+  return effectiveFunctionalDesignation(
+    span.semantics,
+    chord ? chordStructureQuality(chord.identity) : undefined,
+  );
+}
+
 function familyOf(
-  interpretation: HarmonyInterpretation | undefined,
+  span: HarmonySpan,
+  chord: ReturnType<typeof representativeChordAtSpan>,
 ): FunctionalFamily | undefined {
-  return interpretation?.designation?.primaryFunction;
+  return designationOf(span, chord)?.primaryFunction;
 }
 
 function targetMatches(
   target: FunctionalTarget | undefined,
+  currentSpan: HarmonySpan,
   current: HarmonyInterpretation | undefined,
   currentChord: ReturnType<typeof representativeChordAtSpan>,
   sourceKey: KeyReference,
 ) {
   if (!target || !current || !currentChord) return false;
-  const designation = current.designation;
+  const designation = designationOf(currentSpan, currentChord);
   if (!designation?.primaryFunction) return false;
   if (
     current.degree !== target.degree ||
@@ -170,6 +185,7 @@ export function functionalTargetMatches(
     sameKey(sourceKey, currentKey) &&
     targetMatches(
       target,
+      currentSpan,
       currentInterpretation,
       representativeChordAtSpan(analysis, currentSpan),
       sourceKey,
@@ -198,18 +214,12 @@ function assessConnection(
   const contiguous = previous.toTick === current.fromTick;
   const confidence = combinedConfidence(previous, current);
 
-  const previousFamily = familyOf(previousInterpretation);
-  const currentFamily = familyOf(currentInterpretation);
-  const previousKind =
-    previousInterpretation?.designation?.kind ??
-    (previous.semantics?.cadenceRole === "cadential64"
-      ? "cadential64"
-      : undefined);
-  const currentKind =
-    currentInterpretation?.designation?.kind ??
-    (current.semantics?.cadenceRole === "cadential64"
-      ? "cadential64"
-      : undefined);
+  const previousDesignation = designationOf(previous, previousChord);
+  const currentDesignation = designationOf(current, currentChord);
+  const previousFamily = familyOf(previous, previousChord);
+  const currentFamily = familyOf(current, currentChord);
+  const previousKind = previousDesignation?.kind;
+  const currentKind = currentDesignation?.kind;
   let relation: HarmonyConnectionRelation = "unknown";
   let targetMatched: boolean | undefined;
 
@@ -229,6 +239,7 @@ function assessConnection(
     const target = previousInterpretation?.appliedTarget;
     targetMatched = targetMatches(
       target,
+      current,
       currentInterpretation,
       currentChord,
       previousKey,

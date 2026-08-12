@@ -22,6 +22,7 @@ function diagnostic(): HarmonyDiagnostic {
     subjects: {
       origin: { voiceIds: ["alto"], noteIds: ["source-note"] },
       failure: { voiceIds: ["alto"], noteIds: ["failure-note"] },
+      context: { voiceIds: ["alto"], noteIds: ["context-note"] },
     },
   };
 }
@@ -41,5 +42,13 @@ describe("诊断对象分层", () => {
 
     expect(grouped.has("source-note")).toBe(true);
     expect(grouped.has("failure-note")).toBe(true);
+  });
+
+  it("涉及对象包含来源与失败音符，但排除纯上下文音符", () => {
+    const grouped = groupDiagnostics([diagnostic()], "noteIds", "involved");
+
+    expect(grouped.get("source-note")).toHaveLength(1);
+    expect(grouped.get("failure-note")).toHaveLength(1);
+    expect(grouped.has("context-note")).toBe(false);
   });
 });

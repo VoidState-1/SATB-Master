@@ -1,6 +1,8 @@
 import {
+  chordStructureQuality,
   chordIdentityToneSpellings,
 } from "../../../chordModel";
+import { effectiveFunctionalDesignation } from "../../../functionalHarmonyCatalog";
 import type {
   AnalysisChord,
   AnalysisNote,
@@ -683,6 +685,13 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
       nextSlice.notes.bass.pitch,
     );
     const nextInterpretation = interpretationOf(context, nextSpan);
+    const nextDesignation =
+      nextInterpretation && nextSpan.semantics && nextSlice.chord
+        ? effectiveFunctionalDesignation(
+            nextSpan.semantics,
+            chordStructureQuality(nextSlice.chord.identity),
+          )
+        : undefined;
     const valid =
       role === "passing64"
         ? Math.abs(into.diatonicSteps) === 1 &&
@@ -696,8 +705,24 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
             previousSpan.identityKey === nextSpan.identityKey
           : toMidi(lastSlice.notes.bass.pitch) ===
               toMidi(nextSlice.notes.bass.pitch) &&
-            nextInterpretation?.designation?.primaryFunction === "dominant";
+            nextDesignation?.primaryFunction === "dominant";
     if (valid) continue;
+    const currentBassNotes = [
+      ...new Map(
+        [firstSlice.notes.bass, lastSlice.notes.bass].map((note) => [
+          note.id,
+          note,
+        ]),
+      ).values(),
+    ];
+    const contextBassNotes = [
+      ...new Map(
+        [previousSlice.notes.bass, nextSlice.notes.bass].map((note) => [
+          note.id,
+          note,
+        ]),
+      ).values(),
+    ];
     diagnostics.push(
       diagnostic(
         "connection.second-inversion-context",
@@ -719,6 +744,23 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
         {
           chordIds: [...span.regionIds],
           evidence: [chordEvidence(firstSlice.chord)],
+          subjects: {
+            origin: {
+              voiceIds: ["bass"],
+              noteIds: currentBassNotes.map((note) => note.id),
+              chordIds: [...span.regionIds],
+              spanIds: [span.id],
+            },
+            context: {
+              voiceIds: ["bass"],
+              noteIds: contextBassNotes.map((note) => note.id),
+              chordIds: [
+                ...previousSpan.regionIds,
+                ...nextSpan.regionIds,
+              ],
+              spanIds: [previousSpan.id, nextSpan.id],
+            },
+          },
         },
       ),
     );

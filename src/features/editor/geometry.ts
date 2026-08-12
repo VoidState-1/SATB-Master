@@ -15,19 +15,27 @@ export const DIAGNOSTIC_LABEL: Record<HarmonyDiagnostic["severity"], string> = {
 export function groupDiagnostics(
   diagnostics: HarmonyDiagnostic[],
   key: "noteIds" | "chordIds",
-  role: "all" | "failure" = "all",
+  role: "all" | "failure" | "involved" = "all",
 ) {
   const grouped = new Map<string, HarmonyDiagnostic[]>();
-  diagnostics.forEach((diagnostic) =>
-    (role === "failure" && diagnostic.subjects?.failure
-      ? (diagnostic.subjects.failure[key] ?? [])
-      : diagnostic[key]
-    ).forEach((targetId) => {
+  diagnostics.forEach((diagnostic) => {
+    const targetIds =
+      role === "all" || !diagnostic.subjects
+        ? diagnostic[key]
+        : role === "failure"
+          ? diagnostic.subjects.failure
+            ? (diagnostic.subjects.failure[key] ?? [])
+            : diagnostic[key]
+          : [
+              ...(diagnostic.subjects.origin?.[key] ?? []),
+              ...(diagnostic.subjects.failure?.[key] ?? []),
+            ];
+    new Set(targetIds).forEach((targetId) => {
       const targetDiagnostics = grouped.get(targetId) ?? [];
       targetDiagnostics.push(diagnostic);
       grouped.set(targetId, targetDiagnostics);
-    }),
-  );
+    });
+  });
   grouped.forEach((items) =>
     items.sort(
       (left, right) =>

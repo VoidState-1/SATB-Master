@@ -8,6 +8,7 @@ import {
 import {
   FUNCTIONAL_BASE_DEFINITIONS,
   FUNCTIONAL_TARGET_OPTIONS,
+  applyCadenceRole,
   applyFunctionalDefinition,
   applyFunctionalForm,
   applyFunctionalTarget,
@@ -203,10 +204,15 @@ export function ChordSemanticsEditor({
         <select
           value={draft.cadenceRole ?? ""}
           onChange={(event) =>
-            onChange({
-              cadenceRole: (event.target.value || undefined) as
-                NonNullable<ChordDraft["cadenceRole"]> | undefined,
-            })
+            onChange(
+              applyCadenceRole(
+                draft,
+                (event.target.value || undefined) as
+                  | NonNullable<ChordDraft["cadenceRole"]>
+                  | undefined,
+                keyEvent.mode,
+              ),
+            )
           }
         >
           <option value="">无</option>

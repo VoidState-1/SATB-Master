@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createChordRegion } from "../chords";
+import { buildHarmonyAnalysis } from "./analysis";
 import { checkHarmony } from "./registry";
 import { defaultHarmonyRuleSeverities } from "./rules/catalog";
 import {
@@ -778,6 +779,134 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     expect(
       diagnosticFor(project, "resolution.augmented-sixth"),
     ).toBeUndefined();
+  });
+
+  it("旧式 T46 终止角色连接无显式标记的 D7 时通过", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    project.loop.endTick = PPQ * 3;
+    project.chordTrack.regions = [
+      functionalChord(project, "subdominant-sixth", 0, {
+        degree: 4,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 1,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "subdominant",
+        },
+        ...manualCertain,
+      }),
+      functionalChord(project, "legacy-tonic-64", 1, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 2,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "tonic",
+        },
+        cadenceRole: "cadential64",
+        ...manualCertain,
+      }),
+      functionalChord(project, "inferred-dominant-7", 2, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "dominant7",
+        inversion: 0,
+        ...manualCertain,
+      }),
+    ];
+    setLine(project, "soprano", [
+      pitch("F", 0, 4),
+      pitch("G", 0, 4),
+      pitch("G", 0, 4),
+    ]);
+    setLine(project, "alto", [
+      pitch("C", 0, 4),
+      pitch("E", 0, 4),
+      pitch("F", 0, 4),
+    ]);
+    setLine(project, "tenor", [
+      pitch("F", 0, 3),
+      pitch("C", 0, 4),
+      pitch("B", 0, 3),
+    ]);
+    setLine(project, "bass", [
+      pitch("A", 0, 2),
+      pitch("G", 0, 2),
+      pitch("G", 0, 2),
+    ]);
+
+    const analysis = buildHarmonyAnalysis(project, 1);
+    expect(analysis.connections[1]).toMatchObject({
+      relation: "cadential64-target",
+      targetMatched: true,
+    });
+    expect(
+      diagnosticFor(project, "function.cadential64-target"),
+    ).toBeUndefined();
+    expect(
+      diagnosticFor(project, "connection.second-inversion-context"),
+    ).toBeUndefined();
+  });
+
+  it("四六语境错误只标记四六和弦自身的低音", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    project.chordTrack.regions = [
+      functionalChord(project, "subdominant", 0, {
+        degree: 4,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "subdominant",
+        },
+        ...manualCertain,
+      }),
+      functionalChord(project, "cadential64", 1, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 2,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "cadential64",
+          primaryFunction: "dominant",
+        },
+        cadenceRole: "cadential64",
+        ...manualCertain,
+      }),
+      functionalChord(project, "dominant", 2, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "dominant",
+        },
+        ...manualCertain,
+      }),
+    ];
+    setLine(project, "bass", [
+      pitch("C", 0, 3),
+      pitch("G", 0, 2),
+      pitch("A", 0, 2),
+    ]);
+
+    const result = diagnosticFor(project, "connection.second-inversion-context");
+    expect(result?.noteIds).toEqual(["bass-0", "bass-1", "bass-2"]);
+    expect(result?.subjects).toMatchObject({
+      origin: { noteIds: ["bass-1"] },
+      context: { noteIds: ["bass-0", "bass-2"] },
+    });
   });
 
   it("Fr+6 特有音必须保持或级进到目标和弦音", () => {

@@ -386,6 +386,34 @@ export function applyFunctionalDefinition(
   };
 }
 
+export function applyCadenceRole(
+  draft: ChordDraft,
+  cadenceRole: HarmonySemantics["cadenceRole"],
+  mode: KeyMode,
+): ChordDraft {
+  if (cadenceRole === "cadential64")
+    return applyFunctionalDefinition(draft, functionalDefinition("K46"), mode);
+
+  if (
+    draft.cadenceRole === "cadential64" ||
+    draft.designation?.kind === "cadential64"
+  ) {
+    const tonic = applyFunctionalDefinition(
+      draft,
+      functionalDefinition(mode === "major" ? "T" : "t"),
+      mode,
+    );
+    return { ...tonic, cadenceRole };
+  }
+
+  return {
+    ...draft,
+    cadenceRole,
+    secondaryInterpretation: undefined,
+    alternatives: undefined,
+  };
+}
+
 export function applyFunctionalForm(
   draft: ChordDraft,
   definition: FunctionalBaseDefinition,
@@ -489,6 +517,9 @@ export function inferredFunctionalDefinition(
   semantics: HarmonySemantics,
   quality: ChordQuality | undefined,
 ): FunctionalBaseDefinition | undefined {
+  if (semantics.cadenceRole === "cadential64")
+    return functionalDefinition("K46");
+
   const primary = primaryHarmonyInterpretation(semantics);
   const explicitDraft = {
     degree: primary.degree,
@@ -529,6 +560,19 @@ export function inferredFunctionalDefinition(
   if (primary.degree === 6) return functionalDefinition("TSVI");
   if (primary.degree === 7) return functionalDefinition("DVII");
   return undefined;
+}
+
+export function effectiveFunctionalDesignation(
+  semantics: HarmonySemantics,
+  quality: ChordQuality | undefined,
+): FunctionalDesignation | undefined {
+  if (semantics.cadenceRole === "cadential64")
+    return functionalDefinition("K46").designation;
+  const primary = primaryHarmonyInterpretation(semantics);
+  return (
+    primary.designation ??
+    inferredFunctionalDefinition(semantics, quality)?.designation
+  );
 }
 
 export function targetFunctionalLabel(target: FunctionalTarget) {

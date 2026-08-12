@@ -109,7 +109,7 @@ export function PianoRoll({
     [project],
   );
   const diagnosticsByNote = useMemo(
-    () => groupDiagnostics(diagnostics, "noteIds", "failure"),
+    () => groupDiagnostics(diagnostics, "noteIds", "involved"),
     [diagnostics],
   );
   const diagnosticsByChord = useMemo(

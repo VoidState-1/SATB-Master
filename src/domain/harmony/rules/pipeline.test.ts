@@ -187,7 +187,7 @@ describe("共享事实与诊断仲裁", () => {
     );
   });
 
-  it("没有明确功能标记时不按级数猜测 T/S/D", () => {
+  it("缺少显式功能标记时按级数和结构推导有效功能", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
     project.chordTrack.regions = [
@@ -196,7 +196,7 @@ describe("共享事实与诊断仲裁", () => {
     ];
 
     expect(buildHarmonyAnalysis(project, 1).connections[0].relation).toBe(
-      "unknown",
+      "dominant-to-tonic",
     );
   });
 
