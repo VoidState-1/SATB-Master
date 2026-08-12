@@ -1,12 +1,10 @@
 import {
   chordIdentityToneSpellings,
-  primaryHarmonyInterpretation,
 } from "../../../chordModel";
 import type {
   AnalysisChord,
   AnalysisNote,
   AnalysisSlice,
-  HarmonyAnalysis,
   HarmonySpan,
 } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
@@ -18,10 +16,11 @@ import {
   chordEvidence,
   chordInversion,
   chordLabel,
-  connectionBoundarySlices,
   diagnostic,
   noteEvidence,
 } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
+import type { ConnectionView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 type SpecializedRuleId =
@@ -34,10 +33,9 @@ type SpecializedRuleId =
   | "connection.double-dominant-leading-tone"
   | "connection.neapolitan-sixth";
 
-function interpretationOf(span: HarmonySpan) {
-  return span.semantics
-    ? primaryHarmonyInterpretation(span.semantics)
-    : undefined;
+function interpretationOf(context: HarmonyRuleContext, span: HarmonySpan) {
+  const resolution = context.harmony.primaryInterpretation(span);
+  return resolution.status === "resolved" ? resolution.value : undefined;
 }
 
 function isStepMotion(source: AnalysisNote, target: AnalysisNote) {
@@ -147,12 +145,20 @@ function dominantBassProblem(source: AnalysisSlice, target: AnalysisSlice) {
     : `低音不符合 ${["D7", "D56", "D34", "D2"][inversion]} 的常用解决公式`;
 }
 
-type SpecializedBoundary = NonNullable<
-  ReturnType<typeof connectionBoundarySlices>
->;
+type SpecializedBoundary = Pick<
+  ConnectionView,
+  "sourceBoundary" | "targetBoundary"
+> extends infer Boundary
+  ? Boundary extends {
+      sourceBoundary: infer Source;
+      targetBoundary: infer Target;
+    }
+    ? { source: Source; target: Target }
+    : never
+  : never;
 
 interface SpecializedConnectionContext {
-  connection: HarmonyAnalysis["connections"][number];
+  connection: ConnectionView["connection"];
   sourceSpan: HarmonySpan;
   targetSpan: HarmonySpan;
   boundary: SpecializedBoundary;
@@ -168,8 +174,12 @@ interface SpecializedProblems {
 
 interface SpecializedConnectionPolicy {
   id: SpecializedRuleId;
-  sourceMatches(span: HarmonySpan, chord: AnalysisChord): boolean;
-  targetAllowed(span: HarmonySpan): boolean;
+  sourceMatches(
+    context: HarmonyRuleContext,
+    span: HarmonySpan,
+    chord: AnalysisChord,
+  ): boolean;
+  targetAllowed(context: HarmonyRuleContext, span: HarmonySpan): boolean;
   collectProblems(context: SpecializedConnectionContext): SpecializedProblems;
   coverageKinds?: readonly {
     kind: "leading-tone" | "chord-seventh" | "dominant-ninth";
@@ -195,20 +205,26 @@ function hasNinth(chord: AnalysisChord) {
   );
 }
 
-function tonicTarget(span: HarmonySpan) {
-  const interpretation = interpretationOf(span);
+function tonicTarget(context: HarmonyRuleContext, span: HarmonySpan) {
+  const interpretation = interpretationOf(context, span);
   return (
     interpretation?.designation?.primaryFunction === "tonic" &&
     interpretation.degree === 1
   );
 }
 
-function dominantTarget(span: HarmonySpan) {
-  return interpretationOf(span)?.designation?.primaryFunction === "dominant";
+function dominantTarget(context: HarmonyRuleContext, span: HarmonySpan) {
+  return (
+    interpretationOf(context, span)?.designation?.primaryFunction ===
+    "dominant"
+  );
 }
 
-function dominantOrCadential64Target(span: HarmonySpan) {
-  const interpretation = interpretationOf(span);
+function dominantOrCadential64Target(
+  context: HarmonyRuleContext,
+  span: HarmonySpan,
+) {
+  const interpretation = interpretationOf(context, span);
   return (
     interpretation?.designation?.primaryFunction === "dominant" ||
     interpretation?.designation?.kind === "cadential64"
@@ -354,56 +370,52 @@ function resolutionCoverageReferences(
 }
 
 function evaluateSpecializedConnection(
-  analysis: HarmonyAnalysis,
+  ruleContext: HarmonyRuleContext,
   policy: SpecializedConnectionPolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.connections.forEach((connection) => {
+  for (const candidate of ruleContext.connections()) {
+    const { connection, source, target, sourceBoundary, targetBoundary } =
+      candidate;
     if (
       !connection.contiguous ||
       !connection.sameKey ||
       connection.confidence === "ambiguous" ||
       connection.confidence === "unknown"
     )
-      return;
-    const sourceSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.previousSpanId,
-    );
-    const targetSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.currentSpanId,
-    );
-    const boundary = connectionBoundarySlices(analysis, connection);
+      continue;
+    const sourceSpan = source.span;
+    const targetSpan = target.span;
     if (
-      !sourceSpan ||
-      !targetSpan ||
-      !boundary ||
-      !boundary.source.completeSatb ||
-      !boundary.target.completeSatb ||
-      !policy.sourceMatches(sourceSpan, boundary.source.chord!)
+      !sourceBoundary.completeSatb ||
+      !targetBoundary.completeSatb ||
+      !sourceBoundary.chord ||
+      !targetBoundary.chord ||
+      !policy.sourceMatches(ruleContext, sourceSpan, sourceBoundary.chord)
     )
-      return;
+      continue;
     const context: SpecializedConnectionContext = {
       connection,
       sourceSpan,
       targetSpan,
-      boundary,
-      sourceChord: boundary.source.chord!,
-      targetChord: boundary.target.chord!,
+      boundary: { source: sourceBoundary, target: targetBoundary },
+      sourceChord: sourceBoundary.chord,
+      targetChord: targetBoundary.chord,
     };
     const result = policy.collectProblems(context);
-    if (!policy.targetAllowed(targetSpan))
+    if (!policy.targetAllowed(ruleContext, targetSpan))
       result.problems.unshift("后继功能不符合该和弦的目标集合");
-    if (result.problems.length === 0) return;
+    if (result.problems.length === 0) continue;
     const allNotes = [
-      ...activeNotes(boundary.source).map(({ note }) => note),
-      ...activeNotes(boundary.target).map(({ note }) => note),
+      ...activeNotes(sourceBoundary).map(({ note }) => note),
+      ...activeNotes(targetBoundary).map(({ note }) => note),
       ...result.notes,
     ];
     diagnostics.push(
       diagnostic(
         policy.id,
-        boundary.target.tick,
-        boundary.target.endTick,
+        targetBoundary.tick,
+        targetBoundary.endTick,
         [...new Set(result.voices)],
         [...new Map(allNotes.map((note) => [note.id, note])).values()],
         `${chordLabel(context.sourceChord)} 连接配置不规范`,
@@ -423,14 +435,14 @@ function evaluateSpecializedConnection(
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
 const DOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.dominant-seventh",
-  sourceMatches: (span, chord) => {
-    const interpretation = interpretationOf(span);
+  sourceMatches: (context, span, chord) => {
+    const interpretation = interpretationOf(context, span);
     const kind = interpretation?.designation?.kind;
     return (
       hasSeventh(chord) &&
@@ -451,8 +463,8 @@ const DOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
 
 const DOMINANT_NINTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.dominant-ninth",
-  sourceMatches: (span, chord) => {
-    const interpretation = interpretationOf(span);
+  sourceMatches: (context, span, chord) => {
+    const interpretation = interpretationOf(context, span);
     const kind = interpretation?.designation?.kind;
     return (
       hasNinth(chord) &&
@@ -473,8 +485,8 @@ const DOMINANT_NINTH_POLICY: SpecializedConnectionPolicy = {
 
 const LEADING_TONE_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.leading-tone-seventh",
-  sourceMatches: (span, chord) => {
-    const interpretation = interpretationOf(span);
+  sourceMatches: (context, span, chord) => {
+    const interpretation = interpretationOf(context, span);
     const kind = interpretation?.designation?.kind;
     return (
       hasSeventh(chord) &&
@@ -490,8 +502,8 @@ const LEADING_TONE_SEVENTH_POLICY: SpecializedConnectionPolicy = {
 
 const SUPERTONIC_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.supertonic-seventh",
-  sourceMatches: (span, chord) => {
-    const interpretation = interpretationOf(span);
+  sourceMatches: (context, span, chord) => {
+    const interpretation = interpretationOf(context, span);
     return (
       hasSeventh(chord) &&
       interpretation?.degree === 2 &&
@@ -504,8 +516,8 @@ const SUPERTONIC_SEVENTH_POLICY: SpecializedConnectionPolicy = {
 
 const SUBDOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.subdominant-seventh",
-  sourceMatches: (span, chord) => {
-    const interpretation = interpretationOf(span);
+  sourceMatches: (context, span, chord) => {
+    const interpretation = interpretationOf(context, span);
     return (
       hasSeventh(chord) &&
       interpretation?.degree === 4 &&
@@ -518,18 +530,18 @@ const SUBDOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
 
 const DOUBLE_DOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.double-dominant-seventh",
-  sourceMatches: (span, chord) =>
+  sourceMatches: (context, span, chord) =>
     hasSeventh(chord) &&
-    interpretationOf(span)?.designation?.kind === "double-dominant",
+    interpretationOf(context, span)?.designation?.kind === "double-dominant",
   targetAllowed: dominantOrCadential64Target,
   collectProblems: seventhDownAndCommonToneProblems,
 };
 
 const DOUBLE_DOMINANT_LEADING_TONE_POLICY: SpecializedConnectionPolicy = {
   id: "connection.double-dominant-leading-tone",
-  sourceMatches: (span, chord) =>
+  sourceMatches: (context, span, chord) =>
     hasSeventh(chord) &&
-    interpretationOf(span)?.designation?.kind ===
+    interpretationOf(context, span)?.designation?.kind ===
       "double-dominant-leading-tone",
   targetAllowed: dominantOrCadential64Target,
   collectProblems: leadingToneSeventhProblems,
@@ -537,66 +549,65 @@ const DOUBLE_DOMINANT_LEADING_TONE_POLICY: SpecializedConnectionPolicy = {
 
 const NEAPOLITAN_POLICY: SpecializedConnectionPolicy = {
   id: "connection.neapolitan-sixth",
-  sourceMatches: (span) =>
-    interpretationOf(span)?.designation?.kind === "neapolitan",
+  sourceMatches: (context, span) =>
+    interpretationOf(context, span)?.designation?.kind === "neapolitan",
   targetAllowed: dominantOrCadential64Target,
   collectProblems: neapolitanProblems,
 };
 
-export function dominantSeventhConnectionRule(analysis: HarmonyAnalysis) {
-  return evaluateSpecializedConnection(analysis, DOMINANT_SEVENTH_POLICY);
+export function dominantSeventhConnectionRule(context: HarmonyRuleContext) {
+  return evaluateSpecializedConnection(context, DOMINANT_SEVENTH_POLICY);
 }
 
-export function dominantNinthConnectionRule(analysis: HarmonyAnalysis) {
-  return evaluateSpecializedConnection(analysis, DOMINANT_NINTH_POLICY);
+export function dominantNinthConnectionRule(context: HarmonyRuleContext) {
+  return evaluateSpecializedConnection(context, DOMINANT_NINTH_POLICY);
 }
 
-export function leadingToneSeventhConnectionRule(analysis: HarmonyAnalysis) {
-  return evaluateSpecializedConnection(analysis, LEADING_TONE_SEVENTH_POLICY);
+export function leadingToneSeventhConnectionRule(context: HarmonyRuleContext) {
+  return evaluateSpecializedConnection(context, LEADING_TONE_SEVENTH_POLICY);
 }
 
-export function supertonicSeventhConnectionRule(analysis: HarmonyAnalysis) {
-  return evaluateSpecializedConnection(analysis, SUPERTONIC_SEVENTH_POLICY);
+export function supertonicSeventhConnectionRule(context: HarmonyRuleContext) {
+  return evaluateSpecializedConnection(context, SUPERTONIC_SEVENTH_POLICY);
 }
 
-export function subdominantSeventhConnectionRule(analysis: HarmonyAnalysis) {
-  return evaluateSpecializedConnection(analysis, SUBDOMINANT_SEVENTH_POLICY);
+export function subdominantSeventhConnectionRule(context: HarmonyRuleContext) {
+  return evaluateSpecializedConnection(context, SUBDOMINANT_SEVENTH_POLICY);
 }
 
-export function doubleDominantSeventhConnectionRule(analysis: HarmonyAnalysis) {
+export function doubleDominantSeventhConnectionRule(
+  context: HarmonyRuleContext,
+) {
   return evaluateSpecializedConnection(
-    analysis,
+    context,
     DOUBLE_DOMINANT_SEVENTH_POLICY,
   );
 }
 
 export function doubleDominantLeadingToneConnectionRule(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
 ) {
   return evaluateSpecializedConnection(
-    analysis,
+    context,
     DOUBLE_DOMINANT_LEADING_TONE_POLICY,
   );
 }
 
-export function neapolitanSixthConnectionRule(analysis: HarmonyAnalysis) {
-  return evaluateSpecializedConnection(analysis, NEAPOLITAN_POLICY);
+export function neapolitanSixthConnectionRule(context: HarmonyRuleContext) {
+  return evaluateSpecializedConnection(context, NEAPOLITAN_POLICY);
 }
 
-export function ambiguousConnectionRule(analysis: HarmonyAnalysis) {
+export function ambiguousConnectionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.connections.forEach((connection) => {
+  for (const candidate of context.connections()) {
+    const { connection, source, target } = candidate;
     if (
       connection.confidence !== "ambiguous" &&
       connection.confidence !== "unknown"
     )
-      return;
-    const sourceSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.previousSpanId,
-    );
-    const targetSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.currentSpanId,
-    );
+      continue;
+    const sourceSpan = source.span;
+    const targetSpan = target.span;
     const candidates = [sourceSpan, targetSpan].filter(
       (span): span is HarmonySpan =>
         Boolean(
@@ -605,13 +616,13 @@ export function ambiguousConnectionRule(analysis: HarmonyAnalysis) {
             (span.semantics.alternatives?.length ?? 0) > 0),
         ),
     );
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) continue;
     const chordIds = candidates.flatMap((span) => [...span.regionIds]);
     diagnostics.push(
       diagnostic(
         "function.ambiguous-connection",
-        targetSpan?.fromTick ?? sourceSpan?.toTick ?? 0,
-        targetSpan?.fromTick ?? sourceSpan?.toTick ?? 0,
+        targetSpan.fromTick,
+        targetSpan.fromTick,
         [],
         [],
         "功能连接存在互斥解释",
@@ -633,23 +644,27 @@ export function ambiguousConnectionRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
-export function secondInversionContextRule(analysis: HarmonyAnalysis) {
+export function secondInversionContextRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((span, spanIndex) => {
+  for (const current of context.spans()) {
+    const span = current.span;
     const role = span.semantics?.cadenceRole;
     if (role !== "passing64" && role !== "pedal64" && role !== "cadential64")
-      return;
-    const previousSpan = analysis.harmonySpans[spanIndex - 1];
-    const nextSpan = analysis.harmonySpans[spanIndex + 1];
-    if (!previousSpan || !nextSpan) return;
-    const previousSlice = analysis.slices[previousSpan.sliceIndices.at(-1)!];
-    const firstSlice = analysis.slices[span.sliceIndices[0]];
-    const lastSlice = analysis.slices[span.sliceIndices.at(-1)!];
-    const nextSlice = analysis.slices[nextSpan.sliceIndices[0]];
+      continue;
+    const neighborhood = context.spanNeighborhood(current);
+    const previous = neighborhood.previous;
+    const next = neighborhood.next;
+    if (!previous || !next) continue;
+    const previousSpan = previous.span;
+    const nextSpan = next.span;
+    const previousSlice = previous.lastSlice;
+    const firstSlice = current.firstSlice;
+    const lastSlice = current.lastSlice;
+    const nextSlice = next.firstSlice;
     if (
       !previousSlice?.notes.bass ||
       !firstSlice?.notes.bass ||
@@ -658,7 +673,7 @@ export function secondInversionContextRule(analysis: HarmonyAnalysis) {
       !firstSlice.chord ||
       chordInversion(firstSlice.chord) !== 2
     )
-      return;
+      continue;
     const into = writtenInterval(
       previousSlice.notes.bass.pitch,
       firstSlice.notes.bass.pitch,
@@ -667,7 +682,7 @@ export function secondInversionContextRule(analysis: HarmonyAnalysis) {
       lastSlice.notes.bass.pitch,
       nextSlice.notes.bass.pitch,
     );
-    const nextInterpretation = interpretationOf(nextSpan);
+    const nextInterpretation = interpretationOf(context, nextSpan);
     const valid =
       role === "passing64"
         ? Math.abs(into.diatonicSteps) === 1 &&
@@ -682,7 +697,7 @@ export function secondInversionContextRule(analysis: HarmonyAnalysis) {
           : toMidi(lastSlice.notes.bass.pitch) ===
               toMidi(nextSlice.notes.bass.pitch) &&
             nextInterpretation?.designation?.primaryFunction === "dominant";
-    if (valid) return;
+    if (valid) continue;
     diagnostics.push(
       diagnostic(
         "connection.second-inversion-context",
@@ -707,7 +722,7 @@ export function secondInversionContextRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 

@@ -1,6 +1,5 @@
 import {
   chordIdentityToneSpellings,
-  primaryHarmonyInterpretation,
 } from "../../../chordModel";
 import type { HarmonyAnalysis } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
@@ -18,11 +17,10 @@ import {
   chordEvidence,
   chordInversion,
   chordLabel,
-  connectionBoundarySlices,
   diagnostic,
-  finalSameHarmonySlice,
   noteEvidence,
 } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 const UPPER_VOICES = ["soprano", "alto", "tenor"] as const;
@@ -57,13 +55,14 @@ function chordToneCounts(
   };
 }
 
-export function incompleteSatbRule(analysis: HarmonyAnalysis) {
+export function incompleteSatbRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
   if (!analysis.project.ruleProfile.shared.strictFourPartTexture)
     return diagnostics;
 
-  analysis.slices.forEach((slice) => {
-    if (!slice.chord || slice.completeSatb) return;
+  for (const slice of context.slices()) {
+    if (!slice.chord || slice.completeSatb) continue;
     const missing = VOICE_ORDER.filter((voiceId) => !slice.notes[voiceId]);
     diagnostics.push(
       diagnostic(
@@ -81,13 +80,13 @@ export function incompleteSatbRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
-export function allVoicesSimilarRule(analysis: HarmonyAnalysis) {
+export function allVoicesSimilarRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.sliceTransitions.forEach((transition) => {
+  for (const transition of context.sliceTransitions()) {
     if (
       !transition.contiguous ||
       !transition.previous.completeSatb ||
@@ -97,7 +96,7 @@ export function allVoicesSimilarRule(analysis: HarmonyAnalysis) {
         transition.current.attackVoiceIds.includes(voiceId),
       )
     )
-      return;
+      continue;
     const directions = VOICE_ORDER.map((voiceId) => {
       const previous = transition.previous.notes[voiceId]!;
       const current = transition.current.notes[voiceId]!;
@@ -107,7 +106,7 @@ export function allVoicesSimilarRule(analysis: HarmonyAnalysis) {
       directions[0] === 0 ||
       !directions.every((item) => item === directions[0])
     )
-      return;
+      continue;
     const notes = VOICE_ORDER.flatMap((voiceId) => [
       transition.previous.notes[voiceId]!,
       transition.current.notes[voiceId]!,
@@ -132,26 +131,30 @@ export function allVoicesSimilarRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
-function triadVoicingFacts(analysis: HarmonyAnalysis, inversion: 0 | 1 | 2) {
-  return analysis.slices.flatMap((slice, sliceIndex) => {
-    const chord = slice.chord;
-    if (
-      !chord ||
-      !slice.completeSatb ||
-      finalSameHarmonySlice(analysis, sliceIndex) ||
-      !isPlainTriad(chord) ||
-      chordInversion(chord) !== inversion
-    )
-      return [];
-    const tones = chordIdentityToneSpellings(chord.identity);
-    const { active, counts } = chordToneCounts(slice, tones);
-    if (counts.some((count) => count === 0)) return [];
-    return [{ slice, chord, tones, active, counts, inversion }];
-  });
+function triadVoicingFacts(context: HarmonyRuleContext, inversion: 0 | 1 | 2) {
+  return context
+    .slices()
+    .selectMany((slice) => {
+      const chord = slice.chord;
+      if (
+        !chord ||
+        !slice.completeSatb ||
+        context.sliceTransitions({ fromSliceIndex: slice.index }).first()
+          ?.sameHarmony ||
+        !isPlainTriad(chord) ||
+        chordInversion(chord) !== inversion
+      )
+        return [];
+      const tones = chordIdentityToneSpellings(chord.identity);
+      const { active, counts } = chordToneCounts(slice, tones);
+      if (counts.some((count) => count === 0)) return [];
+      return [{ slice, chord, tones, active, counts, inversion }];
+    })
+    .toArray();
 }
 
 function triadVoicingDiagnostic(
@@ -182,9 +185,9 @@ function triadVoicingDiagnostic(
   );
 }
 
-export function rootPositionTriadDoublingRule(analysis: HarmonyAnalysis) {
+export function rootPositionTriadDoublingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  triadVoicingFacts(analysis, 0).forEach((fact) => {
+  triadVoicingFacts(context, 0).forEach((fact) => {
     if (
       fact.chord.identity.structure.kind === "tertian" &&
       fact.chord.identity.structure.quality === "diminished"
@@ -215,12 +218,12 @@ export function rootPositionTriadDoublingRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function firstInversionTriadDoublingRule(analysis: HarmonyAnalysis) {
+export function firstInversionTriadDoublingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  triadVoicingFacts(analysis, 1).forEach((fact) => {
-    const interpretation = fact.chord.semantics
-      ? primaryHarmonyInterpretation(fact.chord.semantics)
-      : undefined;
+  triadVoicingFacts(context, 1).forEach((fact) => {
+    const resolution = context.harmony.primaryInterpretation(fact.chord);
+    const interpretation =
+      resolution.status === "resolved" ? resolution.value : undefined;
     const preferBass =
       fact.chord.identity.structure.kind === "tertian" &&
       (fact.chord.identity.structure.quality === "diminished" ||
@@ -243,9 +246,9 @@ export function firstInversionTriadDoublingRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function secondInversionTriadVoicingRule(analysis: HarmonyAnalysis) {
+export function secondInversionTriadVoicingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  triadVoicingFacts(analysis, 2).forEach((fact) => {
+  triadVoicingFacts(context, 2).forEach((fact) => {
     const role = fact.chord.semantics?.cadenceRole;
     if (
       fact.counts[2] === 2 &&
@@ -286,8 +289,11 @@ function commonToneState(
   return { common, heldVoices };
 }
 
-function basicConnectionFacts(analysis: HarmonyAnalysis) {
-  return analysis.connections.flatMap((connection) => {
+function basicConnectionFacts(context: HarmonyRuleContext) {
+  return context
+    .connections()
+    .selectMany((candidate) => {
+      const { connection, sourceBoundary, targetBoundary } = candidate;
     if (
       !connection.contiguous ||
       !connection.sameKey ||
@@ -296,54 +302,55 @@ function basicConnectionFacts(analysis: HarmonyAnalysis) {
       connection.relation === "same-harmony"
     )
       return [];
-    const boundary = connectionBoundarySlices(analysis, connection);
     if (
-      !boundary ||
-      !boundary.source.completeSatb ||
-      !boundary.target.completeSatb ||
-      !isPlainTriad(boundary.source.chord!) ||
-      !isPlainTriad(boundary.target.chord!) ||
-      chordInversion(boundary.source.chord!) !== 0 ||
-      chordInversion(boundary.target.chord!) !== 0
+      !sourceBoundary.completeSatb ||
+      !targetBoundary.completeSatb ||
+      !sourceBoundary.chord ||
+      !targetBoundary.chord ||
+      !isPlainTriad(sourceBoundary.chord) ||
+      !isPlainTriad(targetBoundary.chord) ||
+      chordInversion(sourceBoundary.chord) !== 0 ||
+      chordInversion(targetBoundary.chord) !== 0
     )
       return [];
-    const sourceRoot = pitchClassValue(boundary.source.chord!.identity.root);
-    const targetRoot = pitchClassValue(boundary.target.chord!.identity.root);
+    const sourceRoot = pitchClassValue(sourceBoundary.chord.identity.root);
+    const targetRoot = pitchClassValue(targetBoundary.chord.identity.root);
     const rootDistance = simplePitchClassDistance(sourceRoot, targetRoot);
     const writtenRootDirect = Math.abs(
-      stepIndex(boundary.source.chord!.identity.root.step) -
-        stepIndex(boundary.target.chord!.identity.root.step),
+        stepIndex(sourceBoundary.chord.identity.root.step) -
+        stepIndex(targetBoundary.chord.identity.root.step),
     );
     const writtenRootDistance = Math.min(
       writtenRootDirect,
       7 - writtenRootDirect,
     );
     const { common, heldVoices } = commonToneState(
-      boundary.source,
-      boundary.target,
+      sourceBoundary,
+      targetBoundary,
     );
     const upperMotion = UPPER_VOICES.map((voiceId) => ({
       voiceId,
       semitones:
-        toMidi(boundary.target.notes[voiceId]!.pitch) -
-        toMidi(boundary.source.notes[voiceId]!.pitch),
+        toMidi(targetBoundary.notes[voiceId]!.pitch) -
+        toMidi(sourceBoundary.notes[voiceId]!.pitch),
     }));
     const bassMotion =
-      toMidi(boundary.target.notes.bass!.pitch) -
-      toMidi(boundary.source.notes.bass!.pitch);
-    return [
-      {
-        connection,
-        boundary,
-        rootDistance,
-        writtenRootDistance,
-        common,
-        heldVoices,
-        upperMotion,
-        bassMotion,
-      },
-    ];
-  });
+      toMidi(targetBoundary.notes.bass!.pitch) -
+      toMidi(sourceBoundary.notes.bass!.pitch);
+      return [
+        {
+          connection,
+          boundary: { source: sourceBoundary, target: targetBoundary },
+          rootDistance,
+          writtenRootDistance,
+          common,
+          heldVoices,
+          upperMotion,
+          bassMotion,
+        },
+      ];
+    })
+    .toArray();
 }
 
 type BasicConnectionFact = ReturnType<typeof basicConnectionFacts>[number];
@@ -389,9 +396,9 @@ function basicConnectionDiagnostic(
   );
 }
 
-export function commonToneFourthFifthRule(analysis: HarmonyAnalysis) {
+export function commonToneFourthFifthRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  basicConnectionFacts(analysis).forEach((fact) => {
+  basicConnectionFacts(context).forEach((fact) => {
     if (
       fact.rootDistance !== 5 ||
       fact.writtenRootDistance !== 3 ||
@@ -411,9 +418,9 @@ export function commonToneFourthFifthRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function secondRelationContraryMotionRule(analysis: HarmonyAnalysis) {
+export function secondRelationContraryMotionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  basicConnectionFacts(analysis).forEach((fact) => {
+  basicConnectionFacts(context).forEach((fact) => {
     if (
       (fact.rootDistance !== 1 && fact.rootDistance !== 2) ||
       fact.writtenRootDistance !== 1 ||
@@ -440,9 +447,9 @@ export function secondRelationContraryMotionRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function commonToneThirdRule(analysis: HarmonyAnalysis) {
+export function commonToneThirdRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  basicConnectionFacts(analysis).forEach((fact) => {
+  basicConnectionFacts(context).forEach((fact) => {
     if (
       (fact.rootDistance !== 3 && fact.rootDistance !== 4) ||
       fact.writtenRootDistance !== 2 ||
@@ -462,9 +469,9 @@ export function commonToneThirdRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function nonparsimoniousMotionRule(analysis: HarmonyAnalysis) {
+export function nonparsimoniousMotionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  basicConnectionFacts(analysis).forEach((fact) => {
+  basicConnectionFacts(context).forEach((fact) => {
     const totalMotion = fact.upperMotion.reduce(
       (sum, item) => sum + Math.abs(item.semitones),
       0,

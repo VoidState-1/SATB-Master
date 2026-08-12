@@ -1,6 +1,6 @@
 import {
   chordIdentityToneSpellings,
-  primaryHarmonyInterpretation,
+  harmonySemanticsConfidence,
 } from "../chordModel";
 import {
   type ChordRegion,
@@ -448,7 +448,7 @@ function buildHarmonySpans(
     const first = firstSlice.chord!;
     const semantics = first.semantics;
     const confidence = semantics
-      ? primaryHarmonyInterpretation(semantics).confidence
+      ? harmonySemanticsConfidence(semantics)
       : "unknown";
     return {
       id,

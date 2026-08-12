@@ -220,6 +220,18 @@ export function primaryHarmonyInterpretation(
   );
 }
 
+/**
+ * 返回当前和声语义能否作为确定结论使用。
+ * `interpretations` 可以包含已经确认的共同和弦双重解释；未决候选放在
+ * `alternatives` 中，因此只要 alternatives 非空，依赖唯一解释的分析就应暂停。
+ */
+export function harmonySemanticsConfidence(
+  semantics: HarmonySemantics,
+): SemanticConfidence {
+  if ((semantics.alternatives?.length ?? 0) > 0) return "ambiguous";
+  return primaryHarmonyInterpretation(semantics).confidence;
+}
+
 export function legacyHarmonyProjection(
   semantics: HarmonySemantics,
 ): LegacyHarmonyProjection {

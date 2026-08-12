@@ -5,7 +5,7 @@ import type {
   RuleDefinition,
   RuleDiagnostic,
 } from "../runtime";
-import { RuleScheduler } from "../runtime";
+import { RuleScheduler, runRulesSynchronously } from "../runtime";
 import {
   createEmptyProject,
   PPQ,
@@ -355,6 +355,57 @@ describe("共享事实与诊断仲裁", () => {
 });
 
 describe("分析与规则结果复用", () => {
+  it("同步与异步调度均为同一 revision 复用唯一规则上下文", async () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions = [
+      region("context-tonic", 0, PPQ),
+      region("context-dominant", PPQ, PPQ, { root: "G", degree: 5 }),
+    ];
+    const statelessMetadata = HARMONY_RULE_DEFINITIONS.find(
+      (definition) => definition.id === "voice.range",
+    )!;
+    const statefulMetadata = HARMONY_RULE_DEFINITIONS.find(
+      (definition) => definition.id === "voice.polyphonic-overlap",
+    )!;
+    const severities = defaultHarmonyRuleSeverities();
+
+    const runAndCollect = (asyncMode: boolean) => {
+      const received: object[] = [];
+      const definitions: RuleDefinition[] = [
+        {
+          ...statelessMetadata,
+          evaluate: (context) => {
+            received.push(context);
+            return { diagnostics: [] };
+          },
+        },
+        {
+          ...statefulMetadata,
+          process: (step) => {
+            received.push(step.rules);
+            return { diagnostics: [], outgoing: [] };
+          },
+        },
+      ];
+      if (!asyncMode) {
+        runRulesSynchronously(definitions, project, severities, 1);
+        return Promise.resolve(received);
+      }
+      return new RuleScheduler(definitions)
+        .run({ project, severities, revision: 1 })
+        .then(() => received);
+    };
+
+    for (const received of [
+      await runAndCollect(false),
+      await runAndCollect(true),
+    ]) {
+      expect(received.length).toBeGreaterThan(2);
+      expect(new Set(received).size).toBe(1);
+    }
+  });
+
   it("只修改 profile 时复用分析并只重跑变化规则", async () => {
     const project = createEmptyProject();
     const counts = { range: 0, leap: 0 };

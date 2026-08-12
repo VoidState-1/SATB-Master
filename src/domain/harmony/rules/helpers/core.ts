@@ -12,7 +12,6 @@ import type {
   RuleDiagnostic,
   RuleEvaluation,
 } from "../../runtime";
-import type { HarmonyConnectionAssessment } from "../connector";
 import type { VoiceId } from "../../../project/types";
 import { VOICE_CONFIG, VOICE_ORDER } from "../../../project/voice";
 import {
@@ -105,20 +104,6 @@ export function chordLabel(chord: AnalysisChord) {
   ).roman;
 }
 
-/** 判断和弦是否适用传统三度叠置解决规则（排除非三度叠置、九和弦及以上扩展、持续音等） */
-export function supportsTertianResolutionRules(
-  chord: AnalysisChord | undefined,
-) {
-  if (!chord) return true;
-  return (
-    chord.identity.structure.kind === "tertian" &&
-    !chord.identity.structure.extensions.some((extension) => extension >= 9) &&
-    (!chord.semantics ||
-      (chord.semantics.interpretations.length === 1 &&
-        !chord.semantics.pedalContext))
-  );
-}
-
 /** 获取特定声部的轨道显示名称或默认配置名称 */
 export function voiceName(analysis: HarmonyAnalysis, voiceId: VoiceId) {
   return (
@@ -189,21 +174,6 @@ export function hasExactPitch(
   return spellings.some((tone) => pitchClassEquals(note.pitch, tone));
 }
 
-/** 判断当前切片是否为同一和弦持续区段中的最后一个切片 */
-export function finalSameHarmonySlice(
-  analysis: HarmonyAnalysis,
-  sliceIndex: number,
-) {
-  const current = analysis.slices[sliceIndex];
-  const next = analysis.slices[sliceIndex + 1];
-  return Boolean(
-    next &&
-    current.chord &&
-    next.chord &&
-    analysis.sliceTransitions[sliceIndex]?.sameHarmony,
-  );
-}
-
 /** 按照声部顺序提取切片中所有活跃（非休止）的音符 */
 export function activeNotes(slice: HarmonyAnalysis["slices"][number]) {
   return VOICE_ORDER.map((voiceId) => ({
@@ -212,26 +182,6 @@ export function activeNotes(slice: HarmonyAnalysis["slices"][number]) {
   })).filter((item): item is { voiceId: VoiceId; note: AnalysisNote } =>
     Boolean(item.note),
   );
-}
-
-/** 获取和声连接前后两个 Span 的边界切片（前一 Span 尾切片与后一 Span 首切片） */
-export function connectionBoundarySlices(
-  analysis: HarmonyAnalysis,
-  connection: HarmonyConnectionAssessment,
-) {
-  const sourceIndices = analysis.harmonySpans.find(
-    (span) => span.id === connection.previousSpanId,
-  )?.sliceIndices;
-  const targetIndices = analysis.harmonySpans.find(
-    (span) => span.id === connection.currentSpanId,
-  )?.sliceIndices;
-  const sourceIndex = sourceIndices?.at(-1);
-  const targetIndex = targetIndices?.[0];
-  if (sourceIndex === undefined || targetIndex === undefined) return undefined;
-  const source = analysis.slices[sourceIndex];
-  const target = analysis.slices[targetIndex];
-  if (!source?.chord || !target?.chord) return undefined;
-  return { source, target, sourceIndex, targetIndex };
 }
 
 /** 计算和弦的转位状态（0为原位，1为第一转位，依此类推） */

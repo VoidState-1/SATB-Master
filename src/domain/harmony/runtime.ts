@@ -22,6 +22,10 @@ import {
   type RuleExceptionContext,
   type RuleExceptionPolicy,
 } from "./rules/types";
+import {
+  createHarmonyRuleContext,
+  type HarmonyRuleContext,
+} from "./rules/context/createRuleContext";
 
 export type { RuleConfig } from "./rules/types";
 
@@ -111,9 +115,7 @@ export interface HarmonyCheckResult {
   invalidationRanges: readonly AnalysisInvalidationRange[];
 }
 
-export interface ReadonlyRuleContext {
-  readonly analysis: HarmonyAnalysis;
-}
+export type ReadonlyRuleContext = HarmonyRuleContext;
 
 /**
  * 规则之间不共享可变状态。每条有状态规则只能把自己的 JSON 信封沿切片链
@@ -138,6 +140,7 @@ export interface RuleStateEnvelope<T extends JsonValue = JsonValue> {
 
 export interface RuleStepContext {
   readonly analysis: HarmonyAnalysis;
+  readonly rules: HarmonyRuleContext;
   readonly slice: AnalysisSlice;
   readonly sliceIndex: number;
   readonly previous?: AnalysisSlice;
@@ -363,6 +366,7 @@ const MAX_RULE_STATE_BYTES = 16 * 1024;
 
 function stepContextAt(
   analysis: HarmonyAnalysis,
+  rules: HarmonyRuleContext,
   sliceIndex: number,
   spanById: ReadonlyMap<string, HarmonySpan>,
 ): RuleStepContext {
@@ -375,6 +379,7 @@ function stepContextAt(
   const span = spanId ? spanById.get(spanId) : undefined;
   return {
     analysis,
+    rules,
     slice,
     sliceIndex,
     previous,
@@ -464,6 +469,7 @@ function validateRuleStates(
 function runStatefulRuleSynchronously(
   definition: StatefulRuleDefinition,
   analysis: HarmonyAnalysis,
+  rules: HarmonyRuleContext,
   config: RuleConfig,
 ): RuleEvaluation {
   const diagnostics: RuleDiagnostic[] = [];
@@ -475,7 +481,7 @@ function runStatefulRuleSynchronously(
   );
   const validSpanIds = new Set(spanById.keys());
   for (let index = 0; index < analysis.slices.length; index += 1) {
-    lastContext = stepContextAt(analysis, index, spanById);
+    lastContext = stepContextAt(analysis, rules, index, spanById);
     const result = definition.process(lastContext, states, config);
     if (result instanceof Promise) throw new Error("同步入口不支持异步规则");
     diagnostics.push(...result.diagnostics);
@@ -500,10 +506,11 @@ function runStatefulRuleSynchronously(
 async function runRule(
   definition: RuleDefinition,
   analysis: HarmonyAnalysis,
+  rules: HarmonyRuleContext,
   config: RuleConfig,
 ) {
   if (!isStatefulRule(definition))
-    return definition.evaluate({ analysis }, config);
+    return definition.evaluate(rules, config);
   const diagnostics: RuleDiagnostic[] = [];
   const skipped: Omit<SkippedRule, "ruleId">[] = [];
   let states: readonly RuleStateEnvelope[] = [];
@@ -513,7 +520,7 @@ async function runRule(
   );
   const validSpanIds = new Set(spanById.keys());
   for (let index = 0; index < analysis.slices.length; index += 1) {
-    lastContext = stepContextAt(analysis, index, spanById);
+    lastContext = stepContextAt(analysis, rules, index, spanById);
     const result = await definition.process(lastContext, states, config);
     diagnostics.push(...result.diagnostics);
     skipped.push(...(result.skipped ?? []));
@@ -541,6 +548,7 @@ export function runRulesSynchronously(
   exceptions: Partial<Record<string, RuleExceptionPolicy>> = {},
 ) {
   const analysis = buildHarmonyAnalysis(project, revision);
+  const rules = createHarmonyRuleContext(analysis);
   const diagnostics: HarmonyDiagnostic[] = [];
   const skippedRules: SkippedRule[] = [];
   for (const definition of definitions) {
@@ -554,9 +562,10 @@ export function runRulesSynchronously(
         ? runStatefulRuleSynchronously(
             definition,
             analysis,
+            rules,
             configs[definition.id] ?? {},
           )
-        : definition.evaluate({ analysis }, configs[definition.id] ?? {});
+        : definition.evaluate(rules, configs[definition.id] ?? {});
       if (evaluation instanceof Promise)
         throw new Error("同步兼容入口不支持异步规则");
       const collected = collectEvaluation(
@@ -637,6 +646,7 @@ export class RuleScheduler {
     const analysis =
       request.analysis ??
       this.prepareAnalysis(request.project, request.revision);
+    const rules = createHarmonyRuleContext(analysis);
     const diagnostics: HarmonyDiagnostic[] = [];
     const skippedRules: SkippedRule[] = [];
     const canReuseRuleResults = analysis.invalidationRanges.length === 0;
@@ -690,6 +700,7 @@ export class RuleScheduler {
         evaluation = await runRule(
           definition,
           analysis,
+          rules,
           request.configs?.[definition.id] ?? {},
         );
       } catch {

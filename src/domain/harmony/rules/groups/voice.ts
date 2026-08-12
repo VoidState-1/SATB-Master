@@ -1,53 +1,53 @@
-import type { HarmonyAnalysis } from "../../analysis";
-import type { RuleDiagnostic } from "../../runtime";
+import type { RuleConfig, RuleDiagnostic } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
-import { VOICE_ORDER } from "../../../project/voice";
+import { VOICE_CONFIG, VOICE_ORDER } from "../../../project/voice";
 import { formatSpelledPitch, toMidi } from "../../../pitch";
 import { diagnostic, noteEvidence, voiceName } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import {
-  defineAlgorithmicRule,
-  defineConstraintRule,
-  eachNote,
-  constraintDiagnosticContext,
-  type PredicateEvaluation,
-} from "../declarative";
-import {
-  configuredVoiceRange,
-  noteWithinConfiguredRange,
-  type VoiceRangeEnvironment,
-} from "../facts/voice";
 
-function voiceRangeDiagnostic(
-  environment: VoiceRangeEnvironment,
-  assertion: PredicateEvaluation,
-) {
-  const { analysis, candidate } = environment;
-  const declarative = constraintDiagnosticContext(assertion);
-  const { voiceId, note } = candidate;
-  const { minimum, maximum } = configuredVoiceRange(environment);
-  const midi = toMidi(note.pitch);
-  return diagnostic(
-    "voice.range",
-    note.startTick,
-    note.startTick + note.durationTicks,
-    [voiceId],
-    [note],
-    "超出建议音域",
-    `${voiceName(analysis, voiceId)}建议使用 MIDI ${minimum}-${maximum}，当前音高为 ${formatSpelledPitch(note.pitch)}（MIDI ${midi}）。`,
-    {
-      params: { midi, minimum, maximum },
-      evidence: declarative.evidence,
-      subjects: declarative.subjects,
-    },
-  );
+function configuredVoiceRange(config: RuleConfig, voiceId: VoiceId) {
+  const fallback = VOICE_CONFIG[voiceId];
+  const configured = config[voiceId];
+  const minimum =
+    configured && typeof configured === "object" && "minMidi" in configured
+      ? configured.minMidi
+      : fallback.min;
+  const maximum =
+    configured && typeof configured === "object" && "maxMidi" in configured
+      ? configured.maxMidi
+      : fallback.max;
+  return { minimum, maximum };
 }
 
-export function noteOverlapRule(analysis: HarmonyAnalysis) {
+export function voiceRangeRule(context: HarmonyRuleContext, config: RuleConfig) {
+  return context
+    .notes()
+    .select((candidate) => ({
+      candidate,
+      midi: toMidi(candidate.note.pitch),
+      ...configuredVoiceRange(config, candidate.voiceId),
+    }))
+    .where(
+      ({ midi, minimum, maximum }) => midi < minimum || midi > maximum,
+    )
+    .select(({ candidate, midi, minimum, maximum }) =>
+      context.diagnostics.forNotes({
+        ruleId: "voice.range",
+        notes: [candidate],
+        title: "超出建议音域",
+        message: `${voiceName(context.analysis, candidate.voiceId)}建议使用 MIDI ${minimum}-${maximum}，当前音高为 ${formatSpelledPitch(candidate.note.pitch)}（MIDI ${midi}）。`,
+        params: { midi, minimum, maximum },
+      }),
+    )
+    .toArray();
+}
+
+export function noteOverlapRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   VOICE_ORDER.forEach((voiceId) => {
-    const active: (typeof analysis.notesByVoice)[typeof voiceId][number][] = [];
-    analysis.notesByVoice[voiceId].forEach((current) => {
+    const active: HarmonyRuleContext["analysis"]["notesByVoice"][typeof voiceId][number][] = [];
+    for (const { note: current } of context.notes({ voiceId })) {
       for (let index = active.length - 1; index >= 0; index -= 1) {
         const previous = active[index];
         if (previous.startTick + previous.durationTicks <= current.startTick)
@@ -65,7 +65,7 @@ export function noteOverlapRule(analysis: HarmonyAnalysis) {
             [voiceId],
             [previous, current],
             "同声部音符重叠",
-            `${voiceName(analysis, voiceId)}中存在时间上互相重叠的音符。`,
+            `${voiceName(context.analysis, voiceId)}中存在时间上互相重叠的音符。`,
             {
               evidence: [
                 noteEvidence(previous, "先开始的音"),
@@ -76,7 +76,7 @@ export function noteOverlapRule(analysis: HarmonyAnalysis) {
         );
       });
       active.push(current);
-    });
+    }
   });
   return diagnostics;
 }
@@ -84,21 +84,25 @@ export function noteOverlapRule(analysis: HarmonyAnalysis) {
 interface AdjacentVoicePairFact {
   upperId: VoiceId;
   lowerId: VoiceId;
-  upper: NonNullable<HarmonyAnalysis["slices"][number]["notes"][VoiceId]>;
-  lower: NonNullable<HarmonyAnalysis["slices"][number]["notes"][VoiceId]>;
+  upper: NonNullable<
+    HarmonyRuleContext["analysis"]["slices"][number]["notes"][VoiceId]
+  >;
+  lower: NonNullable<
+    HarmonyRuleContext["analysis"]["slices"][number]["notes"][VoiceId]
+  >;
   tick: number;
   endTick: number;
   distance: number;
 }
 
-function adjacentVoicePairFacts(analysis: HarmonyAnalysis) {
+function adjacentVoicePairFacts(context: HarmonyRuleContext) {
   const facts: AdjacentVoicePairFact[] = [];
   const adjacent: Array<[VoiceId, VoiceId]> = [
     ["soprano", "alto"],
     ["alto", "tenor"],
     ["tenor", "bass"],
   ];
-  analysis.slices.forEach((slice) => {
+  for (const slice of context.slices()) {
     adjacent.forEach(([upperId, lowerId]) => {
       const upper = slice.notes[upperId];
       const lower = slice.notes[lowerId];
@@ -113,12 +117,12 @@ function adjacentVoicePairFacts(analysis: HarmonyAnalysis) {
         distance: toMidi(upper.pitch) - toMidi(lower.pitch),
       });
     });
-  });
+  }
   return facts;
 }
 
 function verticalDiagnostic(
-  analysis: HarmonyAnalysis,
+  analysis: HarmonyRuleContext["analysis"],
   fact: AdjacentVoicePairFact,
   ruleId: "voice.crossing" | "voice.upper-spacing",
   title: string,
@@ -147,9 +151,10 @@ function verticalDiagnostic(
   );
 }
 
-export function voiceCrossingRule(analysis: HarmonyAnalysis) {
+export function voiceCrossingRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
-  adjacentVoicePairFacts(analysis).forEach((fact) => {
+  adjacentVoicePairFacts(context).forEach((fact) => {
     if (fact.distance >= 0) return;
     diagnostics.push(
       verticalDiagnostic(
@@ -164,9 +169,10 @@ export function voiceCrossingRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function upperVoiceSpacingRule(analysis: HarmonyAnalysis) {
+export function upperVoiceSpacingRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
-  adjacentVoicePairFacts(analysis).forEach((fact) => {
+  adjacentVoicePairFacts(context).forEach((fact) => {
     if (fact.lowerId === "bass" || fact.distance <= 12) return;
     diagnostics.push(
       verticalDiagnostic(
@@ -182,7 +188,7 @@ export function upperVoiceSpacingRule(analysis: HarmonyAnalysis) {
 }
 
 export const VOICE_RULES = defineRuleGroup(
-  defineConstraintRule({
+  defineStatelessRule({
     id: "voice.range",
     catalogNumber: "A.1",
     label: "超出建议音域",
@@ -243,12 +249,9 @@ export const VOICE_RULES = defineRuleGroup(
         },
       },
     ],
-    forEach: eachNote,
-    assert: noteWithinConfiguredRange(),
-    unknownPolicy: "ignore",
-    report: voiceRangeDiagnostic,
+    evaluate: voiceRangeRule,
   }),
-  defineAlgorithmicRule({
+  defineStatelessRule({
     id: "voice.polyphonic-overlap",
     catalogNumber: "A.2",
     label: "同声部音符重叠",

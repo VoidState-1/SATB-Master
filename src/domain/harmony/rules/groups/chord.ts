@@ -3,7 +3,6 @@ import {
   chordIdentityToneSpellingForDegree,
   chordVoicingPolicy,
   harmonySemanticsCompatibleWithIdentity,
-  primaryHarmonyInterpretation,
 } from "../../../chordModel";
 import { analysisKeyAtTick, type HarmonyAnalysis } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
@@ -20,11 +19,10 @@ import {
   chordEvidence,
   chordLabel,
   diagnostic,
-  finalSameHarmonySlice,
   hasExactPitch,
   noteEvidence,
-  supportsTertianResolutionRules,
 } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 interface ChordSliceFact {
@@ -35,31 +33,40 @@ interface ChordSliceFact {
   stableComplete: boolean;
 }
 
-function chordSliceFacts(analysis: HarmonyAnalysis) {
-  return analysis.slices.flatMap((slice, sliceIndex): ChordSliceFact[] => {
-    if (!slice.chord) return [];
-    return [
-      {
-        slice,
-        chord: slice.chord,
-        active: activeNotes(slice),
-        tones: chordIdentityToneSpellings(slice.chord.identity),
-        stableComplete:
-          slice.completeSatb && !finalSameHarmonySlice(analysis, sliceIndex),
-      },
-    ];
-  });
+function chordSliceFacts(context: HarmonyRuleContext) {
+  return context
+    .slices()
+    .selectMany((slice): ChordSliceFact[] => {
+      if (!slice.chord) return [];
+      return [
+        {
+          slice,
+          chord: slice.chord,
+          active: activeNotes(slice),
+          tones: chordIdentityToneSpellings(slice.chord.identity),
+          stableComplete:
+            slice.completeSatb &&
+            !context.sliceTransitions({ fromSliceIndex: slice.index }).first()
+              ?.sameHarmony,
+        },
+      ];
+    })
+    .toArray();
 }
 
-function standardChordSliceFacts(analysis: HarmonyAnalysis) {
-  return chordSliceFacts(analysis).filter(({ chord }) =>
-    supportsTertianResolutionRules(chord),
+function standardChordSliceFacts(context: HarmonyRuleContext) {
+  return chordSliceFacts(context).filter(
+    ({ chord }) =>
+      chord.identity.structure.kind === "tertian" &&
+      !chord.identity.structure.extensions.some(
+        (extension) => extension >= 9,
+      ),
   );
 }
 
-export function unclassifiedNonchordToneRule(analysis: HarmonyAnalysis) {
+export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  standardChordSliceFacts(analysis).forEach(
+  standardChordSliceFacts(context).forEach(
     ({ slice, chord, active, tones }) => {
       const outside = active.filter(
         ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
@@ -88,9 +95,9 @@ export function unclassifiedNonchordToneRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function inversionBassRule(analysis: HarmonyAnalysis) {
+export function inversionBassRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  standardChordSliceFacts(analysis).forEach(({ slice, chord, active }) => {
+  standardChordSliceFacts(context).forEach(({ slice, chord, active }) => {
     const bass = active.find((item) => item.voiceId === "bass");
     if (!bass || pitchClassEquals(bass.note.pitch, chord.identity.bass)) return;
     diagnostics.push(
@@ -112,9 +119,9 @@ export function inversionBassRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function incompleteChordMembersRule(analysis: HarmonyAnalysis) {
+export function incompleteChordMembersRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  standardChordSliceFacts(analysis).forEach(
+  standardChordSliceFacts(context).forEach(
     ({ slice, chord, active, tones, stableComplete }) => {
       if (!stableComplete) return;
       const missing = tones.filter(
@@ -159,11 +166,11 @@ interface RepeatedChordTonePolicy {
 }
 
 function evaluateRepeatedChordToneRule(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   policy: RepeatedChordTonePolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  standardChordSliceFacts(analysis).forEach((fact) => {
+  standardChordSliceFacts(context).forEach((fact) => {
     if (!fact.stableComplete) return;
     const target = policy.target(fact);
     if (!target) return;
@@ -193,8 +200,8 @@ function evaluateRepeatedChordToneRule(
   return diagnostics;
 }
 
-export function doubledLeadingToneRule(analysis: HarmonyAnalysis) {
-  return evaluateRepeatedChordToneRule(analysis, {
+export function doubledLeadingToneRule(context: HarmonyRuleContext) {
+  return evaluateRepeatedChordToneRule(context, {
     id: "chord.doubled-leading-tone",
     target: ({ slice }) =>
       scaleDegreePitchClass(slice.key, 7, slice.key.mode === "minor" ? 1 : 0),
@@ -204,8 +211,8 @@ export function doubledLeadingToneRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function doubledSeventhRule(analysis: HarmonyAnalysis) {
-  return evaluateRepeatedChordToneRule(analysis, {
+export function doubledSeventhRule(context: HarmonyRuleContext) {
+  return evaluateRepeatedChordToneRule(context, {
     id: "chord.doubled-seventh",
     target: ({ tones }) => (tones.length === 4 ? tones[3] : undefined),
     title: "重复和弦七音",
@@ -214,9 +221,9 @@ export function doubledSeventhRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function doubledAlteredTendencyToneRule(analysis: HarmonyAnalysis) {
+export function doubledAlteredTendencyToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  chordSliceFacts(analysis).forEach(
+  chordSliceFacts(context).forEach(
     ({ slice, chord, active, stableComplete }) => {
       if (!stableComplete || chord.identity.structure.kind !== "tertian")
         return;
@@ -238,9 +245,9 @@ export function doubledAlteredTendencyToneRule(analysis: HarmonyAnalysis) {
             degree: alteration.degree,
           });
       });
-      const interpretation = chord.semantics
-        ? primaryHarmonyInterpretation(chord.semantics)
-        : undefined;
+      const resolution = context.harmony.primaryInterpretation(chord);
+      const interpretation =
+        resolution.status === "resolved" ? resolution.value : undefined;
       const designationKind = interpretation?.designation?.kind;
       const targetDegree =
         interpretation?.appliedTarget?.degree ??
@@ -301,8 +308,8 @@ export function doubledAlteredTendencyToneRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-function dominantNinthFacts(analysis: HarmonyAnalysis) {
-  return chordSliceFacts(analysis).filter(
+function dominantNinthFacts(context: HarmonyRuleContext) {
+  return chordSliceFacts(context).filter(
     ({ chord, stableComplete }) =>
       stableComplete &&
       chord.identity.structure.kind === "tertian" &&
@@ -311,9 +318,9 @@ function dominantNinthFacts(analysis: HarmonyAnalysis) {
   );
 }
 
-export function dominantNinthVoicingRule(analysis: HarmonyAnalysis) {
+export function dominantNinthVoicingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  dominantNinthFacts(analysis).forEach(({ slice, chord, active, tones }) => {
+  dominantNinthFacts(context).forEach(({ slice, chord, active, tones }) => {
     const counts = tones.map(
       (tone) =>
         active.filter(({ note }) => pitchClassEquals(note.pitch, tone)).length,
@@ -365,9 +372,9 @@ export function dominantNinthVoicingRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function dominantNinthRootSpacingRule(analysis: HarmonyAnalysis) {
+export function dominantNinthRootSpacingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  dominantNinthFacts(analysis).forEach(({ slice, chord, active, tones }) => {
+  dominantNinthFacts(context).forEach(({ slice, chord, active, tones }) => {
     const root = active.find(
       ({ voiceId, note }) =>
         voiceId === "bass" && pitchClassEquals(note.pitch, tones[0]),
@@ -408,9 +415,9 @@ export function dominantNinthRootSpacingRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function augmentedSixthVoicingRule(analysis: HarmonyAnalysis) {
+export function augmentedSixthVoicingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  chordSliceFacts(analysis).forEach(
+  chordSliceFacts(context).forEach(
     ({ slice, chord, active, tones, stableComplete }) => {
       if (
         !stableComplete ||
@@ -465,7 +472,8 @@ export function augmentedSixthVoicingRule(analysis: HarmonyAnalysis) {
  * 正常调色盘和编辑命令会阻止语义与实体分叉；这里仍在规则层做一次防御检查，
  * 以覆盖迁移、外置工具或未经过命令层写入的工程数据。
  */
-export function chordInterpretationIdentityRule(analysis: HarmonyAnalysis) {
+export function chordInterpretationIdentityRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
   analysis.project.chordTrack.regions.forEach((chord) => {
     if (!chord.semantics) return;
@@ -478,7 +486,13 @@ export function chordInterpretationIdentityRule(analysis: HarmonyAnalysis) {
       )
     )
       return;
-    const interpretation = primaryHarmonyInterpretation(chord.semantics);
+    const resolution = context.harmony.primaryInterpretation(chord);
+    const interpretations =
+      resolution.status === "resolved"
+        ? [resolution.value]
+        : resolution.status === "ambiguous"
+          ? resolution.candidates
+          : [];
     diagnostics.push(
       diagnostic(
         "chord.interpretation-identity-conflict",
@@ -491,17 +505,20 @@ export function chordInterpretationIdentityRule(analysis: HarmonyAnalysis) {
         {
           chordIds: [chord.id],
           params: {
-            interpretationId: interpretation.id,
-            degree: interpretation.degree,
+            interpretationIds: interpretations.map((item) => item.id).join(","),
+            degrees: interpretations.map((item) => item.degree).join(","),
           },
           evidence: [
             chordEvidence(chord),
             {
               kind: "function",
-              label: "主要解释",
-              value:
-                interpretation.designation?.kind ??
-                `第 ${interpretation.degree} 级`,
+              label: interpretations.length > 1 ? "候选解释" : "和声解释",
+              value: interpretations
+                .map(
+                  (item) =>
+                    item.designation?.kind ?? `第 ${item.degree} 级`,
+                )
+                .join(" / "),
             },
           ],
         },

@@ -1,8 +1,7 @@
 import {
   chordIdentityToneSpellings,
-  primaryHarmonyInterpretation,
 } from "../../../chordModel";
-import type { AnalysisNote, HarmonyAnalysis } from "../../analysis";
+import type { AnalysisNote } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
@@ -18,6 +17,7 @@ import {
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 interface AugmentedSixthResolutionPolicy {
@@ -32,39 +32,27 @@ interface AugmentedSixthResolutionPolicy {
 }
 
 function evaluateAugmentedSixthResolution(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   policy: AugmentedSixthResolutionPolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((sourceSpan) => {
-    const sourceSpanChord = sourceSpan.regionIds
-      .map((id) => analysis.chordById.get(id))
-      .find(Boolean);
-    if (sourceSpanChord?.identity.structure.kind !== "augmented-sixth") return;
+  for (const source of context.spans()) {
+    const sourceSpan = source.span;
+    const sourceSpanChord = source.firstSlice.chord;
+    if (sourceSpanChord?.identity.structure.kind !== "augmented-sixth")
+      continue;
     if (
       policy.expectedVariant &&
       sourceSpanChord.identity.structure.variant !== policy.expectedVariant
     )
-      return;
-    const connection = analysis.connections.find(
-      (candidate) => candidate.previousSpanId === sourceSpan.id,
-    );
-    if (!connection?.contiguous || !connection.sameKey) return;
-    const targetSpan = analysis.harmonySpans.find(
-      (candidate) => candidate.id === connection.currentSpanId,
-    );
-    if (!targetSpan) return;
-    let sourceSliceIndex = -1;
-    analysis.slices.forEach((_slice, index) => {
-      if (analysis.sliceSpanIds.get(index) === sourceSpan.id)
-        sourceSliceIndex = index;
-    });
-    const targetSliceIndex = analysis.slices.findIndex(
-      (_slice, index) => analysis.sliceSpanIds.get(index) === targetSpan.id,
-    );
-    if (sourceSliceIndex < 0 || targetSliceIndex < 0) return;
-    const sourceSlice = analysis.slices[sourceSliceIndex];
-    const targetSlice = analysis.slices[targetSliceIndex];
+      continue;
+    const candidate = context.connections({ sourceSpanId: sourceSpan.id }).first();
+    if (!candidate) continue;
+    const { connection } = candidate;
+    if (!connection.contiguous || !connection.sameKey) continue;
+    const targetSpan = candidate.target.span;
+    const sourceSlice = candidate.sourceBoundary;
+    const targetSlice = candidate.targetBoundary;
     const sourceChord = sourceSlice.chord;
     const targetChord = targetSlice.chord;
     if (
@@ -73,7 +61,7 @@ function evaluateAugmentedSixthResolution(
       !sourceSlice.completeSatb ||
       !targetSlice.completeSatb
     )
-      return;
+      continue;
 
     const tones = chordIdentityToneSpellings(sourceChord.identity);
     const sourceNotes = activeNotes(sourceSlice);
@@ -84,14 +72,16 @@ function evaluateAugmentedSixthResolution(
       pitchClassEquals(note.pitch, tones.at(-1)!),
     );
     // 两端音缺失或重复属于 D.13 的静态配置错误；本规则只在端点唯一时检查横向解决。
-    if (lowCandidates.length !== 1 || highCandidates.length !== 1) return;
+    if (lowCandidates.length !== 1 || highCandidates.length !== 1) continue;
     const low = lowCandidates[0];
     const high = highCandidates[0];
     const targetLow = targetSlice.notes[low.voiceId];
     const targetHigh = targetSlice.notes[high.voiceId];
-    const targetInterpretation = targetSpan.semantics
-      ? primaryHarmonyInterpretation(targetSpan.semantics)
-      : undefined;
+    const targetResolution = context.harmony.primaryInterpretation(targetSpan);
+    const targetInterpretation =
+      targetResolution.status === "resolved"
+        ? targetResolution.value
+        : undefined;
     const targetKind = targetInterpretation?.designation?.kind;
     const isCadential64 =
       targetKind === "cadential64" ||
@@ -154,7 +144,7 @@ function evaluateAugmentedSixthResolution(
       highResolves &&
       characteristicResolves
     )
-      return;
+      continue;
 
     const problems = [
       ...(!isDominant && !isCadential64 ? ["目标不是明确的属功能或 K46"] : []),
@@ -213,20 +203,22 @@ function evaluateAugmentedSixthResolution(
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
-export function augmentedSixthResolutionRule(analysis: HarmonyAnalysis) {
-  return evaluateAugmentedSixthResolution(analysis, {
+export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
+  return evaluateAugmentedSixthResolution(context, {
     id: "resolution.augmented-sixth",
     checkCharacteristicTone: false,
     generic: true,
   });
 }
 
-export function italianAugmentedSixthConnectionRule(analysis: HarmonyAnalysis) {
-  return evaluateAugmentedSixthResolution(analysis, {
+export function italianAugmentedSixthConnectionRule(
+  context: HarmonyRuleContext,
+) {
+  return evaluateAugmentedSixthResolution(context, {
     id: "connection.italian-augmented-sixth",
     expectedVariant: "italian",
     checkCharacteristicTone: false,
@@ -234,8 +226,10 @@ export function italianAugmentedSixthConnectionRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function frenchAugmentedSixthConnectionRule(analysis: HarmonyAnalysis) {
-  return evaluateAugmentedSixthResolution(analysis, {
+export function frenchAugmentedSixthConnectionRule(
+  context: HarmonyRuleContext,
+) {
+  return evaluateAugmentedSixthResolution(context, {
     id: "connection.french-augmented-sixth",
     expectedVariant: "french",
     checkCharacteristicTone: true,
@@ -243,8 +237,10 @@ export function frenchAugmentedSixthConnectionRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function germanAugmentedSixthConnectionRule(analysis: HarmonyAnalysis) {
-  return evaluateAugmentedSixthResolution(analysis, {
+export function germanAugmentedSixthConnectionRule(
+  context: HarmonyRuleContext,
+) {
+  return evaluateAugmentedSixthResolution(context, {
     id: "connection.german-augmented-sixth",
     expectedVariant: "german",
     checkCharacteristicTone: false,
@@ -252,31 +248,25 @@ export function germanAugmentedSixthConnectionRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function deceptiveCadenceTargetRule(analysis: HarmonyAnalysis) {
+export function deceptiveCadenceTargetRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((sourceSpan) => {
-    if (sourceSpan.semantics?.cadenceRole !== "deceptive") return;
-    const sourceInterpretation = sourceSpan.semantics
-      ? primaryHarmonyInterpretation(sourceSpan.semantics)
-      : undefined;
+  const { analysis } = context;
+  for (const source of context.spans()) {
+    const sourceSpan = source.span;
+    if (sourceSpan.semantics?.cadenceRole !== "deceptive") continue;
+    const sourceResolution = context.harmony.primaryInterpretation(sourceSpan);
+    const sourceInterpretation =
+      sourceResolution.status === "resolved"
+        ? sourceResolution.value
+        : undefined;
     const sourceIsDominant =
       sourceInterpretation?.designation?.primaryFunction === "dominant" ||
       sourceInterpretation?.degree === 5 ||
       sourceInterpretation?.degree === 7;
-    const connection = analysis.connections.find(
-      (candidate) => candidate.previousSpanId === sourceSpan.id,
-    );
-    const targetSpan = connection
-      ? analysis.harmonySpans.find(
-          (candidate) => candidate.id === connection.currentSpanId,
-        )
-      : undefined;
-    const sourceChord = sourceSpan.regionIds
-      .map((id) => analysis.chordById.get(id))
-      .find(Boolean);
-    const targetChord = targetSpan?.regionIds
-      .map((id) => analysis.chordById.get(id))
-      .find(Boolean);
+    const candidate = context.connections({ sourceSpanId: sourceSpan.id }).first();
+    const connection = candidate?.connection;
+    const sourceChord = source.lastSlice.chord;
+    const targetChord = candidate?.target.firstSlice.chord;
     if (
       !sourceChord ||
       !connection ||
@@ -285,14 +275,14 @@ export function deceptiveCadenceTargetRule(analysis: HarmonyAnalysis) {
       connection.confidence === "ambiguous" ||
       connection.confidence === "unknown"
     )
-      return;
+      continue;
     const resolves = Boolean(
       sourceIsDominant &&
       connection.relation === "deceptive" &&
       connection.contiguous &&
       connection.sameKey,
     );
-    if (resolves) return;
+    if (resolves) continue;
     diagnostics.push(
       diagnostic(
         "function.deceptive-cadence-target",
@@ -331,38 +321,26 @@ export function deceptiveCadenceTargetRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
-export function deceptiveVoiceLeadingRule(analysis: HarmonyAnalysis) {
+export function deceptiveVoiceLeadingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((sourceSpan) => {
-    if (sourceSpan.semantics?.cadenceRole !== "deceptive") return;
-    const connection = analysis.connections.find(
-      (candidate) => candidate.previousSpanId === sourceSpan.id,
-    );
+  for (const source of context.spans()) {
+    const sourceSpan = source.span;
+    if (sourceSpan.semantics?.cadenceRole !== "deceptive") continue;
+    const candidate = context.connections({ sourceSpanId: sourceSpan.id }).first();
+    const connection = candidate?.connection;
     if (
       connection?.relation !== "deceptive" ||
       !connection.contiguous ||
       !connection.sameKey
     )
-      return;
-    const targetSpan = analysis.harmonySpans.find(
-      (candidate) => candidate.id === connection.currentSpanId,
-    );
-    if (!targetSpan) return;
-    let sourceSliceIndex = -1;
-    analysis.slices.forEach((_slice, index) => {
-      if (analysis.sliceSpanIds.get(index) === sourceSpan.id)
-        sourceSliceIndex = index;
-    });
-    const targetSliceIndex = analysis.slices.findIndex(
-      (_slice, index) => analysis.sliceSpanIds.get(index) === targetSpan.id,
-    );
-    if (sourceSliceIndex < 0 || targetSliceIndex < 0) return;
-    const sourceSlice = analysis.slices[sourceSliceIndex];
-    const targetSlice = analysis.slices[targetSliceIndex];
+      continue;
+    if (!candidate) continue;
+    const sourceSlice = candidate.sourceBoundary;
+    const targetSlice = candidate.targetBoundary;
     const sourceChord = sourceSlice.chord;
     const targetChord = targetSlice.chord;
     if (
@@ -371,7 +349,7 @@ export function deceptiveVoiceLeadingRule(analysis: HarmonyAnalysis) {
       !sourceSlice.completeSatb ||
       !targetSlice.completeSatb
     )
-      return;
+      continue;
 
     const sourceBass = sourceSlice.notes.bass;
     const targetBass = targetSlice.notes.bass;
@@ -417,7 +395,7 @@ export function deceptiveVoiceLeadingRule(analysis: HarmonyAnalysis) {
       targetCounts[1] === 2 &&
       targetCounts[2] === 1 &&
       pitchClassEquals(targetTones[1], tonic);
-    if (bassResolves && leadingResolves && targetProfile) return;
+    if (bassResolves && leadingResolves && targetProfile) continue;
 
     const problems = [
       ...(!bassResolves ? ["低音未按 5→6 进行"] : []),
@@ -457,7 +435,7 @@ export function deceptiveVoiceLeadingRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 

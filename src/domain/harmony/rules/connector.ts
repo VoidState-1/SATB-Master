@@ -1,4 +1,5 @@
 import {
+  harmonySemanticsConfidence,
   primaryHarmonyInterpretation,
   type FunctionalFamily,
   type FunctionalTarget,
@@ -52,9 +53,11 @@ export interface FunctionalTargetChainFact {
 }
 
 function interpretationOf(span: HarmonySpan) {
-  return span.semantics
-    ? primaryHarmonyInterpretation(span.semantics)
-    : undefined;
+  if (!span.semantics) return undefined;
+  const confidence = harmonySemanticsConfidence(span.semantics);
+  return confidence === "ambiguous" || confidence === "unknown"
+    ? undefined
+    : primaryHarmonyInterpretation(span.semantics);
 }
 
 function localKeyOf(
@@ -77,7 +80,7 @@ function familyOf(
 function targetMatches(
   target: FunctionalTarget | undefined,
   current: HarmonyInterpretation | undefined,
-  currentChord: ReturnType<typeof primaryChordAtSpan>,
+  currentChord: ReturnType<typeof representativeChordAtSpan>,
   sourceKey: KeyReference,
 ) {
   if (!target || !current || !currentChord) return false;
@@ -97,12 +100,16 @@ function targetMatches(
 }
 
 function combinedConfidence(
-  previous: HarmonyInterpretation | undefined,
-  current: HarmonyInterpretation | undefined,
+  previousSpan: HarmonySpan,
+  currentSpan: HarmonySpan,
 ): HarmonyConnectionAssessment["confidence"] {
   const values = [
-    previous?.confidence ?? "unknown",
-    current?.confidence ?? "unknown",
+    previousSpan.semantics
+      ? harmonySemanticsConfidence(previousSpan.semantics)
+      : "unknown",
+    currentSpan.semantics
+      ? harmonySemanticsConfidence(currentSpan.semantics)
+      : "unknown",
   ];
   if (values.includes("unknown")) return "unknown";
   if (values.includes("ambiguous")) return "ambiguous";
@@ -110,7 +117,7 @@ function combinedConfidence(
   return "certain";
 }
 
-function primaryChordAtSpan(
+function representativeChordAtSpan(
   analysis: Pick<HarmonyAnalysis, "chordById">,
   span: HarmonySpan,
 ) {
@@ -164,7 +171,7 @@ export function functionalTargetMatches(
     targetMatches(
       target,
       currentInterpretation,
-      primaryChordAtSpan(analysis, currentSpan),
+      representativeChordAtSpan(analysis, currentSpan),
       sourceKey,
     )
   );
@@ -175,8 +182,8 @@ function assessConnection(
   previous: HarmonySpan,
   current: HarmonySpan,
 ): HarmonyConnectionAssessment {
-  const previousChord = primaryChordAtSpan(analysis, previous);
-  const currentChord = primaryChordAtSpan(analysis, current);
+  const previousChord = representativeChordAtSpan(analysis, previous);
+  const currentChord = representativeChordAtSpan(analysis, current);
   const previousInterpretation = interpretationOf(previous);
   const currentInterpretation = interpretationOf(current);
   const previousKey = localKeyOf(
@@ -189,10 +196,7 @@ function assessConnection(
   );
   const keyMatches = sameKey(previousKey, currentKey);
   const contiguous = previous.toTick === current.fromTick;
-  const confidence = combinedConfidence(
-    previousInterpretation,
-    currentInterpretation,
-  );
+  const confidence = combinedConfidence(previous, current);
 
   const previousFamily = familyOf(previousInterpretation);
   const currentFamily = familyOf(currentInterpretation);

@@ -1,7 +1,6 @@
-import {
-  primaryHarmonyInterpretation,
-  type HarmonyInterpretation,
-  type KeyReference,
+import type {
+  HarmonyInterpretation,
+  KeyReference,
 } from "../../../chordModel";
 import {
   analysisKeyAtTick,
@@ -9,10 +8,6 @@ import {
   type HarmonySpan,
 } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
-import {
-  metricPositionAt,
-  strongestMetricPositionBetween,
-} from "../../../rhythm/metric";
 import {
   formatPitchClass,
   pitchClassEquals,
@@ -25,136 +20,116 @@ import {
   diagnostic,
   noteEvidence,
 } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
+import type { SpanView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import {
-  all,
-  constraintDiagnosticContext,
-  defineConstraintRule,
-  eachCadential64Transition,
-  eachHarmonySpan,
-  mergeDiagnosticEvidence,
-  not,
-  type Cadential64TransitionCandidate,
-  type HarmonySpanCandidate,
-  type PredicateEvaluation,
-} from "../declarative";
-import type { ConstraintEnvironment } from "../declarative/constraint";
-import {
-  cadential64StartsOnStrongMetricPosition,
-  cadential64StartsStrongerThanTarget,
-  spanFormsHarmonicSyncopation,
-} from "../facts/rhythm";
 
 function keyEquals(left: KeyReference, right: KeyReference) {
   return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
-function spanChord(analysis: HarmonyAnalysis, span: HarmonySpan) {
-  return span.regionIds.map((id) => analysis.chordById.get(id)).find(Boolean);
+function spanInterpretation(context: HarmonyRuleContext, span: HarmonySpan) {
+  const resolution = context.harmony.primaryInterpretation(span);
+  return resolution.status === "resolved" ? resolution.value : undefined;
 }
 
-function spanInterpretation(span: HarmonySpan) {
-  return span.semantics
-    ? primaryHarmonyInterpretation(span.semantics)
-    : undefined;
+export function harmonicSyncopationRule(context: HarmonyRuleContext) {
+  const diagnostics: RuleDiagnostic[] = [];
+  for (const current of context.spans()) {
+    const { span } = current;
+    const neighborhood = context.spanNeighborhood(current);
+    if (
+      !neighborhood.previous ||
+      !neighborhood.next ||
+      neighborhood.previous.span.toTick !== span.fromTick ||
+      span.toTick !== neighborhood.next.span.fromTick
+    )
+      continue;
+    if (!span.semantics || span.semantics.pedalContext || span.semantics.cadenceRole)
+      continue;
+
+    const entry = context.metric.positionAt(span.fromTick);
+    if (!entry || entry.confidence === "ambiguous" || entry.level > 1)
+      continue;
+    const crossed = context.metric.strongestBetween(span.fromTick, span.toTick, {
+      boundaries: "open",
+    });
+    if (context.metric.compare(crossed, entry) !== "stronger") continue;
+    const chord = current.firstSlice.chord;
+    if (!chord) continue;
+
+    diagnostics.push(
+      context.diagnostics.forSpan({
+        ruleId: "rhythm.harmonic-syncopation",
+        span: current,
+        endTick: span.toTick,
+        title: "和声切分",
+        message: `${chordLabel(chord)} 在弱位进入，并延续跨越了后继更强拍位。`,
+        params: {
+          entryStrength: entry.level,
+          exitStrength: context.metric.positionAt(span.toTick)?.level ?? -1,
+          crossedStrength: crossed?.level ?? -1,
+          entryMetricRole: entry.role,
+          crossedMetricRole: crossed?.role ?? "unknown",
+        },
+      }),
+    );
+  }
+  return diagnostics;
 }
 
-function harmonicSyncopationDiagnostic(
-  environment: ConstraintEnvironment<HarmonySpanCandidate>,
-  assertion: PredicateEvaluation,
-) {
-  const { analysis, candidate } = environment;
-  const { span } = candidate;
-  const chord = spanChord(analysis, span);
-  if (!chord) return undefined;
-  const entry = metricPositionAt(analysis.metricTimeline, span.fromTick);
-  const exit = metricPositionAt(analysis.metricTimeline, span.toTick);
-  const crossed = strongestMetricPositionBetween(
-    analysis.metricTimeline,
-    span.fromTick,
-    span.toTick,
-    { boundaries: "open" },
-  );
-  const declarative = constraintDiagnosticContext(assertion);
-  return diagnostic(
-    "rhythm.harmonic-syncopation",
-    span.fromTick,
-    span.toTick,
-    [],
-    [],
-    "和声切分",
-    `${chordLabel(chord)} 在弱位进入，并延续跨越了后继更强拍位。`,
-    {
-      chordIds: [...span.regionIds],
-      params: {
-        entryStrength: entry?.level ?? -1,
-        exitStrength: exit?.level ?? -1,
-        crossedStrength: crossed?.level ?? -1,
-        entryMetricRole: entry?.role ?? "unknown",
-        crossedMetricRole: crossed?.role ?? "unknown",
-      },
-      evidence: mergeDiagnosticEvidence(
-        declarative.evidence,
-        [chordEvidence(chord)],
-      ),
-      subjects: declarative.subjects,
-    },
-  );
+export function cadential64MetricPositionRule(context: HarmonyRuleContext) {
+  const diagnostics: RuleDiagnostic[] = [];
+  for (const source of context.spans()) {
+    const interpretation = spanInterpretation(context, source.span);
+    if (
+      interpretation?.designation?.kind !== "cadential64" &&
+      source.span.semantics?.cadenceRole !== "cadential64"
+    )
+      continue;
+    const candidate = context.connections({ sourceSpanId: source.span.id }).first();
+    if (!candidate?.connection.contiguous) continue;
+    const sourcePosition = context.metric.positionAt(source.span.fromTick);
+    const targetPosition = context.metric.positionAt(candidate.target.span.fromTick);
+    if (
+      !sourcePosition ||
+      !targetPosition ||
+      sourcePosition.confidence === "ambiguous" ||
+      targetPosition.confidence === "ambiguous"
+    )
+      continue;
+    if (
+      sourcePosition.level >= 2 &&
+      context.metric.compare(sourcePosition, targetPosition) === "stronger"
+    )
+      continue;
+    diagnostics.push(
+      context.diagnostics.forConnection({
+        ruleId: "cadence.cadential64-metric-position",
+        connection: candidate,
+        failureTick: source.span.fromTick,
+        endTick: source.span.toTick,
+        title: "K46 拍位不当",
+        message: "终止四六应位于强拍或相对强位置，并比后继属和弦更强。",
+        params: {
+          sourceStrength: sourcePosition.level,
+          targetStrength: targetPosition.level,
+          sourceMetricRole: sourcePosition.role,
+          targetMetricRole: targetPosition.role,
+        },
+      }),
+    );
+  }
+  return diagnostics;
 }
 
-function cadential64MetricDiagnostic(
-  environment: ConstraintEnvironment<Cadential64TransitionCandidate>,
-  assertion: PredicateEvaluation,
-) {
-  const { analysis, candidate } = environment;
-  const chord = spanChord(analysis, candidate.sourceSpan);
-  const target = spanChord(analysis, candidate.targetSpan);
-  if (!chord) return undefined;
-  const sourcePosition = metricPositionAt(
-    analysis.metricTimeline,
-    candidate.sourceSpan.fromTick,
-  );
-  const targetPosition = metricPositionAt(
-    analysis.metricTimeline,
-    candidate.targetSpan.fromTick,
-  );
-  const declarative = constraintDiagnosticContext(assertion);
-  return diagnostic(
-    "cadence.cadential64-metric-position",
-    candidate.sourceSpan.fromTick,
-    candidate.sourceSpan.toTick,
-    [],
-    [],
-    "K46 拍位不当",
-    "终止四六应位于强拍或相对强位置，并比后继属和弦更强。",
-    {
-      chordIds: target ? [chord.id, target.id] : [chord.id],
-      params: {
-        sourceStrength: sourcePosition?.level ?? -1,
-        targetStrength: targetPosition?.level ?? -1,
-        sourceMetricRole: sourcePosition?.role ?? "unknown",
-        targetMetricRole: targetPosition?.role ?? "unknown",
-      },
-      evidence: mergeDiagnosticEvidence(
-        declarative.evidence,
-        [
-          chordEvidence(chord),
-          ...(target ? [chordEvidence(target)] : []),
-        ],
-      ),
-      subjects: declarative.subjects,
-    },
-  );
-}
-
-function cadenceContext(analysis: HarmonyAnalysis, span: HarmonySpan) {
-  const index = analysis.harmonySpans.findIndex(
-    (candidate) => candidate.id === span.id,
-  );
-  const previousSpan = index > 0 ? analysis.harmonySpans[index - 1] : undefined;
-  if (!previousSpan || previousSpan.toTick !== span.fromTick) return undefined;
-  const sourceSlice = analysis.slices[previousSpan.sliceIndices.at(-1)!];
-  const targetSlice = analysis.slices[span.sliceIndices[0]];
+function cadenceContext(context: HarmonyRuleContext, current: SpanView) {
+  const { span } = current;
+  const previous = context.spanNeighborhood(current).previous;
+  if (!previous || previous.span.toTick !== span.fromTick) return undefined;
+  const previousSpan = previous.span;
+  const sourceSlice = previous.lastSlice;
+  const targetSlice = current.firstSlice;
   if (!sourceSlice?.chord || !targetSlice?.chord) return undefined;
   const sourceChord = sourceSlice.chord;
   const targetChord = targetSlice.chord;
@@ -164,17 +139,18 @@ function cadenceContext(analysis: HarmonyAnalysis, span: HarmonySpan) {
     targetSlice,
     sourceChord,
     targetChord,
-    sourceInterpretation: spanInterpretation(previousSpan),
-    targetInterpretation: spanInterpretation(span),
+    sourceInterpretation: spanInterpretation(context, previousSpan),
+    targetInterpretation: spanInterpretation(context, span),
   };
 }
 
-function cadenceRuleContexts(analysis: HarmonyAnalysis) {
-  return analysis.harmonySpans.flatMap((span) => {
+function cadenceRuleContexts(context: HarmonyRuleContext) {
+  return context.spans().selectMany((current) => {
+    const { span } = current;
     const cadenceType = span.semantics?.cadenceType;
     if (!cadenceType || cadenceType === "open") return [];
-    const context = cadenceContext(analysis, span);
-    if (!context) return [];
+    const cadence = cadenceContext(context, current);
+    if (!cadence) return [];
     const {
       sourceSlice,
       targetSlice,
@@ -182,7 +158,7 @@ function cadenceRuleContexts(analysis: HarmonyAnalysis) {
       targetChord,
       sourceInterpretation,
       targetInterpretation,
-    } = context;
+    } = cadence;
     const key = targetInterpretation?.localKey ?? targetSlice.key;
     const sourceBass = sourceSlice.notes.bass;
     const targetBass = targetSlice.notes.bass;
@@ -206,12 +182,12 @@ function cadenceRuleContexts(analysis: HarmonyAnalysis) {
         targetInterpretation,
       },
     ];
-  });
+  }).toArray();
 }
 
-export function cadenceBassFormulaRule(analysis: HarmonyAnalysis) {
+export function cadenceBassFormulaRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  cadenceRuleContexts(analysis).forEach((context) => {
+  cadenceRuleContexts(context).forEach((context) => {
     const valid =
       context.cadenceType === "perfect-authentic" ||
       context.cadenceType === "imperfect-authentic"
@@ -265,9 +241,9 @@ export function cadenceBassFormulaRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function perfectAuthenticSopranoRule(analysis: HarmonyAnalysis) {
+export function perfectAuthenticSopranoRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  cadenceRuleContexts(analysis).forEach((context) => {
+  cadenceRuleContexts(context).forEach((context) => {
     if (context.cadenceType !== "perfect-authentic") return;
     const soprano = context.targetSlice.notes.soprano;
     if (!soprano) return;
@@ -301,9 +277,9 @@ export function perfectAuthenticSopranoRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function unstableEndingRule(analysis: HarmonyAnalysis) {
+export function unstableEndingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  cadenceRuleContexts(analysis).forEach((context) => {
+  cadenceRuleContexts(context).forEach((context) => {
     if (context.cadenceType === "half" || context.cadenceType === "deceptive")
       return;
     const valid =
@@ -340,12 +316,14 @@ function interpretationKey(
   return interpretation.localKey ?? analysisKeyAtTick(analysis, span.fromTick);
 }
 
-export function unmarkedKeyChangeRule(analysis: HarmonyAnalysis) {
+export function unmarkedKeyChangeRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
+  const spans = context.spans().toArray();
   let index = 0;
-  while (index < analysis.harmonySpans.length) {
-    const span = analysis.harmonySpans[index];
-    const interpretation = spanInterpretation(span);
+  while (index < spans.length) {
+    const span = spans[index].span;
+    const interpretation = spanInterpretation(context, span);
     const projectKey = analysisKeyAtTick(analysis, span.fromTick);
     const localKey = interpretation?.localKey;
     if (
@@ -362,11 +340,11 @@ export function unmarkedKeyChangeRule(analysis: HarmonyAnalysis) {
     }
     const group: HarmonySpan[] = [span];
     let cursor = index + 1;
-    while (cursor < analysis.harmonySpans.length) {
-      const candidate = analysis.harmonySpans[cursor];
-      const candidateInterpretation = spanInterpretation(candidate);
+    while (cursor < spans.length) {
+      const candidate = spans[cursor].span;
+      const candidateInterpretation = spanInterpretation(context, candidate);
       if (
-        analysis.harmonySpans[cursor - 1].toTick !== candidate.fromTick ||
+        spans[cursor - 1].span.toTick !== candidate.fromTick ||
         !candidateInterpretation?.localKey ||
         !keyEquals(candidateInterpretation.localKey, localKey) ||
         keyEquals(
@@ -409,27 +387,30 @@ export function unmarkedKeyChangeRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function pivotReinterpretationRule(analysis: HarmonyAnalysis) {
+export function pivotReinterpretationRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((span, index) => {
+  for (const current of context.spans()) {
+    const span = current.span;
     const interpretations = span.semantics?.interpretations;
-    if (!interpretations || interpretations.length < 2) return;
+    if (!interpretations || interpretations.length < 2) continue;
     const keys = interpretations.map((item) =>
       interpretationKey(analysis, span, item),
     );
-    if (keys.every((key) => keyEquals(key, keys[0]))) return;
-    const previous = analysis.harmonySpans[index - 1];
-    const next = analysis.harmonySpans[index + 1];
+    if (keys.every((key) => keyEquals(key, keys[0]))) continue;
+    const neighborhood = context.spanNeighborhood(current);
+    const previous = neighborhood.previous?.span;
+    const next = neighborhood.next?.span;
     if (
       !previous ||
       !next ||
       previous.toTick !== span.fromTick ||
       span.toTick !== next.fromTick
     )
-      return;
-    const previousInterpretation = spanInterpretation(previous);
-    const nextInterpretation = spanInterpretation(next);
-    if (!previousInterpretation || !nextInterpretation) return;
+      continue;
+    const previousInterpretation = spanInterpretation(context, previous);
+    const nextInterpretation = spanInterpretation(context, next);
+    if (!previousInterpretation || !nextInterpretation) continue;
     const previousKey = interpretationKey(
       analysis,
       previous,
@@ -439,9 +420,9 @@ export function pivotReinterpretationRule(analysis: HarmonyAnalysis) {
     const entersWithCandidate = keys.some((key) => keyEquals(key, previousKey));
     const exitsWithCandidate = keys.some((key) => keyEquals(key, nextKey));
     const changesKey = !keyEquals(previousKey, nextKey);
-    if (entersWithCandidate && exitsWithCandidate && changesKey) return;
-    const chord = spanChord(analysis, span);
-    if (!chord) return;
+    if (entersWithCandidate && exitsWithCandidate && changesKey) continue;
+    const chord = current.firstSlice.chord;
+    if (!chord) continue;
     diagnostics.push(
       diagnostic(
         "tonality.pivot-reinterpretation",
@@ -457,26 +438,28 @@ export function pivotReinterpretationRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
-export function tonicizationModulationConflictRule(analysis: HarmonyAnalysis) {
+export function tonicizationModulationConflictRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((span) => {
+  for (const current of context.spans()) {
+    const span = current.span;
     const interpretations = span.semantics?.interpretations.filter(
       (item) => item.source === "confirmed",
     );
-    if (!interpretations || interpretations.length < 2) return;
+    if (!interpretations || interpretations.length < 2) continue;
     const projectKey = analysisKeyAtTick(analysis, span.fromTick);
     const tonicization = interpretations.find((item) => item.appliedTarget);
     const modulation = interpretations.find(
       (item) => item.localKey && !keyEquals(item.localKey, projectKey),
     );
     if (!tonicization || !modulation || tonicization.id === modulation.id)
-      return;
-    const chord = spanChord(analysis, span);
-    if (!chord) return;
+      continue;
+    const chord = current.firstSlice.chord;
+    if (!chord) continue;
     diagnostics.push(
       diagnostic(
         "tonality.tonicization-modulation-conflict",
@@ -504,12 +487,12 @@ export function tonicizationModulationConflictRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
 export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
-  defineConstraintRule({
+  defineStatelessRule({
     id: "rhythm.harmonic-syncopation",
     catalogNumber: "J.1",
     label: "和声切分",
@@ -521,11 +504,9 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     defaultSeverity: "warning",
     requires: ["chords", "semantics", "meter"],
     dependencyScope: "phrase",
-    forEach: eachHarmonySpan,
-    assert: not(spanFormsHarmonicSyncopation()),
-    report: harmonicSyncopationDiagnostic,
+    evaluate: harmonicSyncopationRule,
   }),
-  defineConstraintRule({
+  defineStatelessRule({
     id: "cadence.cadential64-metric-position",
     catalogNumber: "J.2",
     label: "K46 拍位不当",
@@ -537,12 +518,7 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     defaultSeverity: "warning",
     requires: ["chords", "semantics", "meter"],
     dependencyScope: "phrase",
-    forEach: eachCadential64Transition,
-    assert: all(
-      cadential64StartsOnStrongMetricPosition(),
-      cadential64StartsStrongerThanTarget(),
-    ),
-    report: cadential64MetricDiagnostic,
+    evaluate: cadential64MetricPositionRule,
   }),
   defineStatelessRule({
     id: "cadence.bass-formula",

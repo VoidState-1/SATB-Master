@@ -2,18 +2,15 @@ import {
   analysisKeyAtTick,
   type AnalysisNote,
   type AnalysisSlice,
-  type HarmonyAnalysis,
 } from "../../analysis";
 import type { RuleConfig, RuleDiagnostic } from "../../runtime";
 import {
   chordIdentityToneSpellings,
-  primaryHarmonyInterpretation,
 } from "../../../chordModel";
 import { VOICE_ORDER } from "../../../project/voice";
 import { durationToTicksAt } from "../../../time";
 import { formatSpelledPitch, pitchClassEquals, toMidi } from "../../../pitch";
 import {
-  voicePairTransitionFacts,
   type VoicePairTransitionFact,
 } from "../sharedFacts";
 import {
@@ -25,9 +22,11 @@ import {
   pitchClass,
   voiceName,
 } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 function chromaticHarmonyLicenses(
+  context: HarmonyRuleContext,
   note: AnalysisNote,
   slice: AnalysisSlice | undefined,
 ) {
@@ -37,9 +36,9 @@ function chromaticHarmonyLicenses(
     !hasExactPitch(note, chordIdentityToneSpellings(chord.identity))
   )
     return false;
-  const interpretation = chord.semantics
-    ? primaryHarmonyInterpretation(chord.semantics)
-    : undefined;
+  const resolution = context.harmony.primaryInterpretation(chord);
+  const interpretation =
+    resolution.status === "resolved" ? resolution.value : undefined;
   const kind = interpretation?.designation?.kind;
   return (
     chord.identity.structure.kind === "augmented-sixth" ||
@@ -66,9 +65,10 @@ interface CrossRelationCandidate {
 }
 
 function crossRelationCandidates(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   config: RuleConfig,
 ) {
+  const { analysis } = context;
   const configuredWindow = config.window;
   const duration =
     configuredWindow &&
@@ -77,13 +77,10 @@ function crossRelationCandidates(
     "unit" in configuredWindow
       ? configuredWindow
       : { value: 1, unit: "beats" as const };
-  const notes = VOICE_ORDER.flatMap((voiceId) =>
-    analysis.notesByVoice[voiceId].map((note) => ({ voiceId, note })),
-  ).sort(
-    (left, right) =>
-      left.note.startTick - right.note.startTick ||
-      left.voiceId.localeCompare(right.voiceId),
-  );
+  const notes = context
+    .notes()
+    .orderBy(({ note, voiceId }) => `${String(note.startTick).padStart(12, "0")}:${voiceId}`)
+    .toArray();
   const candidates: CrossRelationCandidate[] = [];
 
   for (let leftIndex = 0; leftIndex < notes.length; leftIndex += 1) {
@@ -116,20 +113,12 @@ function crossRelationCandidates(
         !pitchClassEquals(leftKey.tonic, rightKey.tonic)
       )
         continue;
-      const leftSlice = analysis.slices.find(
-        (slice) =>
-          slice.tick <= left.note.startTick &&
-          left.note.startTick < slice.endTick,
-      );
-      const rightSlice = analysis.slices.find(
-        (slice) =>
-          slice.tick <= right.note.startTick &&
-          right.note.startTick < slice.endTick,
-      );
+      const leftSlice = context.sliceAt(left.note.startTick);
+      const rightSlice = context.sliceAt(right.note.startTick);
       if (
         !simultaneous &&
-        (chromaticHarmonyLicenses(left.note, leftSlice) ||
-          chromaticHarmonyLicenses(right.note, rightSlice))
+        (chromaticHarmonyLicenses(context, left.note, leftSlice) ||
+          chromaticHarmonyLicenses(context, right.note, rightSlice))
       )
         continue;
       candidates.push({
@@ -146,7 +135,7 @@ function crossRelationCandidates(
 }
 
 function crossRelationDiagnostic(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   candidate: CrossRelationCandidate,
   ruleId:
     | "voice-leading.cross-relation-simultaneous"
@@ -162,18 +151,18 @@ function crossRelationDiagnostic(
     [candidate.left.voiceId, candidate.right.voiceId],
     [candidate.left.note, candidate.right.note],
     title,
-    `${voiceName(analysis, candidate.left.voiceId)}的 ${formatSpelledPitch(candidate.left.note.pitch)} 与${voiceName(analysis, candidate.right.voiceId)}的 ${formatSpelledPitch(candidate.right.note.pitch)} 使用同一字母音名但不同升降号。`,
+    `${voiceName(context.analysis, candidate.left.voiceId)}的 ${formatSpelledPitch(candidate.left.note.pitch)} 与${voiceName(context.analysis, candidate.right.voiceId)}的 ${formatSpelledPitch(candidate.right.note.pitch)} 使用同一字母音名但不同升降号。`,
     {
       messageKey: `${ruleId}.${kind}`,
       params: { kind, windowTicks: candidate.windowTicks },
       evidence: [
         noteEvidence(
           candidate.left.note,
-          voiceName(analysis, candidate.left.voiceId),
+          voiceName(context.analysis, candidate.left.voiceId),
         ),
         noteEvidence(
           candidate.right.note,
-          voiceName(analysis, candidate.right.voiceId),
+          voiceName(context.analysis, candidate.right.voiceId),
         ),
       ],
       confidence,
@@ -181,12 +170,12 @@ function crossRelationDiagnostic(
   );
 }
 
-export function simultaneousCrossRelationRule(analysis: HarmonyAnalysis) {
-  return crossRelationCandidates(analysis, {})
+export function simultaneousCrossRelationRule(context: HarmonyRuleContext) {
+  return crossRelationCandidates(context, {})
     .filter((candidate) => candidate.simultaneous)
     .map((candidate) =>
       crossRelationDiagnostic(
-        analysis,
+        context,
         candidate,
         "voice-leading.cross-relation-simultaneous",
         "simultaneous",
@@ -197,14 +186,14 @@ export function simultaneousCrossRelationRule(analysis: HarmonyAnalysis) {
 }
 
 export function successiveCrossRelationRule(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   config: RuleConfig,
 ) {
-  return crossRelationCandidates(analysis, config)
+  return crossRelationCandidates(context, config)
     .filter((candidate) => !candidate.simultaneous)
     .map((candidate) =>
       crossRelationDiagnostic(
-        analysis,
+        context,
         candidate,
         "voice-leading.cross-relation-successive",
         "successive",
@@ -239,13 +228,13 @@ function isPerfectOctave(interval: VoicePairTransitionFact["currentInterval"]) {
 }
 
 function evaluateVoicePairRule(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   policy: VoicePairRulePolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.sliceTransitions.forEach((transition) => {
-    voicePairTransitionFacts(transition).forEach((fact) => {
-      if (!policy.matches(fact)) return;
+  for (const transition of context.sliceTransitions()) {
+    for (const fact of context.voiceLeading.voicePairs(transition)) {
+      if (!policy.matches(fact)) continue;
       const [upperId, lowerId] = fact.voiceIds;
       const [previousUpper, previousLower] = fact.previousNotes;
       const [currentUpper, currentLower] = fact.currentNotes;
@@ -265,31 +254,31 @@ function evaluateVoicePairRule(
             evidence: [
               noteEvidence(
                 previousUpper,
-                `${voiceName(analysis, upperId)}前一音`,
+                `${voiceName(context.analysis, upperId)}前一音`,
               ),
               noteEvidence(
                 previousLower,
-                `${voiceName(analysis, lowerId)}前一音`,
+                `${voiceName(context.analysis, lowerId)}前一音`,
               ),
               noteEvidence(
                 currentUpper,
-                `${voiceName(analysis, upperId)}当前音`,
+                `${voiceName(context.analysis, upperId)}当前音`,
               ),
               noteEvidence(
                 currentLower,
-                `${voiceName(analysis, lowerId)}当前音`,
+                `${voiceName(context.analysis, lowerId)}当前音`,
               ),
             ],
           },
         ),
       );
-    });
-  });
+    }
+  }
   return diagnostics;
 }
 
-export function parallelFifthsRule(analysis: HarmonyAnalysis) {
-  return evaluateVoicePairRule(analysis, {
+export function parallelFifthsRule(context: HarmonyRuleContext) {
+  return evaluateVoicePairRule(context, {
     id: "voice-leading.parallel-fifths",
     title: "平行纯五度",
     message: "两个声部同向移动，并连续形成相同类型的完全协和音程。",
@@ -300,8 +289,8 @@ export function parallelFifthsRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function parallelOctavesRule(analysis: HarmonyAnalysis) {
-  return evaluateVoicePairRule(analysis, {
+export function parallelOctavesRule(context: HarmonyRuleContext) {
+  return evaluateVoicePairRule(context, {
     id: "voice-leading.parallel-octaves",
     title: "平行八度或同度",
     message: "两个声部同向移动，并连续形成相同类型的完全协和音程。",
@@ -312,8 +301,8 @@ export function parallelOctavesRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function hiddenFifthRule(analysis: HarmonyAnalysis) {
-  return evaluateVoicePairRule(analysis, {
+export function hiddenFifthRule(context: HarmonyRuleContext) {
+  return evaluateVoicePairRule(context, {
     id: "voice-leading.hidden-fifth",
     title: "外声部隐伏五度",
     message: "外声部同向进入纯五度，且高声部发生跳进。",
@@ -329,8 +318,8 @@ export function hiddenFifthRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function hiddenOctaveRule(analysis: HarmonyAnalysis) {
-  return evaluateVoicePairRule(analysis, {
+export function hiddenOctaveRule(context: HarmonyRuleContext) {
+  return evaluateVoicePairRule(context, {
     id: "voice-leading.hidden-octave",
     title: "外声部隐伏八度",
     message: "外声部同向进入八度或同度，且高声部发生跳进。",
@@ -346,8 +335,8 @@ export function hiddenOctaveRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function voiceOverlapRule(analysis: HarmonyAnalysis) {
-  return evaluateVoicePairRule(analysis, {
+export function voiceOverlapRule(context: HarmonyRuleContext) {
+  return evaluateVoicePairRule(context, {
     id: "voice-leading.overlap",
     title: "声部重叠",
     message: "当前声部进入了相邻声部上一位置所占据的音域。",
@@ -366,8 +355,8 @@ export function voiceOverlapRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function perfectToDiminishedFifthRule(analysis: HarmonyAnalysis) {
-  return evaluateVoicePairRule(analysis, {
+export function perfectToDiminishedFifthRule(context: HarmonyRuleContext) {
+  return evaluateVoicePairRule(context, {
     id: "voice-leading.unequal-fifths-perfect-to-diminished",
     title: "纯五度到减五度",
     message:
@@ -379,8 +368,10 @@ export function perfectToDiminishedFifthRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function outerDiminishedToPerfectFifthRule(analysis: HarmonyAnalysis) {
-  return evaluateVoicePairRule(analysis, {
+export function outerDiminishedToPerfectFifthRule(
+  context: HarmonyRuleContext,
+) {
+  return evaluateVoicePairRule(context, {
     id: "voice-leading.unequal-fifths-outer-diminished-to-perfect",
     title: "外声部减五度到纯五度",
     message: "男低音与女高音由减五度同向进入纯五度，按斯波索宾口径严格禁止。",
@@ -392,8 +383,10 @@ export function outerDiminishedToPerfectFifthRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function innerDiminishedToPerfectFifthRule(analysis: HarmonyAnalysis) {
-  return evaluateVoicePairRule(analysis, {
+export function innerDiminishedToPerfectFifthRule(
+  context: HarmonyRuleContext,
+) {
+  return evaluateVoicePairRule(context, {
     id: "voice-leading.unequal-fifths-inner-diminished-to-perfect",
     title: "内声部减五度到纯五度",
     message:

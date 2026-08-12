@@ -307,5 +307,37 @@ describe("完整规则目录首版实现", () => {
       functionalChord("next", PPQ, draft(5, "major", "dominant")),
     ];
     expect(hasRule(ambiguous, "function.ambiguous-connection")).toBe(true);
+
+    const alternative = createEmptyProject();
+    alternative.lengthTicks = PPQ * 2;
+    const unresolved = functionalChord(
+      "unresolved-alternative",
+      0,
+      draft(1, "major", "tonic"),
+    );
+    unresolved.semantics = {
+      ...unresolved.semantics!,
+      alternatives: [
+        {
+          id: "possible-dominant",
+          localKey: { tonic: { step: "F", alter: 0 }, mode: "major" },
+          degree: 5,
+          degreeAlteration: 0,
+          designation: {
+            notationSystem: "spasobin",
+            kind: "primary",
+            primaryFunction: "dominant",
+          },
+          source: "inferred",
+          confidence: "probable",
+        },
+      ],
+    };
+    alternative.chordTrack.regions = [
+      unresolved,
+      functionalChord("alternative-next", PPQ, draft(4, "major", "subdominant")),
+    ];
+    expect(hasRule(alternative, "function.ambiguous-connection")).toBe(true);
+    expect(hasRule(alternative, "function.retrogression")).toBe(false);
   });
 });

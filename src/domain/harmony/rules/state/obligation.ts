@@ -1,5 +1,9 @@
 import type { HarmonyAnalysis } from "../../analysis";
 import type {
+  DiagnosticEvidence,
+  DiagnosticSubjectRefs,
+  DiagnosticSubjects,
+  DiagnosticTraceEntry,
   JsonValue,
   RuleDiagnostic,
   RuleStateEnvelope,
@@ -7,18 +11,20 @@ import type {
 } from "../../runtime";
 import type { RuleConfig, RuleRequirement } from "../types";
 import { defineStatefulRule, type RuleMetadataInput } from "../defineRule";
-import {
-  decisionTableRequirements,
-  evaluateDecisionTable,
-  type DecisionEvaluation,
-  type DecisionTable,
-  type ObligationOutcome,
-} from "./decisionTable";
-import { FactStore, type SubjectRefs } from "./facts";
-import { analysisMoment, type AnalysisMoment } from "./moments";
+import { analysisMoment, type AnalysisMoment } from "./moment";
 
 export type RetriggerPolicy =
-  "retain-existing" | "refresh-source" | "fork" | "reject";
+  | "retain-existing"
+  | "refresh-source"
+  | "fork"
+  | "reject";
+
+export interface SubjectRefs {
+  readonly voiceIds?: readonly import("../../../project/types").VoiceId[];
+  readonly noteIds?: readonly string[];
+  readonly chordIds?: readonly string[];
+  readonly spanIds?: readonly string[];
+}
 
 export interface ObligationCandidate<Payload extends JsonValue> {
   readonly partitionKey: string;
@@ -39,6 +45,13 @@ export interface ObligationSource<Payload extends JsonValue> {
     environment: ObligationOpenEnvironment,
   ) => readonly ObligationCandidate<Payload>[];
 }
+
+export type ObligationOutcome =
+  | "continue"
+  | "resolve"
+  | "violate"
+  | "cancel"
+  | "indeterminate";
 
 export interface ObligationHistoryEntry {
   readonly tick: number;
@@ -68,10 +81,12 @@ export interface ObligationEnvironment<Payload extends JsonValue> {
   readonly obligation: ObligationView<Payload>;
 }
 
-export type ObligationDecision<Payload extends JsonValue> = Extract<
-  DecisionEvaluation<ObligationEnvironment<Payload>>,
-  { status: "decided" }
->;
+export interface ObligationDecision {
+  readonly outcome: ObligationOutcome;
+  readonly reason: string;
+  readonly evidence?: readonly DiagnosticEvidence[];
+  readonly subjectRefs?: SubjectRefs;
+}
 
 type StoredHistoryEntry = {
   readonly [key: string]: JsonValue;
@@ -82,13 +97,11 @@ type StoredHistoryEntry = {
 
 type StoredObligation<Payload extends JsonValue> = {
   readonly [key: string]: JsonValue;
-  readonly engine: "declarative-obligation-v1";
+  readonly engine: "obligation-v2";
   readonly partitionKey: string;
   readonly payload: Payload;
   readonly history: StoredHistoryEntry[];
 };
-
-type CarryPolicy = "continue" | "cancel";
 
 export interface ObligationRuleInput<
   Id extends string,
@@ -96,13 +109,14 @@ export interface ObligationRuleInput<
 > extends RuleMetadataInput<Id> {
   readonly source: ObligationSource<Payload>;
   readonly retrigger: RetriggerPolicy;
-  readonly transition: DecisionTable<ObligationEnvironment<Payload>>;
-  readonly onNoDecision?: CarryPolicy;
-  readonly onUnknown?: CarryPolicy;
+  readonly transition: (
+    environment: ObligationEnvironment<Payload>,
+  ) => ObligationDecision | undefined;
+  readonly onNoDecision?: "continue" | "cancel";
   readonly onEnd?: "cancel";
   readonly reportViolation: (
     environment: ObligationEnvironment<Payload>,
-    decision: ObligationDecision<Payload>,
+    decision: ObligationDecision,
   ) => RuleDiagnostic | undefined;
 }
 
@@ -127,8 +141,8 @@ function normalizeRefs(refs: RuleStateEnvelope["subjectRefs"]): SubjectRefs {
 
 function storedPayload<Payload extends JsonValue>(state: RuleStateEnvelope) {
   const stored = state.payload as StoredObligation<Payload>;
-  if (stored.engine !== "declarative-obligation-v1")
-    throw new Error("声明式义务状态格式无效");
+  if (stored.engine !== "obligation-v2")
+    throw new Error("义务状态格式无效");
   return stored;
 }
 
@@ -160,10 +174,7 @@ function appendHistory<Payload extends JsonValue>(
       : [...stored.history, entry].slice(-32);
   return {
     ...state,
-    payload: {
-      ...stored,
-      history,
-    } as StoredObligation<Payload>,
+    payload: { ...stored, history } as StoredObligation<Payload>,
   } satisfies RuleStateEnvelope;
 }
 
@@ -180,7 +191,7 @@ function makeEnvelope<Payload extends JsonValue>(
     createdAt: { tick: context.slice.tick, sliceIndex: context.sliceIndex },
     subjectRefs: candidate.subjectRefs,
     payload: {
-      engine: "declarative-obligation-v1",
+      engine: "obligation-v2",
       partitionKey: candidate.partitionKey,
       payload: candidate.payload,
       history: [
@@ -201,9 +212,7 @@ function assertRequirements(
 ) {
   for (const requirement of required) {
     if (!declared.includes(requirement))
-      throw new Error(
-        `规则“${ruleId}”的声明式事实依赖未声明：“${requirement}”`,
-      );
+      throw new Error(`规则“${ruleId}”的义务源依赖未声明：“${requirement}”`);
   }
 }
 
@@ -229,16 +238,11 @@ export function defineObligationRule<
     retrigger,
     transition,
     onNoDecision = "continue",
-    onUnknown = "continue",
     onEnd = "cancel",
     reportViolation,
     ...metadata
   } = input;
-  assertRequirements(metadata.id, metadata.requires, [
-    ...source.requires,
-    ...decisionTableRequirements(transition),
-  ]);
-  const stores = new WeakMap<HarmonyAnalysis, FactStore>();
+  assertRequirements(metadata.id, metadata.requires, source.requires);
   const traces = new WeakMap<HarmonyAnalysis, ObligationRuntimeTraceEntry[]>();
   const appendTrace = (
     analysis: HarmonyAnalysis,
@@ -258,16 +262,11 @@ export function defineObligationRule<
       const moment = analysisMoment(context);
       const diagnostics: RuleDiagnostic[] = [];
       const outgoing: RuleStateEnvelope[] = [];
-      let store = stores.get(context.analysis);
-      if (!store) {
-        store = new FactStore();
-        stores.set(context.analysis, store);
-      }
       const recordTrace = (
         obligation: ObligationView<Payload>,
         outcome: ObligationOutcome,
         reason: string,
-      ) => {
+      ) =>
         appendTrace(context.analysis, {
           ruleId: metadata.id,
           obligationId: obligation.id,
@@ -276,7 +275,6 @@ export function defineObligationRule<
           outcome,
           reason,
         });
-      };
 
       for (const state of incoming) {
         const environment: ObligationEnvironment<Payload> = {
@@ -285,51 +283,25 @@ export function defineObligationRule<
           config,
           obligation: obligationView<Payload>(state),
         };
-        const decision = evaluateDecisionTable(transition, environment, store);
-        if (decision.status === "conflict") {
-          const reasons = decision.evaluated
-            .filter((item) => item.evaluation.result.truth === "yes")
-            .map((item) => item.row.reason)
-            .join(", ");
-          throw new Error(`义务决策发生冲突：${reasons}`);
-        }
-        if (decision.status === "unknown") {
-          if (onUnknown === "continue") {
-            recordTrace(
-              environment.obligation,
-              "indeterminate",
-              "decision-unknown",
-            );
-            outgoing.push(
-              appendHistory<Payload>(state, {
-                tick: moment.tick,
-                outcome: "indeterminate",
-                reason: "decision-unknown",
-              }),
-            );
-          } else {
-            recordTrace(environment.obligation, "cancel", "decision-unknown");
-          }
-          continue;
-        }
-        if (decision.status === "none") {
+        const decision = transition(environment);
+        if (!decision) {
           if (onNoDecision === "continue") outgoing.push(state);
           else recordTrace(environment.obligation, "cancel", "no-decision");
           continue;
         }
-        if (decision.status !== "decided") continue;
-
-        const { outcome, reason } = decision.selected.row;
-        recordTrace(environment.obligation, outcome, reason);
-        if (outcome === "continue" || outcome === "indeterminate") {
+        recordTrace(environment.obligation, decision.outcome, decision.reason);
+        if (
+          decision.outcome === "continue" ||
+          decision.outcome === "indeterminate"
+        ) {
           outgoing.push(
             appendHistory<Payload>(state, {
               tick: moment.tick,
-              outcome,
-              reason,
+              outcome: decision.outcome,
+              reason: decision.reason,
             }),
           );
-        } else if (outcome === "violate") {
+        } else if (decision.outcome === "violate") {
           const violation = reportViolation(environment, decision);
           if (violation) diagnostics.push(violation);
         }
@@ -345,6 +317,12 @@ export function defineObligationRule<
             throw new Error(`义务分区重复触发：“${candidate.partitionKey}”`);
           if (retrigger === "refresh-source") {
             for (const state of existing) {
+              const obligation = obligationView<Payload>(state);
+              recordTrace(
+                obligation,
+                "cancel",
+                "obligation-source-refreshed",
+              );
               const index = outgoing.indexOf(state);
               if (index >= 0) outgoing.splice(index, 1);
             }
@@ -388,4 +366,52 @@ export function defineObligationRule<
       return Object.freeze([...(traces.get(analysis) ?? [])]);
     },
   });
+}
+
+function diagnosticRefs(refs: SubjectRefs): DiagnosticSubjectRefs {
+  return {
+    ...(refs.voiceIds ? { voiceIds: [...refs.voiceIds] } : {}),
+    ...(refs.noteIds ? { noteIds: [...refs.noteIds] } : {}),
+    ...(refs.chordIds ? { chordIds: [...refs.chordIds] } : {}),
+    ...(refs.spanIds ? { spanIds: [...refs.spanIds] } : {}),
+  };
+}
+
+export function mergeDiagnosticEvidence(
+  ...groups: readonly (readonly DiagnosticEvidence[])[]
+) {
+  const result: DiagnosticEvidence[] = [];
+  const keys = new Set<string>();
+  for (const item of groups.flat()) {
+    const key = `${item.kind}:${item.id ?? ""}:${item.label}:${item.value}`;
+    if (keys.has(key)) continue;
+    keys.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+export function obligationDiagnosticContext<Payload extends JsonValue>(
+  environment: ObligationEnvironment<Payload>,
+  decision: ObligationDecision,
+): {
+  readonly subjects: DiagnosticSubjects;
+  readonly trace: DiagnosticTraceEntry[];
+  readonly evidence: DiagnosticEvidence[];
+} {
+  return {
+    subjects: {
+      origin: diagnosticRefs(environment.obligation.openedBy),
+      failure: diagnosticRefs(decision.subjectRefs ?? {}),
+    },
+    trace: [
+      ...environment.obligation.history,
+      {
+        tick: environment.moment.tick,
+        outcome: decision.outcome,
+        reason: decision.reason,
+      },
+    ],
+    evidence: [...(decision.evidence ?? [])],
+  };
 }

@@ -1,4 +1,4 @@
-import type { HarmonyAnalysis } from "../../analysis";
+import type { HarmonyAnalysis, MelodyTransition } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import { formatSpelledPitch, toMidi } from "../../../pitch";
 import {
@@ -7,15 +7,18 @@ import {
   noteEvidence,
   voiceName,
 } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
-function validMelodyTransitions(analysis: HarmonyAnalysis) {
-  return analysis.melodyTransitions.filter(
-    (transition) => transition.contiguous,
-  );
+function validMelodyTransitions(
+  context: HarmonyRuleContext,
+  voiceId?: MelodyTransition["voiceId"],
+) {
+  return context
+    .melodyTransitions(voiceId ? { voiceId } : undefined)
+    .where((transition) => transition.contiguous);
 }
 
-type MelodyTransition = HarmonyAnalysis["melodyTransitions"][number];
 type NamedInterval = ReturnType<typeof intervalName>;
 
 interface MelodyTransitionRulePolicy {
@@ -32,14 +35,14 @@ interface MelodyTransitionRulePolicy {
 }
 
 function evaluateMelodyTransitionRule(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   policy: MelodyTransitionRulePolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  validMelodyTransitions(analysis).forEach((transition) => {
+  for (const transition of validMelodyTransitions(context)) {
     const interval = Math.abs(transition.writtenInterval.semitones);
     const writtenName = intervalName(transition.writtenInterval);
-    if (!policy.matches(interval, writtenName)) return;
+    if (!policy.matches(interval, writtenName)) continue;
     diagnostics.push(
       diagnostic(
         policy.id,
@@ -48,7 +51,7 @@ function evaluateMelodyTransitionRule(
         [transition.voiceId],
         [transition.previous, transition.current],
         policy.title,
-        policy.message(analysis, transition, interval),
+        policy.message(context.analysis, transition, interval),
         {
           params: { semitones: interval },
           evidence: [
@@ -63,7 +66,7 @@ function evaluateMelodyTransitionRule(
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
@@ -100,32 +103,32 @@ const TRITONE_POLICY: MelodyTransitionRulePolicy = {
   evidenceValue: (_interval, named) => named.label,
 };
 
-export function leapOverOctaveRule(analysis: HarmonyAnalysis) {
-  return evaluateMelodyTransitionRule(analysis, LEAP_OVER_OCTAVE_POLICY);
+export function leapOverOctaveRule(context: HarmonyRuleContext) {
+  return evaluateMelodyTransitionRule(context, LEAP_OVER_OCTAVE_POLICY);
 }
 
-export function largeLeapRule(analysis: HarmonyAnalysis) {
-  return evaluateMelodyTransitionRule(analysis, LARGE_LEAP_POLICY);
+export function largeLeapRule(context: HarmonyRuleContext) {
+  return evaluateMelodyTransitionRule(context, LARGE_LEAP_POLICY);
 }
 
-export function tritoneRule(analysis: HarmonyAnalysis) {
-  return evaluateMelodyTransitionRule(analysis, TRITONE_POLICY);
+export function tritoneRule(context: HarmonyRuleContext) {
+  return evaluateMelodyTransitionRule(context, TRITONE_POLICY);
 }
 
 function alteredIntervalRule(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   ruleId: "melody.augmented-interval" | "melody.diminished-interval",
   expectedQuality: "增" | "减",
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  validMelodyTransitions(analysis).forEach((transition) => {
+  for (const transition of validMelodyTransitions(context)) {
     const named = intervalName(transition.writtenInterval);
     if (
       !named.altered ||
       named.quality !== expectedQuality ||
       Math.abs(transition.writtenInterval.semitones) === 0
     )
-      return;
+      continue;
     diagnostics.push(
       diagnostic(
         ruleId,
@@ -134,7 +137,7 @@ function alteredIntervalRule(
         [transition.voiceId],
         [transition.previous, transition.current],
         "旋律出现增减音程",
-        `${voiceName(analysis, transition.voiceId)}的 ${formatSpelledPitch(transition.previous.pitch)} 到 ${formatSpelledPitch(transition.current.pitch)} 构成${named.label}。`,
+        `${voiceName(context.analysis, transition.voiceId)}的 ${formatSpelledPitch(transition.previous.pitch)} 到 ${formatSpelledPitch(transition.current.pitch)} 构成${named.label}。`,
         {
           messageKey: `${ruleId}.${named.quality}`,
           params: {
@@ -150,16 +153,16 @@ function alteredIntervalRule(
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
-export function augmentedIntervalRule(analysis: HarmonyAnalysis) {
-  return alteredIntervalRule(analysis, "melody.augmented-interval", "增");
+export function augmentedIntervalRule(context: HarmonyRuleContext) {
+  return alteredIntervalRule(context, "melody.augmented-interval", "增");
 }
 
-export function diminishedIntervalRule(analysis: HarmonyAnalysis) {
-  return alteredIntervalRule(analysis, "melody.diminished-interval", "减");
+export function diminishedIntervalRule(context: HarmonyRuleContext) {
+  return alteredIntervalRule(context, "melody.diminished-interval", "减");
 }
 
 interface MelodicContourFact {
@@ -173,21 +176,10 @@ interface MelodicContourFact {
   consonantOutline: boolean;
 }
 
-function melodicContourFacts(analysis: HarmonyAnalysis) {
+function melodicContourFacts(context: HarmonyRuleContext) {
   const facts: MelodicContourFact[] = [];
-  const byVoice = new Map(
-    (["soprano", "alto", "tenor", "bass"] as const).map((voiceId) => [
-      voiceId,
-      validMelodyTransitions(analysis).filter(
-        (transition) => transition.voiceId === voiceId,
-      ),
-    ]),
-  );
-
-  byVoice.forEach((transitions, voiceId) => {
-    for (let index = 0; index < transitions.length - 1; index += 1) {
-      const first = transitions[index];
-      const second = transitions[index + 1];
+  for (const voiceId of ["soprano", "alto", "tenor", "bass"] as const) {
+    for (const [first, second] of validMelodyTransitions(context, voiceId).window(2)) {
       if (first.current.id !== second.previous.id) continue;
       const firstSemitones = first.writtenInterval.semitones;
       const secondSemitones = second.writtenInterval.semitones;
@@ -221,7 +213,7 @@ function melodicContourFacts(analysis: HarmonyAnalysis) {
         consonantOutline,
       });
     }
-  });
+  }
   return facts;
 }
 
@@ -251,9 +243,10 @@ function contourDiagnostic(
   );
 }
 
-export function leapRecoveryRule(analysis: HarmonyAnalysis) {
+export function leapRecoveryRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
-  melodicContourFacts(analysis).forEach((fact) => {
+  melodicContourFacts(context).forEach((fact) => {
     if (!fact.firstIsLeap || fact.recoveredByOppositeStep) return;
     diagnostics.push(
       contourDiagnostic(
@@ -268,9 +261,10 @@ export function leapRecoveryRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function consecutiveLeapsRule(analysis: HarmonyAnalysis) {
+export function consecutiveLeapsRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
-  melodicContourFacts(analysis).forEach((fact) => {
+  melodicContourFacts(context).forEach((fact) => {
     if (
       !fact.firstIsLeap ||
       !fact.secondIsLeap ||

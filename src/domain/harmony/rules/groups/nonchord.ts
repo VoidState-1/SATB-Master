@@ -1,9 +1,4 @@
-import { chordIdentityToneSpellings } from "../../../chordModel";
-import type {
-  AnalysisNote,
-  AnalysisSlice,
-  HarmonyAnalysis,
-} from "../../analysis";
+import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import type { NonChordToneRole, VoiceId } from "../../../project/types";
 import { pitchClassEquals, toMidi, writtenInterval } from "../../../pitch";
@@ -13,6 +8,8 @@ import {
   noteEvidence,
   voiceName,
 } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
+import type { NoteView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 type NonchordRuleId =
@@ -25,72 +22,50 @@ type NonchordRuleId =
   | "nonchord.anticipation"
   | "nonchord.pedal-point";
 
-function sliceAtTick(analysis: HarmonyAnalysis, tick: number) {
-  return analysis.slices.find(
-    (slice) => slice.tick <= tick && tick < slice.endTick,
-  );
-}
-
-function isChordTone(note: AnalysisNote, slice: AnalysisSlice | undefined) {
-  return Boolean(
-    slice?.chord &&
-    chordIdentityToneSpellings(slice.chord.identity).some((tone) =>
-      pitchClassEquals(note.pitch, tone),
-    ),
-  );
-}
-
-function isStep(from: AnalysisNote, to: AnalysisNote) {
-  const interval = writtenInterval(from.pitch, to.pitch);
-  return (
-    Math.abs(interval.diatonicSteps) === 1 &&
-    Math.abs(interval.semitones) >= 1 &&
-    Math.abs(interval.semitones) <= 2
-  );
-}
-
-function noteContext(
-  analysis: HarmonyAnalysis,
-  voiceId: VoiceId,
+function isChordTone(
+  context: HarmonyRuleContext,
   note: AnalysisNote,
+  slice: AnalysisSlice | undefined,
 ) {
-  const line = analysis.notesByVoice[voiceId];
-  const index = line.findIndex((candidate) => candidate.id === note.id);
-  const previous = index > 0 ? line[index - 1] : undefined;
-  const next = index >= 0 ? line[index + 1] : undefined;
-  return {
-    previous,
-    next,
-    previousSlice: previous
-      ? sliceAtTick(analysis, previous.startTick)
-      : undefined,
-    currentSlice: sliceAtTick(analysis, note.startTick),
-    nextSlice: next ? sliceAtTick(analysis, next.startTick) : undefined,
-  };
+  return context.harmony.isChordTone(note, slice?.chord);
+}
+
+function roleNotes(context: HarmonyRuleContext, role: NonChordToneRole) {
+  return context
+    .notes({ role })
+    .select((current) => ({
+      current,
+      neighborhood: context.noteNeighborhood(current),
+    }))
+    .where(
+      (item): item is {
+        current: NoteView;
+        neighborhood: NonNullable<typeof item.neighborhood>;
+      } => Boolean(item.neighborhood),
+    );
 }
 
 function suspensionEntry(
-  analysis: HarmonyAnalysis,
-  voiceId: VoiceId,
-  note: AnalysisNote,
+  context: HarmonyRuleContext,
+  currentNote: NoteView,
 ) {
-  const outsideIndex = analysis.slices.findIndex(
+  const { voiceId, note } = currentNote;
+  const outside = context.slices().first(
     (slice) =>
       slice.notes[voiceId]?.id === note.id &&
-      slice.chord &&
-      !isChordTone(note, slice),
+      Boolean(slice.chord) &&
+      !isChordTone(context, note, slice),
   );
-  if (outsideIndex < 0) return undefined;
-  const current = analysis.slices[outsideIndex];
-  const previousSlice = analysis.slices[outsideIndex - 1];
-  const line = analysis.notesByVoice[voiceId];
-  const noteIndex = line.findIndex((candidate) => candidate.id === note.id);
-  const previousAttack = noteIndex > 0 ? line[noteIndex - 1] : undefined;
+  if (!outside) return undefined;
+  const previousSlice = context
+    .sliceTransitions({ toSliceIndex: outside.index })
+    .last()?.previous;
+  const previousAttack = context.noteNeighborhood(currentNote)?.previous?.note;
   const preparedByHeldNote = Boolean(
     previousSlice?.chord &&
-    previousSlice.endTick === current.tick &&
+    previousSlice.endTick === outside.tick &&
     previousSlice.notes[voiceId]?.id === note.id &&
-    isChordTone(note, previousSlice),
+    isChordTone(context, note, previousSlice),
   );
   const preparedByReattack = Boolean(
     previousSlice?.chord &&
@@ -98,10 +73,10 @@ function suspensionEntry(
     previousAttack.startTick + previousAttack.durationTicks ===
       note.startTick &&
     toMidi(previousAttack.pitch) === toMidi(note.pitch) &&
-    isChordTone(previousAttack, previousSlice),
+    isChordTone(context, previousAttack, previousSlice),
   );
   return {
-    current,
+    current: outside,
     previousSlice,
     previousAttack,
     prepared: preparedByHeldNote || preparedByReattack,
@@ -110,7 +85,7 @@ function suspensionEntry(
 
 function pushRoleDiagnostic(
   diagnostics: RuleDiagnostic[],
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   ruleId: NonchordRuleId,
   voiceId: VoiceId,
   note: AnalysisNote,
@@ -132,7 +107,10 @@ function pushRoleDiagnostic(
         chordIds: slice?.chord ? [slice.chord.id] : [],
         evidence: [
           ...(slice?.chord ? [chordEvidence(slice.chord)] : []),
-          noteEvidence(note, `${voiceName(analysis, voiceId)}标注音`),
+          noteEvidence(
+            note,
+            `${voiceName(context.analysis, voiceId)}标注音`,
+          ),
           ...related.map((item) => noteEvidence(item, "相邻结构音")),
         ],
       },
@@ -140,36 +118,29 @@ function pushRoleDiagnostic(
   );
 }
 
-function roleNoteFacts(analysis: HarmonyAnalysis, role: NonChordToneRole) {
-  return (["soprano", "alto", "tenor", "bass"] as const).flatMap((voiceId) =>
-    analysis.notesByVoice[voiceId]
-      .filter((note) => note.nonChordToneRole === role)
-      .map((note) => ({
-        voiceId,
-        note,
-        context: noteContext(analysis, voiceId, note),
-      })),
-  );
-}
-
-export function passingToneRule(analysis: HarmonyAnalysis) {
+export function passingToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, "passing").forEach(({ voiceId, note, context }) => {
-    const { previous, next, previousSlice, currentSlice, nextSlice } = context;
-    if (!previous || !next || !currentSlice?.chord) return;
+  for (const { current, neighborhood } of roleNotes(context, "passing")) {
+    const { voiceId, note } = current;
+    const previous = neighborhood.previous?.note;
+    const next = neighborhood.next?.note;
+    const previousSlice = previous ? context.sliceAt(previous.startTick) : undefined;
+    const currentSlice = neighborhood.attackSlice;
+    const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
+    if (!previous || !next || !currentSlice.chord) continue;
     const entering = writtenInterval(previous.pitch, note.pitch);
     const leaving = writtenInterval(note.pitch, next.pitch);
     const valid =
-      !isChordTone(note, currentSlice) &&
-      isChordTone(previous, previousSlice) &&
-      isChordTone(next, nextSlice) &&
-      isStep(previous, note) &&
-      isStep(note, next) &&
+      !isChordTone(context, note, currentSlice) &&
+      isChordTone(context, previous, previousSlice) &&
+      isChordTone(context, next, nextSlice) &&
+      context.pitch.isStep(previous, note) &&
+      context.pitch.isStep(note, next) &&
       Math.sign(entering.semitones) === Math.sign(leaving.semitones);
     if (!valid)
       pushRoleDiagnostic(
         diagnostics,
-        analysis,
+        context,
         "nonchord.passing-tone",
         voiceId,
         note,
@@ -178,30 +149,35 @@ export function passingToneRule(analysis: HarmonyAnalysis) {
         [previous, next],
         currentSlice,
       );
-  });
+  }
   return diagnostics;
 }
 
-export function neighborToneRule(analysis: HarmonyAnalysis) {
+export function neighborToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, "neighbor").forEach(({ voiceId, note, context }) => {
-    const { previous, next, previousSlice, currentSlice, nextSlice } = context;
-    if (!previous || !next || !currentSlice?.chord) return;
+  for (const { current, neighborhood } of roleNotes(context, "neighbor")) {
+    const { voiceId, note } = current;
+    const previous = neighborhood.previous?.note;
+    const next = neighborhood.next?.note;
+    const previousSlice = previous ? context.sliceAt(previous.startTick) : undefined;
+    const currentSlice = neighborhood.attackSlice;
+    const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
+    if (!previous || !next || !currentSlice.chord) continue;
     const entering = writtenInterval(previous.pitch, note.pitch);
     const leaving = writtenInterval(note.pitch, next.pitch);
     const valid =
-      !isChordTone(note, currentSlice) &&
-      isChordTone(previous, previousSlice) &&
-      isChordTone(next, nextSlice) &&
-      isStep(previous, note) &&
-      isStep(note, next) &&
+      !isChordTone(context, note, currentSlice) &&
+      isChordTone(context, previous, previousSlice) &&
+      isChordTone(context, next, nextSlice) &&
+      context.pitch.isStep(previous, note) &&
+      context.pitch.isStep(note, next) &&
       Math.sign(entering.semitones) === -Math.sign(leaving.semitones) &&
       toMidi(previous.pitch) === toMidi(next.pitch) &&
       pitchClassEquals(previous.pitch, next.pitch);
     if (!valid)
       pushRoleDiagnostic(
         diagnostics,
-        analysis,
+        context,
         "nonchord.neighbor-tone",
         voiceId,
         note,
@@ -210,18 +186,19 @@ export function neighborToneRule(analysis: HarmonyAnalysis) {
         [previous, next],
         currentSlice,
       );
-  });
+  }
   return diagnostics;
 }
 
-export function suspensionPreparationRule(analysis: HarmonyAnalysis) {
+export function suspensionPreparationRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, "suspension").forEach(({ voiceId, note }) => {
-    const entry = suspensionEntry(analysis, voiceId, note);
-    if (!entry || entry.prepared) return;
+  for (const { current } of roleNotes(context, "suspension")) {
+    const { voiceId, note } = current;
+    const entry = suspensionEntry(context, current);
+    if (!entry || entry.prepared) continue;
     pushRoleDiagnostic(
       diagnostics,
-      analysis,
+      context,
       "nonchord.suspension-preparation",
       voiceId,
       note,
@@ -230,7 +207,7 @@ export function suspensionPreparationRule(analysis: HarmonyAnalysis) {
       entry.previousAttack ? [entry.previousAttack] : [],
       entry.current,
     );
-  });
+  }
   return diagnostics;
 }
 
@@ -243,24 +220,26 @@ interface SuspensionResolutionPolicy {
 }
 
 function evaluateSuspensionResolution(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   policy: SuspensionResolutionPolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, policy.role).forEach(({ voiceId, note, context }) => {
-    const { next, nextSlice } = context;
-    const entry = suspensionEntry(analysis, voiceId, note);
-    if (!entry || !next || !nextSlice?.chord) return;
+  for (const { current, neighborhood } of roleNotes(context, policy.role)) {
+    const { voiceId, note } = current;
+    const next = neighborhood.next?.note;
+    const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
+    const entry = suspensionEntry(context, current);
+    if (!entry || !next || !nextSlice?.chord) continue;
     const interval = writtenInterval(note.pitch, next.pitch);
     const valid =
       entry.prepared &&
-      isStep(note, next) &&
+      context.pitch.isStep(note, next) &&
       Math.sign(interval.semitones) === policy.direction &&
-      isChordTone(next, nextSlice);
+      isChordTone(context, next, nextSlice);
     if (!valid)
       pushRoleDiagnostic(
         diagnostics,
-        analysis,
+        context,
         policy.id,
         voiceId,
         note,
@@ -269,12 +248,12 @@ function evaluateSuspensionResolution(
         [next],
         entry.current,
       );
-  });
+  }
   return diagnostics;
 }
 
-export function suspensionResolutionRule(analysis: HarmonyAnalysis) {
-  return evaluateSuspensionResolution(analysis, {
+export function suspensionResolutionRule(context: HarmonyRuleContext) {
+  return evaluateSuspensionResolution(context, {
     id: "nonchord.suspension-resolution",
     role: "suspension",
     direction: -1,
@@ -283,8 +262,8 @@ export function suspensionResolutionRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function retardationRule(analysis: HarmonyAnalysis) {
-  return evaluateSuspensionResolution(analysis, {
+export function retardationRule(context: HarmonyRuleContext) {
+  return evaluateSuspensionResolution(context, {
     id: "nonchord.retardation",
     role: "retardation",
     direction: 1,
@@ -293,24 +272,27 @@ export function retardationRule(analysis: HarmonyAnalysis) {
   });
 }
 
-export function appoggiaturaRule(analysis: HarmonyAnalysis) {
+export function appoggiaturaRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, "appoggiatura").forEach(
-    ({ voiceId, note, context }) => {
-      const { previous, next, currentSlice, nextSlice } = context;
-      if (!previous || !next || !currentSlice?.chord || !nextSlice?.chord)
-        return;
+  for (const { current, neighborhood } of roleNotes(context, "appoggiatura")) {
+      const { voiceId, note } = current;
+      const previous = neighborhood.previous?.note;
+      const next = neighborhood.next?.note;
+      const currentSlice = neighborhood.attackSlice;
+      const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
+      if (!previous || !next || !currentSlice.chord || !nextSlice?.chord)
+        continue;
       const entryInterval = writtenInterval(previous.pitch, note.pitch);
       const valid =
-        !isChordTone(note, currentSlice) &&
-        isStep(note, next) &&
-        isChordTone(next, nextSlice) &&
+        !isChordTone(context, note, currentSlice) &&
+        context.pitch.isStep(note, next) &&
+        isChordTone(context, next, nextSlice) &&
         (Math.abs(entryInterval.diatonicSteps) > 1 ||
           Math.abs(entryInterval.semitones) > 2);
       if (!valid)
         pushRoleDiagnostic(
           diagnostics,
-          analysis,
+          context,
           "nonchord.appoggiatura",
           voiceId,
           note,
@@ -319,25 +301,22 @@ export function appoggiaturaRule(analysis: HarmonyAnalysis) {
           [previous, next],
           currentSlice,
         );
-    },
-  );
+  }
   return diagnostics;
 }
 
-export function anticipationRule(analysis: HarmonyAnalysis) {
+export function anticipationRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, "anticipation").forEach(
-    ({ voiceId, note, context }) => {
-      const { next, currentSlice } = context;
-      if (!currentSlice?.chord) return;
-      const currentSpanId = analysis.sliceSpanIds.get(currentSlice.index);
-      const targetSlice = analysis.slices.find(
-        (slice) =>
-          slice.tick > note.startTick &&
-          analysis.sliceSpanIds.get(slice.index) !== currentSpanId &&
-          slice.chord,
-      );
-      if (!targetSlice?.chord) return;
+  for (const { current, neighborhood } of roleNotes(context, "anticipation")) {
+      const { voiceId, note } = current;
+      const next = neighborhood.next?.note;
+      const currentSlice = neighborhood.attackSlice;
+      if (!currentSlice.chord) continue;
+      const currentSpan = context.spanAt(currentSlice.tick);
+      const targetSlice = currentSpan
+        ? context.spanNeighborhood(currentSpan).next?.firstSlice
+        : undefined;
+      if (!targetSlice?.chord) continue;
       const repeatedByNext = Boolean(
         next &&
         note.startTick + note.durationTicks === next.startTick &&
@@ -347,13 +326,13 @@ export function anticipationRule(analysis: HarmonyAnalysis) {
       const heldIntoTarget =
         note.startTick + note.durationTicks > targetSlice.tick;
       const valid =
-        !isChordTone(note, currentSlice) &&
-        isChordTone(note, targetSlice) &&
+        !isChordTone(context, note, currentSlice) &&
+        isChordTone(context, note, targetSlice) &&
         (heldIntoTarget || repeatedByNext);
       if (!valid)
         pushRoleDiagnostic(
           diagnostics,
-          analysis,
+          context,
           "nonchord.anticipation",
           voiceId,
           note,
@@ -362,32 +341,39 @@ export function anticipationRule(analysis: HarmonyAnalysis) {
           next ? [next] : [],
           currentSlice,
         );
-    },
-  );
+  }
   return diagnostics;
 }
 
-export function pedalPointRule(analysis: HarmonyAnalysis) {
+export function pedalPointRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  roleNoteFacts(analysis, "pedal").forEach(({ voiceId, note }) => {
-    const overlapping = analysis.slices.filter(
-      (slice) =>
-        slice.chord &&
-        slice.tick < note.startTick + note.durationTicks &&
-        slice.endTick > note.startTick,
-    );
+  for (const { current } of roleNotes(context, "pedal")) {
+    const { voiceId, note } = current;
+    const overlapping = context
+      .slices({
+        overlapping: {
+          fromTick: note.startTick,
+          toTick: note.startTick + note.durationTicks,
+        },
+      })
+      .where((slice) => Boolean(slice.chord))
+      .toArray();
     const distinctSpans = new Set(
       overlapping
-        .map((slice) => analysis.sliceSpanIds.get(slice.index))
+        .map((slice) => context.spanAt(slice.tick)?.span.id)
         .filter(Boolean),
     );
-    if (overlapping.length === 0 || distinctSpans.size < 2) return;
+    if (overlapping.length === 0 || distinctSpans.size < 2) continue;
     const first = overlapping[0];
     const last = overlapping.at(-1)!;
-    if (isChordTone(note, first) && isChordTone(note, last)) return;
+    if (
+      isChordTone(context, note, first) &&
+      isChordTone(context, note, last)
+    )
+      continue;
     pushRoleDiagnostic(
       diagnostics,
-      analysis,
+      context,
       "nonchord.pedal-point",
       voiceId,
       note,
@@ -396,7 +382,7 @@ export function pedalPointRule(analysis: HarmonyAnalysis) {
       [],
       first,
     );
-  });
+  }
   return diagnostics;
 }
 

@@ -27,10 +27,10 @@ export interface AnalysisMoment {
 export function analysisMoment(context: RuleStepContext): AnalysisMoment {
   const previous = context.previous;
   const current = context.slice;
-  const previousSpanId = context.analysis.sliceSpanIds.get(
-    context.sliceIndex - 1,
-  );
-  const currentSpanId = context.analysis.sliceSpanIds.get(context.sliceIndex);
+  const previousSpanId = previous
+    ? context.rules.spanAt(previous.tick)?.span.id
+    : undefined;
+  const currentSpanId = context.rules.spanAt(current.tick)?.span.id;
   const releasedVoiceIds = previous
     ? VOICE_ORDER.filter(
         (voiceId) =>

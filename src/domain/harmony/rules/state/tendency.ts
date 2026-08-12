@@ -1,7 +1,6 @@
 import {
   chordIdentityToneSpellings,
   chordIdentityToneSpellingForDegree,
-  primaryHarmonyInterpretation,
 } from "../../../chordModel";
 import type { VoiceId } from "../../../project/types";
 import {
@@ -11,20 +10,17 @@ import {
   type SpelledPitchClass,
 } from "../../../pitch";
 import type { JsonValue, RuleStepContext } from "../../runtime";
-import {
-  defineFact,
-  fact,
-  factNo,
-  factUnknown,
-  factYes,
-  type PredicateNode,
-} from "../declarative/facts";
 import type {
   ObligationEnvironment,
   ObligationSource,
-} from "../declarative/obligation";
+  SubjectRefs,
+} from "./obligation";
 import { hasExactPitch, noteEvidence } from "../helpers/core";
-import type { VoiceObligationPayload } from "./obligation";
+
+export type VoiceObligationPayload = {
+  readonly [key: string]: JsonValue;
+  readonly voiceId: VoiceId;
+};
 
 export type LeadingTonePayload = VoiceObligationPayload & {
   readonly leadingMidi: number;
@@ -52,21 +48,24 @@ export type AlteredTonePayload = VoiceObligationPayload & {
 };
 
 export function supportsTendencyResolutionRules(
+  context: RuleStepContext,
   chord: RuleStepContext["slice"]["chord"],
 ) {
   if (!chord) return true;
+  const resolution = context.rules.harmony.primaryInterpretation(chord);
   return (
     chord.identity.structure.kind === "tertian" &&
-    (!chord.semantics ||
-      (chord.semantics.interpretations.length === 1 &&
-        !chord.semantics.pedalContext))
+    !chord.semantics?.pedalContext &&
+    (!chord.semantics || resolution.status === "resolved")
   );
 }
 
 function leadingToneExpectation(context: RuleStepContext) {
-  const interpretation = context.slice.chord?.semantics
-    ? primaryHarmonyInterpretation(context.slice.chord.semantics)
+  const resolution = context.slice.chord
+    ? context.rules.harmony.primaryInterpretation(context.slice.chord)
     : undefined;
+  const interpretation =
+    resolution?.status === "resolved" ? resolution.value : undefined;
   const baseKey = interpretation?.localKey ?? context.slice.key;
   const targetTonic = interpretation?.appliedTarget
     ? scaleDegreePitchClass(baseKey, interpretation.appliedTarget.degree)
@@ -85,7 +84,7 @@ function leadingToneExpectation(context: RuleStepContext) {
 }
 
 function currentSpanRefs(context: RuleStepContext) {
-  const spanId = context.analysis.sliceSpanIds.get(context.sliceIndex);
+  const spanId = context.rules.spanAt(context.slice.tick)?.span.id;
   return spanId ? { spanIds: [spanId] } : {};
 }
 
@@ -93,7 +92,8 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
   id: "source.leading-tone-attacks",
   requires: ["written-pitches"],
   collect({ context, moment }) {
-    if (!supportsTendencyResolutionRules(context.slice.chord)) return [];
+    if (!supportsTendencyResolutionRules(context, context.slice.chord))
+      return [];
     const { leadingTone, targetTonic } = leadingToneExpectation(context);
     return moment.attackedVoiceIds.flatMap((voiceId) => {
       const note = context.slice.notes[voiceId];
@@ -128,7 +128,7 @@ export const chordSeventhSource: ObligationSource<SeventhPayload> = {
   requires: ["written-pitches", "chords"],
   collect({ context, moment }) {
     const chord = context.slice.chord;
-    if (!chord || !supportsTendencyResolutionRules(chord)) return [];
+    if (!chord || !supportsTendencyResolutionRules(context, chord)) return [];
     const tones = chordIdentityToneSpellings(chord.identity);
     if (tones.length < 4) return [];
     return moment.attackedVoiceIds.flatMap((voiceId) => {
@@ -156,7 +156,9 @@ export const dominantNinthSource: ObligationSource<DominantNinthPayload> = {
   collect({ context, moment }) {
     const chord = context.slice.chord;
     if (
-      chord?.identity.structure.kind !== "tertian" ||
+      !chord ||
+      !supportsTendencyResolutionRules(context, chord) ||
+      chord.identity.structure.kind !== "tertian" ||
       chord.identity.structure.quality !== "dominant7" ||
       !chord.identity.structure.extensions.includes(9)
     )
@@ -187,7 +189,12 @@ export const alteredToneSource: ObligationSource<AlteredTonePayload> = {
   requires: ["written-pitches", "chords"],
   collect({ context, moment }) {
     const chord = context.slice.chord;
-    if (chord?.identity.structure.kind !== "tertian") return [];
+    if (
+      !chord ||
+      !supportsTendencyResolutionRules(context, chord) ||
+      chord.identity.structure.kind !== "tertian"
+    )
+      return [];
     return chord.identity.structure.alterations.flatMap((alteration) => {
       if (!alteration.tendency) return [];
       const tendency = alteration.tendency;
@@ -221,191 +228,105 @@ export const alteredToneSource: ObligationSource<AlteredTonePayload> = {
   },
 };
 
-export function tendencyContextUnsupported<
-  Payload extends VoiceObligationPayload,
->(): PredicateNode<ObligationEnvironment<Payload>> {
-  return fact(
-    defineFact({
-      id: "tendency.context-unsupported",
-      evaluate(environment: ObligationEnvironment<Payload>) {
-        return supportsTendencyResolutionRules(environment.context.slice.chord)
-          ? factNo("tendency-context-supported")
-          : factYes("tendency-context-unsupported");
-      },
-    }),
-  );
-}
-
-export function leadingTargetUnchanged(): PredicateNode<
-  ObligationEnvironment<LeadingTonePayload>
-> {
-  return fact(
-    defineFact({
-      id: "tendency.leading-target-unchanged",
-      requires: ["written-pitches"],
-      evaluate(environment: ObligationEnvironment<LeadingTonePayload>) {
-        const payload = environment.obligation.payload;
-        const unchanged =
-          environment.context.slice.key.tonic.step === payload.sourceKeyStep &&
-          environment.context.slice.key.tonic.alter ===
-            payload.sourceKeyAlter &&
-          environment.context.slice.key.mode === payload.sourceKeyMode;
-        return unchanged
-          ? factYes("leading-target-unchanged")
-          : factNo("leading-target-changed");
-      },
-    }),
-  );
-}
-
-function resolutionOptions<Payload extends VoiceObligationPayload>(
+function currentNote<Payload extends VoiceObligationPayload>(
   environment: ObligationEnvironment<Payload>,
 ) {
-  const sourceId = environment.obligation.openedBy.noteIds?.[0];
-  const source = sourceId
-    ? environment.context.analysis.noteById.get(sourceId)
+  return environment.context.slice.notes[environment.obligation.payload.voiceId];
+}
+
+function sourceNote<Payload extends VoiceObligationPayload>(
+  environment: ObligationEnvironment<Payload>,
+) {
+  const id = environment.obligation.openedBy.noteIds?.[0];
+  return id
+    ? environment.context.rules
+        .notes()
+        .first(({ note }) => note.id === id)?.note
     : undefined;
-  const current =
-    environment.context.slice.notes[environment.obligation.payload.voiceId];
-  if (!source || !current) return undefined;
+}
+
+export function transitionEvidence<Payload extends VoiceObligationPayload>(
+  environment: ObligationEnvironment<Payload>,
+) {
+  const source = sourceNote(environment);
+  const current = currentNote(environment);
   return {
     source,
     current,
-    options: {
-      evidence: [
-        noteEvidence(source, "倾向音"),
-        noteEvidence(current, "当前音"),
-      ],
-      subjectRefs: {
-        voiceIds: [environment.obligation.payload.voiceId],
-        noteIds: [source.id, current.id],
-      },
-    },
+    evidence:
+      source && current
+        ? [noteEvidence(source, "倾向音"), noteEvidence(current, "当前音")]
+        : [],
+    subjectRefs: {
+      voiceIds: [environment.obligation.payload.voiceId],
+      ...(current ? { noteIds: [current.id] } : {}),
+      ...(environment.context.slice.chord
+        ? { chordIds: [environment.context.slice.chord.id] }
+        : {}),
+    } satisfies SubjectRefs,
   };
 }
 
-export function leadingToneResolves(): PredicateNode<
-  ObligationEnvironment<LeadingTonePayload>
-> {
-  return fact(
-    defineFact({
-      id: "tendency.leading-tone-resolves",
-      requires: ["written-pitches"],
-      evaluate(environment: ObligationEnvironment<LeadingTonePayload>) {
-        const notes = resolutionOptions(environment);
-        if (!notes) return factUnknown("leading-resolution-notes-unavailable");
-        const payload = environment.obligation.payload;
-        const resolves =
-          notes.current.pitch.step === payload.targetStep &&
-          notes.current.pitch.alter === payload.targetAlter &&
-          toMidi(notes.current.pitch) - payload.leadingMidi === 1;
-        return resolves
-          ? factYes("leading-tone-resolved", notes.options)
-          : factNo("leading-tone-not-resolved", notes.options);
-      },
-    }),
+export function leadingTargetUnchanged(
+  environment: ObligationEnvironment<LeadingTonePayload>,
+) {
+  const payload = environment.obligation.payload;
+  return (
+    environment.context.slice.key.tonic.step === payload.sourceKeyStep &&
+    environment.context.slice.key.tonic.alter === payload.sourceKeyAlter &&
+    environment.context.slice.key.mode === payload.sourceKeyMode
   );
 }
 
-function downwardResolution<Payload extends VoiceObligationPayload>(
+export function leadingToneResolves(
+  environment: ObligationEnvironment<LeadingTonePayload>,
+) {
+  const current = currentNote(environment);
+  const payload = environment.obligation.payload;
+  return Boolean(
+    current &&
+      current.pitch.step === payload.targetStep &&
+      current.pitch.alter === payload.targetAlter &&
+      toMidi(current.pitch) - payload.leadingMidi === 1,
+  );
+}
+
+function resolvesDownward<Payload extends VoiceObligationPayload>(
   environment: ObligationEnvironment<Payload>,
   sourceMidi: number,
-  successReason: string,
-  failureReason: string,
 ) {
-  const notes = resolutionOptions(environment);
+  const current = currentNote(environment);
   const targetChord = environment.context.slice.chord;
-  if (!notes || !targetChord)
-    return factUnknown("downward-resolution-context-unavailable");
-  const semitones = toMidi(notes.current.pitch) - sourceMidi;
-  const resolves =
+  if (!current || !targetChord) return false;
+  const semitones = toMidi(current.pitch) - sourceMidi;
+  return (
     (semitones === -1 || semitones === -2) &&
-    hasExactPitch(
-      notes.current,
-      chordIdentityToneSpellings(targetChord.identity),
-    );
-  const options = {
-    ...notes.options,
-    subjectRefs: {
-      ...notes.options.subjectRefs,
-      chordIds: [targetChord.id],
-    },
-  };
-  return resolves
-    ? factYes(successReason, options)
-    : factNo(failureReason, options);
-}
-
-export function chordSeventhResolves(): PredicateNode<
-  ObligationEnvironment<SeventhPayload>
-> {
-  return fact(
-    defineFact({
-      id: "tendency.chord-seventh-resolves",
-      requires: ["written-pitches", "chords"],
-      evaluate(environment: ObligationEnvironment<SeventhPayload>) {
-        return downwardResolution(
-          environment,
-          environment.obligation.payload.seventhMidi,
-          "chord-seventh-resolved",
-          "chord-seventh-not-resolved",
-        );
-      },
-    }),
+    hasExactPitch(current, chordIdentityToneSpellings(targetChord.identity))
   );
 }
 
-export function dominantNinthResolves(): PredicateNode<
-  ObligationEnvironment<DominantNinthPayload>
-> {
-  return fact(
-    defineFact({
-      id: "tendency.dominant-ninth-resolves",
-      requires: ["written-pitches", "chords"],
-      evaluate(environment: ObligationEnvironment<DominantNinthPayload>) {
-        return downwardResolution(
-          environment,
-          environment.obligation.payload.ninthMidi,
-          "dominant-ninth-resolved",
-          "dominant-ninth-not-resolved",
-        );
-      },
-    }),
-  );
+export function chordSeventhResolves(
+  environment: ObligationEnvironment<SeventhPayload>,
+) {
+  return resolvesDownward(environment, environment.obligation.payload.seventhMidi);
 }
 
-export function alteredToneResolves(): PredicateNode<
-  ObligationEnvironment<AlteredTonePayload>
-> {
-  return fact(
-    defineFact({
-      id: "tendency.altered-tone-resolves",
-      requires: ["written-pitches", "chords"],
-      evaluate(environment: ObligationEnvironment<AlteredTonePayload>) {
-        const notes = resolutionOptions(environment);
-        const targetChord = environment.context.slice.chord;
-        if (!notes || !targetChord)
-          return factUnknown("altered-resolution-context-unavailable");
-        const payload = environment.obligation.payload;
-        const expectedSemitones = payload.tendency === "up" ? 1 : -1;
-        const semitones = toMidi(notes.current.pitch) - payload.alteredMidi;
-        const resolves =
-          semitones === expectedSemitones &&
-          hasExactPitch(
-            notes.current,
-            chordIdentityToneSpellings(targetChord.identity),
-          );
-        const options = {
-          ...notes.options,
-          subjectRefs: {
-            ...notes.options.subjectRefs,
-            chordIds: [targetChord.id],
-          },
-        };
-        return resolves
-          ? factYes("altered-tone-resolved", options)
-          : factNo("altered-tone-not-resolved", options);
-      },
-    }),
+export function dominantNinthResolves(
+  environment: ObligationEnvironment<DominantNinthPayload>,
+) {
+  return resolvesDownward(environment, environment.obligation.payload.ninthMidi);
+}
+
+export function alteredToneResolves(
+  environment: ObligationEnvironment<AlteredTonePayload>,
+) {
+  const current = currentNote(environment);
+  const targetChord = environment.context.slice.chord;
+  if (!current || !targetChord) return false;
+  const payload = environment.obligation.payload;
+  const expected = payload.tendency === "up" ? 1 : -1;
+  return (
+    toMidi(current.pitch) - payload.alteredMidi === expected &&
+    hasExactPitch(current, chordIdentityToneSpellings(targetChord.identity))
   );
 }

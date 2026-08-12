@@ -1,6 +1,5 @@
 import {
   chordIdentityToneSpellings,
-  primaryHarmonyInterpretation,
   type FunctionalFamily,
 } from "../../../chordModel";
 import type { RuleDiagnostic } from "../../runtime";
@@ -21,26 +20,12 @@ import {
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
 import {
-  all,
-  any,
-  decisionTable,
   defineObligationRule,
   mergeDiagnosticEvidence,
-  not,
   obligationDiagnosticContext,
-  otherwiseWhen,
-  when,
   type ObligationDecision,
   type ObligationEnvironment,
-} from "../declarative";
-import {
-  sameOpenedHarmonySpan,
-  sameWrittenPitchAsSource,
-  subjectHasActiveNote,
-  subjectVoiceAttacked,
-  subjectVoiceEnteredRest,
-  targetChordAvailable,
-} from "../facts/obligation";
+} from "../state/obligation";
 import {
   alteredToneResolves,
   alteredToneSource,
@@ -51,12 +36,14 @@ import {
   leadingTargetUnchanged,
   leadingToneResolves,
   leadingToneSource,
-  tendencyContextUnsupported,
+  supportsTendencyResolutionRules,
+  transitionEvidence,
   type AlteredTonePayload,
   type DominantNinthPayload,
   type LeadingTonePayload,
   type SeventhPayload,
-} from "../facts/tendency";
+  type VoiceObligationPayload,
+} from "../state/tendency";
 
 type SecondaryDominantState = {
   sourceSpanId: string;
@@ -97,11 +84,15 @@ function resolutionCauseRef(
   currentSpanId: string | undefined,
   voiceId: VoiceId,
 ) {
-  const connection = context.analysis.connections.find(
-    (candidate) =>
-      candidate.previousSpanId === sourceSpanId &&
-      candidate.currentSpanId === currentSpanId,
-  );
+  const connection =
+    sourceSpanId && currentSpanId
+      ? context.rules
+          .connections({
+            sourceSpanId,
+            targetSpanId: currentSpanId,
+          })
+          .first()?.connection
+      : undefined;
   const connectionKey =
     connection?.connectionKey ??
     `connection:${sourceSpanId ?? "none"}->${currentSpanId ?? "none"}`;
@@ -112,7 +103,11 @@ function openedSourceNote<Payload extends JsonValue>(
   environment: ObligationEnvironment<Payload>,
 ) {
   const noteId = environment.obligation.openedBy.noteIds?.[0];
-  return noteId ? environment.context.analysis.noteById.get(noteId) : undefined;
+  return noteId
+    ? environment.context.rules
+        .notes()
+        .first(({ note }) => note.id === noteId)?.note
+    : undefined;
 }
 
 function openedSourceChord<Payload extends JsonValue>(
@@ -120,7 +115,10 @@ function openedSourceChord<Payload extends JsonValue>(
 ) {
   const chordId = environment.obligation.openedBy.chordIds?.[0];
   return chordId
-    ? environment.context.analysis.chordById.get(chordId)
+    ? environment.context.rules
+        .spans()
+        .selectMany(({ chords }) => chords)
+        .first((chord) => chord.id === chordId)
     : undefined;
 }
 
@@ -133,17 +131,15 @@ function openedSpanId<Payload extends JsonValue>(
 function currentSpanId<Payload extends JsonValue>(
   environment: ObligationEnvironment<Payload>,
 ) {
-  return environment.context.analysis.sliceSpanIds.get(
-    environment.context.sliceIndex,
-  );
+  return environment.context.rules.spanAt(environment.moment.tick)?.span.id;
 }
 
 function leadingToneDiagnostic(
   environment: ObligationEnvironment<LeadingTonePayload>,
-  decision: ObligationDecision<LeadingTonePayload>,
+  decision: ObligationDecision,
 ) {
   const payload = environment.obligation.payload;
-  const declarative = obligationDiagnosticContext(environment, decision);
+  const obligationContext = obligationDiagnosticContext(environment, decision);
   const source = openedSourceNote(environment);
   const current = environment.context.slice.notes[payload.voiceId];
   if (!source || !current) return undefined;
@@ -180,7 +176,7 @@ function leadingToneDiagnostic(
             value: `${formatPitchClass(environment.context.slice.key.tonic)} ${environment.context.slice.key.mode}`,
           },
         ],
-        declarative.evidence,
+        obligationContext.evidence,
       ),
       causeRefs: [
         resolutionCauseRef(
@@ -191,18 +187,18 @@ function leadingToneDiagnostic(
           payload.voiceId,
         ),
       ],
-      subjects: declarative.subjects,
-      trace: declarative.trace,
+      subjects: obligationContext.subjects,
+      trace: obligationContext.trace,
     },
   );
 }
 
 function seventhDiagnostic(
   environment: ObligationEnvironment<SeventhPayload>,
-  decision: ObligationDecision<SeventhPayload>,
+  decision: ObligationDecision,
 ) {
   const payload = environment.obligation.payload;
-  const declarative = obligationDiagnosticContext(environment, decision);
+  const obligationContext = obligationDiagnosticContext(environment, decision);
   const source = openedSourceNote(environment);
   const chord = openedSourceChord(environment);
   const current = environment.context.slice.notes[payload.voiceId];
@@ -231,7 +227,7 @@ function seventhDiagnostic(
           chordEvidence(targetChord),
           noteEvidence(current, "后继音"),
         ],
-        declarative.evidence,
+        obligationContext.evidence,
       ),
       causeRefs: [
         resolutionCauseRef(
@@ -242,18 +238,18 @@ function seventhDiagnostic(
           payload.voiceId,
         ),
       ],
-      subjects: declarative.subjects,
-      trace: declarative.trace,
+      subjects: obligationContext.subjects,
+      trace: obligationContext.trace,
     },
   );
 }
 
 function dominantNinthDiagnostic(
   environment: ObligationEnvironment<DominantNinthPayload>,
-  decision: ObligationDecision<DominantNinthPayload>,
+  decision: ObligationDecision,
 ) {
   const payload = environment.obligation.payload;
-  const declarative = obligationDiagnosticContext(environment, decision);
+  const obligationContext = obligationDiagnosticContext(environment, decision);
   const source = openedSourceNote(environment);
   const sourceChord = openedSourceChord(environment);
   const current = environment.context.slice.notes[payload.voiceId];
@@ -282,7 +278,7 @@ function dominantNinthDiagnostic(
           chordEvidence(targetChord),
           noteEvidence(current, "后继音"),
         ],
-        declarative.evidence,
+        obligationContext.evidence,
       ),
       causeRefs: [
         resolutionCauseRef(
@@ -293,18 +289,18 @@ function dominantNinthDiagnostic(
           payload.voiceId,
         ),
       ],
-      subjects: declarative.subjects,
-      trace: declarative.trace,
+      subjects: obligationContext.subjects,
+      trace: obligationContext.trace,
     },
   );
 }
 
 function alteredToneDiagnostic(
   environment: ObligationEnvironment<AlteredTonePayload>,
-  decision: ObligationDecision<AlteredTonePayload>,
+  decision: ObligationDecision,
 ) {
   const payload = environment.obligation.payload;
-  const declarative = obligationDiagnosticContext(environment, decision);
+  const obligationContext = obligationDiagnosticContext(environment, decision);
   const source = openedSourceNote(environment);
   const sourceChord = openedSourceChord(environment);
   const current = environment.context.slice.notes[payload.voiceId];
@@ -333,7 +329,7 @@ function alteredToneDiagnostic(
           chordEvidence(targetChord),
           noteEvidence(current, "后继音"),
         ],
-        declarative.evidence,
+        obligationContext.evidence,
       ),
       causeRefs: [
         resolutionCauseRef(
@@ -344,168 +340,183 @@ function alteredToneDiagnostic(
           payload.voiceId,
         ),
       ],
-      subjects: declarative.subjects,
-      trace: declarative.trace,
+      subjects: obligationContext.subjects,
+      trace: obligationContext.trace,
     },
   );
 }
 
-const leadingToneTransition = decisionTable<
-  ObligationEnvironment<LeadingTonePayload>
->({
-  conflicts: { precedence: ["resolve", "cancel", "continue"] },
-  rows: [
-    when(
-      "resolve",
-      "leading-tone-resolved",
-      all(
-        subjectVoiceAttacked(),
-        leadingTargetUnchanged(),
-        leadingToneResolves(),
-      ),
-    ),
-    when(
-      "continue",
-      "leading-tone-repeated",
-      all(
-        any(
-          sameOpenedHarmonySpan<LeadingTonePayload>(),
-          sameWrittenPitchAsSource(),
-        ),
-        leadingTargetUnchanged(),
-      ),
-    ),
-    when(
-      "cancel",
-      "leading-tone-context-ended",
-      any(
-        subjectVoiceEnteredRest(),
-        tendencyContextUnsupported(),
-        not(leadingTargetUnchanged()),
-      ),
-    ),
-    otherwiseWhen(
-      "violate",
-      "leading-tone-moved-elsewhere",
-      subjectVoiceAttacked(),
-    ),
-  ],
-});
+function sameOpenedSpan<Payload extends JsonValue>(
+  environment: ObligationEnvironment<Payload>,
+) {
+  const sourceSpanId = openedSpanId(environment);
+  return Boolean(sourceSpanId && sourceSpanId === currentSpanId(environment));
+}
 
-const seventhSameSpan = sameOpenedHarmonySpan<SeventhPayload>();
-const seventhUnsupported = tendencyContextUnsupported<SeventhPayload>();
-const seventhTargetChord = targetChordAvailable<SeventhPayload>();
-const seventhRest = subjectVoiceEnteredRest<SeventhPayload>();
-const seventhTransition = decisionTable<ObligationEnvironment<SeventhPayload>>({
-  rows: [
-    when(
-      "cancel",
-      "chord-seventh-context-ended",
-      any(seventhRest, seventhUnsupported, not(seventhTargetChord)),
-    ),
-    when(
-      "continue",
-      "chord-seventh-same-harmony",
-      all(
-        seventhSameSpan,
-        not(seventhRest),
-        not(seventhUnsupported),
-        seventhTargetChord,
-      ),
-    ),
-    when(
-      "resolve",
-      "chord-seventh-resolved",
-      all(
-        not(seventhSameSpan),
-        not(seventhUnsupported),
-        seventhTargetChord,
-        subjectHasActiveNote(),
-        chordSeventhResolves(),
-      ),
-    ),
-    otherwiseWhen(
-      "violate",
-      "chord-seventh-moved-elsewhere",
-      all(
-        not(seventhSameSpan),
-        not(seventhUnsupported),
-        seventhTargetChord,
-        subjectHasActiveNote(),
-      ),
-    ),
-  ],
-});
+function subjectAttacked<Payload extends VoiceObligationPayload>(
+  environment: ObligationEnvironment<Payload>,
+) {
+  return environment.moment.attackedVoiceIds.includes(
+    environment.obligation.payload.voiceId,
+  );
+}
 
-const ninthSameSpan = sameOpenedHarmonySpan<DominantNinthPayload>();
-const ninthTargetChord = targetChordAvailable<DominantNinthPayload>();
-const ninthRest = subjectVoiceEnteredRest<DominantNinthPayload>();
-const dominantNinthTransition = decisionTable<
-  ObligationEnvironment<DominantNinthPayload>
->({
-  rows: [
-    when(
-      "cancel",
-      "dominant-ninth-context-ended",
-      any(ninthRest, not(ninthTargetChord)),
-    ),
-    when(
-      "continue",
-      "dominant-ninth-same-harmony",
-      all(ninthSameSpan, not(ninthRest), ninthTargetChord),
-    ),
-    when(
-      "resolve",
-      "dominant-ninth-resolved",
-      all(
-        not(ninthSameSpan),
-        ninthTargetChord,
-        subjectHasActiveNote(),
-        dominantNinthResolves(),
-      ),
-    ),
-    otherwiseWhen(
-      "violate",
-      "dominant-ninth-moved-elsewhere",
-      all(not(ninthSameSpan), ninthTargetChord, subjectHasActiveNote()),
-    ),
-  ],
-});
+function subjectEnteredRest<Payload extends VoiceObligationPayload>(
+  environment: ObligationEnvironment<Payload>,
+) {
+  return environment.moment.enteredRestVoiceIds.includes(
+    environment.obligation.payload.voiceId,
+  );
+}
 
-const alteredSameSpan = sameOpenedHarmonySpan<AlteredTonePayload>();
-const alteredTargetChord = targetChordAvailable<AlteredTonePayload>();
-const alteredRest = subjectVoiceEnteredRest<AlteredTonePayload>();
-const alteredToneTransition = decisionTable<
-  ObligationEnvironment<AlteredTonePayload>
->({
-  rows: [
-    when(
-      "cancel",
-      "altered-tone-context-ended",
-      any(alteredRest, not(alteredTargetChord)),
-    ),
-    when(
-      "continue",
-      "altered-tone-same-harmony",
-      all(alteredSameSpan, not(alteredRest), alteredTargetChord),
-    ),
-    when(
-      "resolve",
-      "altered-tone-resolved",
-      all(
-        not(alteredSameSpan),
-        alteredTargetChord,
-        subjectHasActiveNote(),
-        alteredToneResolves(),
-      ),
-    ),
-    otherwiseWhen(
-      "violate",
-      "altered-tone-moved-elsewhere",
-      all(not(alteredSameSpan), alteredTargetChord, subjectHasActiveNote()),
-    ),
-  ],
-});
+function subjectHasActiveNote<Payload extends VoiceObligationPayload>(
+  environment: ObligationEnvironment<Payload>,
+) {
+  return Boolean(
+    environment.context.slice.notes[environment.obligation.payload.voiceId],
+  );
+}
+
+function targetChordAvailable<Payload extends JsonValue>(
+  environment: ObligationEnvironment<Payload>,
+) {
+  return Boolean(environment.context.slice.chord);
+}
+
+function sameWrittenPitchAsSource<Payload extends VoiceObligationPayload>(
+  environment: ObligationEnvironment<Payload>,
+) {
+  const source = openedSourceNote(environment);
+  const current =
+    environment.context.slice.notes[environment.obligation.payload.voiceId];
+  return Boolean(
+    source &&
+      current &&
+      source.pitch.step === current.pitch.step &&
+      source.pitch.alter === current.pitch.alter &&
+      source.pitch.octave === current.pitch.octave,
+  );
+}
+
+function decision<Payload extends VoiceObligationPayload>(
+  environment: ObligationEnvironment<Payload>,
+  outcome: ObligationDecision["outcome"],
+  reason: string,
+): ObligationDecision {
+  const details = transitionEvidence(environment);
+  return {
+    outcome,
+    reason,
+    evidence: details.evidence,
+    subjectRefs: details.subjectRefs,
+  };
+}
+
+function leadingToneTransition(
+  environment: ObligationEnvironment<LeadingTonePayload>,
+): ObligationDecision | undefined {
+  const targetUnchanged = leadingTargetUnchanged(environment);
+  const attacked = subjectAttacked(environment);
+
+  if (attacked && targetUnchanged && leadingToneResolves(environment))
+    return decision(environment, "resolve", "leading-tone-resolved");
+
+  if (
+    targetUnchanged &&
+    (sameOpenedSpan(environment) || sameWrittenPitchAsSource(environment))
+  )
+    return decision(environment, "continue", "leading-tone-repeated");
+
+  if (
+    subjectEnteredRest(environment) ||
+    !supportsTendencyResolutionRules(
+      environment.context,
+      environment.context.slice.chord,
+    ) ||
+    !targetUnchanged
+  )
+    return decision(environment, "cancel", "leading-tone-context-ended");
+
+  if (attacked)
+    return decision(environment, "violate", "leading-tone-moved-elsewhere");
+
+  return undefined;
+}
+
+function seventhTransition(
+  environment: ObligationEnvironment<SeventhPayload>,
+): ObligationDecision | undefined {
+  if (
+    subjectEnteredRest(environment) ||
+    !supportsTendencyResolutionRules(
+      environment.context,
+      environment.context.slice.chord,
+    ) ||
+    !targetChordAvailable(environment)
+  )
+    return decision(environment, "cancel", "chord-seventh-context-ended");
+
+  if (sameOpenedSpan(environment))
+    return decision(environment, "continue", "chord-seventh-same-harmony");
+
+  if (subjectHasActiveNote(environment) && chordSeventhResolves(environment))
+    return decision(environment, "resolve", "chord-seventh-resolved");
+
+  if (subjectHasActiveNote(environment))
+    return decision(environment, "violate", "chord-seventh-moved-elsewhere");
+
+  return undefined;
+}
+
+function dominantNinthTransition(
+  environment: ObligationEnvironment<DominantNinthPayload>,
+): ObligationDecision | undefined {
+  if (
+    subjectEnteredRest(environment) ||
+    !supportsTendencyResolutionRules(
+      environment.context,
+      environment.context.slice.chord,
+    ) ||
+    !targetChordAvailable(environment)
+  )
+    return decision(environment, "cancel", "dominant-ninth-context-ended");
+
+  if (sameOpenedSpan(environment))
+    return decision(environment, "continue", "dominant-ninth-same-harmony");
+
+  if (subjectHasActiveNote(environment) && dominantNinthResolves(environment))
+    return decision(environment, "resolve", "dominant-ninth-resolved");
+
+  if (subjectHasActiveNote(environment))
+    return decision(environment, "violate", "dominant-ninth-moved-elsewhere");
+
+  return undefined;
+}
+
+function alteredToneTransition(
+  environment: ObligationEnvironment<AlteredTonePayload>,
+): ObligationDecision | undefined {
+  if (
+    subjectEnteredRest(environment) ||
+    !supportsTendencyResolutionRules(
+      environment.context,
+      environment.context.slice.chord,
+    ) ||
+    !targetChordAvailable(environment)
+  )
+    return decision(environment, "cancel", "altered-tone-context-ended");
+
+  if (sameOpenedSpan(environment))
+    return decision(environment, "continue", "altered-tone-same-harmony");
+
+  if (subjectHasActiveNote(environment) && alteredToneResolves(environment))
+    return decision(environment, "resolve", "altered-tone-resolved");
+
+  if (subjectHasActiveNote(environment))
+    return decision(environment, "violate", "altered-tone-moved-elsewhere");
+
+  return undefined;
+}
 
 export function secondaryDominantStateStep(
   context: RuleStepContext,
@@ -517,9 +528,9 @@ export function secondaryDominantStateStep(
     const currentSpan = context.span;
     incoming.forEach((state) => {
       const payload = state.payload as SecondaryDominantState;
-      const connection = context.analysis.connections.find(
-        (candidate) => candidate.currentSpanId === currentSpan.id,
-      );
+      const connection = context.rules.connections({
+        targetSpanId: currentSpan.id,
+      }).first()?.connection;
       const resolves = functionalTargetMatches(
         context.analysis,
         payload.sourceSpanId,
@@ -536,10 +547,14 @@ export function secondaryDominantStateStep(
       if (allowedCadential64 && connection?.contiguous && connection.sameKey) {
         outgoing.push(state);
       } else if (!resolves) {
-        const previous = context.analysis.chordById.get(payload.sourceChordId);
-        const current = currentSpan.regionIds
-          .map((id) => context.analysis.chordById.get(id))
-          .find(Boolean);
+        const previous = context.rules
+          .spans({ id: payload.sourceSpanId })
+          .selectMany(({ chords }) => chords)
+          .first((chord) => chord.id === payload.sourceChordId);
+        const current = context.rules
+          .spans({ id: currentSpan.id })
+          .selectMany(({ chords }) => chords)
+          .first();
         if (
           previous &&
           current &&
@@ -574,9 +589,13 @@ export function secondaryDominantStateStep(
   } else {
     outgoing.push(...incoming);
   }
-  const sourceInterpretation = context.span?.semantics
-    ? primaryHarmonyInterpretation(context.span.semantics)
+  const sourceResolution = context.span
+    ? context.rules.harmony.primaryInterpretation(context.span)
     : undefined;
+  const sourceInterpretation =
+    sourceResolution?.status === "resolved"
+      ? sourceResolution.value
+      : undefined;
   if (
     context.isSpanStart &&
     context.span &&
@@ -632,7 +651,6 @@ export const STATEFUL_RULES = defineRuleGroup(
     source: leadingToneSource,
     retrigger: "retain-existing",
     transition: leadingToneTransition,
-    onUnknown: "continue",
     onEnd: "cancel",
     reportViolation: leadingToneDiagnostic,
   }),
@@ -652,7 +670,6 @@ export const STATEFUL_RULES = defineRuleGroup(
     source: chordSeventhSource,
     retrigger: "retain-existing",
     transition: seventhTransition,
-    onUnknown: "continue",
     onEnd: "cancel",
     reportViolation: seventhDiagnostic,
   }),
@@ -671,7 +688,6 @@ export const STATEFUL_RULES = defineRuleGroup(
     source: dominantNinthSource,
     retrigger: "retain-existing",
     transition: dominantNinthTransition,
-    onUnknown: "continue",
     onEnd: "cancel",
     reportViolation: dominantNinthDiagnostic,
   }),
@@ -690,7 +706,6 @@ export const STATEFUL_RULES = defineRuleGroup(
     source: alteredToneSource,
     retrigger: "retain-existing",
     transition: alteredToneTransition,
-    onUnknown: "continue",
     onEnd: "cancel",
     reportViolation: alteredToneDiagnostic,
   }),

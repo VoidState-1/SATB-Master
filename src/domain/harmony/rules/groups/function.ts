@@ -1,5 +1,4 @@
-import { primaryHarmonyInterpretation } from "../../../chordModel";
-import { analysisKeyAtTick, type HarmonyAnalysis } from "../../analysis";
+import { analysisKeyAtTick } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import {
   formatPitchClass,
@@ -7,9 +6,11 @@ import {
   scaleDegreePitchClass,
 } from "../../../pitch";
 import { chordEvidence, chordLabel, diagnostic } from "../helpers/core";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
-export function mixtureSourceRule(analysis: HarmonyAnalysis) {
+export function mixtureSourceRule(context: HarmonyRuleContext) {
+  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
   const qualities = {
     major: ["major", "minor", "minor", "major", "major", "minor", "diminished"],
@@ -24,7 +25,9 @@ export function mixtureSourceRule(analysis: HarmonyAnalysis) {
       chord.identity.structure.alterations.length > 0
     )
       return;
-    const interpretation = primaryHarmonyInterpretation(chord.semantics!);
+    const resolution = context.harmony.primaryInterpretation(chord);
+    if (resolution.status !== "resolved") return;
+    const interpretation = resolution.value;
     const localKey =
       interpretation.localKey ?? analysisKeyAtTick(analysis, chord.startTick);
     const sourceMode = mixture === "parallel-major" ? "major" : "minor";
@@ -72,9 +75,10 @@ export function mixtureSourceRule(analysis: HarmonyAnalysis) {
   return diagnostics;
 }
 
-export function functionalRetrogressionRule(analysis: HarmonyAnalysis) {
+export function functionalRetrogressionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.connections.forEach((connection) => {
+  for (const candidate of context.connections()) {
+    const { connection } = candidate;
     if (
       connection.relation !== "retrogression" ||
       !connection.contiguous ||
@@ -82,20 +86,10 @@ export function functionalRetrogressionRule(analysis: HarmonyAnalysis) {
       connection.confidence === "ambiguous" ||
       connection.confidence === "unknown"
     )
-      return;
-    const previousSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.previousSpanId,
-    );
-    const currentSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.currentSpanId,
-    );
-    const previous = previousSpan?.regionIds
-      .map((id) => analysis.chordById.get(id))
-      .find(Boolean);
-    const current = currentSpan?.regionIds
-      .map((id) => analysis.chordById.get(id))
-      .find(Boolean);
-    if (!previous || !current) return;
+      continue;
+    const previous = candidate.sourceBoundary.chord;
+    const current = candidate.targetBoundary.chord;
+    if (!previous || !current) continue;
     diagnostics.push(
       diagnostic(
         "function.retrogression",
@@ -124,33 +118,24 @@ export function functionalRetrogressionRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
-export function doubleDominantTargetRule(analysis: HarmonyAnalysis) {
+export function doubleDominantTargetRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.connections.forEach((connection) => {
-    if (connection.relation !== "double-dominant-target") return;
-    const previousSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.previousSpanId,
-    );
-    const currentSpan = analysis.harmonySpans.find(
-      (span) => span.id === connection.currentSpanId,
-    );
-    const previous = previousSpan?.regionIds
-      .map((id) => analysis.chordById.get(id))
-      .find(Boolean);
-    const current = currentSpan?.regionIds
-      .map((id) => analysis.chordById.get(id))
-      .find(Boolean);
+  for (const candidate of context.connections()) {
+    const { connection } = candidate;
+    if (connection.relation !== "double-dominant-target") continue;
+    const previous = candidate.sourceBoundary.chord;
+    const current = candidate.targetBoundary.chord;
     if (
       !previous ||
       !current ||
       !connection.contiguous ||
       connection.targetMatched
     )
-      return;
+      continue;
     diagnostics.push(
       diagnostic(
         "function.double-dominant-target",
@@ -183,36 +168,28 @@ export function doubleDominantTargetRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 
-export function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
+export function cadential64ResolutionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  analysis.harmonySpans.forEach((span) => {
-    const interpretation = span.semantics
-      ? primaryHarmonyInterpretation(span.semantics)
-      : undefined;
+  const { analysis } = context;
+  for (const candidate of context.spans()) {
+    const { span } = candidate;
+    const resolution = context.harmony.primaryInterpretation(span);
+    const interpretation =
+      resolution.status === "resolved" ? resolution.value : undefined;
     if (
       interpretation?.designation?.kind !== "cadential64" &&
       span.semantics?.cadenceRole !== "cadential64"
     )
-      return;
-    const previous = span.regionIds
-      .map((id) => analysis.chordById.get(id))
-      .find(Boolean);
-    if (!previous) return;
-    const connection = analysis.connections.find(
-      (candidate) => candidate.previousSpanId === span.id,
-    );
-    const currentSpan = connection
-      ? analysis.harmonySpans.find(
-          (candidate) => candidate.id === connection.currentSpanId,
-        )
-      : undefined;
-    const current = currentSpan?.regionIds
-      .map((id) => analysis.chordById.get(id))
-      .find(Boolean);
+      continue;
+    const previous = candidate.lastSlice.chord;
+    if (!previous) continue;
+    const outgoing = context.connections({ sourceSpanId: span.id }).first();
+    const connection = outgoing?.connection;
+    const current = outgoing?.targetBoundary.chord;
     if (
       !connection ||
       !connection.contiguous ||
@@ -220,14 +197,14 @@ export function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
       connection.confidence === "ambiguous" ||
       connection.confidence === "unknown"
     )
-      return;
+      continue;
     const resolves = Boolean(
       connection.relation === "cadential64-target" &&
       connection.targetMatched &&
       connection.contiguous &&
       connection.sameKey,
     );
-    if (resolves) return;
+    if (resolves) continue;
     diagnostics.push(
       diagnostic(
         "function.cadential64-target",
@@ -260,7 +237,7 @@ export function cadential64ResolutionRule(analysis: HarmonyAnalysis) {
         },
       ),
     );
-  });
+  }
   return diagnostics;
 }
 

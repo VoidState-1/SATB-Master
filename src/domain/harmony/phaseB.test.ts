@@ -128,6 +128,41 @@ describe("Phase B v1 书写与和弦金样本", () => {
     );
   });
 
+  it("和弦双重解释不妨碍基于 identity 的拼写检查", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ;
+    const chord = fSharpMajorRegion(true);
+    chord.semantics = {
+      ...chord.semantics!,
+      interpretations: [
+        ...chord.semantics!.interpretations,
+        {
+          id: "confirmed-pivot-reading",
+          localKey: { tonic: { step: "B", alter: 0 }, mode: "major" },
+          degree: 5,
+          degreeAlteration: 0,
+          source: "confirmed",
+          confidence: "certain",
+        },
+      ],
+    };
+    project.chordTrack.regions = [chord];
+    setNotes(project, "soprano", [
+      note(
+        "wrong-g-flat-with-pivot",
+        0,
+        PPQ,
+        HARMONY_PHASE_B_GOLDEN.enharmonicChordTone.wrongEnharmonicTone,
+      ),
+    ]);
+
+    expect(
+      checkHarmony(project).diagnostics.find(
+        (item) => item.ruleId === "chord.unclassified-nonchord-tone",
+      )?.noteIds,
+    ).toEqual(["wrong-g-flat-with-pivot"]);
+  });
+
   it("正确的 F♯ 拼写作为和弦构成音通过", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ;

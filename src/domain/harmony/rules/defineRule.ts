@@ -1,4 +1,4 @@
-import type { HarmonyAnalysis } from "../analysis";
+import type { HarmonyRuleContext } from "./context/createRuleContext";
 import type {
   RuleDefinition,
   RuleDiagnostic,
@@ -32,9 +32,9 @@ export type RuleMetadataInput<Id extends string> = Omit<
 };
 
 export type StatelessRuleEvaluator = (
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   config: RuleConfig,
-) => RuleDiagnostic[];
+) => readonly RuleDiagnostic[];
 
 type StatelessRuleInput<Id extends string> = RuleMetadataInput<Id> & {
   readonly evaluate: StatelessRuleEvaluator;
@@ -75,8 +75,8 @@ export function defineStatelessRule<const Id extends string>(
   const { evaluate, ...metadata } = input;
   return {
     ...completeMetadata(metadata),
-    evaluate: ({ analysis }, config) => ({
-      diagnostics: evaluate(analysis, config),
+    evaluate: (context, config) => ({
+      diagnostics: evaluate(context, config),
     }),
   };
 }
