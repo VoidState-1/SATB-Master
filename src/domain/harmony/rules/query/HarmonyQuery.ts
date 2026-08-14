@@ -81,13 +81,15 @@ export class HarmonyQuery<T> implements Iterable<T> {
   }
 
   orderBy<K>(
-    keyOf: (item: T) => K,
+    keyOf: (item: T, index: number) => K,
     direction: "asc" | "desc" = "asc",
   ) {
+    if (direction !== "asc" && direction !== "desc")
+      throw new Error("invalid order direction");
     const multiplier = direction === "asc" ? 1 : -1;
     return new HarmonyQuery(
       this.#items
-        .map((item, index) => ({ item, index, key: keyOf(item) }))
+        .map((item, index) => ({ item, index, key: keyOf(item, index) }))
         .sort((left, right) => {
           if (left.key < right.key) return -1 * multiplier;
           if (left.key > right.key) return 1 * multiplier;
@@ -105,9 +107,9 @@ export class HarmonyQuery<T> implements Iterable<T> {
       group.push(item);
       groups.set(key, group);
     });
-    return new Map(
+    return new ReadonlyHarmonyGroups(
       [...groups].map(([key, items]) => [key, Object.freeze(items)] as const),
-    ) as ReadonlyMap<K, readonly T[]>;
+    );
   }
 
   first(predicate?: (item: T, index: number) => boolean) {
@@ -136,5 +138,56 @@ export class HarmonyQuery<T> implements Iterable<T> {
 
   toArray() {
     return this.#items;
+  }
+}
+
+class ReadonlyHarmonyGroups<K, V> {
+  readonly #map: ReadonlyMap<K, readonly V[]>;
+
+  constructor(entries: readonly (readonly [K, readonly V[]])[]) {
+    this.#map = new Map(entries);
+  }
+
+  get size() {
+    return this.#map.size;
+  }
+
+  get(key: K) {
+    return this.#map.get(key);
+  }
+
+  has(key: K) {
+    return this.#map.has(key);
+  }
+
+  forEach(
+    callbackfn: (
+      value: readonly V[],
+      key: K,
+      map: ReadonlyMap<K, readonly V[]>,
+    ) => void,
+    thisArg?: unknown,
+  ) {
+    this.#map.forEach((value, key) => callbackfn.call(thisArg, value, key, this.#map));
+  }
+
+  *entries() {
+    yield* this.#map.entries();
+  }
+
+  *keys() {
+    yield* this.#map.keys();
+  }
+
+  *values() {
+    yield* this.#map.values();
+  }
+
+  [Symbol.iterator]() {
+    return this.entries();
+  }
+
+  get [Symbol.toStringTag]() {
+    return "ReadonlyHarmonyGroups";
   }
 }

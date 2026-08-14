@@ -27,7 +27,7 @@ function isChordTone(
   note: AnalysisNote,
   slice: AnalysisSlice | undefined,
 ) {
-  return context.harmony.isChordTone(note, slice?.chord);
+  return context.harmony.isWrittenChordTone(note, slice?.chord);
 }
 
 function roleNotes(context: HarmonyRuleContext, role: NonChordToneRole) {

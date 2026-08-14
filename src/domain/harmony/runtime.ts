@@ -8,7 +8,6 @@ import {
   type SliceTransition,
 } from "./analysis";
 import type { ProjectDocument, VoiceId } from "../project/types";
-import { VOICE_ORDER } from "../project/voice";
 import { planRuleApplicability } from "./rules/applicability";
 import {
   arbitrateDiagnostics,
@@ -26,6 +25,12 @@ import {
   createHarmonyRuleContext,
   type HarmonyRuleContext,
 } from "./rules/context/createRuleContext";
+import { RULE_RUNTIME_LIMITS } from "./rules/policy/limits";
+import {
+  completeHarmonyResult,
+  severityAfterApplicability,
+} from "./rules/policy/result";
+import { validateRuleStates as validateRuleStateEnvelopes } from "./rules/policy/state";
 
 export type { RuleConfig } from "./rules/types";
 
@@ -206,7 +211,6 @@ export interface RuleRunRequest {
   exceptions?: Partial<Record<string, RuleExceptionPolicy>>;
 }
 
-const MAX_DIAGNOSTICS_PER_RULE = 512;
 function requirementSkips(
   definition: RuleDefinition,
   analysis: HarmonyAnalysis,
@@ -282,10 +286,6 @@ function requirementSkips(
   return skipped;
 }
 
-function severityOrder(severity: DiagnosticSeverity) {
-  return severity === "error" ? 0 : severity === "warning" ? 1 : 2;
-}
-
 function completeResult(
   analysis: HarmonyAnalysis,
   diagnostics: HarmonyDiagnostic[],
@@ -293,27 +293,14 @@ function completeResult(
   superseded: boolean,
   definitions: readonly RuleDefinition[],
 ): HarmonyCheckResult {
-  const uniqueSkips = new Map(
-    skippedRules.map((item) => [
-      `${item.ruleId}:${item.reason}:${item.partial}`,
-      item,
-    ]),
-  );
-  return {
-    diagnostics: arbitrateDiagnostics(diagnostics, definitions).sort(
-      (left, right) =>
-        left.tick - right.tick ||
-        severityOrder(left.severity) - severityOrder(right.severity) ||
-        left.ruleId.localeCompare(right.ruleId),
-    ),
-    skippedRules: [...uniqueSkips.values()],
-    skippedRuleIds: [
-      ...new Set([...uniqueSkips.values()].map((item) => item.ruleId)),
-    ],
+  return completeHarmonyResult({
+    diagnostics,
+    skippedRules,
     revision: analysis.revision,
     superseded,
     invalidationRanges: analysis.invalidationRanges,
-  };
+    arbitrate: (source) => arbitrateDiagnostics(source, definitions),
+  });
 }
 
 function collectEvaluation(
@@ -327,7 +314,7 @@ function collectEvaluation(
     ...exceptionPolicy,
   };
   const diagnostics = evaluation.diagnostics
-    .slice(0, MAX_DIAGNOSTICS_PER_RULE)
+    .slice(0, RULE_RUNTIME_LIMITS.diagnosticsPerRule)
     .map((item) => {
       const applicability = planRuleApplicability(
         definition,
@@ -335,17 +322,12 @@ function collectEvaluation(
         analysis,
         effectiveExceptionPolicy,
       );
-      if (
-        applicability.policy === "skip" ||
-        applicability.policy === "deferred"
-      )
+      const effectiveSeverity = severityAfterApplicability(
+        severity,
+        applicability.policy,
+      );
+      if (!effectiveSeverity)
         return undefined;
-      const effectiveSeverity =
-        applicability.policy === "downgraded"
-          ? severity === "error"
-            ? "warning"
-            : "suggestion"
-          : severity;
       return normalizeBuiltinDiagnostic(
         item,
         definition,
@@ -360,9 +342,6 @@ function collectEvaluation(
   }));
   return { diagnostics, skipped };
 }
-
-const MAX_RULE_STATES = 512;
-const MAX_RULE_STATE_BYTES = 16 * 1024;
 
 function stepContextAt(
   analysis: HarmonyAnalysis,
@@ -390,80 +369,76 @@ function stepContextAt(
   };
 }
 
-function isJsonValue(
-  value: unknown,
-  seen = new Set<object>(),
-): value is JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "boolean")
-    return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (!value || typeof value !== "object" || seen.has(value)) return false;
-  seen.add(value);
-  if (Array.isArray(value))
-    return value.every((item) => isJsonValue(item, seen));
-  return Object.entries(value).every(
-    ([, item]) => item !== undefined && isJsonValue(item, seen),
-  );
-}
-
 function validateRuleStates(
   definition: StatefulRuleDefinition,
   states: readonly RuleStateEnvelope[],
   context: RuleStepContext,
   validSpanIds: ReadonlySet<string>,
 ) {
-  if (!Array.isArray(states) || states.length > MAX_RULE_STATES)
-    throw new Error("规则状态数量超过限制");
-  const ids = new Set<string>();
-  return states.map((state) => {
-    if (
-      !state ||
-      typeof state.id !== "string" ||
-      !state.id.trim() ||
-      state.id.length > 128 ||
-      ids.has(state.id) ||
-      state.ownerRuleId !== definition.id
-    )
-      throw new Error("规则状态标识无效");
-    ids.add(state.id);
-    if (
-      !Number.isInteger(state.createdAt?.tick) ||
-      !Number.isInteger(state.createdAt?.sliceIndex) ||
-      state.createdAt.tick < 0 ||
-      state.createdAt.tick > context.slice.tick ||
-      state.createdAt.sliceIndex < 0 ||
-      state.createdAt.sliceIndex > context.sliceIndex
-    )
-      throw new Error("规则状态创建位置无效");
-    const refs = state.subjectRefs;
-    if (
-      refs?.voiceIds?.some((id: VoiceId) => !VOICE_ORDER.includes(id)) ||
-      refs?.noteIds?.some((id: string) => !context.analysis.noteById.has(id)) ||
-      refs?.chordIds?.some(
-        (id: string) => !context.analysis.chordById.has(id),
-      ) ||
-      refs?.spanIds?.some((id: string) => !validSpanIds.has(id))
-    )
-      throw new Error("规则状态引用了不存在的分析对象");
-    if (!isJsonValue(state.payload))
-      throw new Error("规则状态必须是纯 JSON 数据");
-    const serialized = JSON.stringify(state.payload);
-    if (serialized.length > MAX_RULE_STATE_BYTES)
-      throw new Error("单个规则状态超过 16 KiB 限制");
-    return {
-      ...state,
-      createdAt: { ...state.createdAt },
-      subjectRefs: refs
-        ? {
-            voiceIds: refs.voiceIds ? [...refs.voiceIds] : undefined,
-            noteIds: refs.noteIds ? [...refs.noteIds] : undefined,
-            chordIds: refs.chordIds ? [...refs.chordIds] : undefined,
-            spanIds: refs.spanIds ? [...refs.spanIds] : undefined,
-          }
-        : undefined,
-      payload: JSON.parse(serialized) as JsonValue,
-    } satisfies RuleStateEnvelope;
+  return validateRuleStateEnvelopes(states, {
+    ownerRuleId: definition.id,
+    maximumTick: context.slice.tick,
+    maximumSliceIndex: context.sliceIndex,
+    knownReferences: {
+      noteIds: context.analysis.noteById,
+      chordIds: context.analysis.chordById,
+      spanIds: validSpanIds,
+    },
   });
+}
+
+interface StatefulRuleRun {
+  readonly contexts: readonly RuleStepContext[];
+  readonly validSpanIds: ReadonlySet<string>;
+  readonly diagnostics: RuleDiagnostic[];
+  readonly skipped: Omit<SkippedRule, "ruleId">[];
+  states: readonly RuleStateEnvelope[];
+}
+
+function createStatefulRuleRun(
+  analysis: HarmonyAnalysis,
+  rules: HarmonyRuleContext,
+): StatefulRuleRun {
+  const spanById = new Map(
+    analysis.harmonySpans.map((span) => [span.id, span]),
+  );
+  return {
+    contexts: analysis.slices.map((_, index) =>
+      stepContextAt(analysis, rules, index, spanById),
+    ),
+    validSpanIds: new Set(spanById.keys()),
+    diagnostics: [],
+    skipped: [],
+    states: [],
+  };
+}
+
+function accumulateStatefulStep(
+  run: StatefulRuleRun,
+  definition: StatefulRuleDefinition,
+  context: RuleStepContext,
+  result: RuleStepResult,
+) {
+  run.diagnostics.push(...result.diagnostics);
+  run.skipped.push(...(result.skipped ?? []));
+  run.states = validateRuleStates(
+    definition,
+    result.outgoing,
+    context,
+    run.validSpanIds,
+  );
+}
+
+function accumulateStatefulFinal(
+  run: StatefulRuleRun,
+  result: RuleEvaluation,
+) {
+  run.diagnostics.push(...result.diagnostics);
+  run.skipped.push(...(result.skipped ?? []));
+}
+
+function statefulEvaluation(run: StatefulRuleRun): RuleEvaluation {
+  return { diagnostics: run.diagnostics, skipped: run.skipped };
 }
 
 function runStatefulRuleSynchronously(
@@ -472,35 +447,23 @@ function runStatefulRuleSynchronously(
   rules: HarmonyRuleContext,
   config: RuleConfig,
 ): RuleEvaluation {
-  const diagnostics: RuleDiagnostic[] = [];
-  const skipped: Omit<SkippedRule, "ruleId">[] = [];
-  let states: readonly RuleStateEnvelope[] = [];
-  let lastContext: RuleStepContext | undefined;
-  const spanById = new Map(
-    analysis.harmonySpans.map((span) => [span.id, span]),
-  );
-  const validSpanIds = new Set(spanById.keys());
-  for (let index = 0; index < analysis.slices.length; index += 1) {
-    lastContext = stepContextAt(analysis, rules, index, spanById);
-    const result = definition.process(lastContext, states, config);
+  const run = createStatefulRuleRun(analysis, rules);
+  for (const context of run.contexts) {
+    const result = definition.process(context, run.states, config);
     if (result instanceof Promise) throw new Error("同步入口不支持异步规则");
-    diagnostics.push(...result.diagnostics);
-    skipped.push(...(result.skipped ?? []));
-    states = validateRuleStates(
-      definition,
-      result.outgoing,
-      lastContext,
-      validSpanIds,
-    );
+    accumulateStatefulStep(run, definition, context, result);
   }
   if (definition.finalize) {
-    const finalResult = definition.finalize(lastContext, states, config);
+    const finalResult = definition.finalize(
+      run.contexts.at(-1),
+      run.states,
+      config,
+    );
     if (finalResult instanceof Promise)
       throw new Error("同步入口不支持异步规则");
-    diagnostics.push(...finalResult.diagnostics);
-    skipped.push(...(finalResult.skipped ?? []));
+    accumulateStatefulFinal(run, finalResult);
   }
-  return { diagnostics, skipped };
+  return statefulEvaluation(run);
 }
 
 async function runRule(
@@ -511,32 +474,20 @@ async function runRule(
 ) {
   if (!isStatefulRule(definition))
     return definition.evaluate(rules, config);
-  const diagnostics: RuleDiagnostic[] = [];
-  const skipped: Omit<SkippedRule, "ruleId">[] = [];
-  let states: readonly RuleStateEnvelope[] = [];
-  let lastContext: RuleStepContext | undefined;
-  const spanById = new Map(
-    analysis.harmonySpans.map((span) => [span.id, span]),
-  );
-  const validSpanIds = new Set(spanById.keys());
-  for (let index = 0; index < analysis.slices.length; index += 1) {
-    lastContext = stepContextAt(analysis, rules, index, spanById);
-    const result = await definition.process(lastContext, states, config);
-    diagnostics.push(...result.diagnostics);
-    skipped.push(...(result.skipped ?? []));
-    states = validateRuleStates(
-      definition,
-      result.outgoing,
-      lastContext,
-      validSpanIds,
-    );
+  const run = createStatefulRuleRun(analysis, rules);
+  for (const context of run.contexts) {
+    const result = await definition.process(context, run.states, config);
+    accumulateStatefulStep(run, definition, context, result);
   }
   if (definition.finalize) {
-    const finalResult = await definition.finalize(lastContext, states, config);
-    diagnostics.push(...finalResult.diagnostics);
-    skipped.push(...(finalResult.skipped ?? []));
+    const finalResult = await definition.finalize(
+      run.contexts.at(-1),
+      run.states,
+      config,
+    );
+    accumulateStatefulFinal(run, finalResult);
   }
-  return { diagnostics, skipped } satisfies RuleEvaluation;
+  return statefulEvaluation(run);
 }
 
 export function runRulesSynchronously(

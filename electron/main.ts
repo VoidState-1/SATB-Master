@@ -1,9 +1,11 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerProjectIpc } from './project-ipc.js'
 import { registerRuleLibraryIpc } from './rule-library.js'
 import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
+import { DESKTOP_CHANNELS } from '../shared/desktop.js'
+import { handleDesktop } from './typed-ipc.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 const developmentServerUrl = process.argv.includes('--dev')
@@ -43,8 +45,8 @@ function createWindow() {
     })
     window.show()
   })
-  window.on('maximize', () => window.webContents.send('window:maximized-changed', true))
-  window.on('unmaximize', () => window.webContents.send('window:maximized-changed', false))
+  window.on('maximize', () => window.webContents.send(DESKTOP_CHANNELS.windowMaximizedChanged, true))
+  window.on('unmaximize', () => window.webContents.send(DESKTOP_CHANNELS.windowMaximizedChanged, false))
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     const protocol = new URL(url).protocol
@@ -66,17 +68,17 @@ function createWindow() {
 
 function registerWindowIpc() {
   const senderWindow = (event: Electron.IpcMainInvokeEvent) => BrowserWindow.fromWebContents(event.sender)
-  ipcMain.handle('window:minimize', (event) => senderWindow(event)?.minimize())
-  ipcMain.handle('window:toggle-maximize', (event) => {
+  handleDesktop(DESKTOP_CHANNELS.windowMinimize, (event) => senderWindow(event)?.minimize())
+  handleDesktop(DESKTOP_CHANNELS.windowToggleMaximize, (event) => {
     const window = senderWindow(event)
     if (!window) return false
     if (window.isMaximized()) window.unmaximize()
     else window.maximize()
     return window.isMaximized()
   })
-  ipcMain.handle('window:is-maximized', (event) => senderWindow(event)?.isMaximized() ?? false)
-  ipcMain.handle('window:is-focused', (event) => senderWindow(event)?.isFocused() ?? false)
-  ipcMain.handle('window:close', (event) => senderWindow(event)?.close())
+  handleDesktop(DESKTOP_CHANNELS.windowIsMaximized, (event) => senderWindow(event)?.isMaximized() ?? false)
+  handleDesktop(DESKTOP_CHANNELS.windowIsFocused, (event) => senderWindow(event)?.isFocused() ?? false)
+  handleDesktop(DESKTOP_CHANNELS.windowClose, (event) => senderWindow(event)?.close())
 }
 
 app.whenReady().then(() => {

@@ -50,8 +50,6 @@ import {
 import type { ClipboardNote } from "../useEditorState";
 import type { EditorCommandContext } from "./types";
 
-const editorState = (editor: EditorCommandContext["editor"]) => editor;
-
 export function useProjectCommands({
   project,
   history,

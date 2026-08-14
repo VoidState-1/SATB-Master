@@ -310,6 +310,51 @@ describe("Phase C QuickJS 沙箱", () => {
       }),
     ).toHaveLength(context.slices.length);
   });
+
+  it("sandbox 与宿主复核共享状态形状、引用数量和 JSON 约束", async () => {
+    const context = buildExternalRuleContext(
+      buildHarmonyAnalysis(createEmptyProject(), 1),
+    );
+    const sourceForState = (stateSource: string) => `SATB_RULE.register({
+      manifest: {
+        apiVersion: 3,
+        packageId: "org.example.state-policy",
+        version: "1.0.0",
+        rules: [{ id: "state-policy", label: "状态策略", group: "custom", configVersion: 1 }],
+      },
+      rules: [{
+        id: "state-policy",
+        process(step) {
+          const state = ${stateSource};
+          return { outgoing: [state], diagnostics: [] };
+        },
+      }],
+    });`;
+    const base = `{
+      id: "state-1",
+      ownerRuleId: "state-policy",
+      createdAt: { tick: step.slice.tick, sliceIndex: step.sliceIndex },
+      payload: { ok: true }
+    }`;
+    await expect(
+      evaluateExternalRuleSource({
+        source: sourceForState(`({ ...${base}, payload: { invalid: undefined } })`),
+        ruleId: "state-policy",
+        context,
+        config: {},
+      }),
+    ).rejects.toThrow("纯 JSON");
+    await expect(
+      evaluateExternalRuleSource({
+        source: sourceForState(
+          `({ ...${base}, subjectRefs: { voiceIds: Array(9).fill("alto") } })`,
+        ),
+        ruleId: "state-policy",
+        context,
+        config: {},
+      }),
+    ).rejects.toThrow("引用");
+  });
 });
 
 describe("Phase C 外置诊断归一化", () => {

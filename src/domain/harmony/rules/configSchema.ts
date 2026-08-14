@@ -6,12 +6,122 @@ import type {
   RuleConfigValue,
   RuleOptionDefinition,
 } from "./types";
+import {
+  RULE_DURATION_UNITS,
+  RULE_EXCEPTION_CONTEXTS,
+  RULE_EXCEPTION_MODES,
+  type RuleExceptionContext,
+  type RuleExceptionMode,
+  type RuleExceptionPolicy,
+} from "./types";
+
+export const MAX_RULE_CONFIG_ENTRIES = 64;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 function cloneValue<T extends RuleConfigValue>(value: T): T {
   return structuredClone(value);
 }
 
-function normalizeOption(
+/** 解析持久化边界允许出现的通用配置值，不绑定某一条规则的 option。 */
+export function parseRuleConfigValue(
+  value: unknown,
+): RuleConfigValue | undefined {
+  if (
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  )
+    return value;
+  if (!isRecord(value)) return undefined;
+  if (
+    Number.isInteger(value.minMidi) &&
+    Number.isInteger(value.maxMidi) &&
+    (value.minMidi as number) >= 0 &&
+    (value.maxMidi as number) <= 127 &&
+    (value.minMidi as number) <= (value.maxMidi as number)
+  )
+    return {
+      minMidi: value.minMidi as number,
+      maxMidi: value.maxMidi as number,
+    };
+  if (
+    typeof value.value === "number" &&
+    Number.isFinite(value.value) &&
+    RULE_DURATION_UNITS.includes(
+      value.unit as (typeof RULE_DURATION_UNITS)[number],
+    )
+  )
+    return {
+      value: value.value,
+      unit: value.unit as (typeof RULE_DURATION_UNITS)[number],
+    };
+  return undefined;
+}
+
+export function parseRuleConfig(
+  value: unknown,
+  options: { readonly keyPattern?: RegExp; readonly maximumEntries?: number } = {},
+): RuleConfig | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value);
+  if (entries.length > (options.maximumEntries ?? MAX_RULE_CONFIG_ENTRIES))
+    return undefined;
+  const config: RuleConfig = {};
+  for (const [key, candidate] of entries) {
+    if (options.keyPattern && !options.keyPattern.test(key)) return undefined;
+    const parsed = parseRuleConfigValue(candidate);
+    if (parsed === undefined) return undefined;
+    config[key] = parsed;
+  }
+  return config;
+}
+
+export function parseRuleExceptionPolicy(
+  value: unknown,
+): RuleExceptionPolicy | undefined {
+  if (!isRecord(value)) return undefined;
+  const policy: RuleExceptionPolicy = {};
+  for (const [context, mode] of Object.entries(value)) {
+    if (
+      !RULE_EXCEPTION_CONTEXTS.includes(context as RuleExceptionContext) ||
+      !RULE_EXCEPTION_MODES.includes(mode as RuleExceptionMode)
+    )
+      return undefined;
+    policy[context as RuleExceptionContext] = mode as RuleExceptionMode;
+  }
+  return policy;
+}
+
+/** 运行时只保留规则明确支持且 mode 合法的特例项。 */
+export function normalizeExceptionPolicy(
+  supportedContexts: readonly RuleExceptionContext[],
+  input: unknown,
+): RuleExceptionPolicy {
+  if (!isRecord(input)) return {};
+  const supported = new Set<RuleExceptionContext>(supportedContexts);
+  const policy: RuleExceptionPolicy = {};
+  for (const [context, mode] of Object.entries(input)) {
+    if (
+      supported.has(context as RuleExceptionContext) &&
+      RULE_EXCEPTION_MODES.includes(mode as RuleExceptionMode)
+    )
+      policy[context as RuleExceptionContext] = mode as RuleExceptionMode;
+  }
+  return policy;
+}
+
+export function defaultConfigFromOptions(
+  options: readonly RuleOptionDefinition[],
+): RuleConfig {
+  return Object.fromEntries(
+    options.map((option) => [option.key, cloneValue(option.defaultValue)]),
+  );
+}
+
+export function normalizeRuleConfigValue(
   option: RuleOptionDefinition,
   candidate: unknown,
 ): { value: RuleConfigValue; repair?: RuleConfigRepair } {
@@ -67,14 +177,16 @@ function normalizeOption(
       if (
         typeof value === "number" &&
         Number.isFinite(value) &&
-        ["ticks", "beats", "measures"].includes(String(unit)) &&
+        RULE_DURATION_UNITS.includes(
+          unit as (typeof RULE_DURATION_UNITS)[number],
+        ) &&
         (option.min === undefined || value >= option.min) &&
         (option.max === undefined || value <= option.max)
       )
         return {
           value: {
             value,
-            unit: unit as "ticks" | "beats" | "measures",
+            unit: unit as (typeof RULE_DURATION_UNITS)[number],
           },
         };
       return repair("range");
@@ -108,12 +220,13 @@ export function normalizeRuleConfig(
     if (!knownKeys.has(key)) repairs.push({ key, reason: "unknown" });
   });
   definition.options.forEach((option) => {
-    const normalized = normalizeOption(
+    const supplied = input !== undefined && Object.hasOwn(input, option.key);
+    const normalized = normalizeRuleConfigValue(
       option,
-      input?.[option.key] ?? definition.defaultConfig[option.key],
+      supplied ? input?.[option.key] : definition.defaultConfig[option.key],
     );
     config[option.key] = normalized.value;
-    if (normalized.repair && input?.[option.key] !== undefined)
+    if (normalized.repair && supplied)
       repairs.push(normalized.repair);
   });
   return { config, repairs };

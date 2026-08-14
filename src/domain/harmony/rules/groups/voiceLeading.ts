@@ -1,8 +1,4 @@
-import {
-  analysisKeyAtTick,
-  type AnalysisNote,
-  type AnalysisSlice,
-} from "../../analysis";
+import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { RuleConfig, RuleDiagnostic } from "../../runtime";
 import {
   chordIdentityToneSpellings,
@@ -106,8 +102,9 @@ function crossRelationCandidates(
       const simultaneous = overlapStart < overlapEnd;
       const gap = simultaneous ? 0 : right.note.startTick - leftEnd;
       if (!simultaneous && (gap < 0 || gap > windowTicks)) continue;
-      const leftKey = analysisKeyAtTick(analysis, left.note.startTick);
-      const rightKey = analysisKeyAtTick(analysis, right.note.startTick);
+      const leftKey = context.keyAt(left.note.startTick);
+      const rightKey = context.keyAt(right.note.startTick);
+      if (!leftKey || !rightKey) continue;
       if (
         leftKey.mode !== rightKey.mode ||
         !pitchClassEquals(leftKey.tonic, rightKey.tonic)

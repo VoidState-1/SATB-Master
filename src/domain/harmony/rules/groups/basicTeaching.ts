@@ -6,6 +6,7 @@ import type { RuleDiagnostic } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
+  leadingTonePitchClass,
   pitchClassEquals,
   pitchClassValue,
   scaleDegreePitchClass,
@@ -193,11 +194,7 @@ export function rootPositionTriadDoublingRule(context: HarmonyRuleContext) {
       fact.chord.identity.structure.quality === "diminished"
     )
       return;
-    const leadingTone = scaleDegreePitchClass(
-      fact.slice.key,
-      7,
-      fact.slice.key.mode === "minor" ? 1 : 0,
-    );
+    const leadingTone = leadingTonePitchClass(fact.slice.key);
     if (
       fact.counts.some(
         (count, index) =>

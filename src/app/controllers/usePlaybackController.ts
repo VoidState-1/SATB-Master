@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { audioEngine, type AudioEngineState } from "../../audio/audioEngine";
 import { replaceProject } from "../../domain/editing";
 import type { ProjectDocument } from "../../domain/project";
+import { nearestGridTick } from "../../domain/time";
 import {
   loadDefaultSoundFont,
   loadPreparedDesktopSoundFont,
@@ -423,13 +424,9 @@ export function usePlaybackController({
 
   const setLoopBoundary = useCallback(
     (boundary: "start" | "end", requestedTick = playheadTick) => {
-      const tick = Math.max(
-        0,
-        Math.min(
-          project.lengthTicks,
-          Math.round(requestedTick / gridTicks) * gridTicks,
-        ),
-      );
+      const tick = nearestGridTick(requestedTick, gridTicks, {
+        maximum: project.lengthTicks,
+      });
       if (boundary === "start") {
         if (tick >= loopEndTick) return showNotice("循环起点必须早于终点");
         history.commit(

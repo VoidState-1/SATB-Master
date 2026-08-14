@@ -4,6 +4,7 @@ import {
 } from "../../../chordModel";
 import type { VoiceId } from "../../../project/types";
 import {
+  leadingTonePitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
   toMidi,
@@ -74,11 +75,7 @@ function leadingToneExpectation(context: RuleStepContext) {
     ? { tonic: targetTonic, mode: "major" as const }
     : context.slice.key;
   return {
-    leadingTone: scaleDegreePitchClass(
-      targetKey,
-      7,
-      targetKey.mode === "minor" ? 1 : 0,
-    ),
+    leadingTone: leadingTonePitchClass(targetKey),
     targetTonic,
   };
 }

@@ -10,7 +10,11 @@ import {
   type HarmonySemantics,
   type KeyReference,
 } from "../chordModel";
-import { RULE_EXCEPTION_CONTEXTS } from "../harmony/rules/types";
+import {
+  MAX_RULE_CONFIG_ENTRIES,
+  parseRuleConfig,
+  parseRuleExceptionPolicy,
+} from "../harmony/rules/configSchema";
 import {
   isSupportedKeySignature,
   toMidi,
@@ -24,7 +28,11 @@ import type {
   ProjectDocument,
   VoiceId,
 } from "./types";
-import { PPQ, PROJECT_SCHEMA_VERSION } from "./types";
+import {
+  METER_DENOMINATORS,
+  PPQ,
+  PROJECT_SCHEMA_VERSION,
+} from "./types";
 import { VOICE_ORDER } from "./voice";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -386,33 +394,15 @@ function validateRuleProfile(value: unknown) {
     return false;
   const voiceRanges = shared.voiceRanges;
   const severities = ["error", "warning", "suggestion", "off"];
-  const configValue = (item: unknown) =>
-    typeof item === "string" ||
-    typeof item === "boolean" ||
-    (typeof item === "number" && Number.isFinite(item)) ||
-    (isRecord(item) &&
-      ((isInteger(item.minMidi, 0, 127) &&
-        isInteger(item.maxMidi, 0, 127) &&
-        (item.minMidi as number) <= (item.maxMidi as number)) ||
-        (typeof item.value === "number" &&
-          Number.isFinite(item.value) &&
-          ["ticks", "beats", "measures"].includes(item.unit as string))));
+  const stableIdPattern =
+    /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
   const config = (candidate: unknown) =>
-    isRecord(candidate) &&
-    Object.keys(candidate).length <= 64 &&
-    Object.values(candidate).every(configValue);
+    parseRuleConfig(candidate, {
+      keyPattern: stableIdPattern,
+      maximumEntries: MAX_RULE_CONFIG_ENTRIES,
+    }) !== undefined;
   const exceptions = (candidate: unknown) =>
-    isRecord(candidate) &&
-    Object.keys(candidate).every((context) =>
-      RULE_EXCEPTION_CONTEXTS.includes(
-        context as (typeof RULE_EXCEPTION_CONTEXTS)[number],
-      ),
-    ) &&
-    Object.values(candidate).every(
-      (mode) =>
-        typeof mode === "string" &&
-        ["exempt", "downgrade", "strict"].includes(mode),
-    );
+    parseRuleExceptionPolicy(candidate) !== undefined;
   if (
     !VOICE_ORDER.every((voiceId) => {
       const range = voiceRanges[voiceId];
@@ -425,7 +415,7 @@ function validateRuleProfile(value: unknown) {
     })
   )
     return false;
-  const ids = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
+  const ids = stableIdPattern;
   const versions = /^[0-9A-Za-z](?:[0-9A-Za-z.+-]{0,62}[0-9A-Za-z])?$/;
   const hashes = /^[a-f0-9]{64}$/;
   if (
@@ -523,7 +513,9 @@ export function validateProject(value: unknown): value is ProjectDocument {
         hasString(event, "id") &&
         isInteger(event.tick, 0) &&
         isInteger(event.numerator, 1, 32) &&
-        [2, 4, 8, 16].includes(event.denominator as number) &&
+        METER_DENOMINATORS.includes(
+          event.denominator as (typeof METER_DENOMINATORS)[number],
+        ) &&
         (event.beatGrouping === undefined ||
           (Array.isArray(event.beatGrouping) &&
             event.beatGrouping.length > 0 &&

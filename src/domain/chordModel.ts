@@ -54,6 +54,21 @@ export interface KeyReference {
 
 export type ScaleDegree = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
+const ROMAN_DEGREE_LABELS: Readonly<Record<ScaleDegree, string>> =
+  Object.freeze({
+    1: "I",
+    2: "II",
+    3: "III",
+    4: "IV",
+    5: "V",
+    6: "VI",
+    7: "VII",
+  });
+
+export function romanDegreeLabel(degree: ScaleDegree) {
+  return ROMAN_DEGREE_LABELS[degree];
+}
+
 export type SemanticConfidence =
   "certain" | "probable" | "ambiguous" | "unknown";
 
@@ -275,6 +290,17 @@ export function isSeventhStructure(structure: ChordStructure) {
   return structure.kind === "tertian" && isSeventhChord(structure.quality);
 }
 
+export function maximumInversionForDraft(draft: ChordDraft) {
+  if (draft.augmentedSixthVariant || draft.extensions?.includes(9)) return 0;
+  return isSeventhChord(draft.quality) ? 3 : 2;
+}
+
+export function maximumInversionForStructure(structure: ChordStructure) {
+  if (structure.kind === "augmented-sixth") return 0;
+  if (structure.extensions.includes(9)) return 0;
+  return isSeventhChord(structure.quality) ? 3 : 2;
+}
+
 export function chordToneSpellings(
   root: SpelledPitchClass,
   quality: ChordQuality,
@@ -369,6 +395,27 @@ export function chordIdentityToneSpellings(identity: ChordIdentity) {
   return identity.structure.kind === "tertian"
     ? tertianToneSpellings(identity.root, identity.structure)
     : augmentedSixthToneSpellings(identity.root, identity.structure.variant);
+}
+
+/** Returns whether a pitch uses one of the chord's written spellings. */
+export function identityContainsWrittenPitchClass(
+  identity: ChordIdentity,
+  pitch: SpelledPitchClass,
+) {
+  return chordIdentityToneSpellings(identity).some((tone) =>
+    pitchClassEquals(pitch, tone),
+  );
+}
+
+/** Returns whether a pitch has one of the chord's sounding pitch classes. */
+export function identityContainsPitchClass(
+  identity: ChordIdentity,
+  pitch: SpelledPitchClass,
+) {
+  const pitchClass = pitchClassValue(pitch);
+  return chordIdentityToneSpellings(identity).some(
+    (tone) => pitchClassValue(tone) === pitchClass,
+  );
 }
 
 export function chordIdentityToneSpellingForDegree(
@@ -491,13 +538,13 @@ export function semanticsFromChordDraft(draft: ChordDraft): HarmonySemantics {
 }
 
 export function chordIdentityInversion(identity: ChordIdentity) {
-  if (identity.structure.kind === "augmented-sixth") return 0;
+  const maximum = maximumInversionForStructure(identity.structure);
+  if (maximum === 0) return 0;
   const tones = chordIdentityToneSpellings(identity);
   const index = tones.findIndex((tone) =>
     pitchClassEquals(tone, identity.bass),
   );
-  return Math.max(0, Math.min(index < 0 ? 0 : index, tones.length - 1)) as
-    0 | 1 | 2 | 3;
+  return Math.max(0, Math.min(index < 0 ? 0 : index, maximum)) as 0 | 1 | 2 | 3;
 }
 
 export function chordDraftFromIdentity(

@@ -4,6 +4,7 @@ import {
   chordStructureQuality,
   functionalTargetForDegree,
   isSeventhChord,
+  maximumInversionForDraft,
   primaryHarmonyInterpretation,
   resolveChordIdentity,
   semanticsFromChordDraft,
@@ -368,7 +369,12 @@ export function applyFunctionalDefinition(
     inversion: (definition.fixedInversion ??
       Math.min(
         draft.inversion,
-        form === "ninth" ? 0 : isSeventhChord(quality) ? 3 : 2,
+        maximumInversionForDraft({
+          ...draft,
+          quality,
+          extensions: form === "ninth" ? [9] : [],
+          augmentedSixthVariant: definition.augmentedSixthVariant,
+        }),
       )) as ChordDraft["inversion"],
     appliedTarget: definition.fixedTarget?.degree,
     appliedTargetFunction: definition.fixedTarget
@@ -431,7 +437,12 @@ export function applyFunctionalForm(
     inversion: (definition.fixedInversion ??
       Math.min(
         draft.inversion,
-        form === "ninth" ? 0 : isSeventhChord(quality) ? 3 : 2,
+        maximumInversionForDraft({
+          ...draft,
+          quality,
+          extensions: form === "ninth" ? [9] : [],
+          augmentedSixthVariant: definition.augmentedSixthVariant,
+        }),
       )) as ChordDraft["inversion"],
   };
 }

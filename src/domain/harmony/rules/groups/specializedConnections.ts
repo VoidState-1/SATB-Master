@@ -12,7 +12,12 @@ import type {
 import type { RuleDiagnostic } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
-import { pitchClassEquals, toMidi, writtenInterval } from "../../../pitch";
+import {
+  isWrittenStep,
+  pitchClassEquals,
+  toMidi,
+  writtenInterval,
+} from "../../../pitch";
 import {
   activeNotes,
   chordEvidence,
@@ -38,15 +43,6 @@ type SpecializedRuleId =
 function interpretationOf(context: HarmonyRuleContext, span: HarmonySpan) {
   const resolution = context.harmony.primaryInterpretation(span);
   return resolution.status === "resolved" ? resolution.value : undefined;
-}
-
-function isStepMotion(source: AnalysisNote, target: AnalysisNote) {
-  const interval = writtenInterval(source.pitch, target.pitch);
-  return (
-    Math.abs(interval.diatonicSteps) === 1 &&
-    Math.abs(interval.semitones) >= 1 &&
-    Math.abs(interval.semitones) <= 2
-  );
 }
 
 function toneMembers(
@@ -92,7 +88,7 @@ function motionProblems(
       const valid = Boolean(
         next &&
         targetContains(target, next) &&
-        isStepMotion(member.note, next) &&
+        isWrittenStep(interval!) &&
         (check.direction === "step" ||
           Math.sign(interval!.semitones) ===
             (check.direction === "up" ? 1 : -1)),
@@ -140,7 +136,7 @@ function dominantBassProblem(source: AnalysisSlice, target: AnalysisSlice) {
   const motionMatches =
     inversion === 0
       ? [5, 7].includes(Math.abs(interval.semitones) % 12)
-      : isStepMotion(sourceBass, targetBass) &&
+      : isWrittenStep(interval) &&
         Math.sign(interval.semitones) === (inversion === 1 ? 1 : -1);
   return targetMatches && motionMatches
     ? undefined

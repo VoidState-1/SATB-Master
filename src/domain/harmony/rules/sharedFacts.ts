@@ -1,4 +1,4 @@
-import { chordIdentityToneSpellings } from "../../chordModel";
+import { identityContainsWrittenPitchClass, chordIdentityToneSpellings } from "../../chordModel";
 import type {
   AnalysisChord,
   HarmonyAnalysis,
@@ -36,7 +36,7 @@ export interface ChordMemberFact {
   voiceId: VoiceId;
   note: AnalysisNote;
   chordToneIndex?: number;
-  isChordTone: boolean;
+  isWrittenChordTone: boolean;
 }
 
 export interface HarmonyContextFacts {
@@ -144,7 +144,10 @@ export function chordMemberFacts(
           voiceId,
           note,
           chordToneIndex: chordToneIndex >= 0 ? chordToneIndex : undefined,
-          isChordTone: chordToneIndex >= 0,
+          isWrittenChordTone: identityContainsWrittenPitchClass(
+            chord.identity,
+            note.pitch,
+          ),
         }),
       ];
     }),
@@ -185,7 +188,9 @@ export function buildHarmonyContextFacts(
         currentSlice,
         currentSlice.chord,
       ).find((fact) => fact.voiceId === transition.voiceId);
-      return Boolean(previousMember?.isChordTone && currentMember?.isChordTone);
+      return Boolean(
+        previousMember?.isWrittenChordTone && currentMember?.isWrittenChordTone,
+      );
     })
     .map((transition) => transition.id);
   const voiceExchangeTransitionIds = analysis.sliceTransitions
@@ -227,7 +232,8 @@ export function buildHarmonyContextFacts(
         if (!slice.chord) return [];
         return chordMemberFacts(slice, slice.chord)
           .filter(
-            (fact) => !fact.isChordTone && Boolean(fact.note.nonChordToneRole),
+            (fact) =>
+              !fact.isWrittenChordTone && Boolean(fact.note.nonChordToneRole),
           )
           .map((fact) => fact.note.id);
       }),

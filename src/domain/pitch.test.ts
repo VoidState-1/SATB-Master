@@ -3,6 +3,9 @@ import { resolveChordIdentity } from "./chordModel";
 import {
   formatSpelledPitch,
   keySignatureFifths,
+  isWrittenStep,
+  leadingTonePitchClass,
+  normalizePitchClassNumber,
   parsePitchClass,
   serializePitchClass,
   spellMidi,
@@ -58,6 +61,38 @@ describe("书写音高", () => {
         { step: "F", alter: 0, octave: 4 },
       ),
     ).toEqual({ diatonicSteps: 4, semitones: 6 });
+  });
+
+  it("统一计算模 12、书写级进和大小调导音", () => {
+    expect(normalizePitchClassNumber(-1)).toBe(11);
+    expect(
+      isWrittenStep(
+        writtenInterval(
+          { step: "B", alter: 0, octave: 3 },
+          { step: "C", alter: 0, octave: 4 },
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isWrittenStep(
+        writtenInterval(
+          { step: "C", alter: 1, octave: 4 },
+          { step: "D", alter: -1, octave: 4 },
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      leadingTonePitchClass({
+        tonic: { step: "C", alter: 0 },
+        mode: "major",
+      }),
+    ).toEqual({ step: "B", alter: 0 });
+    expect(
+      leadingTonePitchClass({
+        tonic: { step: "A", alter: 0 },
+        mode: "minor",
+      }),
+    ).toEqual({ step: "G", alter: 1 });
   });
 
   it("调性序列化与 MIDI 调号五度数稳定", () => {

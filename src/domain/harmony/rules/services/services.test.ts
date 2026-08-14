@@ -91,7 +91,8 @@ describe("规则领域 services", () => {
     const analysis = buildHarmonyAnalysis(project);
     const slice = analysis.slices[0];
 
-    expect(service.isChordTone(slice.notes.alto!, slice.chord)).toBe(true);
+    expect(service.isWrittenChordTone(slice.notes.alto!, slice.chord)).toBe(true);
+    expect(service.isSoundingChordTone(slice.notes.alto!, slice.chord)).toBe(true);
     expect(service.chordMembersAt(slice)).not.toHaveLength(0);
     expect(service.primaryInterpretation(slice.chord!)).toMatchObject({
       status: "resolved",

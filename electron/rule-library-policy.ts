@@ -1,135 +1,26 @@
 import { createHash } from 'node:crypto'
+import {
+  assertExternalRuleContentHash,
+  isExternalRuleMetadataFileName,
+  MAX_EXTERNAL_RULE_BYTES,
+  parseExternalRuleManifest,
+  validateExternalRulePackageMetadata,
+  type ExternalRuleManifest,
+  type ExternalRuleManifestRule,
+  type InstalledExternalRulePackage,
+} from '../shared/external-rules.js'
 
-export const MAX_RULE_BYTES = 512 * 1024
-const HASH_PATTERN = /^[a-f0-9]{64}$/
-const ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/
-const VERSION_PATTERN = /^[0-9A-Za-z](?:[0-9A-Za-z.+-]{0,62}[0-9A-Za-z])?$/
-const VALID_GROUPS = new Set([
-  'voice', 'melody', 'voiceLeading', 'chord', 'resolution', 'nonchord',
-  'function', 'connection', 'rhythm', 'cadence', 'tonality', 'custom',
-])
-const VALID_SEVERITIES = new Set(['error', 'warning', 'suggestion'])
-const VALID_SCOPES = new Set(['note', 'slice', 'chord', 'phrase', 'project'])
+export const MAX_RULE_BYTES = MAX_EXTERNAL_RULE_BYTES
+export type RuleManifest = ExternalRuleManifest
+export type RuleManifestEntry = ExternalRuleManifestRule
+export type InstalledRulePackage = InstalledExternalRulePackage
 
-export interface RuleManifestEntry {
-  id: string
-  label: string
-  description: string
-  group: string
-  defaultSeverity: string
-  dependencyScope: string
-  configVersion: number
-  options: unknown[]
-  supportedExceptionContexts: string[]
-  defaultExceptionPolicies: Record<string, string>
-}
-
-export interface RuleManifest {
-  apiVersion: 3
-  packageId: string
-  version: string
-  rules: RuleManifestEntry[]
-}
-
-export interface InstalledRulePackage {
-  manifest: RuleManifest
-  contentHash: string
-  sourcePath?: string
-  sizeBytes: number
-  installedAt: string
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function requiredString(value: unknown, label: string, max: number, pattern?: RegExp) {
-  if (
-    typeof value !== 'string' ||
-    !value.trim() ||
-    value.length > max ||
-    (pattern && !pattern.test(value))
-  ) throw new Error(`${label} 无效`)
-  return value
-}
-
-export function validateRuleManifest(value: unknown): RuleManifest {
-  if (!isRecord(value) || value.apiVersion !== 3) throw new Error('规则包 manifest 无效')
-  const packageId = requiredString(value.packageId, 'packageId', 128, ID_PATTERN)
-  const version = requiredString(value.version, 'version', 64, VERSION_PATTERN)
-  if (!Array.isArray(value.rules) || value.rules.length < 1 || value.rules.length > 64) {
-    throw new Error('规则包必须声明 1 到 64 条规则')
-  }
-  const seen = new Set<string>()
-  const rules = value.rules.map((entry, index): RuleManifestEntry => {
-    if (!isRecord(entry)) throw new Error(`第 ${index + 1} 条规则声明无效`)
-    const id = requiredString(entry.id, '规则 ID', 128, ID_PATTERN)
-    if (seen.has(id)) throw new Error(`规则 ID“${id}”重复`)
-    seen.add(id)
-    const group = requiredString(entry.group, '规则分组', 32)
-    const defaultSeverity = requiredString(entry.defaultSeverity, '默认严重程度', 16)
-    const dependencyScope = requiredString(entry.dependencyScope, '依赖范围', 16)
-    if (!VALID_GROUPS.has(group)) throw new Error(`规则“${id}”的分组无效`)
-    if (!VALID_SEVERITIES.has(defaultSeverity)) throw new Error(`规则“${id}”的默认严重程度无效`)
-    if (!VALID_SCOPES.has(dependencyScope)) throw new Error(`规则“${id}”的依赖范围无效`)
-    if (!Number.isInteger(entry.configVersion) || (entry.configVersion as number) < 1 || (entry.configVersion as number) > 1_000_000) {
-      throw new Error(`规则“${id}”的 configVersion 无效`)
-    }
-    const options = entry.options === undefined ? [] : entry.options
-    if (!Array.isArray(options) || options.length > 32) throw new Error(`规则“${id}”的配置项无效`)
-    const supportedExceptionContexts = entry.supportedExceptionContexts === undefined
-      ? []
-      : entry.supportedExceptionContexts
-    if (!Array.isArray(supportedExceptionContexts) || supportedExceptionContexts.length > 32 || supportedExceptionContexts.some((context) => typeof context !== 'string')) {
-      throw new Error(`规则“${id}”的特例上下文无效`)
-    }
-    const defaultExceptionPolicies = entry.defaultExceptionPolicies === undefined
-      ? {}
-      : entry.defaultExceptionPolicies
-    if (!isRecord(defaultExceptionPolicies)) throw new Error(`规则“${id}”的默认特例策略无效`)
-    return {
-      id,
-      label: requiredString(entry.label, '规则名称', 120),
-      description: requiredString(entry.description, '规则说明', 400),
-      group,
-      defaultSeverity,
-      dependencyScope,
-      configVersion: entry.configVersion as number,
-      options: [...options],
-      supportedExceptionContexts: [...supportedExceptionContexts] as string[],
-      defaultExceptionPolicies: { ...defaultExceptionPolicies } as Record<string, string>,
-    }
-  })
-  return { apiVersion: 3, packageId, version, rules }
-}
-
-export function validateInstalledRuleMetadata(value: unknown): InstalledRulePackage {
-  if (!isRecord(value)) throw new Error('规则包元数据无效')
-  const contentHash = requiredString(value.contentHash, '内容摘要', 64, HASH_PATTERN)
-  if (
-    !Number.isInteger(value.sizeBytes) ||
-    (value.sizeBytes as number) < 1 ||
-    (value.sizeBytes as number) > MAX_RULE_BYTES
-  ) throw new Error('规则包大小无效')
-  return {
-    manifest: validateRuleManifest(value.manifest),
-    contentHash,
-    sourcePath:
-      typeof value.sourcePath === 'string' && value.sourcePath.length <= 2048
-        ? value.sourcePath
-        : undefined,
-    sizeBytes: value.sizeBytes as number,
-    installedAt: requiredString(value.installedAt, '安装时间', 64),
-  }
-}
-
-export function assertRuleHash(value: unknown): asserts value is string {
-  if (typeof value !== 'string' || !HASH_PATTERN.test(value)) throw new Error('规则包内容摘要无效')
-}
-
-export function isRuleMetadataFileName(value: string) {
-  return value.endsWith('.json') && HASH_PATTERN.test(value.slice(0, -'.json'.length))
-}
+export const validateRuleManifest = parseExternalRuleManifest
+export const validateInstalledRuleMetadata = validateExternalRulePackageMetadata
+export const assertRuleHash: (
+  value: unknown,
+) => asserts value is string = assertExternalRuleContentHash
+export const isRuleMetadataFileName = isExternalRuleMetadataFileName
 
 export function hashRuleSource(source: string) {
   return createHash('sha256').update(source, 'utf8').digest('hex')

@@ -7,7 +7,11 @@ import type {
   ProjectDocument,
   VoiceId,
 } from "../../domain/project";
-import type { EditorTool } from "../../features/editor";
+import {
+  DEFAULT_GRID_TICKS,
+  DEFAULT_PIXELS_PER_BEAT,
+  type EditorTool,
+} from "../../features/editor";
 
 export interface ClipboardNote {
   voiceId: VoiceId;
@@ -39,8 +43,8 @@ export function useEditorState(
   });
   const [editorInteractionActive, setEditorInteractionActive] = useState(false);
   const [cancelEditorRequest, setCancelEditorRequest] = useState(0);
-  const [gridTicks, setGridTicks] = useState(480);
-  const [pixelsPerBeat, setPixelsPerBeat] = useState(72);
+  const [gridTicks, setGridTicks] = useState(DEFAULT_GRID_TICKS);
+  const [pixelsPerBeat, setPixelsPerBeat] = useState(DEFAULT_PIXELS_PER_BEAT);
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(
     new Set(),
   );

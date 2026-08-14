@@ -1,4 +1,3 @@
-import { formatPitchClass, LEGACY_TONIC_SPELLINGS } from "../pitch";
 import type { SatbTrack, VoiceId } from "./types";
 
 export const VOICE_ORDER: VoiceId[] = ["soprano", "alto", "tenor", "bass"];
@@ -48,5 +47,22 @@ export const VOICE_CONFIG: Record<
   },
 };
 
-// 仅供 v2 文件迁移与旧测试摘要使用；v3 的 KeyEvent 直接保存拼写。
-export const KEY_NAMES = LEGACY_TONIC_SPELLINGS.map(formatPitchClass);
+export function defaultVoiceRanges(): Record<
+  VoiceId,
+  { minMidi: number; maxMidi: number }
+> {
+  return Object.fromEntries(
+    VOICE_ORDER.map((voiceId) => [
+      voiceId,
+      {
+        minMidi: VOICE_CONFIG[voiceId].min,
+        maxMidi: VOICE_CONFIG[voiceId].max,
+      },
+    ]),
+  ) as Record<VoiceId, { minMidi: number; maxMidi: number }>;
+}
+
+export function defaultVoiceRange(voiceId: VoiceId) {
+  const { min, max } = VOICE_CONFIG[voiceId];
+  return { minMidi: min, maxMidi: max };
+}

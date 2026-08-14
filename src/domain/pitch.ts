@@ -122,6 +122,10 @@ function modulo(value: number, base: number) {
   return ((value % base) + base) % base;
 }
 
+export function normalizePitchClassNumber(value: number) {
+  return modulo(value, 12);
+}
+
 function signedPitchDifference(target: number, natural: number) {
   let difference = modulo(target - natural, 12);
   if (difference > 6) difference -= 12;
@@ -203,6 +207,10 @@ export function scaleDegreePitchClass(
     targetPitchClass,
     stepIndex(key.tonic.step) + degreeIndex,
   );
+}
+
+export function leadingTonePitchClass(key: KeyLike) {
+  return scaleDegreePitchClass(key, 7, key.mode === "minor" ? 1 : 0);
 }
 
 const KEY_FIFTHS: Record<string, number> = {
@@ -314,6 +322,14 @@ export function writtenInterval(
     diatonicSteps: toDiatonic - fromDiatonic,
     semitones: toMidi(to) - toMidi(from),
   };
+}
+
+export function isWrittenStep(interval: WrittenInterval) {
+  return (
+    Math.abs(interval.diatonicSteps) === 1 &&
+    Math.abs(interval.semitones) >= 1 &&
+    Math.abs(interval.semitones) <= 2
+  );
 }
 
 export function pitchClassEquals(

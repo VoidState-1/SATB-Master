@@ -8,6 +8,10 @@ import type { HarmonyAnalysis } from "../../analysis";
 import { VOICE_ORDER } from "../../../project/voice";
 import { chordEvidence, diagnostic, noteEvidence } from "../helpers/core";
 import type { ConnectionView, NoteView, SpanView } from "../context/views";
+import {
+  validateDiagnosticReferences,
+  validateDiagnosticShape,
+} from "../policy/diagnostic";
 
 interface DiagnosticDetails {
   readonly title: string;
@@ -171,6 +175,22 @@ function assertSubjects(
   }
 }
 
+function assertDiagnosticPolicy(
+  analysis: HarmonyAnalysis,
+  candidate: RuleDiagnostic,
+) {
+  const shape = validateDiagnosticShape(candidate, analysis.project.lengthTicks);
+  if (!shape.ok) throw new Error(`规则“${candidate.ruleId}”${shape.reason}`);
+  const references = validateDiagnosticReferences(candidate, {
+    maximumTick: analysis.project.lengthTicks,
+    noteIds: analysis.noteById,
+    chordIds: analysis.chordById,
+    spanIds: new Set(analysis.harmonySpans.map((span) => span.id)),
+  });
+  if (!references.ok)
+    throw new Error(`规则“${candidate.ruleId}”${references.reason}`);
+}
+
 export function createDiagnosticFactory(
   analysis: HarmonyAnalysis,
   views: {
@@ -205,7 +225,7 @@ export function createDiagnosticFactory(
         );
       assertRange(analysis, input.ruleId, tick, endTick);
       assertSubjects(analysis, input.ruleId, input.subjects);
-      return diagnostic(
+      const result = diagnostic(
         input.ruleId,
         tick,
         endTick,
@@ -220,6 +240,8 @@ export function createDiagnosticFactory(
           { origin: { voiceIds, noteIds: notes.map((note) => note.id) } },
         ),
       );
+      assertDiagnosticPolicy(analysis, result);
+      return result;
     },
     forSpan(input) {
       assertDetails(input);
@@ -229,7 +251,7 @@ export function createDiagnosticFactory(
       const endTick = input.endTick ?? tick;
       assertRange(analysis, input.ruleId, tick, endTick);
       assertSubjects(analysis, input.ruleId, input.subjects);
-      return diagnostic(
+      const result = diagnostic(
         input.ruleId,
         tick,
         endTick,
@@ -244,6 +266,8 @@ export function createDiagnosticFactory(
           { origin: { spanIds: [input.span.span.id] } },
         ),
       );
+      assertDiagnosticPolicy(analysis, result);
+      return result;
     },
     forConnection(input) {
       assertDetails(input);
@@ -263,7 +287,7 @@ export function createDiagnosticFactory(
         ...input.connection.source.chords,
         ...input.connection.target.chords,
       ];
-      return diagnostic(
+      const result = diagnostic(
         input.ruleId,
         tick,
         endTick,
@@ -281,6 +305,8 @@ export function createDiagnosticFactory(
           },
         ),
       );
+      assertDiagnosticPolicy(analysis, result);
+      return result;
     },
   };
   return Object.freeze(factory);

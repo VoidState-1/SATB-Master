@@ -6,12 +6,8 @@ import {
   type HarmonyRuleSeverities,
 } from "./harmony/rules/catalog";
 import {
-  RULE_EXCEPTION_CONTEXTS,
   type HarmonyRuleSeverity,
   type RuleConfig,
-  type RuleConfigValue,
-  type RuleExceptionContext,
-  type RuleExceptionMode,
   type RuleExceptionPolicy,
   type RuleInstanceSettings,
 } from "./harmony/rules/types";
@@ -27,7 +23,19 @@ import {
   normalizeExternalRuleConfig,
   type InstalledExternalRulePackage,
 } from "./harmony/external/api";
-import { normalizeRuleConfig } from "./harmony/rules/configSchema";
+import {
+  MAX_RULE_CONFIG_ENTRIES,
+  normalizeExceptionPolicy,
+  normalizeRuleConfig,
+  parseRuleConfig as parseRuleConfigMap,
+  parseRuleConfigValue,
+  parseRuleExceptionPolicy,
+} from "./harmony/rules/configSchema";
+import {
+  CONTENT_HASH_PATTERN,
+  STABLE_ID_PATTERN,
+  VERSION_PATTERN,
+} from "../../shared/external-rules";
 
 export const PORTABLE_RULE_PROFILE_KIND = "satb-rule-profile";
 export const PORTABLE_RULE_PROFILE_VERSION = 2;
@@ -68,76 +76,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-const VALID_SEVERITIES = new Set<HarmonyRuleSeverity>([
-  "error",
-  "warning",
-  "suggestion",
-  "off",
-]);
-const VALID_EXCEPTION_MODES = new Set<RuleExceptionMode>([
-  "exempt",
-  "downgrade",
-  "strict",
-]);
-const STABLE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
-const VERSION_PATTERN = /^[0-9A-Za-z](?:[0-9A-Za-z.+-]{0,62}[0-9A-Za-z])?$/;
-const HASH_PATTERN = /^[a-f0-9]{64}$/;
-
-function parseConfigValue(value: unknown): RuleConfigValue | undefined {
-  if (
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    (typeof value === "number" && Number.isFinite(value))
-  )
-    return value;
-  if (!isRecord(value)) return undefined;
-  if (
-    Number.isInteger(value.minMidi) &&
-    Number.isInteger(value.maxMidi) &&
-    (value.minMidi as number) >= 0 &&
-    (value.maxMidi as number) <= 127 &&
-    (value.minMidi as number) <= (value.maxMidi as number)
-  )
-    return {
-      minMidi: value.minMidi as number,
-      maxMidi: value.maxMidi as number,
-    };
-  if (
-    typeof value.value === "number" &&
-    Number.isFinite(value.value) &&
-    ["ticks", "beats", "measures"].includes(String(value.unit))
-  )
-    return {
-      value: value.value,
-      unit: value.unit as "ticks" | "beats" | "measures",
-    };
-  return undefined;
-}
 
 function parseRuleConfig(value: unknown, label: string): RuleConfig {
-  if (!isRecord(value) || Object.keys(value).length > 64)
+  const config = parseRuleConfigValueMap(value);
+  if (!config)
     throw new Error(`${label}的 config 无效`);
-  const config: RuleConfig = {};
-  for (const [key, candidate] of Object.entries(value)) {
-    if (!STABLE_ID_PATTERN.test(key)) throw new Error(`${label}包含无效配置键`);
-    const parsed = parseConfigValue(candidate);
-    if (parsed === undefined) throw new Error(`${label}的配置项“${key}”无效`);
-    config[key] = parsed;
-  }
   return config;
 }
 
+function parseRuleConfigValueMap(value: unknown): RuleConfig | undefined {
+  return parseRuleConfigMap(value, {
+    keyPattern: STABLE_ID_PATTERN,
+    maximumEntries: MAX_RULE_CONFIG_ENTRIES,
+  });
+}
+
 function parseExceptionPolicy(value: unknown, label: string) {
-  if (!isRecord(value)) throw new Error(`${label}的 exceptions 无效`);
-  const policy: RuleExceptionPolicy = {};
-  for (const [context, mode] of Object.entries(value)) {
-    if (
-      !RULE_EXCEPTION_CONTEXTS.includes(context as RuleExceptionContext) ||
-      !VALID_EXCEPTION_MODES.has(mode as RuleExceptionMode)
-    )
-      throw new Error(`${label}包含无效特例策略`);
-    policy[context as RuleExceptionContext] = mode as RuleExceptionMode;
-  }
+  const policy = parseRuleExceptionPolicy(value);
+  if (!policy) throw new Error(`${label}的 exceptions 无效`);
   return policy;
 }
 
@@ -147,7 +103,9 @@ function parseRuleInstance(
 ): RuleInstanceSettings {
   if (
     !isRecord(value) ||
-    !VALID_SEVERITIES.has(value.severity as HarmonyRuleSeverity) ||
+    !["error", "warning", "suggestion", "off"].includes(
+      value.severity as HarmonyRuleSeverity,
+    ) ||
     !Number.isInteger(value.configVersion) ||
     (value.configVersion as number) < 1
   )
@@ -169,7 +127,7 @@ function parseSharedSettings(value: unknown): SharedHarmonySettings {
     throw new Error("配置档案的共享设置无效");
   const voiceRanges = {} as SharedHarmonySettings["voiceRanges"];
   for (const voiceId of ["soprano", "alto", "tenor", "bass"] as const) {
-    const range = parseConfigValue(value.voiceRanges[voiceId]);
+    const range = parseRuleConfigValue(value.voiceRanges[voiceId]);
     if (!range || typeof range !== "object" || !("minMidi" in range))
       throw new Error(`配置档案的${voiceId}音域无效`);
     voiceRanges[voiceId] = range;
@@ -217,7 +175,7 @@ export function parsePortableRuleProfile(value: unknown): PortableRuleProfile {
       typeof version !== "string" ||
       !VERSION_PATTERN.test(version) ||
       typeof contentHash !== "string" ||
-      !HASH_PATTERN.test(contentHash)
+      !CONTENT_HASH_PATTERN.test(contentHash)
     )
       throw new Error(`第 ${index + 1} 项外置规则标识无效`);
     const key = externalRuleReferenceKey({
@@ -312,9 +270,9 @@ export function resolveBuiltinRuleProfile(
         : stored?.config;
     configs[ruleId] = normalizeRuleConfig(definition, sourceConfig).config;
     exceptions[ruleId] = stored
-      ? normalizeExceptions(
-          stored.exceptions,
+      ? normalizeExceptionPolicy(
           definition.supportedExceptionContexts,
+          stored.exceptions,
         )
       : {};
   });
@@ -396,10 +354,10 @@ export function setBuiltinRuleException(
   policy: RuleExceptionPolicy | undefined,
 ) {
   const definition = definitionOf(ruleId);
-  const supported = new Set<string>(definition.supportedExceptionContexts);
-  const normalized = Object.fromEntries(
-    Object.entries(policy ?? {}).filter(([context]) => supported.has(context)),
-  ) as RuleExceptionPolicy;
+  const normalized = normalizeExceptionPolicy(
+    definition.supportedExceptionContexts,
+    policy,
+  );
   ensureInstance(project, ruleId).exceptions = normalized;
 }
 
@@ -486,18 +444,6 @@ export function createPortableRuleProfile(
   };
 }
 
-function normalizeExceptions(
-  policy: RuleExceptionPolicy,
-  supported: readonly RuleExceptionContext[],
-) {
-  const supportedSet = new Set<RuleExceptionContext>(supported);
-  return Object.fromEntries(
-    Object.entries(policy).filter(([context]) =>
-      supportedSet.has(context as RuleExceptionContext),
-    ),
-  ) as RuleExceptionPolicy;
-}
-
 function profileRuleMap(profile: RuleProfile) {
   return new Map<string, unknown>([
     ...Object.entries(completeBuiltinSettings(profile)).map(
@@ -549,9 +495,9 @@ export function prepareRuleProfileImport(
         definition.id === "voice.range"
           ? sharedVoiceRangeConfig(portable.shared)
           : normalized.config,
-      exceptions: normalizeExceptions(
-        imported?.exceptions ?? {},
+      exceptions: normalizeExceptionPolicy(
         definition.supportedExceptionContexts,
+        imported?.exceptions ?? {},
       ),
     };
   }
@@ -589,9 +535,9 @@ export function prepareRuleProfileImport(
       const normalized = normalizeExternalRuleConfig(installed.rule, config);
       config = normalized.config;
       configVersion = installed.rule.configVersion;
-      exceptions = normalizeExceptions(
-        exceptions,
+      exceptions = normalizeExceptionPolicy(
         installed.rule.supportedExceptionContexts,
+        exceptions,
       );
       if (normalized.repairs.length > 0)
         repairedSettings.push({

@@ -1,24 +1,17 @@
-import { useMemo } from "react";
 import {
   chordIdentityInversion,
-  primaryHarmonyInterpretation,
   resolveChordIdentity,
-  semanticsFromChordDraft,
 } from "../../domain/chordModel";
 import {
   FUNCTIONAL_BASE_DEFINITIONS,
   FUNCTIONAL_TARGET_OPTIONS,
-  applyCadenceRole,
-  applyFunctionalDefinition,
-  applyFunctionalForm,
-  applyFunctionalTarget,
-  chordFormFromDraft,
-  compatibleFunctionalInterpretations,
-  functionalBaseIdFromDraft,
-  functionalDefinition,
   inversionFigures,
-  type FunctionalBaseId,
 } from "../../domain/functionalHarmonyCatalog";
+import {
+  CHORD_TONE_ALTERATIONS,
+  applyChordEditorAction,
+  createChordEditorModel,
+} from "../../domain/chordEditorModel";
 import type { ChordDraft, KeyEvent } from "../../domain/project";
 import {
   formatPitchClass,
@@ -36,58 +29,18 @@ export function ChordSemanticsEditor({
   keyEvent: KeyEvent;
   onChange(patch: Partial<ChordDraft>): void;
 }) {
-  const baseId = functionalBaseIdFromDraft(draft);
-  const definition = baseId ? functionalDefinition(baseId) : undefined;
-  const form = chordFormFromDraft(draft);
-  const maximumInversion = draft.augmentedSixthVariant
-    ? 0
-    : draft.extensions?.includes(9)
-      ? 0
-      : form === "seventh"
-        ? 3
-        : 2;
+  const model = createChordEditorModel(draft, keyEvent);
+  const {
+    baseId,
+    baseDefinition: definition,
+    form,
+    maximumInversion,
+    secondaryCandidates,
+    selectedSecondaryCandidate,
+    secondaryKeyOptions,
+  } = model;
   const secondary = draft.secondaryInterpretation;
   const identity = resolveChordIdentity(draft, keyEvent);
-  const identitySignature = JSON.stringify(identity);
-  const primary = primaryHarmonyInterpretation(semanticsFromChordDraft(draft));
-  const primaryLocalKey = primary.localKey ?? {
-    tonic: keyEvent.tonic,
-    mode: keyEvent.mode,
-  };
-  const sameInterpretation = (left: typeof primary, right: typeof primary) => {
-    const leftKey = left.localKey ?? primaryLocalKey;
-    const rightKey = right.localKey ?? primaryLocalKey;
-    return (
-      serializePitchClass(leftKey.tonic) ===
-        serializePitchClass(rightKey.tonic) &&
-      leftKey.mode === rightKey.mode &&
-      left.degree === right.degree &&
-      left.degreeAlteration === right.degreeAlteration &&
-      JSON.stringify(left.appliedTarget) ===
-        JSON.stringify(right.appliedTarget) &&
-      JSON.stringify(left.designation) === JSON.stringify(right.designation)
-    );
-  };
-  const compatibleCandidates = useMemo(
-    () => compatibleFunctionalInterpretations(identity),
-    [identitySignature],
-  );
-  const secondaryCandidates = compatibleCandidates.filter(
-    (candidate) => !sameInterpretation(candidate.interpretation, primary),
-  );
-  const selectedSecondaryCandidate = secondary
-    ? secondaryCandidates.find((candidate) =>
-        sameInterpretation(candidate.interpretation, secondary),
-      )
-    : undefined;
-  const secondaryKeyOptions = [
-    ...new Map(
-      secondaryCandidates.map((candidate) => [
-        `${serializePitchClass(candidate.localKey.tonic)}:${candidate.localKey.mode}`,
-        candidate,
-      ]),
-    ).values(),
-  ];
 
   return (
     <>
@@ -97,11 +50,10 @@ export function ChordSemanticsEditor({
           value={baseId ?? ""}
           onChange={(event) =>
             onChange(
-              applyFunctionalDefinition(
-                draft,
-                functionalDefinition(event.target.value as FunctionalBaseId),
-                keyEvent.mode,
-              ),
+              applyChordEditorAction(draft, keyEvent, {
+                type: "select-functional-definition",
+                id: event.target.value as NonNullable<typeof baseId>,
+              }),
             )
           }
         >
@@ -119,14 +71,11 @@ export function ChordSemanticsEditor({
           value={form}
           disabled={!definition || definition.forms.length === 1}
           onChange={(event) =>
-            definition &&
             onChange(
-              applyFunctionalForm(
-                draft,
-                definition,
-                event.target.value as ReturnType<typeof chordFormFromDraft>,
-                keyEvent.mode,
-              ),
+              applyChordEditorAction(draft, keyEvent, {
+                type: "select-functional-form",
+                form: event.target.value as typeof form,
+              }),
             )
           }
         >
@@ -146,10 +95,12 @@ export function ChordSemanticsEditor({
         <select
           value={draft.inversion}
           onChange={(event) =>
-            onChange({
-              inversion: Number(event.target.value) as ChordDraft["inversion"],
-              secondaryInterpretation: undefined,
-            })
+            onChange(
+              applyChordEditorAction(draft, keyEvent, {
+                type: "set-inversion",
+                inversion: Number(event.target.value) as ChordDraft["inversion"],
+              }),
+            )
           }
         >
           <option value="0">原位</option>
@@ -165,12 +116,12 @@ export function ChordSemanticsEditor({
           disabled={baseId !== "D" && baseId !== "DVII"}
           onChange={(event) =>
             onChange(
-              applyFunctionalTarget(
-                draft,
-                FUNCTIONAL_TARGET_OPTIONS.find(
-                  (item) => item.target.degree === Number(event.target.value),
-                )?.target,
-              ),
+              applyChordEditorAction(draft, keyEvent, {
+                type: "set-applied-target",
+                degree: event.target.value
+                  ? Number(event.target.value)
+                  : undefined,
+              }),
             )
           }
         >
@@ -187,10 +138,13 @@ export function ChordSemanticsEditor({
         <select
           value={draft.mixture ?? ""}
           onChange={(event) =>
-            onChange({
-              mixture: (event.target.value ||
-                undefined) as ChordDraft["mixture"],
-            })
+            onChange(
+              applyChordEditorAction(draft, keyEvent, {
+                type: "set-mixture",
+                mixture: (event.target.value ||
+                  undefined) as ChordDraft["mixture"],
+              }),
+            )
           }
         >
           <option value="">无</option>
@@ -205,13 +159,12 @@ export function ChordSemanticsEditor({
           value={draft.cadenceRole ?? ""}
           onChange={(event) =>
             onChange(
-              applyCadenceRole(
-                draft,
-                (event.target.value || undefined) as
+              applyChordEditorAction(draft, keyEvent, {
+                type: "set-cadence-role",
+                cadenceRole: (event.target.value || undefined) as
                   | NonNullable<ChordDraft["cadenceRole"]>
                   | undefined,
-                keyEvent.mode,
-              ),
+              }),
             )
           }
         >
@@ -227,10 +180,14 @@ export function ChordSemanticsEditor({
         <select
           value={draft.cadenceType ?? ""}
           onChange={(event) =>
-            onChange({
-              cadenceType: (event.target.value || undefined) as
-                NonNullable<ChordDraft["cadenceType"]> | undefined,
-            })
+            onChange(
+              applyChordEditorAction(draft, keyEvent, {
+                type: "set-cadence-type",
+                cadenceType: (event.target.value || undefined) as
+                  | NonNullable<ChordDraft["cadenceType"]>
+                  | undefined,
+              }),
+            )
           }
         >
           <option value="">无</option>
@@ -252,31 +209,18 @@ export function ChordSemanticsEditor({
           }
           disabled={baseId !== "D" && baseId !== "DD"}
           onChange={(event) => {
-            const [degree, alter] = event.target.value.split(":").map(Number);
-            const altered = Boolean(event.target.value);
-            onChange({
-              alterations: altered
-                ? [
-                    {
-                      degree: degree as 5 | 9,
-                      alter: alter as -1 | 1,
-                      tendency: alter > 0 ? "up" : "down",
-                    },
-                  ]
-                : [],
-              designation:
-                baseId === "D" && draft.designation
-                  ? {
-                      ...draft.designation,
-                      kind: altered
-                        ? "altered-dominant"
-                        : draft.appliedTarget
-                          ? "applied-dominant"
-                          : "primary",
-                    }
-                  : draft.designation,
-              secondaryInterpretation: undefined,
-            });
+            const choice = CHORD_TONE_ALTERATIONS.find((candidate) =>
+              candidate.degree
+                ? `${candidate.degree}:${candidate.alter}` === event.target.value
+                : event.target.value === "",
+            );
+            if (choice)
+              onChange(
+                applyChordEditorAction(draft, keyEvent, {
+                  type: "set-tone-alteration",
+                  choice,
+                }),
+              );
           }}
         >
           <option value="">无</option>
@@ -292,18 +236,15 @@ export function ChordSemanticsEditor({
           value={draft.alterations?.[0]?.tendency ?? ""}
           disabled={!draft.alterations?.[0]}
           onChange={(event) => {
-            const alteration = draft.alterations?.[0];
-            if (!alteration) return;
-            onChange({
-              alterations: [
-                {
-                  ...alteration,
-                  tendency: (event.target.value || undefined) as
-                    "up" | "down" | undefined,
-                },
-              ],
-              secondaryInterpretation: undefined,
-            });
+            onChange(
+              applyChordEditorAction(draft, keyEvent, {
+                type: "set-alteration-tendency",
+                tendency: (event.target.value || undefined) as
+                  | "up"
+                  | "down"
+                  | undefined,
+              }),
+            );
           }}
         >
           <option value="">未指定（不检查）</option>
@@ -316,16 +257,14 @@ export function ChordSemanticsEditor({
         <select
           value={draft.pedalContext?.role ?? ""}
           onChange={(event) =>
-            onChange({
-              pedalContext: event.target.value
-                ? {
-                    pitch: draft.pedalContext?.pitch ?? identity.bass,
-                    role: event.target.value as NonNullable<
-                      ChordDraft["pedalContext"]
-                    >["role"],
-                  }
-                : undefined,
-            })
+            onChange(
+              applyChordEditorAction(draft, keyEvent, {
+                type: "set-pedal-role",
+                role: (event.target.value || undefined) as
+                  | NonNullable<ChordDraft["pedalContext"]>["role"]
+                  | undefined,
+              }),
+            )
           }
         >
           <option value="">无</option>
@@ -342,9 +281,12 @@ export function ChordSemanticsEditor({
             onChange={(event) => {
               const pitch = parsePitchClass(event.target.value);
               if (pitch)
-                onChange({
-                  pedalContext: { ...draft.pedalContext!, pitch },
-                });
+                onChange(
+                  applyChordEditorAction(draft, keyEvent, {
+                    type: "set-pedal-pitch",
+                    pitch,
+                  }),
+                );
             }}
           >
             {keyTonicOptions(keyEvent.mode).map((option) => (
@@ -365,13 +307,12 @@ export function ChordSemanticsEditor({
           checked={Boolean(secondary)}
           disabled={secondaryCandidates.length === 0}
           onChange={(event) => {
-            if (!event.target.checked) {
-              onChange({ secondaryInterpretation: undefined });
-              return;
-            }
-            onChange({
-              secondaryInterpretation: secondaryCandidates[0]?.interpretation,
-            });
+            onChange(
+              applyChordEditorAction(draft, keyEvent, {
+                type: "set-secondary-enabled",
+                enabled: event.target.checked,
+              }),
+            );
           }}
         />
       </label>
@@ -394,9 +335,12 @@ export function ChordSemanticsEditor({
                     event.target.value,
                 );
                 if (candidate)
-                  onChange({
-                    secondaryInterpretation: candidate.interpretation,
-                  });
+                  onChange(
+                    applyChordEditorAction(draft, keyEvent, {
+                      type: "select-secondary",
+                      candidateId: candidate.id,
+                    }),
+                  );
               }}
             >
               {secondaryKeyOptions.map((candidate) => (
@@ -419,9 +363,12 @@ export function ChordSemanticsEditor({
                   (item) => item.id === event.target.value,
                 );
                 if (candidate)
-                  onChange({
-                    secondaryInterpretation: candidate.interpretation,
-                  });
+                  onChange(
+                    applyChordEditorAction(draft, keyEvent, {
+                      type: "select-secondary",
+                      candidateId: candidate.id,
+                    }),
+                  );
               }}
             >
               {secondaryCandidates

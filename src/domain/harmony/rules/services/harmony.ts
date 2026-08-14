@@ -1,10 +1,10 @@
 import {
-  chordIdentityToneSpellings,
   harmonySemanticsConfidence,
+  identityContainsPitchClass,
+  identityContainsWrittenPitchClass,
   primaryHarmonyInterpretation,
   type HarmonyInterpretation,
 } from "../../../chordModel";
-import { pitchClassEquals } from "../../../pitch";
 import type {
   AnalysisChord,
   AnalysisNote,
@@ -27,7 +27,11 @@ export type Resolution<T> =
   | { readonly status: "unavailable"; readonly reason: string };
 
 export interface HarmonyAnalysisService {
-  isChordTone(
+  isWrittenChordTone(
+    note: AnalysisNote,
+    chord: AnalysisChord | undefined,
+  ): boolean;
+  isSoundingChordTone(
     note: AnalysisNote,
     chord: AnalysisChord | undefined,
   ): boolean;
@@ -45,13 +49,11 @@ function semanticsOf(subject: HarmonySpan | AnalysisChord) {
 
 export function createHarmonyAnalysisService(): HarmonyAnalysisService {
   const service: HarmonyAnalysisService = {
-    isChordTone(note, chord) {
-      return Boolean(
-        chord &&
-          chordIdentityToneSpellings(chord.identity).some((tone) =>
-            pitchClassEquals(note.pitch, tone),
-          ),
-      );
+    isWrittenChordTone(note, chord) {
+      return Boolean(chord && identityContainsWrittenPitchClass(chord.identity, note.pitch));
+    },
+    isSoundingChordTone(note, chord) {
+      return Boolean(chord && identityContainsPitchClass(chord.identity, note.pitch));
     },
     chordMembersAt(slice) {
       return slice.chord ? chordMemberFacts(slice, slice.chord) : [];

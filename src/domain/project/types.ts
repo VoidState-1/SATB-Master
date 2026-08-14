@@ -11,6 +11,8 @@ import type {
   SemanticConfidence,
 } from "../chordModel";
 import type {
+  DiagnosticSeverity,
+  HarmonyRuleSeverity,
   RuleConfig,
   RuleExceptionPolicy,
   RuleInstanceSettings,
@@ -40,6 +42,10 @@ export type {
   ScaleDegree,
   SemanticConfidence,
 } from "../chordModel";
+export type {
+  DiagnosticSeverity,
+  HarmonyRuleSeverity,
+} from "../harmony/rules/types";
 export type {
   Alteration,
   DiatonicStep,
@@ -124,11 +130,14 @@ export interface TempoEvent {
   bpm: number;
 }
 
+export const METER_DENOMINATORS = [2, 4, 8, 16] as const;
+export type MeterDenominator = (typeof METER_DENOMINATORS)[number];
+
 export interface MeterEvent {
   id: string;
   tick: number;
   numerator: number;
-  denominator: 2 | 4 | 8 | 16;
+  denominator: MeterDenominator;
   /** 可选的拍组划分，例如 5/8 的 [2, 3] 或 7/8 的 [2, 2, 3]。 */
   beatGrouping?: readonly number[];
 }
@@ -174,9 +183,6 @@ export interface EditableRange {
   toTick: number;
   editable: boolean;
 }
-
-export type DiagnosticSeverity = "error" | "warning" | "suggestion";
-export type HarmonyRuleSeverity = DiagnosticSeverity | "off";
 
 export interface SharedHarmonySettings {
   voiceRanges: Record<VoiceId, { minMidi: number; maxMidi: number }>;

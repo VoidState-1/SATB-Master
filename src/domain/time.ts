@@ -14,6 +14,60 @@ export interface MeasureInfo {
   beatTicks: number[];
 }
 
+export interface TickBounds {
+  readonly minimum?: number;
+  readonly maximum?: number;
+}
+
+export function orderedEvents<T extends { readonly tick: number }>(
+  events: readonly T[],
+): readonly T[] {
+  return Object.freeze(
+    events
+      .map((event, index) => ({ event, index }))
+      .sort(
+        (left, right) =>
+          left.event.tick - right.event.tick || left.index - right.index,
+      )
+      .map(({ event }) => event),
+  );
+}
+
+export function measureAtTick<T extends {
+  readonly startTick: number;
+  readonly endTick: number;
+}>(
+  measures: readonly T[],
+  tick: number,
+) {
+  if (!Number.isFinite(tick)) return undefined;
+  return measures.find(
+    (measure) => measure.startTick <= tick && tick < measure.endTick,
+  );
+}
+
+export function nearestGridTick(
+  tick: number,
+  gridTicks: number,
+  bounds: TickBounds = {},
+) {
+  if (
+    !Number.isFinite(tick) ||
+    !Number.isFinite(gridTicks) ||
+    gridTicks <= 0 ||
+    (bounds.minimum !== undefined && !Number.isFinite(bounds.minimum)) ||
+    (bounds.maximum !== undefined && !Number.isFinite(bounds.maximum))
+  )
+    throw new Error("吸附时间参数无效");
+  const minimum = bounds.minimum ?? 0;
+  const maximum = bounds.maximum ?? Number.POSITIVE_INFINITY;
+  if (maximum < minimum) throw new Error("吸附时间边界无效");
+  return Math.max(
+    minimum,
+    Math.min(maximum, Math.round(tick / gridTicks) * gridTicks),
+  );
+}
+
 export function eventAtTick<T extends { tick: number }>(
   events: readonly T[],
   tick: number,
@@ -75,7 +129,7 @@ export function buildMeasures(project: {
   readonly meterEvents: readonly MeterEvent[];
   readonly lengthTicks: number;
 }): MeasureInfo[] {
-  const meters = [...project.meterEvents].sort((a, b) => a.tick - b.tick);
+  const meters = orderedEvents(project.meterEvents);
   const measures: MeasureInfo[] = [];
   let tick = 0;
   let number = 1;
@@ -117,7 +171,7 @@ export function ticksForMeasures(
   measureCount: number,
 ) {
   const safeCount = Math.max(1, Math.floor(Number(measureCount)));
-  const meters = [...project.meterEvents].sort((a, b) => a.tick - b.tick);
+  const meters = orderedEvents(project.meterEvents);
   let tick = 0;
   for (let index = 0; index < safeCount; index += 1) {
     const meter = eventAtTick(meters, tick);
@@ -142,9 +196,7 @@ export function durationToTicksAt(
   const value = Math.max(0, Number(duration.value));
   if (!Number.isFinite(value) || value === 0) return 0;
   if (duration.unit === "ticks") return Math.round(value);
-  const meters = [...project.meterEvents].sort(
-    (left, right) => left.tick - right.tick,
-  );
+  const meters = orderedEvents(project.meterEvents);
   let cursor = Math.max(0, startTick);
   let remaining = value;
   while (remaining > 0) {
@@ -172,10 +224,7 @@ export function tickToPosition(
 ) {
   const safeTick = Math.max(0, Math.min(tick, project.lengthTicks));
   const measures = buildMeasures(project);
-  const measure =
-    measures.find(
-      (item) => safeTick >= item.startTick && safeTick < item.endTick,
-    ) ?? measures.at(-1);
+  const measure = measureAtTick(measures, safeTick) ?? measures.at(-1);
   if (!measure) return { measure: 1, beat: 1, tick: 0 };
   const beatLength = ticksPerBeat(project.ppq, measure.denominator);
   const local = safeTick - measure.startTick;
@@ -210,7 +259,7 @@ export function tickToSeconds(
   project: Pick<ProjectDocument, "ppq" | "tempoEvents">,
   tick: number,
 ) {
-  const events = [...project.tempoEvents].sort((a, b) => a.tick - b.tick);
+  const events = orderedEvents(project.tempoEvents);
   let seconds = 0;
   let cursor = 0;
 
@@ -233,7 +282,7 @@ export function secondsToTick(
   project: Pick<ProjectDocument, "ppq" | "tempoEvents">,
   seconds: number,
 ) {
-  const events = [...project.tempoEvents].sort((a, b) => a.tick - b.tick);
+  const events = orderedEvents(project.tempoEvents);
   let remaining = Math.max(0, seconds);
 
   for (let index = 0; index < events.length; index += 1) {

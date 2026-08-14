@@ -1,32 +1,26 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import {
   chordIdentityInversion,
-  primaryHarmonyInterpretation,
   resolveChordIdentity,
-  semanticsFromChordDraft,
 } from "../../../domain/chordModel";
-import { formatChord, isSeventhChord } from "../../../domain/chords";
+import { formatChord } from "../../../domain/chords";
 import {
   FUNCTIONAL_BASE_DEFINITIONS,
   FUNCTIONAL_TARGET_OPTIONS,
-  applyFunctionalDefinition,
-  applyFunctionalForm,
-  applyFunctionalTarget,
-  chordFormFromDraft,
-  compatibleFunctionalInterpretations,
-  functionalBaseIdFromDraft,
-  functionalDefinition,
   functionalScopeForForm,
   inversionFigures,
   type FunctionalBaseId,
-  type FunctionalChordForm,
 } from "../../../domain/functionalHarmonyCatalog";
+import {
+  CHORD_TONE_ALTERATIONS,
+  applyChordEditorAction,
+  createChordEditorModel,
+} from "../../../domain/chordEditorModel";
 import type {
   ChordDraft,
   KeyEvent,
-  KeyReference,
 } from "../../../domain/project";
 import {
   formatPitchClass,
@@ -53,33 +47,11 @@ interface ChordPaletteProps {
   onClose(): void;
 }
 
-const FORM_LABELS: Record<FunctionalChordForm, string> = {
+const FORM_LABELS = {
   triad: "三和弦",
   seventh: "七和弦",
   ninth: "九和弦",
 };
-
-const TONE_ALTERATIONS: ReadonlyArray<{
-  label: string;
-  degree?: 5 | 9;
-  alter?: -1 | 1;
-  tendency?: "up" | "down";
-}> = [
-  { label: "无" },
-  { label: "♭5", degree: 5, alter: -1, tendency: "down" },
-  { label: "♯5", degree: 5, alter: 1, tendency: "up" },
-  { label: "♭9", degree: 9, alter: -1, tendency: "down" },
-  { label: "♯9", degree: 9, alter: 1, tendency: "up" },
-];
-
-function maximumInversion(draft: ChordDraft) {
-  if (draft.augmentedSixthVariant || draft.extensions?.includes(9)) return 0;
-  return isSeventhChord(draft.quality) ? 3 : 2;
-}
-
-function keyReference(event: KeyEvent): KeyReference {
-  return { tonic: event.tonic, mode: event.mode };
-}
 
 export function ChordPalette({
   draft,
@@ -92,60 +64,20 @@ export function ChordPalette({
   const [position, setPosition] = useState(anchor);
   const [view, setView] = useState<PaletteView>("functional");
   const formatted = formatChord(draft, keyEvent);
-  const baseId = functionalBaseIdFromDraft(draft);
-  const baseDefinition = baseId ? functionalDefinition(baseId) : undefined;
-  const form = chordFormFromDraft(draft);
-  const inversionLimit = maximumInversion(draft);
-  const canApplyTarget = baseId === "D" || baseId === "DVII";
-  const canAlterTone = baseId === "D" || baseId === "DD";
+  const model = createChordEditorModel(draft, keyEvent);
+  const {
+    baseId,
+    baseDefinition,
+    form,
+    maximumInversion: inversionLimit,
+    canApplyTarget,
+    canAlterTone,
+    secondaryCandidates,
+    selectedSecondaryCandidate,
+    secondaryKeyOptions,
+  } = model;
   const secondary = draft.secondaryInterpretation;
   const currentIdentity = resolveChordIdentity(draft, keyEvent);
-  const identitySignature = JSON.stringify(currentIdentity);
-  const primary = primaryHarmonyInterpretation(semanticsFromChordDraft(draft));
-  const primaryLocalKey = primary.localKey ?? keyReference(keyEvent);
-  const interpretationMatches = (
-    left: typeof primary,
-    right: typeof primary,
-    rightFallback = primaryLocalKey,
-  ) => {
-    const leftKey = left.localKey ?? primaryLocalKey;
-    const rightKey = right.localKey ?? rightFallback;
-    return (
-      serializePitchClass(leftKey.tonic) ===
-        serializePitchClass(rightKey.tonic) &&
-      leftKey.mode === rightKey.mode &&
-      left.degree === right.degree &&
-      left.degreeAlteration === right.degreeAlteration &&
-      JSON.stringify(left.appliedTarget) ===
-        JSON.stringify(right.appliedTarget) &&
-      JSON.stringify(left.designation) === JSON.stringify(right.designation)
-    );
-  };
-  const compatibleCandidates = useMemo(
-    () => compatibleFunctionalInterpretations(currentIdentity),
-    [identitySignature],
-  );
-  const secondaryCandidates = compatibleCandidates.filter(
-    (candidate) =>
-      !interpretationMatches(
-        candidate.interpretation,
-        primary,
-        primaryLocalKey,
-      ),
-  );
-  const selectedSecondaryCandidate = secondary
-    ? secondaryCandidates.find((candidate) =>
-        interpretationMatches(candidate.interpretation, secondary),
-      )
-    : undefined;
-  const secondaryKeyOptions = [
-    ...new Map(
-      secondaryCandidates.map((candidate) => [
-        `${serializePitchClass(candidate.localKey.tonic)}:${candidate.localKey.mode}`,
-        candidate,
-      ]),
-    ).values(),
-  ];
 
   useLayoutEffect(() => {
     const updatePosition = () => {
@@ -189,18 +121,20 @@ export function ChordPalette({
 
   const selectDefinition = (id: FunctionalBaseId) => {
     onChange(
-      applyFunctionalDefinition(draft, functionalDefinition(id), keyEvent.mode),
+      applyChordEditorAction(draft, keyEvent, {
+        type: "select-functional-definition",
+        id,
+      }),
     );
   };
 
   const setSecondaryEnabled = (enabled: boolean) => {
-    if (!enabled) {
-      onChange({ secondaryInterpretation: undefined });
-      return;
-    }
-    onChange({
-      secondaryInterpretation: secondaryCandidates[0]?.interpretation,
-    });
+    onChange(
+      applyChordEditorAction(draft, keyEvent, {
+        type: "set-secondary-enabled",
+        enabled,
+      }),
+    );
   };
   const structuralColumns = (absolute: boolean) => (
     <div className="chord-palette-columns is-structural">
@@ -213,11 +147,12 @@ export function ChordPalette({
             className={draft.degree === option.value ? "is-selected" : ""}
             aria-pressed={draft.degree === option.value}
             onClick={() =>
-              onChange({
-                degree: option.value,
-                designation: undefined,
-                secondaryInterpretation: undefined,
-              })
+              onChange(
+                applyChordEditorAction(draft, keyEvent, {
+                  type: "set-degree",
+                  degree: option.value,
+                }),
+              )
             }
           >
             {absolute
@@ -245,11 +180,12 @@ export function ChordPalette({
             }
             aria-pressed={draft.degreeAlteration === option.value}
             onClick={() =>
-              onChange({
-                degreeAlteration: option.value,
-                designation: undefined,
-                secondaryInterpretation: undefined,
-              })
+              onChange(
+                applyChordEditorAction(draft, keyEvent, {
+                  type: "set-degree-alteration",
+                  alteration: option.value,
+                }),
+              )
             }
           >
             {option.label}
@@ -267,17 +203,12 @@ export function ChordPalette({
             className={draft.quality === option.value ? "is-selected" : ""}
             aria-pressed={draft.quality === option.value}
             onClick={() =>
-              onChange({
-                quality: option.value,
-                extensions: [],
-                augmentedSixthVariant: undefined,
-                inversion: Math.min(
-                  draft.inversion,
-                  isSeventhChord(option.value) ? 3 : 2,
-                ) as ChordDraft["inversion"],
-                designation: undefined,
-                secondaryInterpretation: undefined,
-              })
+              onChange(
+                applyChordEditorAction(draft, keyEvent, {
+                  type: "set-quality",
+                  quality: option.value,
+                }),
+              )
             }
           >
             {option.shortLabel}
@@ -295,10 +226,12 @@ export function ChordPalette({
             className={draft.inversion === option.value ? "is-selected" : ""}
             aria-pressed={draft.inversion === option.value}
             onClick={() =>
-              onChange({
-                inversion: option.value,
-                secondaryInterpretation: undefined,
-              })
+              onChange(
+                applyChordEditorAction(draft, keyEvent, {
+                  type: "set-inversion",
+                  inversion: option.value,
+                }),
+              )
             }
           >
             {option.label}
@@ -317,12 +250,12 @@ export function ChordPalette({
             }
             aria-pressed={draft.appliedTarget === option.value}
             onClick={() =>
-              onChange({
-                appliedTarget: option.value,
-                appliedTargetFunction: undefined,
-                designation: undefined,
-                secondaryInterpretation: undefined,
-              })
+              onChange(
+                applyChordEditorAction(draft, keyEvent, {
+                  type: "set-structural-applied-target",
+                  degree: option.value,
+                }),
+              )
             }
           >
             {option.label}
@@ -425,12 +358,10 @@ export function ChordPalette({
                   onClick={() =>
                     baseDefinition &&
                     onChange(
-                      applyFunctionalForm(
-                        draft,
-                        baseDefinition,
-                        option,
-                        keyEvent.mode,
-                      ),
+                      applyChordEditorAction(draft, keyEvent, {
+                        type: "select-functional-form",
+                        form: option,
+                      }),
                     )
                   }
                 >
@@ -455,10 +386,12 @@ export function ChordPalette({
                   }
                   aria-pressed={draft.inversion === option.value}
                   onClick={() =>
-                    onChange({
-                      inversion: option.value,
-                      secondaryInterpretation: undefined,
-                    })
+                    onChange(
+                      applyChordEditorAction(draft, keyEvent, {
+                        type: "set-inversion",
+                        inversion: option.value,
+                      }),
+                    )
                   }
                 >
                   {option.label}
@@ -473,7 +406,11 @@ export function ChordPalette({
                 disabled={!canApplyTarget}
                 className={!draft.appliedTarget ? "is-selected" : ""}
                 onClick={() =>
-                  onChange(applyFunctionalTarget(draft, undefined))
+                  onChange(
+                    applyChordEditorAction(draft, keyEvent, {
+                      type: "set-applied-target",
+                    }),
+                  )
                 }
               >
                 无
@@ -489,7 +426,12 @@ export function ChordPalette({
                       : ""
                   }
                   onClick={() =>
-                    onChange(applyFunctionalTarget(draft, option.target))
+                    onChange(
+                      applyChordEditorAction(draft, keyEvent, {
+                        type: "set-applied-target",
+                        degree: option.target.degree,
+                      }),
+                    )
                   }
                 >
                   {option.label}
@@ -499,7 +441,7 @@ export function ChordPalette({
 
             <section className="chord-palette-column">
               <h3>构成音变化</h3>
-              {TONE_ALTERATIONS.map((option) => {
+              {CHORD_TONE_ALTERATIONS.map((option) => {
                 const selected = option.degree
                   ? draft.alterations?.some(
                       (item) =>
@@ -514,30 +456,12 @@ export function ChordPalette({
                     disabled={!canAlterTone}
                     className={selected ? "is-selected" : ""}
                     onClick={() => {
-                      const altered = Boolean(option.degree && option.alter);
-                      onChange({
-                        alterations: altered
-                          ? [
-                              {
-                                degree: option.degree!,
-                                alter: option.alter!,
-                                tendency: option.tendency!,
-                              },
-                            ]
-                          : [],
-                        designation:
-                          baseId === "D" && draft.designation
-                            ? {
-                                ...draft.designation,
-                                kind: altered
-                                  ? "altered-dominant"
-                                  : draft.appliedTarget
-                                    ? "applied-dominant"
-                                    : "primary",
-                              }
-                            : draft.designation,
-                        secondaryInterpretation: undefined,
-                      });
+                      onChange(
+                        applyChordEditorAction(draft, keyEvent, {
+                          type: "set-tone-alteration",
+                          choice: option,
+                        }),
+                      );
                     }}
                   >
                     {option.label}
@@ -553,10 +477,13 @@ export function ChordPalette({
               <select
                 value={draft.mixture ?? ""}
                 onChange={(event) =>
-                  onChange({
-                    mixture: (event.target.value ||
-                      undefined) as ChordDraft["mixture"],
-                  })
+                  onChange(
+                    applyChordEditorAction(draft, keyEvent, {
+                      type: "set-mixture",
+                      mixture: (event.target.value ||
+                        undefined) as ChordDraft["mixture"],
+                    }),
+                  )
                 }
               >
                 <option value="">无</option>
@@ -570,17 +497,14 @@ export function ChordPalette({
               <select
                 value={draft.pedalContext?.role ?? ""}
                 onChange={(event) =>
-                  onChange({
-                    pedalContext: event.target.value
-                      ? {
-                          pitch:
-                            draft.pedalContext?.pitch ?? currentIdentity.bass,
-                          role: event.target.value as NonNullable<
-                            ChordDraft["pedalContext"]
-                          >["role"],
-                        }
-                      : undefined,
-                  })
+                  onChange(
+                    applyChordEditorAction(draft, keyEvent, {
+                      type: "set-pedal-role",
+                      role: (event.target.value || undefined) as
+                        | NonNullable<ChordDraft["pedalContext"]>["role"]
+                        | undefined,
+                    }),
+                  )
                 }
               >
                 <option value="">无</option>
@@ -597,9 +521,12 @@ export function ChordPalette({
                   onChange={(event) => {
                     const pitch = parsePitchClass(event.target.value);
                     if (pitch)
-                      onChange({
-                        pedalContext: { ...draft.pedalContext!, pitch },
-                      });
+                      onChange(
+                        applyChordEditorAction(draft, keyEvent, {
+                          type: "set-pedal-pitch",
+                          pitch,
+                        }),
+                      );
                   }}
                 >
                   {keyTonicOptions(keyEvent.mode).map((option) => (
@@ -641,9 +568,12 @@ export function ChordPalette({
                           event.target.value,
                       );
                       if (candidate)
-                        onChange({
-                          secondaryInterpretation: candidate.interpretation,
-                        });
+                        onChange(
+                          applyChordEditorAction(draft, keyEvent, {
+                            type: "select-secondary",
+                            candidateId: candidate.id,
+                          }),
+                        );
                     }}
                   >
                     {secondaryKeyOptions.map((candidate) => (
@@ -666,9 +596,12 @@ export function ChordPalette({
                         (item) => item.id === event.target.value,
                       );
                       if (candidate)
-                        onChange({
-                          secondaryInterpretation: candidate.interpretation,
-                        });
+                        onChange(
+                          applyChordEditorAction(draft, keyEvent, {
+                            type: "select-secondary",
+                            candidateId: candidate.id,
+                          }),
+                        );
                     }}
                   >
                     {secondaryCandidates

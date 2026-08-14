@@ -2,11 +2,7 @@ import type {
   HarmonyInterpretation,
   KeyReference,
 } from "../../../chordModel";
-import {
-  analysisKeyAtTick,
-  type HarmonyAnalysis,
-  type HarmonySpan,
-} from "../../analysis";
+import type { HarmonySpan } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import {
   formatPitchClass,
@@ -309,26 +305,26 @@ export function unstableEndingRule(context: HarmonyRuleContext) {
 }
 
 function interpretationKey(
-  analysis: HarmonyAnalysis,
+  context: HarmonyRuleContext,
   span: HarmonySpan,
   interpretation: HarmonyInterpretation,
 ) {
-  return interpretation.localKey ?? analysisKeyAtTick(analysis, span.fromTick);
+  return interpretation.localKey ?? context.keyAt(span.fromTick);
 }
 
 export function unmarkedKeyChangeRule(context: HarmonyRuleContext) {
-  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
   const spans = context.spans().toArray();
   let index = 0;
   while (index < spans.length) {
     const span = spans[index].span;
     const interpretation = spanInterpretation(context, span);
-    const projectKey = analysisKeyAtTick(analysis, span.fromTick);
+    const projectKey = context.keyAt(span.fromTick);
     const localKey = interpretation?.localKey;
     if (
       !interpretation ||
       !localKey ||
+      !projectKey ||
       keyEquals(localKey, projectKey) ||
       interpretation.appliedTarget ||
       span.semantics?.mixture ||
@@ -349,7 +345,7 @@ export function unmarkedKeyChangeRule(context: HarmonyRuleContext) {
         !keyEquals(candidateInterpretation.localKey, localKey) ||
         keyEquals(
           candidateInterpretation.localKey,
-          analysisKeyAtTick(analysis, candidate.fromTick),
+          context.keyAt(candidate.fromTick) ?? candidateInterpretation.localKey,
         ) ||
         candidateInterpretation.appliedTarget ||
         candidate.semantics?.mixture
@@ -388,16 +384,17 @@ export function unmarkedKeyChangeRule(context: HarmonyRuleContext) {
 }
 
 export function pivotReinterpretationRule(context: HarmonyRuleContext) {
-  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
   for (const current of context.spans()) {
     const span = current.span;
     const interpretations = span.semantics?.interpretations;
     if (!interpretations || interpretations.length < 2) continue;
     const keys = interpretations.map((item) =>
-      interpretationKey(analysis, span, item),
+      interpretationKey(context, span, item),
     );
-    if (keys.every((key) => keyEquals(key, keys[0]))) continue;
+    if (keys.some((key) => !key)) continue;
+    const resolvedKeys = keys as KeyReference[];
+    if (resolvedKeys.every((key) => keyEquals(key, resolvedKeys[0]))) continue;
     const neighborhood = context.spanNeighborhood(current);
     const previous = neighborhood.previous?.span;
     const next = neighborhood.next?.span;
@@ -412,13 +409,18 @@ export function pivotReinterpretationRule(context: HarmonyRuleContext) {
     const nextInterpretation = spanInterpretation(context, next);
     if (!previousInterpretation || !nextInterpretation) continue;
     const previousKey = interpretationKey(
-      analysis,
+      context,
       previous,
       previousInterpretation,
     );
-    const nextKey = interpretationKey(analysis, next, nextInterpretation);
-    const entersWithCandidate = keys.some((key) => keyEquals(key, previousKey));
-    const exitsWithCandidate = keys.some((key) => keyEquals(key, nextKey));
+    const nextKey = interpretationKey(context, next, nextInterpretation);
+    if (!previousKey || !nextKey) continue;
+    const entersWithCandidate = resolvedKeys.some((key) =>
+      keyEquals(key, previousKey),
+    );
+    const exitsWithCandidate = resolvedKeys.some((key) =>
+      keyEquals(key, nextKey),
+    );
     const changesKey = !keyEquals(previousKey, nextKey);
     if (entersWithCandidate && exitsWithCandidate && changesKey) continue;
     const chord = current.firstSlice.chord;
@@ -443,7 +445,6 @@ export function pivotReinterpretationRule(context: HarmonyRuleContext) {
 }
 
 export function tonicizationModulationConflictRule(context: HarmonyRuleContext) {
-  const { analysis } = context;
   const diagnostics: RuleDiagnostic[] = [];
   for (const current of context.spans()) {
     const span = current.span;
@@ -451,7 +452,8 @@ export function tonicizationModulationConflictRule(context: HarmonyRuleContext) 
       (item) => item.source === "confirmed",
     );
     if (!interpretations || interpretations.length < 2) continue;
-    const projectKey = analysisKeyAtTick(analysis, span.fromTick);
+    const projectKey = context.keyAt(span.fromTick);
+    if (!projectKey) continue;
     const tonicization = interpretations.find((item) => item.appliedTarget);
     const modulation = interpretations.find(
       (item) => item.localKey && !keyEquals(item.localKey, projectKey),

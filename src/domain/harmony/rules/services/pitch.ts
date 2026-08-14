@@ -2,6 +2,7 @@ import type { ScaleDegree } from "../../../chordModel";
 import type { AnalysisNote, AnalysisKey } from "../../analysis";
 import {
   pitchClassEquals,
+  isWrittenStep,
   scaleDegreePitchClass,
   stepIndex,
   toMidi,
@@ -55,12 +56,7 @@ export function createPitchAnalysisService(): PitchAnalysisService {
       return toMidi(pitchOf(left)) === toMidi(pitchOf(right));
     },
     isStep(left, right) {
-      const interval = writtenInterval(left.pitch, right.pitch);
-      return (
-        Math.abs(interval.diatonicSteps) === 1 &&
-        Math.abs(interval.semitones) >= 1 &&
-        Math.abs(interval.semitones) <= 2
-      );
+      return isWrittenStep(writtenInterval(left.pitch, right.pitch));
     },
     scaleDegreeOf(value, key) {
       const pitch = pitchOf(value);

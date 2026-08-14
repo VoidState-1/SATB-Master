@@ -1,6 +1,10 @@
 import type { RuleConfig, RuleDiagnostic } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
-import { VOICE_CONFIG, VOICE_ORDER } from "../../../project/voice";
+import {
+  VOICE_CONFIG,
+  VOICE_ORDER,
+  defaultVoiceRange,
+} from "../../../project/voice";
 import { formatSpelledPitch, toMidi } from "../../../pitch";
 import { diagnostic, noteEvidence, voiceName } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -207,10 +211,7 @@ export const VOICE_RULES = defineRuleGroup(
         description: "女高声部的建议音域上下界。",
         section: "threshold",
         required: true,
-        defaultValue: {
-          minMidi: 60,
-          maxMidi: 81,
-        },
+        defaultValue: defaultVoiceRange("soprano"),
       },
       {
         kind: "pitch-range",
@@ -219,10 +220,7 @@ export const VOICE_RULES = defineRuleGroup(
         description: "女低声部的建议音域上下界。",
         section: "threshold",
         required: true,
-        defaultValue: {
-          minMidi: 55,
-          maxMidi: 74,
-        },
+        defaultValue: defaultVoiceRange("alto"),
       },
       {
         kind: "pitch-range",
@@ -231,10 +229,7 @@ export const VOICE_RULES = defineRuleGroup(
         description: "男高声部的建议音域上下界。",
         section: "threshold",
         required: true,
-        defaultValue: {
-          minMidi: 48,
-          maxMidi: 67,
-        },
+        defaultValue: defaultVoiceRange("tenor"),
       },
       {
         kind: "pitch-range",
@@ -243,10 +238,7 @@ export const VOICE_RULES = defineRuleGroup(
         description: "男低声部的建议音域上下界。",
         section: "threshold",
         required: true,
-        defaultValue: {
-          minMidi: 40,
-          maxMidi: 60,
-        },
+        defaultValue: defaultVoiceRange("bass"),
       },
     ],
     evaluate: voiceRangeRule,

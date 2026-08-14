@@ -1,6 +1,6 @@
 import type { ProjectDocument, RuleProfile, SatbTrack, VoiceId } from "./types";
 import { PPQ, PROJECT_SCHEMA_VERSION } from "./types";
-import { VOICE_CONFIG } from "./voice";
+import { VOICE_CONFIG, defaultVoiceRanges } from "./voice";
 import {
   HARMONY_RULE_CATALOG_REVISION,
   HARMONY_RULE_DEFINITIONS,
@@ -56,12 +56,7 @@ export function createDefaultRuleProfile(): RuleProfile {
     catalogRevision: HARMONY_RULE_CATALOG_REVISION,
     title: "斯波索宾基础规则",
     shared: {
-      voiceRanges: {
-        soprano: { minMidi: 60, maxMidi: 81 },
-        alto: { minMidi: 55, maxMidi: 74 },
-        tenor: { minMidi: 48, maxMidi: 67 },
-        bass: { minMidi: 40, maxMidi: 60 },
-      },
+      voiceRanges: defaultVoiceRanges(),
       strictFourPartTexture: false,
     },
     builtin,

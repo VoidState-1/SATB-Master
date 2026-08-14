@@ -34,7 +34,11 @@ import { DiagnosticsPanel } from "../features/diagnostics";
 import { IconButton } from "../components/IconButton";
 import { Inspector } from "../features/inspector";
 import { PanelResizeHandle } from "../components/PanelResizeHandle";
-import { PianoRoll } from "../features/editor";
+import {
+  GRID_OPTIONS,
+  PianoRoll,
+  stepTimelineZoom,
+} from "../features/editor";
 import { SettingsDialog } from "../features/settings";
 import { TrackSidebar } from "../features/tracks";
 import { replaceProject } from "../domain/editing";
@@ -59,13 +63,6 @@ import { useKeyboardController } from "./controllers/useKeyboardController";
 import { useProjectController } from "./controllers/useProjectController";
 import { useWindowController } from "./controllers/useWindowController";
 import { formatShortcutBinding } from "../shortcuts/shortcutRegistry";
-
-const GRID_OPTIONS = [
-  { label: "1/4", ticks: 960 },
-  { label: "1/8", ticks: 480 },
-  { label: "1/16", ticks: 240 },
-  { label: "1/32", ticks: 120 },
-];
 
 function createProjectWithRuleProfileTemplate() {
   const project = createEmptyProject();
@@ -502,7 +499,7 @@ function AppShell() {
             label="缩小时间轴"
             icon={<ZoomOut />}
             onClick={() =>
-              setPixelsPerBeat((value) => Math.max(42, value - 10))
+              setPixelsPerBeat((value) => stepTimelineZoom(value, -1))
             }
           />
           <span className="zoom-value">{pixelsPerBeat}</span>
@@ -510,7 +507,7 @@ function AppShell() {
             label="放大时间轴"
             icon={<ZoomIn />}
             onClick={() =>
-              setPixelsPerBeat((value) => Math.min(140, value + 10))
+              setPixelsPerBeat((value) => stepTimelineZoom(value, 1))
             }
           />
         </div>

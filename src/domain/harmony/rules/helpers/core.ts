@@ -16,6 +16,7 @@ import type { VoiceId } from "../../../project/types";
 import { VOICE_CONFIG, VOICE_ORDER } from "../../../project/voice";
 import {
   formatSpelledPitch,
+  normalizePitchClassNumber,
   pitchClassEquals,
   type SpelledPitchClass,
   type WrittenInterval,
@@ -70,12 +71,12 @@ export function diagnostic(
 
 /** 将半音值归一化为 [0, 11] 范围内的音高类 */
 export function pitchClass(value: number) {
-  return ((value % 12) + 12) % 12;
+  return normalizePitchClassNumber(value);
 }
 
 /** 将音程半音差归一化为 [0, 11] 范围内的模 12 音程 */
 export function intervalMod12(value: number) {
-  return ((value % 12) + 12) % 12;
+  return normalizePitchClassNumber(value);
 }
 
 /** 判断拼写音程是否为指定半音数的五度音程（自然音阶距离为 4） */

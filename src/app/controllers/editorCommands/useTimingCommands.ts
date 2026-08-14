@@ -24,6 +24,7 @@ import {
   createId,
   getAllPlayableTracks,
   getTrack,
+  METER_DENOMINATORS,
   reconcileChordIdentities,
   type ChordDraft,
   type ChordRegion,
@@ -45,12 +46,12 @@ import {
   eventAtTick,
   formatPosition,
   keyAtTick,
+  measureAtTick,
+  nearestGridTick,
   ticksPerBeat,
 } from "../../../domain/time";
 import type { ClipboardNote } from "../useEditorState";
 import type { EditorCommandContext } from "./types";
-
-const editorState = (editor: EditorCommandContext["editor"]) => editor;
 
 export function useTimingCommands({
   project,
@@ -86,13 +87,10 @@ export function useTimingCommands({
   const timingTick = useCallback(
     (type: "tempo" | "meter" | "key") => {
       if (type === "tempo")
-        return Math.round(playheadTick / gridTicks) * gridTicks;
-      return (
-        buildMeasures(project).find(
-          (measure) =>
-            playheadTick >= measure.startTick && playheadTick < measure.endTick,
-        )?.startTick ?? 0
-      );
+        return nearestGridTick(playheadTick, gridTicks, {
+          maximum: project.lengthTicks,
+        });
+      return measureAtTick(buildMeasures(project), playheadTick)?.startTick ?? 0;
     },
     [gridTicks, playheadTick, project],
   );
@@ -107,10 +105,7 @@ export function useTimingCommands({
               Math.min(project.lengthTicks, Math.round(requestedTick)),
             );
       if (requestedTick !== undefined && type !== "tempo") {
-        const measure = buildMeasures(project).find(
-          (candidate) =>
-            tick >= candidate.startTick && tick < candidate.endTick,
-        );
+        const measure = measureAtTick(buildMeasures(project), tick);
         if (measure?.startTick !== tick)
           return showNotice("拍号和调号变化只能添加在小节起点");
       }
@@ -187,10 +182,11 @@ export function useTimingCommands({
                 : event,
             );
           } else if (type === "meter") {
-            const denominator = [2, 4, 8, 16].includes(
-              Number(patch.denominator),
+            const requestedDenominator = Number(patch.denominator);
+            const denominator = METER_DENOMINATORS.includes(
+              requestedDenominator as (typeof METER_DENOMINATORS)[number],
             )
-              ? (Number(patch.denominator) as 2 | 4 | 8 | 16)
+              ? (requestedDenominator as (typeof METER_DENOMINATORS)[number])
               : 4;
             draft.meterEvents = draft.meterEvents.map((event) =>
               event.id === id

@@ -5,6 +5,7 @@ import type { AnalysisNote } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
+  leadingTonePitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
   toMidi,
@@ -356,11 +357,7 @@ export function deceptiveVoiceLeadingRule(context: HarmonyRuleContext) {
     const dominant = scaleDegreePitchClass(sourceSlice.key, 5, 0);
     const submediant = scaleDegreePitchClass(sourceSlice.key, 6, 0);
     const tonic = sourceSlice.key.tonic;
-    const leadingTone = scaleDegreePitchClass(
-      sourceSlice.key,
-      7,
-      sourceSlice.key.mode === "minor" ? 1 : 0,
-    );
+    const leadingTone = leadingTonePitchClass(sourceSlice.key);
     const bassResolves = Boolean(
       sourceBass &&
       targetBass &&

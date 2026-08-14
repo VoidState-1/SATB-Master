@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain } from 'electron'
+import { app, dialog } from 'electron'
 import { constants } from 'node:fs'
 import { copyFile, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -7,6 +7,8 @@ import {
   prepareSoundFontResource,
   releaseSoundFontResource,
 } from './soundfont-resource.js'
+import { DESKTOP_CHANNELS } from '../shared/desktop.js'
+import { handleDesktop } from './typed-ipc.js'
 
 const MAX_PROJECT_BYTES = 20 * 1024 * 1024
 const MAX_RULE_PROFILE_BYTES = 2 * 1024 * 1024
@@ -22,27 +24,6 @@ function defaultSoundFontDirectory() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'soundfonts')
     : path.join(app.getAppPath(), 'public', 'soundfonts')
-}
-
-interface SaveRequest {
-  project: unknown
-  currentPath?: string
-  forceDialog?: boolean
-  migrationBackupSourcePath?: string
-}
-
-interface RecoveryRequest {
-  project: unknown
-  sourcePath?: string
-  migrationBackupSourcePath?: string
-}
-
-interface LoadSoundFontRequest {
-  filePath: string
-}
-
-interface SoundFontTokenRequest {
-  token: string
 }
 
 interface RecoveryEnvelope {
@@ -64,11 +45,6 @@ function assertProjectEnvelope(value: unknown) {
   if (!supported) {
     throw new Error('工程结构或版本无效')
   }
-}
-
-interface RuleProfileSaveRequest {
-  profile: unknown
-  defaultName?: string
 }
 
 function recoveryPath() {
@@ -185,7 +161,7 @@ function assertRuleProfileEnvelope(value: unknown) {
 }
 
 export function registerProjectIpc() {
-  ipcMain.handle('project:open', async () => {
+  handleDesktop(DESKTOP_CHANNELS.projectOpen, async () => {
     let filePath: string
     if (e2eDirectory) {
       // 端到端测试仍走完整 IPC 与磁盘读写，只用固定临时路径替代不可自动化的系统文件对话框。
@@ -209,7 +185,7 @@ export function registerProjectIpc() {
     return { canceled: false, filePath, project }
   })
 
-  ipcMain.handle('project:save', async (_event, request: SaveRequest) => {
+  handleDesktop(DESKTOP_CHANNELS.projectSave, async (_event, request) => {
     let filePath = e2eDirectory ? path.join(e2eDirectory, 'project.satb') : request.currentPath
     if (!e2eDirectory && (!filePath || request.forceDialog)) {
       const selection = await dialog.showSaveDialog({
@@ -232,7 +208,7 @@ export function registerProjectIpc() {
     return { canceled: false, filePath, migrationBackupPath }
   })
 
-  ipcMain.handle('project:autosave', async (_event, request: RecoveryRequest) => {
+  handleDesktop(DESKTOP_CHANNELS.projectAutosave, async (_event, request) => {
     assertProjectEnvelope(request.project)
     const envelope: RecoveryEnvelope = {
       format: 'satb-master-recovery-v1',
@@ -246,7 +222,7 @@ export function registerProjectIpc() {
     return { recoveryPath: filePath }
   })
 
-  ipcMain.handle('project:recovery', async () => {
+  handleDesktop(DESKTOP_CHANNELS.projectRecovery, async () => {
     const filePath = recoveryPath()
     try {
       const info = await stat(filePath)
@@ -272,12 +248,12 @@ export function registerProjectIpc() {
     }
   })
 
-  ipcMain.handle('project:discard-recovery', async () => {
+  handleDesktop(DESKTOP_CHANNELS.projectDiscardRecovery, async () => {
     await rm(recoveryPath(), { force: true })
     return { discarded: true }
   })
 
-  ipcMain.handle('midi:export', async (_event, request: { bytes: Uint8Array; defaultName: string }) => {
+  handleDesktop(DESKTOP_CHANNELS.midiExport, async (_event, request) => {
     if (e2eDirectory) {
       const filePath = path.join(e2eDirectory, 'export.mid')
       await writeFile(filePath, request.bytes)
@@ -295,14 +271,14 @@ export function registerProjectIpc() {
     return { canceled: false, filePath: selection.filePath }
   })
 
-  ipcMain.handle('rule-profile:open', async () => {
+  handleDesktop(DESKTOP_CHANNELS.ruleProfileOpen, async () => {
     const selection = await dialog.showOpenDialog({
       title: '导入规则配置档案',
       defaultPath: await rememberedDefaultPath('profile'),
       properties: ['openFile'],
       filters: [{ name: 'SATB Master 规则配置档案', extensions: ['json'] }],
     })
-    if (selection.canceled || !selection.filePaths[0]) return { canceled: true }
+    if (selection.canceled || !selection.filePaths[0]) return { canceled: true as const }
     const filePath = selection.filePaths[0]
     const info = await stat(filePath)
     if (info.size < 1 || info.size > MAX_RULE_PROFILE_BYTES)
@@ -313,7 +289,7 @@ export function registerProjectIpc() {
     return { canceled: false, filePath, profile }
   })
 
-  ipcMain.handle('rule-profile:save', async (_event, request: RuleProfileSaveRequest) => {
+  handleDesktop(DESKTOP_CHANNELS.ruleProfileSave, async (_event, request) => {
     assertRuleProfileEnvelope(request?.profile)
     const requestedName =
       typeof request.defaultName === 'string' && request.defaultName.trim()
@@ -339,7 +315,7 @@ export function registerProjectIpc() {
     return { canceled: false, filePath }
   })
 
-  ipcMain.handle('soundfont:open', async () => {
+  handleDesktop(DESKTOP_CHANNELS.soundFontOpen, async () => {
     const selection = await dialog.showOpenDialog({
       title: '选择 SoundFont',
       defaultPath: await rememberedDefaultPath('soundfont'),
@@ -352,14 +328,14 @@ export function registerProjectIpc() {
     await rememberDialogDirectory('soundfont', filePath)
     const soundFont = await prepareSoundFontResource(filePath)
     return {
-      canceled: false,
+      canceled: false as const,
       filePath,
       name: path.basename(filePath),
       ...soundFont,
     }
   })
 
-  ipcMain.handle('soundfont:load-path', async (_event, request: LoadSoundFontRequest) => {
+  handleDesktop(DESKTOP_CHANNELS.soundFontLoadPath, async (_event, request) => {
     // 工程只保存用户主动选取的绝对路径；重开时仍限制扩展名、大小并重新计算摘要。
     assertSoundFontPath(request?.filePath)
     const soundFont = await prepareSoundFontResource(request.filePath)
@@ -370,7 +346,7 @@ export function registerProjectIpc() {
     }
   })
 
-  ipcMain.handle('soundfont:default', async () => {
+  handleDesktop(DESKTOP_CHANNELS.soundFontDefault, async () => {
     const directory = defaultSoundFontDirectory()
     const expectedHash = (await readFile(path.join(directory, 'default.sf2.sha256'), 'utf8')).trim().split(/\s+/)[0]
     if (!expectedHash) throw new Error('默认 SoundFont 摘要文件无效')
@@ -381,16 +357,16 @@ export function registerProjectIpc() {
     }
   })
 
-  ipcMain.handle('soundfont:hash', async (event, request: SoundFontTokenRequest) => {
+  handleDesktop(DESKTOP_CHANNELS.soundFontHash, async (event, request) => {
     if (typeof request?.token !== 'string') throw new Error('SoundFont 加载凭据无效')
     return hashSoundFontResource(request.token, (processedBytes, totalBytes) => {
       if (!event.sender.isDestroyed()) {
-        event.sender.send('soundfont:hash-progress', { token: request.token, processedBytes, totalBytes })
+        event.sender.send(DESKTOP_CHANNELS.soundFontHashProgress, { token: request.token, processedBytes, totalBytes })
       }
     })
   })
 
-  ipcMain.handle('soundfont:release', (_event, request: SoundFontTokenRequest) => {
+  handleDesktop(DESKTOP_CHANNELS.soundFontRelease, (_event, request) => {
     if (typeof request?.token === 'string') releaseSoundFontResource(request.token)
   })
 }

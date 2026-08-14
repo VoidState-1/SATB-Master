@@ -1,7 +1,7 @@
-import { isSeventhChord } from "./chords";
 import {
   chordDraftFromIdentity,
   harmonySemanticsCompatibleWithIdentity,
+  maximumInversionForDraft,
   resolveChordIdentity,
   semanticsFromChordDraft,
 } from "./chordModel";
@@ -287,13 +287,7 @@ function hasValidChordDraft(draft: ChordDraft) {
         : draft.designation?.kind === "neapolitan"
           ? 1
           : undefined;
-  const maximumInversion = draft.augmentedSixthVariant
-    ? 0
-    : draft.extensions?.includes(9)
-      ? 0
-      : isSeventhChord(draft.quality)
-        ? 3
-        : 2;
+  const maximumInversion = maximumInversionForDraft(draft);
   return (
     Number.isInteger(draft.degree) &&
     draft.degree >= 1 &&

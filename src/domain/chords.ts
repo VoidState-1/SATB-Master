@@ -8,6 +8,7 @@ import {
   isSeventhStructure,
   legacyHarmonyProjection,
   primaryHarmonyInterpretation,
+  romanDegreeLabel,
   resolveChordIdentity,
   semanticsFromChordDraft,
 } from "./chordModel";
@@ -31,8 +32,6 @@ import { accidentalSymbol, formatPitchClass, pitchClassValue } from "./pitch";
 import { keyAtTick } from "./time";
 
 export { QUALITY_INTERVALS, isSeventhChord } from "./chordModel";
-
-const ROMAN_DEGREES = ["I", "II", "III", "IV", "V", "VI", "VII"];
 
 export type ChordFunction = "tonic" | "subdominant" | "dominant" | "other";
 
@@ -85,8 +84,8 @@ function romanNameSingle(identity: ChordIdentity, semantics: HarmonySemantics) {
     quality,
   );
   const numeral = uppercase
-    ? ROMAN_DEGREES[interpretation.degree - 1]
-    : ROMAN_DEGREES[interpretation.degree - 1].toLowerCase();
+    ? romanDegreeLabel(interpretation.degree)
+    : romanDegreeLabel(interpretation.degree).toLowerCase();
   const qualityMark =
     quality === "augmented"
       ? "+"
@@ -105,7 +104,7 @@ function romanNameSingle(identity: ChordIdentity, semantics: HarmonySemantics) {
       ? "9"
       : figures;
   const target = interpretation.appliedTarget
-    ? `/${ROMAN_DEGREES[interpretation.appliedTarget.degree - 1]}`
+    ? `/${romanDegreeLabel(interpretation.appliedTarget.degree)}`
     : "";
   return `${accidentalSymbol(interpretation.degreeAlteration)}${numeral}${qualityMark}${extension}${target}`;
 }

@@ -1,3 +1,12 @@
+import {
+  RULE_DURATION_UNITS as SHARED_RULE_DURATION_UNITS,
+  RULE_EXCEPTION_CONTEXTS as SHARED_RULE_EXCEPTION_CONTEXTS,
+  RULE_EXCEPTION_MODES as SHARED_RULE_EXCEPTION_MODES,
+  type RuleDurationUnit as SharedRuleDurationUnit,
+  type RuleExceptionContext as SharedRuleExceptionContext,
+  type RuleExceptionMode as SharedRuleExceptionMode,
+} from "../../../../shared/external-rules";
+
 export type DiagnosticSeverity = "error" | "warning" | "suggestion";
 export type HarmonyRuleSeverity = DiagnosticSeverity | "off";
 
@@ -24,33 +33,23 @@ export type RuleRequirement =
 export type RuleDependencyScope =
   "note" | "slice" | "chord" | "phrase" | "project";
 
-export const RULE_EXCEPTION_CONTEXTS = [
-  "same-harmony",
-  "arpeggiation",
-  "voice-exchange",
-  "inner-voices",
-  "bass-step-up",
-  "sequence",
-  "pedal-point",
-  "nonchord-tone",
-  "cadence",
-  "modulation",
-  "ambiguous-semantics",
-  "insufficient-context",
-] as const;
-
-export type RuleExceptionContext = (typeof RULE_EXCEPTION_CONTEXTS)[number];
-export type RuleExceptionMode = "exempt" | "downgrade" | "strict";
+export const RULE_EXCEPTION_CONTEXTS = SHARED_RULE_EXCEPTION_CONTEXTS;
+export type RuleExceptionContext = SharedRuleExceptionContext;
+export const RULE_EXCEPTION_MODES = SHARED_RULE_EXCEPTION_MODES;
+export type RuleExceptionMode = SharedRuleExceptionMode;
 export type RuleExceptionPolicy = Partial<
   Record<RuleExceptionContext, RuleExceptionMode>
 >;
+
+export const RULE_DURATION_UNITS = SHARED_RULE_DURATION_UNITS;
+export type RuleDurationUnit = SharedRuleDurationUnit;
 
 export type RuleConfigValue =
   | string
   | number
   | boolean
   | { minMidi: number; maxMidi: number }
-  | { value: number; unit: "ticks" | "beats" | "measures" };
+  | { value: number; unit: RuleDurationUnit };
 export type RuleConfig = Record<string, RuleConfigValue>;
 
 interface RuleOptionBase {
@@ -87,7 +86,7 @@ export type RuleOptionDefinition =
       kind: "duration";
       defaultValue: {
         value: number;
-        unit: "ticks" | "beats" | "measures";
+        unit: RuleDurationUnit;
       };
       min?: number;
       max?: number;

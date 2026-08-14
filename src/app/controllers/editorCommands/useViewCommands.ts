@@ -45,12 +45,15 @@ import {
   eventAtTick,
   formatPosition,
   keyAtTick,
+  nearestGridTick,
   ticksPerBeat,
 } from "../../../domain/time";
+import {
+  nextGridResolution,
+  stepTimelineZoom,
+} from "../../../features/editor";
 import type { ClipboardNote } from "../useEditorState";
 import type { EditorCommandContext } from "./types";
-
-const editorState = (editor: EditorCommandContext["editor"]) => editor;
 
 export function useViewCommands({
   project,
@@ -123,22 +126,11 @@ export function useViewCommands({
   );
 
   const changeGridResolution = useCallback((direction: 1 | -1) => {
-    setGridTicks((current) => {
-      const currentIndex = GRID_OPTIONS.findIndex(
-        (option) => option.ticks === current,
-      );
-      const nextIndex = Math.max(
-        0,
-        Math.min(GRID_OPTIONS.length - 1, currentIndex + direction),
-      );
-      return GRID_OPTIONS[nextIndex]?.ticks ?? current;
-    });
+    setGridTicks((current) => nextGridResolution(current, direction));
   }, []);
 
   const changeTimelineZoom = useCallback((direction: 1 | -1) => {
-    setPixelsPerBeat((current) =>
-      Math.max(42, Math.min(140, current + direction * 10)),
-    );
+    setPixelsPerBeat((current) => stepTimelineZoom(current, direction));
   }, []);
 
   const transformSelection = useCallback(
@@ -156,7 +148,9 @@ export function useViewCommands({
       }
       const result = transformNotes(project, selectedNoteIds, (note) => {
         const startTick = quantize
-          ? Math.round(note.startTick / gridTicks) * gridTicks
+          ? nearestGridTick(note.startTick, gridTicks, {
+              maximum: project.lengthTicks,
+            })
           : note.startTick + tickDelta;
         const currentMidi = toMidi(note.pitch);
         const nextMidi = Math.max(0, Math.min(127, currentMidi + pitchDelta));
@@ -200,9 +194,3 @@ export function useViewCommands({
     transformSelection,
   } as const;
 }
-const GRID_OPTIONS = [
-  { label: "1/4", ticks: 960 },
-  { label: "1/8", ticks: 480 },
-  { label: "1/16", ticks: 240 },
-  { label: "1/32", ticks: 120 },
-];

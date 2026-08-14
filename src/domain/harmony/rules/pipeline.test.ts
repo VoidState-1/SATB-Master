@@ -454,4 +454,64 @@ describe("分析与规则结果复用", () => {
     expect(second.invalidationRanges).toEqual([]);
     expect(counts).toEqual({ range: 1, leap: 2 });
   });
+
+  it("同步与异步 stateful runner 使用相同的状态转移和结果策略", async () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions = [
+      region("state-a", 0, PPQ),
+      region("state-b", PPQ, PPQ, { root: "G", degree: 5 }),
+    ];
+    const metadata = HARMONY_RULE_DEFINITIONS.find(
+      (definition) => definition.id === "voice.polyphonic-overlap",
+    )!;
+    const definition: RuleDefinition = {
+      ...metadata,
+      process(step, incoming) {
+        const previous = incoming[0];
+        const previousCount = previous
+          ? (previous.payload as { count: number }).count
+          : 0;
+        const state = previous
+          ? { ...previous, payload: { count: previousCount + 1 } }
+          : {
+              id: "counter",
+              ownerRuleId: metadata.id,
+              createdAt: { tick: step.slice.tick, sliceIndex: step.sliceIndex },
+              payload: { count: 1 },
+            };
+        return {
+          diagnostics: [
+            {
+              ruleId: metadata.id,
+              source: "builtin",
+              tick: step.slice.tick,
+              endTick: step.slice.endTick,
+              voiceIds: [],
+              noteIds: [],
+              chordIds: [],
+              title: "状态测试",
+              message: `计数 ${state.payload.count}`,
+              messageKey: "state-test",
+              params: { count: state.payload.count },
+              evidence: [],
+              confidence: 1,
+            },
+          ],
+          outgoing: [state],
+        };
+      },
+    };
+    const severities = { [metadata.id]: "warning" } as Record<string, "warning">;
+    const sync = runRulesSynchronously([definition], project, severities, 9);
+    const asyncResult = await new RuleScheduler([definition]).run({
+      project,
+      severities,
+      revision: 9,
+    });
+    expect(sync.diagnostics.map(({ id, ...item }) => item)).toEqual(
+      asyncResult.diagnostics.map(({ id, ...item }) => item),
+    );
+    expect(sync.skippedRules).toEqual(asyncResult.skippedRules);
+  });
 });

@@ -4,10 +4,11 @@ import {
   chordVoicingPolicy,
   harmonySemanticsCompatibleWithIdentity,
 } from "../../../chordModel";
-import { analysisKeyAtTick, type HarmonyAnalysis } from "../../analysis";
+import type { HarmonyAnalysis } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import {
   formatPitchClass,
+  leadingTonePitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
   toMidi,
@@ -203,8 +204,7 @@ function evaluateRepeatedChordToneRule(
 export function doubledLeadingToneRule(context: HarmonyRuleContext) {
   return evaluateRepeatedChordToneRule(context, {
     id: "chord.doubled-leading-tone",
-    target: ({ slice }) =>
-      scaleDegreePitchClass(slice.key, 7, slice.key.mode === "minor" ? 1 : 0),
+    target: ({ slice }) => leadingTonePitchClass(slice.key),
     title: "重复导音",
     message: (_chord, target) =>
       `四部和声中通常不应重复局部调性内的书写导音 ${formatPitchClass(target)}。`,
@@ -257,11 +257,10 @@ export function doubledAlteredTendencyToneRule(context: HarmonyRuleContext) {
           : undefined);
       if (targetDegree) {
         const targetTonic = scaleDegreePitchClass(slice.key, targetDegree, 0);
-        const targetLeadingTone = scaleDegreePitchClass(
-          { tonic: targetTonic, mode: "major" },
-          7,
-          0,
-        );
+        const targetLeadingTone = leadingTonePitchClass({
+          tonic: targetTonic,
+          mode: "major",
+        });
         if (
           chordIdentityToneSpellings(chord.identity).some((tone) =>
             pitchClassEquals(tone, targetLeadingTone),
@@ -477,7 +476,8 @@ export function chordInterpretationIdentityRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   analysis.project.chordTrack.regions.forEach((chord) => {
     if (!chord.semantics) return;
-    const key = analysisKeyAtTick(analysis, chord.startTick);
+    const key = context.keyAt(chord.startTick);
+    if (!key) return;
     if (
       harmonySemanticsCompatibleWithIdentity(
         chord.identity,

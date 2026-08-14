@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain } from 'electron'
+import { app, dialog } from 'electron'
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { rememberDialogDirectory, rememberedDefaultPath } from './project-ipc.js'
@@ -11,15 +11,10 @@ import {
   validateRuleManifest,
   type InstalledRulePackage,
 } from './rule-library-policy.js'
+import { DESKTOP_CHANNELS, type InstallExternalRuleRequest } from '../shared/desktop.js'
+import { handleDesktop } from './typed-ipc.js'
 
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
-
-interface InstallRuleRequest {
-  source: string
-  sourcePath?: string
-  contentHash: string
-  manifest: unknown
-}
 
 function ruleLibraryDirectory() {
   return path.join(app.getPath('userData'), 'rule-library')
@@ -100,7 +95,7 @@ async function readRuleImportCandidate() {
   }
 }
 
-async function installRulePackage(request: InstallRuleRequest) {
+async function installRulePackage(request: InstallExternalRuleRequest) {
   if (!request || typeof request.source !== 'string') throw new Error('规则包源码无效')
   const sizeBytes = Buffer.byteLength(request.source, 'utf8')
   if (sizeBytes < 1 || sizeBytes > MAX_RULE_BYTES) throw new Error('规则包大小无效')
@@ -141,13 +136,13 @@ async function removeRulePackage(contentHash: unknown) {
 }
 
 export function registerRuleLibraryIpc() {
-  ipcMain.handle('rule-library:list', () => listInstalledRulePackages())
-  ipcMain.handle('rule-library:import', () => readRuleImportCandidate())
-  ipcMain.handle('rule-library:install', (_event, request: InstallRuleRequest) => installRulePackage(request))
-  ipcMain.handle('rule-library:load-source', (_event, request: { contentHash?: unknown }) =>
-    loadRulePackageSource(request?.contentHash),
+  handleDesktop(DESKTOP_CHANNELS.ruleLibraryList, () => listInstalledRulePackages())
+  handleDesktop(DESKTOP_CHANNELS.ruleLibraryImport, () => readRuleImportCandidate())
+  handleDesktop(DESKTOP_CHANNELS.ruleLibraryInstall, (_event, request) => installRulePackage(request))
+  handleDesktop(DESKTOP_CHANNELS.ruleLibraryLoadSource, (_event, request) =>
+    loadRulePackageSource(request.contentHash),
   )
-  ipcMain.handle('rule-library:remove', (_event, request: { contentHash?: unknown }) =>
-    removeRulePackage(request?.contentHash),
+  handleDesktop(DESKTOP_CHANNELS.ruleLibraryRemove, (_event, request) =>
+    removeRulePackage(request.contentHash),
   )
 }

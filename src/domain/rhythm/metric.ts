@@ -1,5 +1,10 @@
 import type { MeterEvent } from "../project/types";
-import { buildMeasures, eventAtTick, ticksPerBeat } from "../time";
+import {
+  buildMeasures,
+  eventAtTick,
+  measureAtTick,
+  ticksPerBeat,
+} from "../time";
 
 type MetricMeterEvent = Readonly<Omit<MeterEvent, "beatGrouping">> & {
   readonly beatGrouping?: readonly number[];
@@ -126,12 +131,10 @@ export function buildMetricTimeline(
   });
 }
 
-function measureAtTick(timeline: MetricTimeline, tick: number) {
+function metricMeasureAtTick(timeline: MetricTimeline, tick: number) {
   if (!Number.isFinite(tick) || tick < 0 || tick >= timeline.lengthTicks)
     return undefined;
-  return timeline.measures.find(
-    (measure) => measure.startTick <= tick && tick < measure.endTick,
-  );
+  return measureAtTick(timeline.measures, tick);
 }
 
 function groupStarts(grouping: readonly number[] | undefined) {
@@ -149,7 +152,7 @@ export function metricPositionAt(
   timeline: MetricTimeline,
   tick: number,
 ): MetricPosition | undefined {
-  const measure = measureAtTick(timeline, tick);
+  const measure = metricMeasureAtTick(timeline, tick);
   if (!measure) return undefined;
   const beatPosition = (tick - measure.startTick) / measure.beatLength;
   const roundedBeat = Math.round(beatPosition);

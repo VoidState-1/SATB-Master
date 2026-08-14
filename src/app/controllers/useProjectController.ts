@@ -4,15 +4,6 @@ import { createEmptyProject, type ProjectDocument } from "../../domain/project";
 import { useProjectHistory } from "../../hooks/useProjectHistory";
 import { useEditorState } from "./useEditorState";
 
-export function createProjectWithRuleProfileTemplate(
-  loadRuleProfile: () => ProjectDocument["ruleProfile"] | undefined,
-) {
-  const project = createEmptyProject();
-  const template = loadRuleProfile();
-  if (template) project.ruleProfile = template;
-  return project;
-}
-
 export function useProjectController(initialProject: ProjectDocument) {
   const history = useProjectHistory(initialProject);
   const project = history.project;

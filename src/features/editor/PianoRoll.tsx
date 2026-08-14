@@ -34,6 +34,7 @@ import {
   xToTick,
 } from "./viewport";
 import type { EditorDomain, PianoRollProps } from "./types";
+import { stepTimelineZoom } from "./policy";
 export type { EditorDomain, EditorTool, PianoRollProps } from "./types";
 
 // 卷帘窗与工程模型共用标准 MIDI 0-127 音域，避免快捷键能移动到画布之外。
@@ -297,9 +298,9 @@ export function PianoRoll({
       event.preventDefault();
       const delta = event.deltaY !== 0 ? event.deltaY : event.deltaX;
       if (delta === 0) return;
-      const nextPixelsPerBeat = Math.max(
-        42,
-        Math.min(140, pixelsPerBeat + (delta < 0 ? 10 : -10)),
+      const nextPixelsPerBeat = stepTimelineZoom(
+        pixelsPerBeat,
+        delta < 0 ? 1 : -1,
       );
       if (nextPixelsPerBeat === pixelsPerBeat) {
         pendingZoomViewportXRef.current = undefined;

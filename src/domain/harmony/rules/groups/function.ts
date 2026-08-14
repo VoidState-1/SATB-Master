@@ -1,4 +1,3 @@
-import { analysisKeyAtTick } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import {
   formatPitchClass,
@@ -28,8 +27,8 @@ export function mixtureSourceRule(context: HarmonyRuleContext) {
     const resolution = context.harmony.primaryInterpretation(chord);
     if (resolution.status !== "resolved") return;
     const interpretation = resolution.value;
-    const localKey =
-      interpretation.localKey ?? analysisKeyAtTick(analysis, chord.startTick);
+    const localKey = interpretation.localKey ?? context.keyAt(chord.startTick);
+    if (!localKey) return;
     const sourceMode = mixture === "parallel-major" ? "major" : "minor";
     const sourceKey = { tonic: localKey.tonic, mode: sourceMode } as const;
     const expectedRoot = scaleDegreePitchClass(

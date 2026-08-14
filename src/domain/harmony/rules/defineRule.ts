@@ -12,6 +12,7 @@ import type {
   RuleExceptionPolicy,
   RuleOptionDefinition,
 } from "./types";
+import { defaultConfigFromOptions } from "./configSchema";
 
 export type RuleMetadataInput<Id extends string> = Omit<
   HarmonyRuleDefinition,
@@ -52,9 +53,7 @@ function completeMetadata<Id extends string>(
   const supportedExceptionContexts = input.supportedExceptionContexts ?? [];
   const defaultExceptionPolicies = input.defaultExceptionPolicies ?? {};
   const coveredRuleIds = input.coveredRuleIds ?? [];
-  const defaultConfig = Object.fromEntries(
-    options.map((option) => [option.key, structuredClone(option.defaultValue)]),
-  ) as RuleConfig;
+  const defaultConfig = defaultConfigFromOptions(options);
   return {
     ...input,
     configVersion: input.configVersion ?? 1,

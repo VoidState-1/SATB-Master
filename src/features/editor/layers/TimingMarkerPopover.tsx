@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Trash2, X } from "lucide-react";
-import { type KeyMode, type ProjectDocument } from "../../../domain/project";
+import {
+  METER_DENOMINATORS,
+  type KeyMode,
+  type ProjectDocument,
+} from "../../../domain/project";
 import {
   formatPitchClass,
   keyTonicOptions,
@@ -207,7 +211,7 @@ export function TimingMarkerPopover({
                   })
                 }
               >
-                {[2, 4, 8, 16].map((denominator) => (
+                {METER_DENOMINATORS.map((denominator) => (
                   <option key={denominator} value={denominator}>
                     /{denominator}
                   </option>

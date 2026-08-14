@@ -9,6 +9,9 @@ import {
   tickToSeconds,
   ticksForMeasures,
   durationToTicksAt,
+  measureAtTick,
+  nearestGridTick,
+  orderedEvents,
 } from "./time";
 
 describe("音乐时间轴", () => {
@@ -88,5 +91,47 @@ describe("音乐时间轴", () => {
     expect(
       durationToTicksAt(project, PPQ * 4, { value: 1, unit: "measures" }),
     ).toBe((PPQ / 2) * 3);
+  });
+
+  it("sorts timed events stably without mutating the source", () => {
+    const source = [
+      { id: "late", tick: PPQ },
+      { id: "first", tick: 0 },
+      { id: "second", tick: 0 },
+    ];
+    const ordered = orderedEvents(source);
+
+    expect(ordered.map((event) => event.id)).toEqual([
+      "first",
+      "second",
+      "late",
+    ]);
+    expect(source.map((event) => event.id)).toEqual([
+      "late",
+      "first",
+      "second",
+    ]);
+    expect(Object.isFrozen(ordered)).toBe(true);
+  });
+
+  it("locates measures with half-open boundaries", () => {
+    const project = createEmptyProject();
+    const measures = buildMeasures(project);
+
+    expect(measureAtTick(measures, 0)?.number).toBe(1);
+    expect(measureAtTick(measures, measures[0].endTick)?.number).toBe(2);
+    expect(measureAtTick(measures, project.lengthTicks)).toBeUndefined();
+    expect(measureAtTick(measures, Number.NaN)).toBeUndefined();
+  });
+
+  it("snaps to the nearest grid and clamps to explicit bounds", () => {
+    expect(nearestGridTick(239, 480)).toBe(0);
+    expect(nearestGridTick(240, 480)).toBe(480);
+    expect(nearestGridTick(2_100, 480, { maximum: 1_920 })).toBe(1_920);
+    expect(nearestGridTick(-100, 480, { minimum: 240 })).toBe(240);
+    expect(() => nearestGridTick(1, 0)).toThrow();
+    expect(() =>
+      nearestGridTick(1, 480, { minimum: 10, maximum: 0 }),
+    ).toThrow();
   });
 });

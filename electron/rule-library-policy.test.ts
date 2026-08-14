@@ -33,7 +33,7 @@ describe('外置规则私有库策略', () => {
     expect(validateRuleManifest(manifest)).toEqual(manifest)
     expect(() =>
       validateRuleManifest({ ...manifest, apiVersion: 2 }),
-    ).toThrow('manifest')
+    ).toThrow('API v3')
     expect(() =>
       validateRuleManifest({
         ...manifest,

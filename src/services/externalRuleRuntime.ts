@@ -2,6 +2,7 @@ import {
   buildHarmonyAnalysis,
   type HarmonyAnalysis,
   type HarmonyCheckResult,
+  type HarmonyDiagnostic,
 } from "../domain/harmony";
 import {
   buildExternalRuleContext,
@@ -16,6 +17,10 @@ import {
   type ExternalRuleRunResult,
   type InstalledExternalRulePackage,
 } from "../domain/harmony";
+import {
+  completeHarmonyResult,
+  skippedRulesForFailures,
+} from "../domain/harmony/rules/policy/result";
 import type {
   ExternalRuleWorkerRequest,
   ExternalRuleWorkerResponse,
@@ -109,12 +114,24 @@ export async function inspectExternalRuleCandidate(
   }
 }
 
-function failureSkip(failure: ExternalRuleFailure) {
+function completeExternalRun(options: {
+  diagnostics: HarmonyDiagnostic[];
+  failures: ExternalRuleFailure[];
+  revision: number;
+  superseded: boolean;
+}): ExternalRuleRunResult {
+  const completed = completeHarmonyResult({
+    diagnostics: options.diagnostics,
+    skippedRules: skippedRulesForFailures(options.failures),
+    revision: options.revision,
+    superseded: options.superseded,
+  });
   return {
-    ruleId: failure.ruleId,
-    reason: "rule-error" as const,
-    message: `外置规则“${failure.ruleId}”未执行：${failure.message}`,
-    partial: false,
+    diagnostics: completed.diagnostics,
+    skippedRules: completed.skippedRules,
+    failures: options.failures,
+    revision: options.revision,
+    superseded: options.superseded,
   };
 }
 
@@ -146,13 +163,12 @@ export class ExternalRuleRuntime {
       (reference) => reference.enabled && reference.severity !== "off",
     );
     if (activeReferences.length === 0) {
-      return {
+      return completeExternalRun({
         diagnostics: [],
-        skippedRules: [],
         failures: [],
         revision,
         superseded: Boolean(signal?.aborted),
-      };
+      });
     }
 
     const installedByHash = new Map(
@@ -232,22 +248,20 @@ export class ExternalRuleRuntime {
     }
 
     if (signal?.aborted) {
-      return {
+      return completeExternalRun({
         diagnostics: [],
-        skippedRules: failures.map(failureSkip),
         failures,
         revision,
         superseded: true,
-      };
+      });
     }
     if (entries.length === 0) {
-      return {
+      return completeExternalRun({
         diagnostics: [],
-        skippedRules: failures.map(failureSkip),
         failures,
         revision,
         superseded: false,
-      };
+      });
     }
 
     const analysis =
@@ -299,25 +313,23 @@ export class ExternalRuleRuntime {
           return [];
         }
       });
-      return {
+      return completeExternalRun({
         diagnostics,
-        skippedRules: failures.map(failureSkip),
         failures,
         revision,
         superseded: Boolean(signal?.aborted),
-      };
+      });
     } catch (error) {
       if (
         signal?.aborted ||
         (error instanceof DOMException && error.name === "AbortError")
       ) {
-        return {
+        return completeExternalRun({
           diagnostics: [],
-          skippedRules: failures.map(failureSkip),
           failures,
           revision,
           superseded: true,
-        };
+        });
       }
       entries.forEach((entry) =>
         failures.push({
@@ -329,13 +341,12 @@ export class ExternalRuleRuntime {
           message: error instanceof Error ? error.message : String(error),
         }),
       );
-      return {
+      return completeExternalRun({
         diagnostics: [],
-        skippedRules: failures.map(failureSkip),
         failures,
         revision,
         superseded: false,
-      };
+      });
     } finally {
       worker.terminate();
       if (this.activeWorker === worker) this.activeWorker = undefined;

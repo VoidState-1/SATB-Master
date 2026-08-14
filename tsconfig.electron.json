@@ -5,10 +5,10 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "skipLibCheck": true,
-    "rootDir": "electron",
+    "rootDir": ".",
     "outDir": "dist-electron",
     "types": ["node"]
   },
-  "include": ["electron/**/*.ts", "electron/**/*.cts"],
-  "exclude": ["electron/**/*.test.ts"]
+  "include": ["electron/**/*.ts", "electron/**/*.cts", "shared/**/*.ts"],
+  "exclude": ["electron/**/*.test.ts", "shared/**/*.test.ts"]
 }

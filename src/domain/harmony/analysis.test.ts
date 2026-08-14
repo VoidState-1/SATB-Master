@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createChordRegion } from "../chords";
 import { checkHarmony } from "./registry";
-import { buildHarmonyAnalysis, walkSpans } from "./analysis";
+import { buildHarmonyAnalysis } from "./analysis";
 import { defaultHarmonyRuleSeverities } from "./rules/catalog";
 import {
   createEmptyProject,
@@ -435,7 +435,6 @@ describe("斯波索宾基础规则检查", () => {
     const spans = analysis.harmonySpans;
     expect(spans).toHaveLength(2);
     expect(spans.map((span) => span.status)).toEqual(["complete", "ambiguous"]);
-    expect(walkSpans(analysis, 0, "forward")).toEqual([spans[1]]);
   });
 
   it("导音状态不会跨过休止错误关联到更晚的音符", () => {

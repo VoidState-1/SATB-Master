@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   commandForKeyboardEvent,
+  type ShortcutCommandId,
   type ShortcutBindings,
 } from "../../shortcuts/shortcutRegistry";
 import type { EditorDomain, EditorTool } from "../../features/editor";
@@ -111,119 +112,60 @@ export function useKeyboardController({
         return;
       event.preventDefault();
 
-      switch (command.id) {
-        case "newProject":
-          void handleNew();
-          break;
-        case "openProject":
-          void handleOpen();
-          break;
-        case "saveProject":
-          void handleSave(false);
-          break;
-        case "saveProjectAs":
-          void handleSave(true);
-          break;
-        case "undo":
-          history.undo();
-          break;
-        case "redo":
-          history.redo();
-          break;
-        case "selectAll":
-          selectAllInEditorDomain();
-          break;
-        case "clearSelection":
-          clearSelection();
-          break;
-        case "copySelection":
-          copySelection();
-          break;
-        case "cutSelection":
-          cutSelection();
-          break;
-        case "pasteSelection":
-          pasteSelection();
-          break;
-        case "duplicateSelection":
-          duplicateSelection();
-          break;
-        case "deleteSelection":
+      const commandHandlers: Record<ShortcutCommandId, () => void> = {
+        newProject: () => void handleNew(),
+        openProject: () => void handleOpen(),
+        saveProject: () => void handleSave(false),
+        saveProjectAs: () => void handleSave(true),
+        undo: () => history.undo(),
+        redo: () => history.redo(),
+        selectAll: selectAllInEditorDomain,
+        clearSelection,
+        copySelection,
+        cutSelection,
+        pasteSelection,
+        duplicateSelection,
+        deleteSelection: () => {
           if (editorDomain === "chords") handleDeleteChords(selectedChordIds);
           else handleDeleteNotes(selectedNoteIds);
-          break;
-        case "cancelOrClear":
+        },
+        cancelOrClear: () => {
           if (editorInteractionActive)
             setCancelEditorRequest((current) => current + 1);
           else clearSelection();
-          break;
-        case "quantizeSelection":
-          transformSelection(0, 0, true);
-          break;
-        case "moveSelectionLeft":
-          transformSelection(-gridTicks, 0);
-          break;
-        case "moveSelectionRight":
-          transformSelection(gridTicks, 0);
-          break;
-        case "pitchUp":
+        },
+        quantizeSelection: () => transformSelection(0, 0, true),
+        moveSelectionLeft: () => transformSelection(-gridTicks, 0),
+        moveSelectionRight: () => transformSelection(gridTicks, 0),
+        pitchUp: () => {
           if (selectedChordIds.size === 0) transformSelection(0, 1);
-          break;
-        case "pitchDown":
+        },
+        pitchDown: () => {
           if (selectedChordIds.size === 0) transformSelection(0, -1);
-          break;
-        case "octaveUp":
+        },
+        octaveUp: () => {
           if (selectedChordIds.size === 0) transformSelection(0, 12);
-          break;
-        case "octaveDown":
+        },
+        octaveDown: () => {
           if (selectedChordIds.size === 0) transformSelection(0, -12);
-          break;
-        case "selectTool":
-          setTool("select");
-          break;
-        case "pencilTool":
-          setTool("pencil");
-          break;
-        case "eraserTool":
-          setTool("eraser");
-          break;
-        case "splitTool":
-          setTool("split");
-          break;
-        case "nextVoice":
-          cycleActiveVoice(1);
-          break;
-        case "previousVoice":
-          cycleActiveVoice(-1);
-          break;
-        case "playPause":
-          void handlePlay();
-          break;
-        case "goToStart":
-          setPlayheadTick(0);
-          break;
-        case "goToEnd":
-          setPlayheadTick(projectLengthTicks);
-          break;
-        case "previousMeasure":
-          movePlayheadByMeasure(-1);
-          break;
-        case "nextMeasure":
-          movePlayheadByMeasure(1);
-          break;
-        case "gridCoarser":
-          changeGridResolution(-1);
-          break;
-        case "gridFiner":
-          changeGridResolution(1);
-          break;
-        case "zoomOut":
-          changeTimelineZoom(-1);
-          break;
-        case "zoomIn":
-          changeTimelineZoom(1);
-          break;
-      }
+        },
+        selectTool: () => setTool("select"),
+        pencilTool: () => setTool("pencil"),
+        eraserTool: () => setTool("eraser"),
+        splitTool: () => setTool("split"),
+        nextVoice: () => cycleActiveVoice(1),
+        previousVoice: () => cycleActiveVoice(-1),
+        playPause: () => void handlePlay(),
+        goToStart: () => setPlayheadTick(0),
+        goToEnd: () => setPlayheadTick(projectLengthTicks),
+        previousMeasure: () => movePlayheadByMeasure(-1),
+        nextMeasure: () => movePlayheadByMeasure(1),
+        gridCoarser: () => changeGridResolution(-1),
+        gridFiner: () => changeGridResolution(1),
+        zoomOut: () => changeTimelineZoom(-1),
+        zoomIn: () => changeTimelineZoom(1),
+      };
+      commandHandlers[command.id]();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);

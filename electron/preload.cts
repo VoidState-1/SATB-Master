@@ -1,62 +1,84 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import {
+  DESKTOP_CHANNELS,
+  type DesktopApi,
+  type DesktopEventChannel,
+  type DesktopEventMap,
+  type DesktopInvokeChannel,
+  type DesktopInvokeMap,
+} from '../shared/desktop.js'
 
-contextBridge.exposeInMainWorld('desktop', {
+function invokeDesktop<Channel extends DesktopInvokeChannel>(
+  channel: Channel,
+  ...args: DesktopInvokeMap[Channel]['request'] extends void
+    ? []
+    : [DesktopInvokeMap[Channel]['request']]
+): Promise<DesktopInvokeMap[Channel]['response']> {
+  return ipcRenderer.invoke(channel, args[0])
+}
+
+function subscribeDesktop<Channel extends DesktopEventChannel>(
+  channel: Channel,
+  callback: (value: DesktopEventMap[Channel]) => void,
+) {
+  const listener = (_event: Electron.IpcRendererEvent, value: DesktopEventMap[Channel]) => callback(value)
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
+
+const desktop: DesktopApi = {
   versions: {
     electron: process.versions.electron,
     chrome: process.versions.chrome,
     node: process.versions.node,
   },
   windowControls: {
-    minimize: () => ipcRenderer.invoke('window:minimize'),
-    toggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
-    isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
-    isFocused: () => ipcRenderer.invoke('window:is-focused'),
-    close: () => ipcRenderer.invoke('window:close'),
+    minimize: () => invokeDesktop(DESKTOP_CHANNELS.windowMinimize),
+    toggleMaximize: () => invokeDesktop(DESKTOP_CHANNELS.windowToggleMaximize),
+    isMaximized: () => invokeDesktop(DESKTOP_CHANNELS.windowIsMaximized),
+    isFocused: () => invokeDesktop(DESKTOP_CHANNELS.windowIsFocused),
+    close: () => invokeDesktop(DESKTOP_CHANNELS.windowClose),
     onMaximizedChange: (callback: (isMaximized: boolean) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, isMaximized: boolean) => callback(isMaximized)
-      ipcRenderer.on('window:maximized-changed', listener)
-      return () => ipcRenderer.removeListener('window:maximized-changed', listener)
+      return subscribeDesktop(DESKTOP_CHANNELS.windowMaximizedChanged, callback)
     },
   },
   project: {
-    open: () => ipcRenderer.invoke('project:open'),
-    save: (request: unknown) => ipcRenderer.invoke('project:save', request),
-    autosave: (request: unknown) => ipcRenderer.invoke('project:autosave', request),
-    recovery: () => ipcRenderer.invoke('project:recovery'),
-    discardRecovery: () => ipcRenderer.invoke('project:discard-recovery'),
+    open: () => invokeDesktop(DESKTOP_CHANNELS.projectOpen),
+    save: (request) => invokeDesktop(DESKTOP_CHANNELS.projectSave, request),
+    autosave: (request) => invokeDesktop(DESKTOP_CHANNELS.projectAutosave, request),
+    recovery: () => invokeDesktop(DESKTOP_CHANNELS.projectRecovery),
+    discardRecovery: () => invokeDesktop(DESKTOP_CHANNELS.projectDiscardRecovery),
   },
   midi: {
-    export: (bytes: Uint8Array, defaultName: string) => ipcRenderer.invoke('midi:export', { bytes, defaultName }),
+    export: (bytes: Uint8Array, defaultName: string) =>
+      invokeDesktop(DESKTOP_CHANNELS.midiExport, { bytes, defaultName }),
   },
   ruleProfile: {
-    open: () => ipcRenderer.invoke('rule-profile:open'),
-    save: (request: unknown) => ipcRenderer.invoke('rule-profile:save', request),
+    open: () => invokeDesktop(DESKTOP_CHANNELS.ruleProfileOpen),
+    save: (request) => invokeDesktop(DESKTOP_CHANNELS.ruleProfileSave, request),
   },
   soundFont: {
-    open: () => ipcRenderer.invoke('soundfont:open'),
-    loadPath: (filePath: string) => ipcRenderer.invoke('soundfont:load-path', { filePath }),
-    loadDefault: () => ipcRenderer.invoke('soundfont:default'),
+    open: () => invokeDesktop(DESKTOP_CHANNELS.soundFontOpen),
+    loadPath: (filePath: string) => invokeDesktop(DESKTOP_CHANNELS.soundFontLoadPath, { filePath }),
+    loadDefault: () => invokeDesktop(DESKTOP_CHANNELS.soundFontDefault),
     hash: (token: string, callback: (processedBytes: number, totalBytes: number) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, progress: {
-        token: string
-        processedBytes: number
-        totalBytes: number
-      }) => {
+      const removeListener = subscribeDesktop(DESKTOP_CHANNELS.soundFontHashProgress, (progress) => {
         if (progress.token === token) callback(progress.processedBytes, progress.totalBytes)
-      }
-      ipcRenderer.on('soundfont:hash-progress', listener)
-      return ipcRenderer.invoke('soundfont:hash', { token })
-        .finally(() => ipcRenderer.removeListener('soundfont:hash-progress', listener))
+      })
+      return invokeDesktop(DESKTOP_CHANNELS.soundFontHash, { token })
+        .finally(removeListener)
     },
-    release: (token: string) => ipcRenderer.invoke('soundfont:release', { token }),
+    release: (token: string) => invokeDesktop(DESKTOP_CHANNELS.soundFontRelease, { token }),
   },
   ruleLibrary: {
-    list: () => ipcRenderer.invoke('rule-library:list'),
-    importFile: () => ipcRenderer.invoke('rule-library:import'),
-    install: (request: unknown) => ipcRenderer.invoke('rule-library:install', request),
+    list: () => invokeDesktop(DESKTOP_CHANNELS.ruleLibraryList),
+    importFile: () => invokeDesktop(DESKTOP_CHANNELS.ruleLibraryImport),
+    install: (request) => invokeDesktop(DESKTOP_CHANNELS.ruleLibraryInstall, request),
     loadSource: (contentHash: string) =>
-      ipcRenderer.invoke('rule-library:load-source', { contentHash }),
+      invokeDesktop(DESKTOP_CHANNELS.ruleLibraryLoadSource, { contentHash }),
     remove: (contentHash: string) =>
-      ipcRenderer.invoke('rule-library:remove', { contentHash }),
+      invokeDesktop(DESKTOP_CHANNELS.ruleLibraryRemove, { contentHash }),
   },
-})
+}
+
+contextBridge.exposeInMainWorld('desktop', desktop)

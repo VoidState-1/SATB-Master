@@ -7,6 +7,8 @@ import {
   type ExternalRuleContext,
   type ExternalRuleFailureCode,
 } from "./api";
+import { RULE_RUNTIME_LIMITS } from "../rules/policy/limits";
+import { VOICE_ORDER } from "../../project/voice";
 
 export interface ExternalRuleSandboxInspection {
   manifest: unknown;
@@ -182,6 +184,16 @@ export function evaluateExternalRuleSource(options: {
   const contextJson = JSON.stringify(options.context);
   const configJson = JSON.stringify(options.config);
   const ruleIdJson = JSON.stringify(options.ruleId);
+  const stateLimitsJson = JSON.stringify({
+    ruleStates: RULE_RUNTIME_LIMITS.ruleStates,
+    ruleStateIdLength: RULE_RUNTIME_LIMITS.ruleStateIdLength,
+    ruleStatePayloadBytes: RULE_RUNTIME_LIMITS.ruleStatePayloadBytes,
+    subjectVoiceIds: RULE_RUNTIME_LIMITS.subjectVoiceIds,
+    subjectNoteIds: RULE_RUNTIME_LIMITS.subjectNoteIds,
+    subjectChordIds: RULE_RUNTIME_LIMITS.subjectChordIds,
+    subjectSpanIds: RULE_RUNTIME_LIMITS.subjectSpanIds,
+  });
+  const voiceIdsJson = JSON.stringify(VOICE_ORDER);
   return evaluateJson<ExternalRuleSandboxEvaluation>(
     options.source,
     `
@@ -195,42 +207,75 @@ export function evaluateExternalRuleSource(options: {
       }
       const context = deepFreeze(JSON.parse(${JSON.stringify(contextJson)}));
       const config = deepFreeze(JSON.parse(${JSON.stringify(configJson)}));
+      const stateLimits = ${stateLimitsJson};
       let value;
       if (typeof rule.process === "function") {
         let incoming = [];
         const diagnostics = [];
         let lastStepContext;
-        const validVoiceIds = new Set(["soprano", "alto", "tenor", "bass"]);
+        const validVoiceIds = new Set(${voiceIdsJson});
         const validNoteIds = new Set(
           context.project.satbTracks.flatMap((track) => track.notes.map((note) => note.id)),
         );
         const validChordIds = new Set(context.project.chordTrack.regions.map((chord) => chord.id));
         const validSpanIds = new Set(context.harmonySpans.map((span) => span.id));
         const spanById = new Map(context.harmonySpans.map((span) => [span.id, span]));
+        const isJsonValue = (candidate, seen = new Set()) => {
+          if (candidate === null || typeof candidate === "string" || typeof candidate === "boolean")
+            return true;
+          if (typeof candidate === "number") return Number.isFinite(candidate);
+          if (!candidate || typeof candidate !== "object" || seen.has(candidate)) return false;
+          seen.add(candidate);
+          if (Array.isArray(candidate))
+            return candidate.every((item) => isJsonValue(item, seen));
+          return Object.entries(candidate).every(
+            ([, item]) => item !== undefined && isJsonValue(item, seen),
+          );
+        };
+        const validReferenceList = (value, maximum, known) =>
+          value === undefined ||
+          (Array.isArray(value) && value.length <= maximum &&
+            value.every((id) => typeof id === "string" && known.has(id)));
+        const utf8ByteLength = (value) => {
+          let bytes = 0;
+          for (const character of value) {
+            const codePoint = character.codePointAt(0);
+            bytes += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+          }
+          return bytes;
+        };
         const validateStates = (states, sliceIndex, tick) => {
-          if (!Array.isArray(states) || states.length > 512)
-            throw new Error("规则状态最多允许 512 项");
+          if (!Array.isArray(states) || states.length > stateLimits.ruleStates)
+            throw new Error("规则状态数量超过限制");
           const ids = new Set();
           states.forEach((state) => {
-            if (!state || typeof state !== "object" || typeof state.id !== "string" ||
-                !state.id || state.id.length > 128 || ids.has(state.id) ||
+            if (!state || typeof state !== "object" || Array.isArray(state) ||
+                typeof state.id !== "string" || !state.id.trim() ||
+                state.id.length > stateLimits.ruleStateIdLength || ids.has(state.id) ||
                 state.ownerRuleId !== rule.id)
               throw new Error("规则状态标识或所有者无效");
             ids.add(state.id);
-            if (!state.createdAt || !Number.isInteger(state.createdAt.tick) ||
+            if (!state.createdAt || typeof state.createdAt !== "object" ||
+                Array.isArray(state.createdAt) || !Number.isInteger(state.createdAt.tick) ||
                 !Number.isInteger(state.createdAt.sliceIndex) ||
                 state.createdAt.tick < 0 || state.createdAt.tick > tick ||
                 state.createdAt.sliceIndex < 0 || state.createdAt.sliceIndex > sliceIndex)
               throw new Error("规则状态创建位置无效");
+            if (!isJsonValue(state.payload))
+              throw new Error("规则状态必须是纯 JSON 数据");
             const payload = JSON.stringify(state.payload);
-            if (payload === undefined || payload.length > 16 * 1024)
-              throw new Error("规则状态 payload 无效或超过 16 KiB");
+            if (utf8ByteLength(payload) > stateLimits.ruleStatePayloadBytes)
+              throw new Error("规则状态 payload 无效或超过大小限制");
+            if (state.subjectRefs !== undefined &&
+                (!state.subjectRefs || typeof state.subjectRefs !== "object" ||
+                 Array.isArray(state.subjectRefs)))
+              throw new Error("规则状态引用无效");
             const refs = state.subjectRefs || {};
             const validRefs =
-              (!refs.voiceIds || (Array.isArray(refs.voiceIds) && refs.voiceIds.every((id) => validVoiceIds.has(id)))) &&
-              (!refs.noteIds || (Array.isArray(refs.noteIds) && refs.noteIds.every((id) => validNoteIds.has(id)))) &&
-              (!refs.chordIds || (Array.isArray(refs.chordIds) && refs.chordIds.every((id) => validChordIds.has(id)))) &&
-              (!refs.spanIds || (Array.isArray(refs.spanIds) && refs.spanIds.every((id) => validSpanIds.has(id))));
+              validReferenceList(refs.voiceIds, stateLimits.subjectVoiceIds, validVoiceIds) &&
+              validReferenceList(refs.noteIds, stateLimits.subjectNoteIds, validNoteIds) &&
+              validReferenceList(refs.chordIds, stateLimits.subjectChordIds, validChordIds) &&
+              validReferenceList(refs.spanIds, stateLimits.subjectSpanIds, validSpanIds);
             if (!validRefs) throw new Error("规则状态引用了不存在的分析对象");
           });
           return states;
