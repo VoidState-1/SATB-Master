@@ -1,11 +1,13 @@
 import {
   ArrowLeft,
+  Copy,
   FileInput,
   FolderOpen,
   MoreHorizontal,
   Play,
   Save,
   SaveAll,
+  Square,
   WandSparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,14 +23,20 @@ interface RuleTestToolbarProps {
   ruleId: HarmonyRuleId;
   autoRun: boolean;
   runState: "idle" | "running" | "passed" | "failed" | "error";
+  batchRunState: "idle" | "running" | "completed" | "cancelled";
+  hasLibrary: boolean;
   hasActual: boolean;
   onBack(): void;
   onOpen(): void;
+  onOpenDirectory(): void;
   onSave(forceDialog: boolean): void;
   onRun(): void;
   onSetAutoRun(value: boolean): void;
   onSetRule(ruleId: HarmonyRuleId): void;
   onCreateFromProject(): void;
+  onClone(): void;
+  onRunLibrary(): void;
+  onCancelLibrary(): void;
   onAcceptAll(): void;
   onNormalize(): void;
 }
@@ -134,7 +142,9 @@ export function RuleTestToolbar(props: RuleTestToolbarProps) {
       <button
         type="button"
         className="command-button rule-test-run-button"
-        disabled={props.runState === "running"}
+        disabled={
+          props.runState === "running" || props.batchRunState === "running"
+        }
         onClick={props.onRun}
       >
         <Play aria-hidden="true" />
@@ -156,9 +166,28 @@ export function RuleTestToolbar(props: RuleTestToolbarProps) {
           <MoreHorizontal aria-hidden="true" />
         </summary>
         <div className="rule-test-more-menu">
+          <button type="button" onClick={props.onOpenDirectory}>
+            <FolderOpen aria-hidden="true" /> 打开用例目录
+          </button>
           <button type="button" onClick={props.onCreateFromProject}>
             <FileInput aria-hidden="true" /> 从当前工程新建
           </button>
+          <button type="button" onClick={props.onClone}>
+            <Copy aria-hidden="true" /> 复制当前用例
+          </button>
+          {props.batchRunState === "running" ? (
+            <button type="button" onClick={props.onCancelLibrary}>
+              <Square aria-hidden="true" /> 取消批量运行
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!props.hasLibrary}
+              onClick={props.onRunLibrary}
+            >
+              <Play aria-hidden="true" /> 批量运行目录
+            </button>
+          )}
           <button type="button" disabled={!props.hasActual} onClick={props.onAcceptAll}>
             <WandSparkles aria-hidden="true" /> 接受全部实际结果
           </button>

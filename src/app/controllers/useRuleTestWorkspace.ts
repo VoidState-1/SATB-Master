@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   canonicalizeRuleTestCase,
+  cloneRuleTestCase,
   createRuleTestCase,
   dematerializeRuleTestProject,
   expectedDiagnosticFromActual,
@@ -20,7 +21,14 @@ import type { ProjectDocument } from "../../domain/project";
 import { useDocumentHistory } from "../../hooks/useDocumentHistory";
 import {
   createRuleTestCaseStore,
+  runRuleTestLibraryBatch,
+  addRecentRuleTestCaseItem,
+  buildRuleTestCaseLibraryItems,
+  createRecentRuleTestCaseItem,
+  ruleTestLibraryStatus,
   type RuleTestCaseStore,
+  type RuleTestCaseLibraryItem,
+  type RuleTestCaseLibraryViewItem,
 } from "../../services/ruleTestCases";
 import type { ConfirmationState } from "./useConfirmationController";
 import { useEditorCommands } from "./useEditorCommands";
@@ -101,10 +109,25 @@ export function useRuleTestWorkspace({
   const [lastRun, setLastRun] = useState<RuleTestRunResult>();
   const [selectedExpectationId, setSelectedExpectationId] =
     useState<string>();
+  const [libraryDirectory, setLibraryDirectory] = useState<string>();
+  const [libraryItems, setLibraryItems] = useState<
+    RuleTestCaseLibraryItem[]
+  >([]);
+  const [recentItems, setRecentItems] = useState<RuleTestCaseLibraryItem[]>([]);
+  const [activeLibraryKey, setActiveLibraryKey] = useState<string>();
+  const [batchRunState, setBatchRunState] = useState<
+    "idle" | "running" | "completed" | "cancelled"
+  >("idle");
+  const [batchResults, setBatchResults] = useState<
+    Record<string, RuleTestRunResult>
+  >({});
+  const [batchRunningKey, setBatchRunningKey] = useState<string>();
   const runnerRef = useRef(new RuleTestRunner());
   const abortRef = useRef<AbortController | undefined>(undefined);
+  const batchAbortRef = useRef<AbortController | undefined>(undefined);
   const autoRunTimeoutRef = useRef<number | undefined>(undefined);
   const runRequestRef = useRef(0);
+  const batchRequestRef = useRef(0);
   const revisionRef = useRef(history.revision);
   revisionRef.current = history.revision;
 
@@ -135,6 +158,35 @@ export function useRuleTestWorkspace({
     [history, resetEditor],
   );
 
+  const cancelCurrentRun = useCallback((resetState = true) => {
+    runRequestRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = undefined;
+    runnerRef.current.cancel();
+    if (autoRunTimeoutRef.current !== undefined) {
+      window.clearTimeout(autoRunTimeoutRef.current);
+      autoRunTimeoutRef.current = undefined;
+    }
+    if (resetState) setRunState("idle");
+  }, []);
+
+  const cancelBatchRun = useCallback(() => {
+    if (!batchAbortRef.current) return;
+    batchRequestRef.current += 1;
+    batchAbortRef.current?.abort();
+    batchAbortRef.current = undefined;
+    runnerRef.current.cancel();
+    setBatchRunningKey(undefined);
+    setBatchRunState((current) =>
+      current === "running" ? "cancelled" : current,
+    );
+  }, []);
+
+  const cancelRun = useCallback(() => {
+    cancelBatchRun();
+    cancelCurrentRun();
+  }, [cancelBatchRun, cancelCurrentRun]);
+
   const confirmReplacement = useCallback(async () => {
     if (!history.isDirty) return true;
     return requestConfirmation({
@@ -148,6 +200,7 @@ export function useRuleTestWorkspace({
   const createFromProject = useCallback(
     async (project: ProjectDocument) => {
       if (hasSession && !(await confirmReplacement())) return false;
+      cancelRun();
       const testCase = createRuleTestCase({
         project: structuredClone(project),
         ruleId: document.testCase.target.ruleId,
@@ -155,11 +208,13 @@ export function useRuleTestWorkspace({
       const next = workspaceDocument(testCase);
       replaceDocument(next, true);
       setFilePath(undefined);
+      setActiveLibraryKey(undefined);
       showNotice("已从当前工程创建规则用例");
       return true;
     },
     [
       confirmReplacement,
+      cancelRun,
       document.testCase.target.ruleId,
       hasSession,
       replaceDocument,
@@ -176,9 +231,17 @@ export function useRuleTestWorkspace({
       if (!parsed.testCase) {
         throw new Error(parsed.issues.map((item) => item.message).join("；"));
       }
+      cancelRun();
       const next = workspaceDocument(parsed.testCase);
       replaceDocument(next, false);
       setFilePath(opened.filePath);
+      const recent = createRecentRuleTestCaseItem({
+        testCase: parsed.testCase,
+        filePath: opened.filePath,
+        displayName: opened.displayName,
+      });
+      setRecentItems((items) => addRecentRuleTestCaseItem(items, recent));
+      setActiveLibraryKey(recent.key);
       showNotice(`已打开 ${opened.displayName ?? parsed.testCase.title}`);
       return true;
     } catch (error) {
@@ -187,7 +250,88 @@ export function useRuleTestWorkspace({
       );
       return false;
     }
-  }, [confirmReplacement, hasSession, replaceDocument, showNotice, store]);
+  }, [
+    cancelRun,
+    confirmReplacement,
+    hasSession,
+    replaceDocument,
+    showNotice,
+    store,
+  ]);
+
+  const openDirectory = useCallback(async () => {
+    try {
+      cancelBatchRun();
+      const snapshot = await store.openDirectory();
+      if (!snapshot) return false;
+      const items = buildRuleTestCaseLibraryItems(snapshot);
+      setLibraryDirectory(snapshot.directoryPath);
+      setLibraryItems(items);
+      setBatchResults({});
+      setBatchRunState("idle");
+      setBatchRunningKey(undefined);
+      const activeMatch = items.find(
+        (item) => filePath && item.filePath === filePath,
+      );
+      if (activeMatch) setActiveLibraryKey(activeMatch.key);
+      const invalidCount = items.filter((item) => !item.testCase).length;
+      showNotice(
+        invalidCount > 0
+          ? `已载入 ${items.length} 个用例，其中 ${invalidCount} 个无效`
+          : `已载入 ${items.length} 个规则测试用例`,
+      );
+      return true;
+    } catch (error) {
+      showNotice(
+        error instanceof Error ? error.message : "规则测试用例目录打开失败",
+      );
+      return false;
+    }
+  }, [cancelBatchRun, filePath, showNotice, store]);
+
+  const openLibraryItem = useCallback(
+    async (key: string) => {
+      if (key === activeLibraryKey) return true;
+      const item = [...libraryItems, ...recentItems].find(
+        (candidate) => candidate.key === key,
+      );
+      if (!item) return false;
+      if (!item.testCase || item.issues.length > 0) {
+        showNotice(
+          item.issues.map((issue) => issue.message).join("；") ||
+            "规则测试用例无效",
+        );
+        return false;
+      }
+      if (hasSession && !(await confirmReplacement())) return false;
+      cancelRun();
+      replaceDocument(workspaceDocument(structuredClone(item.testCase)), false);
+      setFilePath(item.filePath);
+      setActiveLibraryKey(item.key);
+      setRecentItems((items) => addRecentRuleTestCaseItem(items, item));
+      showNotice(`已打开 ${item.testCase.title}`);
+      return true;
+    },
+    [
+      activeLibraryKey,
+      cancelRun,
+      confirmReplacement,
+      hasSession,
+      libraryItems,
+      recentItems,
+      replaceDocument,
+      showNotice,
+    ],
+  );
+
+  const cloneCurrent = useCallback(() => {
+    cancelRun();
+    const copy = cloneRuleTestCase(synchronizedTestCase(document));
+    replaceDocument(workspaceDocument(copy), true);
+    setFilePath(undefined);
+    setActiveLibraryKey(undefined);
+    showNotice(`已创建“${copy.title}”`);
+  }, [cancelRun, document, replaceDocument, showNotice]);
 
   const save = useCallback(
     async (forceDialog = false) => {
@@ -203,9 +347,27 @@ export function useRuleTestWorkspace({
           defaultName: parsed.testCase.id,
         });
         if (!result) return false;
-        setFilePath(result.filePath);
+        const savedPath = result.filePath ?? filePath;
+        setFilePath(savedPath);
+        const recent = createRecentRuleTestCaseItem({
+          testCase: parsed.testCase,
+          filePath: savedPath,
+          displayName: parsed.testCase.title,
+        });
+        setRecentItems((items) => addRecentRuleTestCaseItem(items, recent));
+        setLibraryItems((items) =>
+          items.map((item) =>
+            savedPath && item.filePath === savedPath
+              ? { ...item, testCase: structuredClone(parsed.testCase), issues: [] }
+              : item,
+          ),
+        );
+        const libraryMatch = libraryItems.find(
+          (item) => savedPath && item.filePath === savedPath,
+        );
+        setActiveLibraryKey(libraryMatch?.key ?? recent.key);
         history.markSaved();
-        showNotice(result.filePath ? `已保存到 ${result.filePath}` : "规则用例已下载");
+        showNotice(savedPath ? `已保存到 ${savedPath}` : "规则用例已下载");
         return true;
       } catch (error) {
         showNotice(
@@ -213,7 +375,7 @@ export function useRuleTestWorkspace({
         );
         return false;
       }
-    }, [document, filePath, history, showNotice, store],
+    }, [document, filePath, history, libraryItems, showNotice, store],
   );
 
   const commitProject = useCallback(
@@ -399,14 +561,10 @@ export function useRuleTestWorkspace({
   }, [document, history, showNotice]);
 
   const run = useCallback(async () => {
-    if (autoRunTimeoutRef.current !== undefined) {
-      window.clearTimeout(autoRunTimeoutRef.current);
-      autoRunTimeoutRef.current = undefined;
-    }
+    cancelBatchRun();
+    cancelCurrentRun(false);
     const requestId = ++runRequestRef.current;
     const revision = history.revision;
-    abortRef.current?.abort();
-    runnerRef.current.cancel();
     const controller = new AbortController();
     abortRef.current = controller;
     setRunState("running");
@@ -424,18 +582,44 @@ export function useRuleTestWorkspace({
     setLastRun(result);
     setRunState(result.status);
     return result;
-  }, [document, history.revision]);
+  }, [cancelBatchRun, cancelCurrentRun, document, history.revision]);
 
-  const cancelRun = useCallback(() => {
-    runRequestRef.current += 1;
-    abortRef.current?.abort();
-    runnerRef.current.cancel();
-    if (autoRunTimeoutRef.current !== undefined) {
-      window.clearTimeout(autoRunTimeoutRef.current);
-      autoRunTimeoutRef.current = undefined;
+  const runLibrary = useCallback(async () => {
+    if (batchAbortRef.current) return;
+    const runnable = libraryItems.filter(
+      (item) => item.testCase && item.issues.length === 0,
+    );
+    if (runnable.length === 0) {
+      showNotice("当前目录没有可运行的规则测试用例");
+      return;
     }
-    setRunState("idle");
-  }, []);
+    cancelCurrentRun();
+    const requestId = ++batchRequestRef.current;
+    const controller = new AbortController();
+    batchAbortRef.current = controller;
+    setBatchResults({});
+    setBatchRunState("running");
+    const batch = await runRuleTestLibraryBatch(
+      libraryItems,
+      runnerRef.current,
+      {
+        signal: controller.signal,
+        onStart: setBatchRunningKey,
+        onResult: (key, result) =>
+          setBatchResults((results) => ({ ...results, [key]: result })),
+      },
+    );
+    if (requestId !== batchRequestRef.current) return;
+    batchAbortRef.current = undefined;
+    setBatchRunningKey(undefined);
+    setBatchResults(batch.results);
+    if (batch.status === "cancelled") {
+      setBatchRunState("cancelled");
+      return;
+    }
+    setBatchRunState("completed");
+    showNotice(`批量运行完成：通过 ${batch.passed}，失败 ${batch.failed}`);
+  }, [cancelCurrentRun, libraryItems, showNotice]);
 
   useEffect(() => {
     if (!hasSession || !autoRun) {
@@ -461,6 +645,7 @@ export function useRuleTestWorkspace({
   useEffect(
     () => () => {
       abortRef.current?.abort();
+      batchAbortRef.current?.abort();
       runnerRef.current.cancel();
       if (autoRunTimeoutRef.current !== undefined) {
         window.clearTimeout(autoRunTimeoutRef.current);
@@ -468,6 +653,64 @@ export function useRuleTestWorkspace({
       }
     },
     [],
+  );
+
+  const libraryViewItems = useMemo<RuleTestCaseLibraryViewItem[]>(
+    () =>
+      libraryItems.map((item) => ({
+        ...item,
+        status:
+          batchRunningKey === item.key
+            ? "running"
+            : activeLibraryKey === item.key
+              ? runState
+              : ruleTestLibraryStatus(item, batchResults[item.key]),
+        dirty: activeLibraryKey === item.key && history.isDirty,
+      })),
+    [
+      activeLibraryKey,
+      batchResults,
+      batchRunningKey,
+      history.isDirty,
+      libraryItems,
+      runState,
+    ],
+  );
+  const recentViewItems = useMemo<RuleTestCaseLibraryViewItem[]>(
+    () =>
+      recentItems.map((item) => ({
+        ...item,
+        status:
+          activeLibraryKey === item.key
+            ? runState
+            : ruleTestLibraryStatus(item, batchResults[item.key]),
+        dirty: activeLibraryKey === item.key && history.isDirty,
+      })),
+    [
+      activeLibraryKey,
+      batchResults,
+      history.isDirty,
+      recentItems,
+      runState,
+    ],
+  );
+  const currentLibraryItem = useMemo<RuleTestCaseLibraryViewItem>(
+    () => ({
+      key: activeLibraryKey ?? "current::unsaved",
+      displayName: filePath?.split(/[\\/]/).at(-1) ?? "未保存用例",
+      filePath,
+      testCase: document.testCase,
+      issues: [],
+      status: runState,
+      dirty: history.isDirty,
+    }),
+    [
+      activeLibraryKey,
+      document.testCase,
+      filePath,
+      history.isDirty,
+      runState,
+    ],
   );
 
   const editorCommands = useEditorCommands({
@@ -487,6 +730,16 @@ export function useRuleTestWorkspace({
     editor,
     editorCommands,
     filePath,
+    activeLibraryKey,
+    currentLibraryItem,
+    libraryDirectory,
+    libraryItems: libraryViewItems,
+    recentItems: recentViewItems,
+    batchRunState,
+    batchCompletedCount: Object.keys(batchResults).length,
+    batchTotalCount: libraryItems.filter(
+      (item) => item.testCase && item.issues.length === 0,
+    ).length,
     playheadTick,
     setPlayheadTick,
     autoRun,
@@ -497,8 +750,13 @@ export function useRuleTestWorkspace({
     setSelectedExpectationId,
     createFromProject,
     open,
+    openDirectory,
+    openLibraryItem,
+    cloneCurrent,
     save,
     run,
+    runLibrary,
+    cancelBatchRun,
     cancelRun,
     normalize,
     commitTestCase,

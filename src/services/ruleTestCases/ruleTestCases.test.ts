@@ -6,11 +6,13 @@ import { createDesktopRuleTestCaseStore } from "./desktop";
 function browserFile(
   name = "case.satb-rule-case.json",
   text = '{"format":"satb-rule-test-case"}',
+  webkitRelativePath?: string,
 ) {
   return {
     name,
     size: new TextEncoder().encode(text).byteLength,
     text: async () => text,
+    webkitRelativePath,
   };
 }
 
@@ -66,7 +68,44 @@ describe("规则测试用例存储端口", () => {
     );
   });
 
-  it("桌面打开、取消、保存和另存为均透传专用 API", async () => {
+  it("浏览器目录取消时不返回用例库", async () => {
+    const store = createBrowserRuleTestCaseStore({
+      chooseDirectory: async () => [],
+    });
+
+    await expect(store.openDirectory()).resolves.toBeUndefined();
+  });
+
+  it("浏览器目录过滤扩展名、稳定排序并保留逐文件错误", async () => {
+    const store = createBrowserRuleTestCaseStore({
+      chooseDirectory: async () => [
+        browserFile("ignore.json", "{}", "cases/ignore.json"),
+        browserFile(
+          "valid.satb-rule-case.json",
+          '{"format":"satb-rule-test-case"}',
+          "cases/nested/valid.satb-rule-case.json",
+        ),
+        browserFile(
+          "broken.satb-rule-case.json",
+          "{",
+          "cases/broken.satb-rule-case.json",
+        ),
+      ],
+    });
+
+    const snapshot = await store.openDirectory();
+    expect(snapshot?.directoryPath).toBe("cases");
+    expect(snapshot?.entries.map((entry) => entry.relativePath)).toEqual([
+      "cases/broken.satb-rule-case.json",
+      "cases/nested/valid.satb-rule-case.json",
+    ]);
+    expect(snapshot?.entries[0].error).toBeTruthy();
+    expect(snapshot?.entries[1].document).toEqual({
+      format: "satb-rule-test-case",
+    });
+  });
+
+  it("桌面打开、取消、保存、另存为和目录读取均透传专用 API", async () => {
     const open = vi
       .fn()
       .mockResolvedValueOnce({ canceled: true })
@@ -82,7 +121,22 @@ describe("规则测试用例存储端口", () => {
         filePath: "C:\\cases\\sample.satb-rule-case.json",
       })
       .mockResolvedValueOnce({ canceled: true });
-    const api = { ruleTestCases: { open, save } } as unknown as Pick<
+    const openDirectory = vi.fn().mockResolvedValue({
+      canceled: false,
+      directoryPath: "C:\\cases",
+      entries: [
+        {
+          key: "sample.satb-rule-case.json",
+          filePath: "C:\\cases\\sample.satb-rule-case.json",
+          relativePath: "sample.satb-rule-case.json",
+          displayName: "sample.satb-rule-case.json",
+          document: { format: "satb-rule-test-case" },
+        },
+      ],
+    });
+    const api = {
+      ruleTestCases: { open, save, openDirectory },
+    } as unknown as Pick<
       DesktopApi,
       "ruleTestCases"
     >;
@@ -120,5 +174,14 @@ describe("规则测试用例存储端口", () => {
       forceDialog: true,
       json: "{}\n",
     });
+    await expect(store.openDirectory()).resolves.toMatchObject({
+      directoryPath: "C:\\cases",
+      entries: [
+        {
+          relativePath: "sample.satb-rule-case.json",
+        },
+      ],
+    });
+    expect(openDirectory).toHaveBeenCalledOnce();
   });
 });

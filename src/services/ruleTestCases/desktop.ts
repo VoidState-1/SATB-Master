@@ -25,5 +25,14 @@ export function createDesktopRuleTestCaseStore(
       });
       return result.canceled ? undefined : { filePath: result.filePath };
     },
+
+    async openDirectory() {
+      const result = await api.ruleTestCases.openDirectory();
+      if (result.canceled) return undefined;
+      return {
+        directoryPath: result.directoryPath,
+        entries: result.entries,
+      };
+    },
   };
 }

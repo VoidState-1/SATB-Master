@@ -5,3 +5,4 @@ export * from "./canonicalize";
 export * from "./comparator";
 export * from "./runner";
 export * from "./factory";
+export * from "./clone";

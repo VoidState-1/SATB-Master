@@ -74,6 +74,21 @@ export interface DesktopInvokeMap {
     request: { currentPath?: string; forceDialog: boolean; json: string };
     response: { canceled: boolean; filePath?: string };
   };
+  "rule-test-case:open-directory": {
+    request: void;
+    response: {
+      canceled: boolean;
+      directoryPath?: string;
+      entries: Array<{
+        key: string;
+        filePath: string;
+        relativePath?: string;
+        displayName: string;
+        document?: unknown;
+        error?: string;
+      }>;
+    };
+  };
   "midi:export": {
     request: { bytes: Uint8Array; defaultName: string };
     response: { canceled: boolean; filePath?: string };
@@ -156,6 +171,7 @@ export const DESKTOP_CHANNELS = Object.freeze({
   projectDiscardRecovery: "project:discard-recovery",
   ruleTestCaseOpen: "rule-test-case:open",
   ruleTestCaseSave: "rule-test-case:save",
+  ruleTestCaseOpenDirectory: "rule-test-case:open-directory",
   midiExport: "midi:export",
   ruleProfileOpen: "rule-profile:open",
   ruleProfileSave: "rule-profile:save",
@@ -192,6 +208,7 @@ export interface DesktopApi {
   ruleTestCases: {
     open(): Promise<DesktopInvokeMap["rule-test-case:open"]["response"]>;
     save(request: DesktopInvokeMap["rule-test-case:save"]["request"]): Promise<DesktopInvokeMap["rule-test-case:save"]["response"]>;
+    openDirectory(): Promise<DesktopInvokeMap["rule-test-case:open-directory"]["response"]>;
   };
   midi: {
     export(bytes: Uint8Array, defaultName: string): Promise<DesktopInvokeMap["midi:export"]["response"]>;

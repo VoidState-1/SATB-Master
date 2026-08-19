@@ -4,7 +4,7 @@ import {
   Minus,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconButton } from "../../components/IconButton";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PianoRoll } from "../../features/editor";
@@ -86,6 +86,41 @@ export function RuleTestWorkbench({
     editor.setSelectedNoteIds(new Set(expectation.noteIds ?? []));
     editor.setSelectedChordIds(new Set(expectation.chordIds ?? []));
   };
+  const resultTargets = useMemo(() => {
+    const comparison = lastRun?.comparison;
+    if (!comparison) return [];
+    return [
+      ...comparison.matches.map(({ actual }) => ({
+        key: `actual:${actual.id}`,
+        tick: actual.tick,
+        select: () => selectDiagnostic(actual),
+      })),
+      ...comparison.missing.map((expected) => ({
+        key: `expected:${expected.id}`,
+        tick: expected.tick,
+        select: () => selectExpectation(expected),
+      })),
+      ...comparison.unexpected.map((actual) => ({
+        key: `actual:${actual.id}`,
+        tick: actual.tick,
+        select: () => selectDiagnostic(actual),
+      })),
+      ...comparison.mismatched.map(({ expected, actual }) => ({
+        key: `mismatch:${expected.id}`,
+        tick: actual.tick,
+        select: () => selectDiagnostic(actual),
+      })),
+    ].sort((left, right) => left.tick - right.tick || left.key.localeCompare(right.key));
+  }, [lastRun]);
+  const [resultCursor, setResultCursor] = useState(-1);
+  useEffect(() => setResultCursor(-1), [lastRun]);
+  const navigateResult = (direction: -1 | 1) => {
+    if (resultTargets.length === 0) return;
+    const next =
+      (resultCursor + direction + resultTargets.length) % resultTargets.length;
+    resultTargets[next].select();
+    setResultCursor(next);
+  };
   const commands = editorCommands;
   return (
     <main className="app-shell rule-test-shell">
@@ -135,14 +170,20 @@ export function RuleTestWorkbench({
         ruleId={testCase.target.ruleId}
         autoRun={controller.autoRun}
         runState={controller.runState}
+        batchRunState={controller.batchRunState}
+        hasLibrary={controller.batchTotalCount > 0}
         hasActual={Boolean(lastRun)}
         onBack={onBack}
         onOpen={() => void controller.open()}
+        onOpenDirectory={() => void controller.openDirectory()}
         onSave={(forceDialog) => void controller.save(forceDialog)}
         onRun={() => void controller.run()}
         onSetAutoRun={controller.setAutoRun}
         onSetRule={controller.setTargetRule}
         onCreateFromProject={onCreateFromProject}
+        onClone={controller.cloneCurrent}
+        onRunLibrary={() => void controller.runLibrary()}
+        onCancelLibrary={controller.cancelBatchRun}
         onAcceptAll={() => void controller.acceptAllActual()}
         onNormalize={controller.normalize}
       />
@@ -172,11 +213,16 @@ export function RuleTestWorkbench({
           </div>
           {leftTab === "cases" ? (
             <RuleTestCaseList
-              testCase={testCase}
-              dirty={history.isDirty}
-              runState={controller.runState}
-              filePath={controller.filePath}
+              currentItem={controller.currentLibraryItem}
+              items={controller.libraryItems}
+              recentItems={controller.recentItems}
+              libraryDirectory={controller.libraryDirectory}
+              batchRunState={controller.batchRunState}
+              batchCompletedCount={controller.batchCompletedCount}
+              batchTotalCount={controller.batchTotalCount}
               onOpen={() => void controller.open()}
+              onOpenDirectory={() => void controller.openDirectory()}
+              onSelect={(key) => void controller.openLibraryItem(key)}
             />
           ) : null}
           {leftTab === "voices" ? (
@@ -271,6 +317,8 @@ export function RuleTestWorkbench({
             runState={controller.runState}
             result={lastRun}
             selectedExpectationId={controller.selectedExpectationId}
+            navigationCount={resultTargets.length}
+            onNavigate={navigateResult}
             onSelectExpected={selectExpectation}
             onSelectActual={selectDiagnostic}
             onAddActual={controller.addActualAsExpectation}

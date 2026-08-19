@@ -52,6 +52,7 @@ const desktop: DesktopApi = {
   ruleTestCases: {
     open: () => invokeDesktop(DESKTOP_CHANNELS.ruleTestCaseOpen),
     save: (request) => invokeDesktop(DESKTOP_CHANNELS.ruleTestCaseSave, request),
+    openDirectory: () => invokeDesktop(DESKTOP_CHANNELS.ruleTestCaseOpenDirectory),
   },
   midi: {
     export: (bytes: Uint8Array, defaultName: string) =>

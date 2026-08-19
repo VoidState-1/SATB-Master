@@ -1,4 +1,11 @@
-import { LocateFixed, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  LocateFixed,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { IconButton } from "../../components/IconButton";
 import type {
   ExpectedDiagnostic,
@@ -14,6 +21,8 @@ interface RuleTestResultsPanelProps {
   runState: "idle" | "running" | "passed" | "failed" | "error";
   result?: RuleTestRunResult;
   selectedExpectationId?: string;
+  navigationCount: number;
+  onNavigate(direction: -1 | 1): void;
   onSelectExpected(expectation: ExpectedDiagnostic): void;
   onSelectActual(diagnostic: HarmonyDiagnostic): void;
   onAddActual(diagnostic: HarmonyDiagnostic): void;
@@ -42,6 +51,8 @@ export function RuleTestResultsPanel({
   runState,
   result,
   selectedExpectationId,
+  navigationCount,
+  onNavigate,
   onSelectExpected,
   onSelectActual,
   onAddActual,
@@ -74,6 +85,20 @@ export function RuleTestResultsPanel({
                 : runState === "error"
                   ? "执行错误"
                   : "未运行"}
+        </span>
+        <span className="rule-test-result-navigation">
+          <IconButton
+            label="上一个结果"
+            icon={<ChevronUp />}
+            disabled={navigationCount === 0}
+            onClick={() => onNavigate(-1)}
+          />
+          <IconButton
+            label="下一个结果"
+            icon={<ChevronDown />}
+            disabled={navigationCount === 0}
+            onClick={() => onNavigate(1)}
+          />
         </span>
       </header>
       <div className="rule-test-result-list">
