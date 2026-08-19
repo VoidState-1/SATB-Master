@@ -15,17 +15,25 @@ function currentFixtureEnvelope(
   title: string,
 ) {
   const base = createEmptyProject(title);
+  const lengthTicks =
+    typeof value.lengthTicks === "number"
+      ? value.lengthTicks
+      : base.lengthTicks;
   return {
     ...base,
     schemaVersion: value.schemaVersion,
     ppq: value.ppq,
-    lengthTicks: value.lengthTicks,
+    lengthTicks,
     tempoEvents: value.tempoEvents,
     meterEvents: value.meterEvents,
     keyEvents: value.keyEvents,
     satbTracks: value.satbTracks,
     auxiliaryTracks: value.auxiliaryTracks,
     chordTrack: value.chordTrack,
+    loop: {
+      ...base.loop,
+      endTick: Math.min(base.loop.endTick, lengthTicks),
+    },
   };
 }
 

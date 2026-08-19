@@ -1,0 +1,353 @@
+{
+  "format": "satb-rule-test-case",
+  "formatVersion": 1,
+  "id": "weak-entry-crosses-downbeat",
+  "title": "弱位进入并跨越下拍的和声切分",
+  "description": "和声在第四拍进入、跨越下一小节下拍并在第三拍离开时仍应报告切分。",
+  "tags": [
+    "regression",
+    "rhythm",
+    "syncopation"
+  ],
+  "target": {
+    "source": "builtin",
+    "ruleId": "rhythm.harmonic-syncopation"
+  },
+  "execution": {
+    "mode": "isolated",
+    "severity": "warning",
+    "config": {},
+    "exceptions": {}
+  },
+  "project": {
+    "schemaVersion": 3,
+    "ppq": 960,
+    "lengthTicks": 7680,
+    "tempoEvents": [
+      {
+        "id": "tempo-0",
+        "tick": 0,
+        "bpm": 80
+      }
+    ],
+    "meterEvents": [
+      {
+        "id": "meter-0",
+        "tick": 0,
+        "numerator": 4,
+        "denominator": 4
+      }
+    ],
+    "keyEvents": [
+      {
+        "id": "key-0",
+        "tick": 0,
+        "tonic": {
+          "step": "C",
+          "alter": 0
+        },
+        "mode": "major"
+      }
+    ],
+    "satbTracks": [
+      {
+        "id": "soprano",
+        "kind": "satb",
+        "voice": "soprano",
+        "name": "女高音",
+        "shortName": "S",
+        "notes": [],
+        "participatesInHarmony": true,
+        "monophonic": true,
+        "visible": true,
+        "muted": false,
+        "solo": false,
+        "locked": false,
+        "volume": 0.82,
+        "pan": 0.2,
+        "program": 52
+      },
+      {
+        "id": "alto",
+        "kind": "satb",
+        "voice": "alto",
+        "name": "女低音",
+        "shortName": "A",
+        "notes": [],
+        "participatesInHarmony": true,
+        "monophonic": true,
+        "visible": true,
+        "muted": false,
+        "solo": false,
+        "locked": false,
+        "volume": 0.82,
+        "pan": 0.08,
+        "program": 52
+      },
+      {
+        "id": "tenor",
+        "kind": "satb",
+        "voice": "tenor",
+        "name": "男高音",
+        "shortName": "T",
+        "notes": [],
+        "participatesInHarmony": true,
+        "monophonic": true,
+        "visible": true,
+        "muted": false,
+        "solo": false,
+        "locked": false,
+        "volume": 0.82,
+        "pan": -0.08,
+        "program": 52
+      },
+      {
+        "id": "bass",
+        "kind": "satb",
+        "voice": "bass",
+        "name": "男低音",
+        "shortName": "B",
+        "notes": [],
+        "participatesInHarmony": true,
+        "monophonic": true,
+        "visible": true,
+        "muted": false,
+        "solo": false,
+        "locked": false,
+        "volume": 0.82,
+        "pan": -0.2,
+        "program": 53
+      }
+    ],
+    "auxiliaryTracks": [],
+    "chordTrack": {
+      "visible": true,
+      "locked": false,
+      "displayMode": "roman",
+      "regions": [
+        {
+          "id": "previous-dominant",
+          "startTick": 0,
+          "durationTicks": 2880,
+          "identity": {
+            "root": {
+              "step": "G",
+              "alter": 0
+            },
+            "structure": {
+              "kind": "tertian",
+              "quality": "dominant7",
+              "extensions": [],
+              "alterations": []
+            },
+            "bass": {
+              "step": "G",
+              "alter": 0
+            }
+          },
+          "semantics": {
+            "interpretations": [
+              {
+                "id": "primary",
+                "degree": 5,
+                "degreeAlteration": 0,
+                "designation": {
+                  "notationSystem": "spasobin",
+                  "kind": "primary",
+                  "primaryFunction": "dominant"
+                },
+                "source": "manual",
+                "confidence": "certain"
+              }
+            ],
+            "primaryInterpretationId": "primary"
+          },
+          "locked": false
+        },
+        {
+          "id": "tonic-root-entry",
+          "startTick": 2880,
+          "durationTicks": 480,
+          "identity": {
+            "root": {
+              "step": "C",
+              "alter": 0
+            },
+            "structure": {
+              "kind": "tertian",
+              "quality": "major",
+              "extensions": [],
+              "alterations": []
+            },
+            "bass": {
+              "step": "C",
+              "alter": 0
+            }
+          },
+          "semantics": {
+            "interpretations": [
+              {
+                "id": "primary",
+                "degree": 1,
+                "degreeAlteration": 0,
+                "designation": {
+                  "notationSystem": "spasobin",
+                  "kind": "primary",
+                  "primaryFunction": "tonic"
+                },
+                "source": "manual",
+                "confidence": "certain"
+              }
+            ],
+            "primaryInterpretationId": "primary"
+          },
+          "locked": false
+        },
+        {
+          "id": "tonic-first-inversion",
+          "startTick": 3360,
+          "durationTicks": 480,
+          "identity": {
+            "root": {
+              "step": "C",
+              "alter": 0
+            },
+            "structure": {
+              "kind": "tertian",
+              "quality": "major",
+              "extensions": [],
+              "alterations": []
+            },
+            "bass": {
+              "step": "E",
+              "alter": 0
+            }
+          },
+          "semantics": {
+            "interpretations": [
+              {
+                "id": "primary",
+                "degree": 1,
+                "degreeAlteration": 0,
+                "designation": {
+                  "notationSystem": "spasobin",
+                  "kind": "primary",
+                  "primaryFunction": "tonic"
+                },
+                "source": "manual",
+                "confidence": "certain"
+              }
+            ],
+            "primaryInterpretationId": "primary"
+          },
+          "locked": false
+        },
+        {
+          "id": "tonic-root-continuation",
+          "startTick": 3840,
+          "durationTicks": 1920,
+          "identity": {
+            "root": {
+              "step": "C",
+              "alter": 0
+            },
+            "structure": {
+              "kind": "tertian",
+              "quality": "major",
+              "extensions": [],
+              "alterations": []
+            },
+            "bass": {
+              "step": "C",
+              "alter": 0
+            }
+          },
+          "semantics": {
+            "interpretations": [
+              {
+                "id": "primary",
+                "degree": 1,
+                "degreeAlteration": 0,
+                "designation": {
+                  "notationSystem": "spasobin",
+                  "kind": "primary",
+                  "primaryFunction": "tonic"
+                },
+                "source": "manual",
+                "confidence": "certain"
+              }
+            ],
+            "primaryInterpretationId": "primary"
+          },
+          "locked": false
+        },
+        {
+          "id": "following-dominant",
+          "startTick": 5760,
+          "durationTicks": 1920,
+          "identity": {
+            "root": {
+              "step": "G",
+              "alter": 0
+            },
+            "structure": {
+              "kind": "tertian",
+              "quality": "dominant7",
+              "extensions": [],
+              "alterations": []
+            },
+            "bass": {
+              "step": "G",
+              "alter": 0
+            }
+          },
+          "semantics": {
+            "interpretations": [
+              {
+                "id": "primary",
+                "degree": 5,
+                "degreeAlteration": 0,
+                "designation": {
+                  "notationSystem": "spasobin",
+                  "kind": "primary",
+                  "primaryFunction": "dominant"
+                },
+                "source": "manual",
+                "confidence": "certain"
+              }
+            ],
+            "primaryInterpretationId": "primary"
+          },
+          "locked": false
+        }
+      ]
+    }
+  },
+  "expected": {
+    "diagnostics": [
+      {
+        "id": "harmonic-syncopation",
+        "ruleId": "rhythm.harmonic-syncopation",
+        "messageKey": "rhythm.harmonic-syncopation",
+        "tick": 2880,
+        "endTick": 5760,
+        "voiceIds": [],
+        "noteIds": [],
+        "chordIds": [
+          "tonic-first-inversion",
+          "tonic-root-continuation",
+          "tonic-root-entry"
+        ],
+        "params": {
+          "crossedMetricRole": "downbeat",
+          "crossedStrength": 3,
+          "entryMetricRole": "weak-beat",
+          "entryStrength": 1,
+          "exitStrength": 2
+        }
+      }
+    ],
+    "allowUnexpectedDiagnostics": false,
+    "skips": []
+  }
+}

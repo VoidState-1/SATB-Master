@@ -97,4 +97,18 @@ describe("规则测试工程投影", () => {
       pitch: { step: "C", alter: 0, octave: 5 },
     });
   });
+
+  it("短于默认循环范围的 fixture 仍能恢复为合法工程", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.loop.endTick = project.lengthTicks;
+
+    const restored = materializeRuleTestProject(
+      dematerializeRuleTestProject(project),
+      "短用例",
+    );
+
+    expect(restored.lengthTicks).toBe(PPQ * 2);
+    expect(restored.loop.endTick).toBe(PPQ * 2);
+  });
 });

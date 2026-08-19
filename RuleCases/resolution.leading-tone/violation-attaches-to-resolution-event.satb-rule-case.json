@@ -1,0 +1,183 @@
+{
+  "format": "satb-rule-test-case",
+  "formatVersion": 1,
+  "id": "leading-tone-violation-attaches-to-resolution-event",
+  "title": "导音解决错误归属到后继事件",
+  "description": "B 未上行到 C 时，诊断位置应在失败的 A 起奏处，并引用前后两个音符。",
+  "tags": [
+    "diagnostic-location",
+    "leading-tone",
+    "regression"
+  ],
+  "target": {
+    "source": "builtin",
+    "ruleId": "resolution.leading-tone"
+  },
+  "execution": {
+    "mode": "isolated",
+    "severity": "warning",
+    "config": {},
+    "exceptions": {}
+  },
+  "project": {
+    "schemaVersion": 3,
+    "ppq": 960,
+    "lengthTicks": 1920,
+    "tempoEvents": [
+      {
+        "id": "tempo-0",
+        "tick": 0,
+        "bpm": 80
+      }
+    ],
+    "meterEvents": [
+      {
+        "id": "meter-0",
+        "tick": 0,
+        "numerator": 4,
+        "denominator": 4
+      }
+    ],
+    "keyEvents": [
+      {
+        "id": "key-0",
+        "tick": 0,
+        "tonic": {
+          "step": "C",
+          "alter": 0
+        },
+        "mode": "major"
+      }
+    ],
+    "satbTracks": [
+      {
+        "id": "soprano",
+        "kind": "satb",
+        "voice": "soprano",
+        "name": "女高音",
+        "shortName": "S",
+        "notes": [
+          {
+            "id": "soprano-0",
+            "startTick": 0,
+            "durationTicks": 960,
+            "pitch": {
+              "step": "B",
+              "alter": 0,
+              "octave": 4
+            },
+            "velocity": 88,
+            "locked": false,
+            "spellingSource": "manual"
+          },
+          {
+            "id": "soprano-1",
+            "startTick": 960,
+            "durationTicks": 960,
+            "pitch": {
+              "step": "A",
+              "alter": 0,
+              "octave": 4
+            },
+            "velocity": 88,
+            "locked": false,
+            "spellingSource": "manual"
+          }
+        ],
+        "participatesInHarmony": true,
+        "monophonic": true,
+        "visible": true,
+        "muted": false,
+        "solo": false,
+        "locked": false,
+        "volume": 0.82,
+        "pan": 0.2,
+        "program": 52
+      },
+      {
+        "id": "alto",
+        "kind": "satb",
+        "voice": "alto",
+        "name": "女低音",
+        "shortName": "A",
+        "notes": [],
+        "participatesInHarmony": true,
+        "monophonic": true,
+        "visible": true,
+        "muted": false,
+        "solo": false,
+        "locked": false,
+        "volume": 0.82,
+        "pan": 0.08,
+        "program": 52
+      },
+      {
+        "id": "tenor",
+        "kind": "satb",
+        "voice": "tenor",
+        "name": "男高音",
+        "shortName": "T",
+        "notes": [],
+        "participatesInHarmony": true,
+        "monophonic": true,
+        "visible": true,
+        "muted": false,
+        "solo": false,
+        "locked": false,
+        "volume": 0.82,
+        "pan": -0.08,
+        "program": 52
+      },
+      {
+        "id": "bass",
+        "kind": "satb",
+        "voice": "bass",
+        "name": "男低音",
+        "shortName": "B",
+        "notes": [],
+        "participatesInHarmony": true,
+        "monophonic": true,
+        "visible": true,
+        "muted": false,
+        "solo": false,
+        "locked": false,
+        "volume": 0.82,
+        "pan": -0.2,
+        "program": 53
+      }
+    ],
+    "auxiliaryTracks": [],
+    "chordTrack": {
+      "visible": true,
+      "locked": false,
+      "displayMode": "roman",
+      "regions": []
+    }
+  },
+  "expected": {
+    "diagnostics": [
+      {
+        "id": "unresolved-leading-tone",
+        "ruleId": "resolution.leading-tone",
+        "messageKey": "resolution.leading-tone",
+        "tick": 960,
+        "endTick": 1920,
+        "voiceIds": [
+          "soprano"
+        ],
+        "noteIds": [
+          "soprano-0",
+          "soprano-1"
+        ],
+        "chordIds": [],
+        "params": {
+          "key": "C major",
+          "leadingTone": "B",
+          "targetTonic": "C"
+        }
+      }
+    ],
+    "allowUnexpectedDiagnostics": false,
+    "skips": []
+  }
+}
