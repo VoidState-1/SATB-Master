@@ -18,6 +18,7 @@ interface ChordTrackProps {
   chordInteraction?: ChordInteraction;
   selectedChordIds: Set<string>;
   diagnosticsByChord: Map<string, HarmonyDiagnostic[]>;
+  missingExpectedChordIds?: ReadonlySet<string>;
   measureGuidePositions: MeasureGuidePosition[];
   playheadX: number;
   onPointerDown(event: React.PointerEvent<HTMLDivElement>): void;
@@ -44,6 +45,7 @@ export function ChordTrack({
   chordInteraction,
   selectedChordIds,
   diagnosticsByChord,
+  missingExpectedChordIds,
   measureGuidePositions,
   playheadX,
   onPointerDown,
@@ -104,7 +106,7 @@ export function ChordTrack({
               type="button"
               key={chord.id}
               tabIndex={-1}
-              className={`chord-block ${selectedChordIds.has(chord.id) ? "is-selected" : ""} ${chord.locked ? "is-locked" : ""} ${issue ? `has-${issue.severity}` : ""}`}
+              className={`chord-block ${selectedChordIds.has(chord.id) ? "is-selected" : ""} ${chord.locked ? "is-locked" : ""} ${issue ? `has-${issue.severity}` : ""} ${missingExpectedChordIds?.has(chord.id) ? "has-missing-expectation" : ""}`}
               style={{ left: x, width }}
               title={
                 chordDiagnostics.length === 0

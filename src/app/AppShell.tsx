@@ -5,6 +5,7 @@ import {
   Copy,
   Download,
   Eraser,
+  FlaskConical,
   FilePlus2,
   FolderOpen,
   Magnet,
@@ -41,6 +42,7 @@ import {
 } from "../features/editor";
 import { SettingsDialog } from "../features/settings";
 import { TrackSidebar } from "../features/tracks";
+import { RuleTestWorkbench } from "../features/ruleTesting";
 import { replaceProject } from "../domain/editing";
 import type { HarmonyDiagnostic } from "../domain/harmony";
 import { createEmptyProject, type ProjectDocument } from "../domain/project";
@@ -62,6 +64,7 @@ import { usePlaybackController } from "./controllers/usePlaybackController";
 import { useKeyboardController } from "./controllers/useKeyboardController";
 import { useProjectController } from "./controllers/useProjectController";
 import { useWindowController } from "./controllers/useWindowController";
+import { useRuleTestWorkspace } from "./controllers/useRuleTestWorkspace";
 import { formatShortcutBinding } from "../shortcuts/shortcutRegistry";
 
 function createProjectWithRuleProfileTemplate() {
@@ -113,6 +116,7 @@ function AppShell() {
   const loopEndTick = project.loop.endTick;
   const [notice, setNotice] = useState<string>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ruleTestMode, setRuleTestMode] = useState(false);
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
   const developerMode = useDeveloperMode();
@@ -150,8 +154,15 @@ function AppShell() {
   });
   const { confirmation, requestConfirmation, answerConfirmation } =
     useConfirmationController();
+  const ruleTestWorkspace = useRuleTestWorkspace({
+    initialProject,
+    showNotice,
+    requestConfirmation,
+  });
   const windowController = useWindowController({
-    isDirty: history.isDirty,
+    isDirty:
+      history.isDirty ||
+      (ruleTestMode && ruleTestWorkspace.history.isDirty),
     requestConfirmation,
   });
   const resetWorkspaceForProject = (nextProject: ProjectDocument) =>
@@ -237,6 +248,7 @@ function AppShell() {
     requestConfirmation,
   });
   useKeyboardController({
+    enabled: !ruleTestMode,
     bindings: shortcutSettings.bindings,
     confirmation,
     settingsOpen,
@@ -277,6 +289,45 @@ function AppShell() {
   };
 
   const measureCount = buildMeasures(project).length;
+  const enterRuleTestMode = async () => {
+    handleStop();
+    if (!ruleTestWorkspace.hasSession) {
+      const created = await ruleTestWorkspace.createFromProject(project);
+      if (!created) return;
+    }
+    setRuleTestMode(true);
+  };
+  const leaveRuleTestMode = async () => {
+    if (
+      ruleTestWorkspace.history.isDirty &&
+      !(await requestConfirmation({
+        title: "返回普通工程？",
+        message: "规则用例有未保存修改。返回后用例会保留在测试工作区，但本次修改不会自动写入文件。",
+        confirmLabel: "返回",
+        cancelLabel: "留在工作台",
+      }))
+    )
+      return;
+    ruleTestWorkspace.cancelRun();
+    ruleTestWorkspace.editor.setSelectedNoteIds(new Set());
+    ruleTestWorkspace.editor.setSelectedChordIds(new Set());
+    setRuleTestMode(false);
+  };
+  if (ruleTestMode) {
+    return (
+      <RuleTestWorkbench
+        controller={ruleTestWorkspace}
+        windowController={windowController}
+        onCreateFromProject={() =>
+          void ruleTestWorkspace.createFromProject(project)
+        }
+        onBack={() => void leaveRuleTestMode()}
+        confirmation={confirmation}
+        answerConfirmation={answerConfirmation}
+        notice={notice}
+      />
+    );
+  }
   return (
     <main className="app-shell">
       <header
@@ -354,6 +405,13 @@ function AppShell() {
             icon={<Download />}
             onClick={() => void handleExportMidi()}
           />
+          {developerMode.enabled ? (
+            <IconButton
+              label="规则测试工作台"
+              icon={<FlaskConical />}
+              onClick={() => void enterRuleTestMode()}
+            />
+          ) : null}
         </div>
         <div className="toolbar-group">
           <IconButton

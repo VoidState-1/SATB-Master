@@ -20,6 +20,8 @@ export interface PianoRollProps {
   selectedChordIds: Set<string>;
   chordBrush: ChordDraft;
   diagnostics: HarmonyDiagnostic[];
+  missingExpectedNoteIds?: ReadonlySet<string>;
+  missingExpectedChordIds?: ReadonlySet<string>;
   playheadTick: number;
   loopEnabled: boolean;
   loopStartTick: number;

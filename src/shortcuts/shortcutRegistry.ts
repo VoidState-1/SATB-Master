@@ -34,6 +34,7 @@ export type ShortcutCommandId =
   | "gridFiner"
   | "zoomOut"
   | "zoomIn"
+  | "runRuleTest"
   | "cancelOrClear";
 
 export type ShortcutGroupId =
@@ -82,6 +83,12 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     label: "工程另存为",
     group: "project",
     defaultBindings: ["Ctrl+Shift+KeyS"],
+  },
+  {
+    id: "runRuleTest",
+    label: "运行当前规则用例",
+    group: "project",
+    defaultBindings: ["F5"],
   },
   {
     id: "undo",

@@ -5,4 +5,5 @@
 @import "./features/diagnostics/diagnostics.css";
 @import "./features/inspector/inspector.css";
 @import "./features/settings/settings.css";
+@import "./features/ruleTesting/ruleTesting.css";
 @import "./styles/dialogs.css";

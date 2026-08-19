@@ -35,6 +35,7 @@ interface NoteLayerProps {
   activeVoice: VoiceId;
   selectedNoteIds: Set<string>;
   diagnosticsByNote: Map<string, HarmonyDiagnostic[]>;
+  missingExpectedNoteIds?: ReadonlySet<string>;
   interaction?: PointerInteraction;
   noteRects: NoteRect[];
   tool: EditorTool;
@@ -58,6 +59,7 @@ export function NoteLayer({
   activeVoice,
   selectedNoteIds,
   diagnosticsByNote,
+  missingExpectedNoteIds,
   interaction,
   noteRects,
   tool,
@@ -217,6 +219,14 @@ export function NoteLayer({
           context.lineWidth = 2;
           context.stroke();
         }
+        if (missingExpectedNoteIds?.has(note.id)) {
+          context.save();
+          context.setLineDash([4, 3]);
+          context.strokeStyle = "#bd433b";
+          context.lineWidth = 1.5;
+          context.stroke();
+          context.restore();
+        }
         const issue = primaryDiagnostic(diagnosticsByNote.get(note.id) ?? []);
         if (issue) {
           context.fillStyle =
@@ -311,6 +321,7 @@ export function NoteLayer({
     diagnosticsByNote,
     interaction,
     measures,
+    missingExpectedNoteIds,
     noteRects,
     pixelsPerBeat,
     project,

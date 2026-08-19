@@ -13,6 +13,7 @@ interface HistoryKeyboardPort {
 }
 
 interface KeyboardControllerOptions {
+  enabled?: boolean;
   bindings: ShortcutBindings;
   confirmation: unknown;
   settingsOpen: boolean;
@@ -51,6 +52,7 @@ interface KeyboardControllerOptions {
 }
 
 export function useKeyboardController({
+  enabled = true,
   bindings,
   confirmation,
   settingsOpen,
@@ -84,6 +86,7 @@ export function useKeyboardController({
   transformSelection,
 }: KeyboardControllerOptions) {
   useEffect(() => {
+    if (!enabled) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (confirmation || settingsOpen || event.isComposing) return;
       const target =
@@ -117,6 +120,7 @@ export function useKeyboardController({
         openProject: () => void handleOpen(),
         saveProject: () => void handleSave(false),
         saveProjectAs: () => void handleSave(true),
+        runRuleTest: () => undefined,
         undo: () => history.undo(),
         redo: () => history.redo(),
         selectAll: selectAllInEditorDomain,
@@ -201,5 +205,6 @@ export function useKeyboardController({
     setTool,
     tool,
     transformSelection,
+    enabled,
   ]);
 }

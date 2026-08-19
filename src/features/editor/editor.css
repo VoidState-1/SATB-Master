@@ -367,6 +367,11 @@
   box-shadow: inset 0 0 0 1px #776b43;
 }
 
+.chord-block.has-missing-expectation {
+  border-color: #bd433b;
+  border-style: dashed;
+}
+
 .chord-block.is-locked {
   background-image: repeating-linear-gradient(
     135deg,
