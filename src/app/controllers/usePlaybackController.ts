@@ -11,6 +11,7 @@ import {
   readSoundFontBuffer,
   type SoundFontLoadProgress,
 } from "../../services/desktop";
+import { createSingleFlight } from "./singleFlight";
 
 interface ProjectHistoryCommitter {
   commit(project: ProjectDocument): void;
@@ -102,6 +103,7 @@ export function usePlaybackController({
   const [soundFontSizeBytes, setSoundFontSizeBytes] = useState<number>();
   const defaultSoundFontRequestedRef = useRef(false);
   const playSessionRef = useRef(0);
+  const playbackStart = useRef(createSingleFlight<void>()).current;
 
   const reportSoundFontProgress = useCallback(
     (progress: SoundFontLoadProgress) => {
@@ -330,11 +332,7 @@ export function usePlaybackController({
     if (returnToStart) setPlayheadTick(0);
   }, []);
 
-  const handlePlay = useCallback(async () => {
-    if (isPlaying) {
-      handleStop();
-      return;
-    }
+  const startPlayback = useCallback(async () => {
     try {
       await audioEngine.resume();
       const soundFontConfig = project.audio.soundFont;
@@ -402,8 +400,6 @@ export function usePlaybackController({
       showNotice(error instanceof Error ? error.message : "播放失败");
     }
   }, [
-    handleStop,
-    isPlaying,
     loopEnabled,
     loopEndTick,
     loopStartTick,
@@ -413,6 +409,14 @@ export function usePlaybackController({
     reportSoundFontProgress,
     showNotice,
   ]);
+
+  const handlePlay = useCallback(() => {
+    if (isPlaying) {
+      handleStop();
+      return Promise.resolve();
+    }
+    return playbackStart.run(startPlayback);
+  }, [handleStop, isPlaying, playbackStart, startPlayback]);
 
   const toggleLoop = useCallback(() => {
     history.commit(

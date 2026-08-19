@@ -62,7 +62,7 @@ function createWindow() {
       window.webContents.openDevTools({ mode: 'detach', activate: false })
     }
   } else {
-    void window.loadFile(path.join(currentDirectory, '../dist/index.html'))
+    void window.loadFile(path.join(currentDirectory, '../../dist/index.html'))
   }
 }
 
