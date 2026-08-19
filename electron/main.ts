@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerProjectIpc } from './project-ipc.js'
 import { registerRuleLibraryIpc } from './rule-library.js'
+import { registerRuleTestCaseIpc } from './rule-test-cases.js'
 import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
 import { DESKTOP_CHANNELS } from '../shared/desktop.js'
 import { handleDesktop } from './typed-ipc.js'
@@ -84,6 +85,7 @@ function registerWindowIpc() {
 app.whenReady().then(() => {
   registerSoundFontProtocol()
   registerProjectIpc()
+  registerRuleTestCaseIpc()
   registerRuleLibraryIpc()
   registerWindowIpc()
   createWindow()

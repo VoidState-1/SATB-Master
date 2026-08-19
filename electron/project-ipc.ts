@@ -13,7 +13,7 @@ import { handleDesktop } from './typed-ipc.js'
 const MAX_PROJECT_BYTES = 20 * 1024 * 1024
 const MAX_RULE_PROFILE_BYTES = 2 * 1024 * 1024
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
-export type DialogDirectoryKind = 'project' | 'midi' | 'soundfont' | 'rule' | 'profile'
+export type DialogDirectoryKind = 'project' | 'midi' | 'soundfont' | 'rule' | 'profile' | 'rule-test-case'
 type DialogDirectories = Partial<Record<DialogDirectoryKind, string>>
 
 let dialogDirectories: DialogDirectories | undefined
@@ -60,7 +60,7 @@ async function loadDialogDirectories() {
   try {
     const stored = JSON.parse(await readFile(dialogDirectoriesPath(), 'utf8')) as Record<string, unknown>
     dialogDirectories = Object.fromEntries(
-      (['project', 'midi', 'soundfont', 'rule', 'profile'] as DialogDirectoryKind[])
+      (['project', 'midi', 'soundfont', 'rule', 'profile', 'rule-test-case'] as DialogDirectoryKind[])
         .filter((kind) => typeof stored[kind] === 'string' && path.isAbsolute(stored[kind] as string))
         .map((kind) => [kind, stored[kind] as string]),
     )

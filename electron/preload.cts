@@ -49,6 +49,10 @@ const desktop: DesktopApi = {
     recovery: () => invokeDesktop(DESKTOP_CHANNELS.projectRecovery),
     discardRecovery: () => invokeDesktop(DESKTOP_CHANNELS.projectDiscardRecovery),
   },
+  ruleTestCases: {
+    open: () => invokeDesktop(DESKTOP_CHANNELS.ruleTestCaseOpen),
+    save: (request) => invokeDesktop(DESKTOP_CHANNELS.ruleTestCaseSave, request),
+  },
   midi: {
     export: (bytes: Uint8Array, defaultName: string) =>
       invokeDesktop(DESKTOP_CHANNELS.midiExport, { bytes, defaultName }),

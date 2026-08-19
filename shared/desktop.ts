@@ -1,5 +1,7 @@
 import type { InstalledExternalRulePackage } from "./external-rules.js";
 
+export const MAX_RULE_TEST_CASE_BYTES = 20 * 1024 * 1024;
+
 export interface ProjectSaveRequest {
   project: unknown;
   currentPath?: string;
@@ -63,6 +65,14 @@ export interface DesktopInvokeMap {
   "project:discard-recovery": {
     request: void;
     response: { discarded: boolean };
+  };
+  "rule-test-case:open": {
+    request: void;
+    response: { canceled: boolean; filePath?: string; document?: unknown };
+  };
+  "rule-test-case:save": {
+    request: { currentPath?: string; forceDialog: boolean; json: string };
+    response: { canceled: boolean; filePath?: string };
   };
   "midi:export": {
     request: { bytes: Uint8Array; defaultName: string };
@@ -144,6 +154,8 @@ export const DESKTOP_CHANNELS = Object.freeze({
   projectAutosave: "project:autosave",
   projectRecovery: "project:recovery",
   projectDiscardRecovery: "project:discard-recovery",
+  ruleTestCaseOpen: "rule-test-case:open",
+  ruleTestCaseSave: "rule-test-case:save",
   midiExport: "midi:export",
   ruleProfileOpen: "rule-profile:open",
   ruleProfileSave: "rule-profile:save",
@@ -176,6 +188,10 @@ export interface DesktopApi {
     autosave(request: ProjectRecoveryRequest): Promise<DesktopInvokeMap["project:autosave"]["response"]>;
     recovery(): Promise<DesktopInvokeMap["project:recovery"]["response"]>;
     discardRecovery(): Promise<DesktopInvokeMap["project:discard-recovery"]["response"]>;
+  };
+  ruleTestCases: {
+    open(): Promise<DesktopInvokeMap["rule-test-case:open"]["response"]>;
+    save(request: DesktopInvokeMap["rule-test-case:save"]["request"]): Promise<DesktopInvokeMap["rule-test-case:save"]["response"]>;
   };
   midi: {
     export(bytes: Uint8Array, defaultName: string): Promise<DesktopInvokeMap["midi:export"]["response"]>;
