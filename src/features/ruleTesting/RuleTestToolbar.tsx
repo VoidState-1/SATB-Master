@@ -1,7 +1,7 @@
 import {
   ArrowLeft,
   Copy,
-  FileInput,
+  FilePlus2,
   FolderOpen,
   MoreHorizontal,
   Play,
@@ -13,8 +13,10 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../../components/IconButton";
 import {
+  HARMONY_RULE_GROUPS,
   HARMONY_RULE_DEFINITIONS,
   type HarmonyRuleId,
+  type HarmonyRuleGroupId,
 } from "../../domain/harmony";
 
 interface RuleTestToolbarProps {
@@ -51,17 +53,30 @@ function RuleSearch({
   const selected = HARMONY_RULE_DEFINITIONS.find((item) => item.id === ruleId)!;
   const selectedLabel = `${selected.id} · ${selected.label}`;
   const [query, setQuery] = useState(selectedLabel);
+  const [groupId, setGroupId] = useState<"all" | HarmonyRuleGroupId>("all");
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => setQuery(selectedLabel), [selectedLabel]);
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return HARMONY_RULE_DEFINITIONS.filter((rule) =>
-      `${rule.id} ${rule.label} ${rule.description}`
+      (groupId === "all" || rule.group === groupId) &&
+      `${rule.id} ${rule.label} ${rule.description} ${
+        HARMONY_RULE_GROUPS.find((group) => group.id === rule.group)?.label ??
+        ""
+      }`
         .toLowerCase()
         .includes(needle),
-    ).slice(0, 12);
-  }, [query]);
+    );
+  }, [groupId, query]);
+  const groupedMatches = useMemo(
+    () =>
+      HARMONY_RULE_GROUPS.map((group) => ({
+        ...group,
+        rules: matches.filter((rule) => rule.group === group.id),
+      })).filter((group) => group.rules.length > 0),
+    [matches],
+  );
   return (
     <div
       ref={rootRef}
@@ -94,23 +109,62 @@ function RuleSearch({
       />
       {open ? (
         <div className="rule-test-rule-menu" role="listbox">
-          {matches.map((rule) => (
-            <button
-              type="button"
-              role="option"
-              aria-selected={rule.id === ruleId}
-              key={rule.id}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onSelect(rule.id);
-                setQuery(`${rule.id} · ${rule.label}`);
-                setOpen(false);
-              }}
+          <div className="rule-test-rule-filter">
+            <label htmlFor="rule-test-rule-group">分类</label>
+            <select
+              id="rule-test-rule-group"
+              aria-label="按规则分类筛选"
+              value={groupId}
+              onChange={(event) =>
+                setGroupId(
+                  event.target.value as "all" | HarmonyRuleGroupId,
+                )
+              }
+              onMouseDown={(event) => event.stopPropagation()}
             >
-              <strong>{rule.label}</strong>
-              <small>{rule.id}</small>
-            </button>
+              <option value="all">
+                全部规则（{HARMONY_RULE_DEFINITIONS.length}）
+              </option>
+              {HARMONY_RULE_GROUPS.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.label}（
+                  {HARMONY_RULE_DEFINITIONS.filter(
+                    (rule) => rule.group === group.id,
+                  ).length}
+                  ）
+                </option>
+              ))}
+            </select>
+            <span>{matches.length} 条</span>
+          </div>
+          {groupedMatches.map((group) => (
+            <section className="rule-test-rule-group" key={group.id}>
+              <h4>
+                {group.label}
+                <span>{group.rules.length}</span>
+              </h4>
+              {group.rules.map((rule) => (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={rule.id === ruleId}
+                  key={rule.id}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    onSelect(rule.id);
+                    setQuery(`${rule.id} · ${rule.label}`);
+                    setOpen(false);
+                  }}
+                >
+                  <strong>{rule.label}</strong>
+                  <small>{rule.id}</small>
+                </button>
+              ))}
+            </section>
           ))}
+          {matches.length === 0 ? (
+            <div className="rule-test-rule-empty">没有匹配的规则</div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -122,6 +176,11 @@ export function RuleTestToolbar(props: RuleTestToolbarProps) {
     <div className="main-toolbar rule-test-toolbar">
       <div className="toolbar-group">
         <IconButton label="返回普通工程" icon={<ArrowLeft />} onClick={props.onBack} />
+        <IconButton
+          label="新建规则用例"
+          icon={<FilePlus2 />}
+          onClick={props.onCreateFromProject}
+        />
         <IconButton label="打开规则用例" icon={<FolderOpen />} onClick={props.onOpen} />
         <IconButton label="保存规则用例" icon={<Save />} onClick={() => props.onSave(false)} />
         <IconButton label="规则用例另存为" icon={<SaveAll />} onClick={() => props.onSave(true)} />
@@ -168,9 +227,6 @@ export function RuleTestToolbar(props: RuleTestToolbarProps) {
         <div className="rule-test-more-menu">
           <button type="button" onClick={props.onOpenDirectory}>
             <FolderOpen aria-hidden="true" /> 打开用例目录
-          </button>
-          <button type="button" onClick={props.onCreateFromProject}>
-            <FileInput aria-hidden="true" /> 从当前工程新建
           </button>
           <button type="button" onClick={props.onClone}>
             <Copy aria-hidden="true" /> 复制当前用例

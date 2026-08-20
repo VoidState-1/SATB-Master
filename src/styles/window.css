@@ -14,11 +14,12 @@
 }
 
 .app-titlebar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 0 14px;
+  padding: 0 150px 0 14px;
   border-bottom: 1px solid #cacbc5;
   background: #f8f8f5;
   font-size: 13px;
@@ -28,8 +29,12 @@
 
 .titlebar-controls {
   display: flex;
+  position: absolute;
+  top: 0;
+  right: 0;
   align-self: stretch;
-  margin-right: -14px;
+  height: 42px;
+  z-index: 3;
   -webkit-app-region: no-drag;
 }
 

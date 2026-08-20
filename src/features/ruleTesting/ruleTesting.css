@@ -59,13 +59,85 @@
   right: 0;
   left: 0;
   z-index: 60;
-  max-height: 320px;
+  width: min(360px, 38vw);
+  max-height: min(520px, calc(100vh - 108px));
   overflow: auto;
   padding: 4px;
   border: 1px solid #aeb1a9;
   border-radius: 4px;
   background: #fbfbf8;
   box-shadow: 0 10px 24px rgba(28, 31, 27, 0.18);
+}
+
+.rule-test-rule-filter {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 4px 6px;
+  border-bottom: 1px solid #d5d6d0;
+  background: #fbfbf8;
+  color: #73766e;
+  font-size: 10px;
+}
+
+.rule-test-rule-filter select {
+  min-width: 0;
+  width: 100%;
+  height: 27px;
+  padding: 0 6px;
+  border: 1px solid #c8cac2;
+  border-radius: 3px;
+  outline: 0;
+  background: #fff;
+  color: #353832;
+  font-size: 10px;
+}
+
+.rule-test-rule-filter select:focus {
+  border-color: #528778;
+  box-shadow: 0 0 0 2px rgba(47, 119, 100, 0.1);
+}
+
+.rule-test-rule-filter > span {
+  min-width: 30px;
+  color: #8a8d85;
+  font: 10px Consolas, monospace;
+  text-align: right;
+}
+
+.rule-test-rule-group {
+  margin-top: 4px;
+}
+
+.rule-test-rule-group h4 {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid #e0e1dc;
+  color: #60645b;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.rule-test-rule-group h4 span {
+  color: #92958d;
+  font: 10px Consolas, monospace;
+  font-weight: 400;
+}
+
+.rule-test-rule-empty {
+  padding: 20px 8px;
+  color: #7e8178;
+  font-size: 11px;
+  text-align: center;
 }
 
 .rule-test-rule-menu button {
