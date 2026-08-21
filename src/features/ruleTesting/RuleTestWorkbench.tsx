@@ -59,7 +59,7 @@ export function RuleTestWorkbench({
   answerConfirmation,
   notice,
 }: RuleTestWorkbenchProps) {
-  const panelLayout = usePanelLayout();
+  const panelLayout = usePanelLayout("rule-test");
   const developerMode = useDeveloperMode();
   const shortcutSettings = useShortcutBindings();
   useRuleTestKeyboard(shortcutSettings.bindings, controller);

@@ -4,9 +4,19 @@ import {
   PANEL_LIMITS,
   PANEL_RESIZER_SIZE,
   fitPanelSizes,
+  panelLayoutStorageKey,
 } from "./usePanelLayout";
 
 describe("panel layout constraints", () => {
+  it("keeps project and rule-test layout preferences isolated", () => {
+    expect(panelLayoutStorageKey("project")).toBe(
+      "satb-master-panel-layout-v2:project",
+    );
+    expect(panelLayoutStorageKey("rule-test")).toBe(
+      "satb-master-panel-layout-v2:rule-test",
+    );
+  });
+
   it("keeps the default layout when the workspace is large enough", () => {
     expect(
       fitPanelSizes(DEFAULT_PANEL_SIZES, { width: 1280, height: 800 }),

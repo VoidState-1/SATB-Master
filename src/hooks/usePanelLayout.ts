@@ -11,7 +11,13 @@ interface WorkspaceBounds {
   height: number;
 }
 
-const STORAGE_KEY = "satb-master-panel-layout-v1";
+const STORAGE_KEY = "satb-master-panel-layout-v2";
+export type PanelLayoutScope = "project" | "rule-test";
+
+export function panelLayoutStorageKey(scope: PanelLayoutScope) {
+  return `${STORAGE_KEY}:${scope}`;
+}
+
 export const PANEL_RESIZER_SIZE = 6;
 export const DEFAULT_PANEL_SIZES: PanelSizes = {
   left: 184,
@@ -37,11 +43,11 @@ function viewportWorkspaceBounds(): WorkspaceBounds {
   };
 }
 
-function readStoredPanelSizes(): PanelSizes {
+function readStoredPanelSizes(scope: PanelLayoutScope): PanelSizes {
   if (typeof window === "undefined") return DEFAULT_PANEL_SIZES;
   try {
     const stored = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEY) ?? "",
+      window.localStorage.getItem(panelLayoutStorageKey(scope)) ?? "",
     ) as Partial<PanelSizes>;
     if (
       [stored.left, stored.right, stored.bottom].every(
@@ -105,12 +111,15 @@ export function fitPanelSizes(
   };
 }
 
-export function usePanelLayout() {
+export function usePanelLayout(scope: PanelLayoutScope = "project") {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const initialBounds = useMemo(viewportWorkspaceBounds, []);
   const [bounds, setBounds] = useState(initialBounds);
   const [preferredSizes, setPreferredSizes] = useState(() =>
-    fitPanelSizes(readStoredPanelSizes(), { width: 10_000, height: 10_000 }),
+    fitPanelSizes(readStoredPanelSizes(scope), {
+      width: 10_000,
+      height: 10_000,
+    }),
   );
   const sizes = useMemo(
     () => fitPanelSizes(preferredSizes, bounds),
@@ -140,11 +149,14 @@ export function usePanelLayout() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(preferredSizes));
+      window.localStorage.setItem(
+        panelLayoutStorageKey(scope),
+        JSON.stringify(preferredSizes),
+      );
     } catch {
       // 受限环境下无法持久化时，当前会话内的尺寸调整仍然有效。
     }
-  }, [preferredSizes]);
+  }, [preferredSizes, scope]);
 
   const horizontalBudget = Math.max(
     PANEL_LIMITS.left.min + PANEL_LIMITS.right.min,
