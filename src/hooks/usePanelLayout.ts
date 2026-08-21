@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export interface PanelSizes {
   left: number;
@@ -9,6 +9,11 @@ export interface PanelSizes {
 interface WorkspaceBounds {
   width: number;
   height: number;
+}
+
+interface MeasurableWorkspace {
+  readonly isConnected: boolean;
+  getBoundingClientRect(): Pick<DOMRect, "width" | "height">;
 }
 
 const STORAGE_KEY = "satb-master-panel-layout-v2";
@@ -41,6 +46,15 @@ function viewportWorkspaceBounds(): WorkspaceBounds {
     width: window.innerWidth,
     height: Math.max(0, window.innerHeight - 94),
   };
+}
+
+export function measureWorkspaceBounds(
+  workspace: MeasurableWorkspace,
+): WorkspaceBounds | undefined {
+  if (!workspace.isConnected) return undefined;
+  const { width, height } = workspace.getBoundingClientRect();
+  if (width <= 0 || height <= 0) return undefined;
+  return { width, height };
 }
 
 function readStoredPanelSizes(scope: PanelLayoutScope): PanelSizes {
@@ -112,7 +126,10 @@ export function fitPanelSizes(
 }
 
 export function usePanelLayout(scope: PanelLayoutScope = "project") {
-  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [workspace, setWorkspace] = useState<HTMLDivElement | null>(null);
+  const workspaceRef = useCallback((node: HTMLDivElement | null) => {
+    setWorkspace(node);
+  }, []);
   const initialBounds = useMemo(viewportWorkspaceBounds, []);
   const [bounds, setBounds] = useState(initialBounds);
   const [preferredSizes, setPreferredSizes] = useState(() =>
@@ -127,12 +144,10 @@ export function usePanelLayout(scope: PanelLayoutScope = "project") {
   );
 
   useEffect(() => {
-    const workspace = workspaceRef.current;
     if (!workspace) return;
     const updateBounds = () => {
-      const rect = workspace.getBoundingClientRect();
-      const nextBounds = { width: rect.width, height: rect.height };
-      setBounds(nextBounds);
+      const nextBounds = measureWorkspaceBounds(workspace);
+      if (nextBounds) setBounds(nextBounds);
     };
     updateBounds();
     const observer =
@@ -145,7 +160,7 @@ export function usePanelLayout(scope: PanelLayoutScope = "project") {
       observer?.disconnect();
       window.removeEventListener("resize", updateBounds);
     };
-  }, []);
+  }, [workspace]);
 
   useEffect(() => {
     try {

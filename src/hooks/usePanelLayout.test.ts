@@ -4,6 +4,7 @@ import {
   PANEL_LIMITS,
   PANEL_RESIZER_SIZE,
   fitPanelSizes,
+  measureWorkspaceBounds,
   panelLayoutStorageKey,
 } from "./usePanelLayout";
 
@@ -56,5 +57,24 @@ describe("panel layout constraints", () => {
     expect(fitPanelSizes(preferred, { width: 1440, height: 900 })).toEqual(
       preferred,
     );
+  });
+
+  it("ignores the zero-sized detached workspace during a view switch", () => {
+    const detachedWorkspace = {
+      isConnected: false,
+      getBoundingClientRect: () => ({ width: 0, height: 0 }),
+    };
+    expect(measureWorkspaceBounds(detachedWorkspace)).toBeUndefined();
+  });
+
+  it("measures the replacement workspace after returning to the editor", () => {
+    const replacementWorkspace = {
+      isConnected: true,
+      getBoundingClientRect: () => ({ width: 1360, height: 760 }),
+    };
+    expect(measureWorkspaceBounds(replacementWorkspace)).toEqual({
+      width: 1360,
+      height: 760,
+    });
   });
 });

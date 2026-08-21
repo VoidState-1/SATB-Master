@@ -410,6 +410,51 @@ async function verifyPanelResizing() {
   }
 }
 
+async function verifyPanelLayoutAfterRuleTestRoundTrip() {
+  await clickButton('设置')
+  await clickButton('开发者')
+  const developerModeEnabled = await evaluate(`(() => {
+    const input = document.querySelector('input[aria-label="启用开发者模式"]');
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (!input.checked) input.click();
+    return input.checked;
+  })()`)
+  if (!developerModeEnabled) throw new Error('无法启用开发者模式')
+  await clickButton('关闭设置')
+
+  await dragPanelResizeHandle('调整声部面板宽度', 40, 0, 41)
+  await dragPanelResizeHandle('调整属性面板宽度', -48, 0, 42)
+  await dragPanelResizeHandle('调整问题面板高度', 0, -52, 43)
+  const before = await panelMetrics()
+  if (!before) throw new Error('进入规则测试前无法读取面板尺寸')
+
+  await clickButton('规则测试工作台')
+  await waitFor(`Boolean(document.querySelector('.rule-test-workspace'))`, '进入规则测试工作台')
+  await clickButton('返回普通工程')
+  await waitFor(`document.body.innerText.includes('返回普通工程？')`, '返回普通工程确认')
+  await clickButton('返回')
+  await waitFor(`Boolean(document.querySelector('.workspace:not(.rule-test-workspace)'))`, '返回普通工程')
+
+  const restored = await panelMetrics()
+  if (!restored
+    || Math.abs(restored.left - before.left) > 1
+    || Math.abs(restored.right - before.right) > 1
+    || Math.abs(restored.bottom - before.bottom) > 1) {
+    throw new Error(`规则测试往返后面板尺寸未恢复：${JSON.stringify({ before, restored })}`)
+  }
+
+  await dragPanelResizeHandle('调整声部面板宽度', 24, 0, 44)
+  await dragPanelResizeHandle('调整属性面板宽度', -24, 0, 45)
+  await dragPanelResizeHandle('调整问题面板高度', 0, -24, 46)
+  const resized = await panelMetrics()
+  if (!resized
+    || resized.left < restored.left + 20
+    || resized.right < restored.right + 20
+    || resized.bottom < restored.bottom + 20) {
+    throw new Error(`规则测试往返后面板无法继续调整：${JSON.stringify({ restored, resized })}`)
+  }
+}
+
 async function verifyInitialGridSelection() {
   const target = await evaluate(`(() => {
     const select = document.querySelector('select[aria-label="时值对齐"]');
@@ -1371,6 +1416,7 @@ try {
   await verifyFullMidiRange()
   await verifyViewportCanvas()
   await verifyPanelResizing()
+  await verifyPanelLayoutAfterRuleTestRoundTrip()
   await verifyInitialGridSelection()
   await verifyShortcutSettings()
   await configureHarmonyRuleSeverity()
@@ -1542,6 +1588,7 @@ try {
     shortcutGestures: 'modifiers-voice-zoom-navigation-ready',
     selectionShortcuts: 'select-clear-duplicate-cut-paste-ready',
     doubleClickVoice: 'ready',
+    panelRuleTestRoundTrip: 'size-preserved-and-resizable',
     projectNotes: noteCount,
     midiFormat: midi.header.format,
     midiTracks: midi.tracks.length,
