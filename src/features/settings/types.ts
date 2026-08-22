@@ -68,6 +68,8 @@ export interface SettingsDialogProps {
   onResetExternalRule(reference: RuleProfile["external"][number]): void;
   developerMode: boolean;
   onSetDeveloperMode(enabled: boolean): void;
+  showRuleTestEntry: boolean;
+  onSetShowRuleTestEntry(visible: boolean): void;
   onClose(): void;
 }
 

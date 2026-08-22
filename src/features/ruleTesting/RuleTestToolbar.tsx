@@ -1,14 +1,33 @@
 import {
   ArrowLeft,
+  BellRing,
+  Clipboard,
   Copy,
+  Download,
+  Eraser,
+  FileAudio,
   FilePlus2,
   FolderOpen,
+  Magnet,
   MoreHorizontal,
+  MousePointer2,
+  Pause,
+  Pencil,
   Play,
+  Redo2,
+  Repeat2,
+  RotateCcw,
   Save,
   SaveAll,
+  Scissors,
+  SkipBack,
   Square,
+  Trash2,
+  Undo2,
+  Volume2,
   WandSparkles,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../../components/IconButton";
@@ -28,6 +47,21 @@ interface RuleTestToolbarProps {
   batchRunState: "idle" | "running" | "completed" | "cancelled";
   hasLibrary: boolean;
   hasActual: boolean;
+  isPlaying: boolean;
+  metronomeEnabled: boolean;
+  audioState: string;
+  audioMessage: string;
+  audioLevel: number;
+  soundFontProgress?: { completedBytes: number; totalBytes: number };
+  loopEnabled: boolean;
+  loopStartLabel: string;
+  loopEndLabel: string;
+  gridTicks: number;
+  gridOptions: readonly { ticks: number; label: string }[];
+  pixelsPerBeat: number;
+  effectiveTool: "select" | "pencil" | "eraser" | "split";
+  canUndo: boolean;
+  canRedo: boolean;
   onBack(): void;
   onOpen(): void;
   onOpenDirectory(): void;
@@ -41,6 +75,24 @@ interface RuleTestToolbarProps {
   onCancelLibrary(): void;
   onAcceptAll(): void;
   onNormalize(): void;
+  onExportMidi(): void;
+  onUndo(): void;
+  onRedo(): void;
+  onCopy(): void;
+  onPaste(): void;
+  onDelete(): void;
+  onSetTool(tool: "select" | "pencil" | "eraser" | "split"): void;
+  onGoToStart(): void;
+  onPlay(): void;
+  onStop(): void;
+  onToggleLoop(): void;
+  onSetLoopBoundary(boundary: "start" | "end"): void;
+  onToggleMetronome(): void;
+  onSetGridTicks(value: number): void;
+  onZoomOut(): void;
+  onZoomIn(): void;
+  onChooseSoundFont(): void;
+  onUseDefaultSoundFont(): void;
 }
 
 function RuleSearch({
@@ -172,6 +224,14 @@ function RuleSearch({
 }
 
 export function RuleTestToolbar(props: RuleTestToolbarProps) {
+  const soundFontPercent = props.soundFontProgress &&
+    props.soundFontProgress.totalBytes > 0
+    ? Math.round(
+        (props.soundFontProgress.completedBytes /
+          props.soundFontProgress.totalBytes) *
+          100,
+      )
+    : undefined;
   return (
     <div className="main-toolbar rule-test-toolbar">
       <div className="toolbar-group">
@@ -184,6 +244,49 @@ export function RuleTestToolbar(props: RuleTestToolbarProps) {
         <IconButton label="打开规则用例" icon={<FolderOpen />} onClick={props.onOpen} />
         <IconButton label="保存规则用例" icon={<Save />} onClick={() => props.onSave(false)} />
         <IconButton label="规则用例另存为" icon={<SaveAll />} onClick={() => props.onSave(true)} />
+        <IconButton label="导出 MIDI" icon={<Download />} onClick={props.onExportMidi} />
+      </div>
+      <div className="toolbar-group">
+        <IconButton label="撤销" icon={<Undo2 />} disabled={!props.canUndo} onClick={props.onUndo} />
+        <IconButton label="重做" icon={<Redo2 />} disabled={!props.canRedo} onClick={props.onRedo} />
+        <IconButton label="复制选中事件" icon={<Copy />} onClick={props.onCopy} />
+        <IconButton label="粘贴事件" icon={<Clipboard />} onClick={props.onPaste} />
+        <IconButton label="删除选中事件" icon={<Trash2 />} onClick={props.onDelete} />
+      </div>
+      <div className="toolbar-group tool-selector">
+        <IconButton label="选择工具" icon={<MousePointer2 />} active={props.effectiveTool === "select"} onClick={() => props.onSetTool("select")} />
+        <IconButton label="铅笔工具" icon={<Pencil />} active={props.effectiveTool === "pencil"} onClick={() => props.onSetTool("pencil")} />
+        <IconButton label="擦除工具" icon={<Eraser />} active={props.effectiveTool === "eraser"} onClick={() => props.onSetTool("eraser")} />
+        <IconButton label="切分工具" icon={<Scissors />} active={props.effectiveTool === "split"} onClick={() => props.onSetTool("split")} />
+      </div>
+      <div className="transport-group">
+        <IconButton label="回到开头" icon={<SkipBack />} onClick={props.onGoToStart} />
+        <IconButton label={props.isPlaying ? "暂停" : "播放"} icon={props.isPlaying ? <Pause /> : <Play />} active={props.isPlaying} onClick={props.onPlay} />
+        <IconButton label="停止" icon={<Square />} onClick={props.onStop} />
+        <IconButton label="循环播放" icon={<Repeat2 />} active={props.loopEnabled} onClick={props.onToggleLoop} />
+        <button type="button" className="loop-boundary" title="将循环起点设为播放头" onClick={() => props.onSetLoopBoundary("start")}>起 {props.loopStartLabel}</button>
+        <button type="button" className="loop-boundary" title="将循环终点设为播放头" onClick={() => props.onSetLoopBoundary("end")}>止 {props.loopEndLabel}</button>
+        <IconButton label="节拍器" icon={<BellRing />} active={props.metronomeEnabled} onClick={props.onToggleMetronome} />
+        <span className={"output-meter " + (props.audioLevel >= 0.98 ? "is-clipping" : "")} role="meter" aria-label="测试工作台输出电平" aria-valuemin={0} aria-valuemax={1} aria-valuenow={Number(props.audioLevel.toFixed(4))}>
+          <i style={{ width: String(Math.max(2, props.audioLevel * 100)) + "%" }} />
+        </span>
+      </div>
+      <div className="toolbar-group toolbar-right">
+        <div className="grid-control" title="编辑吸附网格">
+          <Magnet aria-hidden="true" />
+          <select aria-label="时值对齐" value={props.gridTicks} onChange={(event) => props.onSetGridTicks(Number(event.target.value))}>
+            {props.gridOptions.map((option) => <option key={option.ticks} value={option.ticks}>{option.label}</option>)}
+          </select>
+        </div>
+        <IconButton label="缩小时间轴" icon={<ZoomOut />} onClick={props.onZoomOut} />
+        <span className="zoom-value">{props.pixelsPerBeat}</span>
+        <IconButton label="放大时间轴" icon={<ZoomIn />} onClick={props.onZoomIn} />
+        <IconButton label="选择本地 SoundFont" icon={<FileAudio />} onClick={props.onChooseSoundFont} />
+        <IconButton label="恢复默认音色" icon={<RotateCcw />} onClick={props.onUseDefaultSoundFont} />
+        <span className={"engine-status " + props.audioState} title={props.audioMessage}>
+          <Volume2 aria-hidden="true" />
+          {soundFontPercent === undefined ? props.audioMessage : props.audioMessage + " " + soundFontPercent + "%"}
+        </span>
       </div>
       <div className="rule-test-current-title">
         <strong>{props.title}</strong>

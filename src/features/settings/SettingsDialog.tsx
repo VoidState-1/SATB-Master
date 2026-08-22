@@ -123,6 +123,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
             <DeveloperSettingsPane
               developerMode={props.developerMode}
               onSetDeveloperMode={props.onSetDeveloperMode}
+              showRuleTestEntry={props.showRuleTestEntry}
+              onSetShowRuleTestEntry={props.onSetShowRuleTestEntry}
             />
           )}
         </div>

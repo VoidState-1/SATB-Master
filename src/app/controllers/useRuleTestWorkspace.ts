@@ -17,7 +17,9 @@ import {
   type RuleTestRunResult,
 } from "../../domain/harmony";
 import { defaultChordDraftAtTick } from "../../domain/chords";
+import { buildMidi, midiFileName } from "../../domain/midi";
 import type { ProjectDocument } from "../../domain/project";
+import { exportMidi } from "../../services/desktop";
 import { useDocumentHistory } from "../../hooks/useDocumentHistory";
 import {
   createRuleTestCaseStore,
@@ -375,8 +377,21 @@ export function useRuleTestWorkspace({
         );
         return false;
       }
-    }, [document, filePath, history, libraryItems, showNotice, store],
-  );
+    }, [document, filePath, history, libraryItems, showNotice, store]);
+
+  const exportMidiFile = useCallback(async () => {
+    try {
+      const result = await exportMidi(
+        buildMidi(document.project, true),
+        midiFileName(document.project),
+      );
+      if (!result.canceled) showNotice("MIDI 已导出");
+      return !result.canceled;
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "MIDI 导出失败");
+      return false;
+    }
+  }, [document.project, showNotice]);
 
   const commitProject = useCallback(
     (project: ProjectDocument) => {
@@ -757,6 +772,7 @@ export function useRuleTestWorkspace({
     run,
     runLibrary,
     cancelBatchRun,
+    exportMidi: exportMidiFile,
     cancelRun,
     normalize,
     commitTestCase,

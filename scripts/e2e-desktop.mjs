@@ -410,6 +410,27 @@ async function verifyPanelResizing() {
   }
 }
 
+async function verifyRuleTestWorkbenchControls() {
+  await clickButton('规则测试工作台')
+  await waitFor("Boolean(document.querySelector('.rule-test-workspace'))", '进入规则测试工作台')
+  const controls = await evaluate("(() => { const labels = [...document.querySelectorAll('button[aria-label]')].map((button) => button.getAttribute('aria-label')); return { newCase: labels.includes('新建规则用例'), exportMidi: labels.includes('导出 MIDI'), undo: labels.includes('撤销'), play: labels.includes('播放'), stop: labels.includes('停止'), soundFont: labels.includes('选择本地 SoundFont'), defaultSoundFont: labels.includes('恢复默认音色'), grid: Boolean(document.querySelector('.rule-test-toolbar select[aria-label=\\\"时值对齐\\\"]')), pianoRoll: Boolean(document.querySelector('.rule-test-workspace .piano-roll')) }; })()")
+  if (!controls || Object.values(controls).some((value) => !value)) {
+    throw new Error('规则测试工作台编辑/播放控件缺失：' + JSON.stringify(controls))
+  }
+  await clickButton('回到开头')
+  const playheadAtStart = await evaluate("Number.parseFloat(document.querySelector('.rule-test-workspace .roll-playhead')?.style.left ?? 'NaN')")
+  if (!Number.isFinite(playheadAtStart) || Math.abs(playheadAtStart - 58) > 0.1) {
+    throw new Error(`规则测试播放前播放头未回到起点：${playheadAtStart}`)
+  }
+  await clickButton('播放')
+  await waitFor("Number.parseFloat(document.querySelector('.rule-test-workspace .roll-playhead')?.style.left ?? 'NaN') > 58.1", '规则测试播放头移动', 10_000)
+  await clickButton('停止')
+  await clickButton('返回普通工程')
+  await waitFor("document.body.innerText.includes('返回普通工程？')", '返回普通工程确认')
+  await clickButton('返回')
+  await waitFor("Boolean(document.querySelector('.workspace:not(.rule-test-workspace)'))", '返回普通工程')
+}
+
 async function verifyPanelLayoutAfterRuleTestRoundTrip() {
   await clickButton('设置')
   await clickButton('开发者')
@@ -1417,6 +1438,7 @@ try {
   await verifyViewportCanvas()
   await verifyPanelResizing()
   await verifyPanelLayoutAfterRuleTestRoundTrip()
+  await verifyRuleTestWorkbenchControls()
   await verifyInitialGridSelection()
   await verifyShortcutSettings()
   await configureHarmonyRuleSeverity()

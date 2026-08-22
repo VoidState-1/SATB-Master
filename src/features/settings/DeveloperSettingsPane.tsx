@@ -1,13 +1,17 @@
-import { Bug } from "lucide-react";
+import { Bug, FlaskConical } from "lucide-react";
 
 interface DeveloperSettingsPaneProps {
   developerMode: boolean;
   onSetDeveloperMode(enabled: boolean): void;
+  showRuleTestEntry: boolean;
+  onSetShowRuleTestEntry(visible: boolean): void;
 }
 
 export function DeveloperSettingsPane({
   developerMode,
   onSetDeveloperMode,
+  showRuleTestEntry,
+  onSetShowRuleTestEntry,
 }: DeveloperSettingsPaneProps) {
   return (
     <div className="developer-settings-content">
@@ -37,6 +41,24 @@ export function DeveloperSettingsPane({
             JSON。此开关只保存在本机，不写入工程文件。
           </p>
         </div>
+      </section>
+      <section className="developer-settings-section">
+        <header>
+          <FlaskConical aria-hidden="true" />
+          <div>
+            <h3>显示测试工作台入口</h3>
+            <p>控制主工具栏中的测试工作台入口，关闭后不会影响已保存的测试用例。</p>
+          </div>
+          <label className="developer-mode-toggle">
+            <input
+              type="checkbox"
+              checked={showRuleTestEntry}
+              aria-label="显示测试工作台入口"
+              onChange={(event) => onSetShowRuleTestEntry(event.target.checked)}
+            />
+            <span>{showRuleTestEntry ? "已显示" : "已隐藏"}</span>
+          </label>
+        </header>
       </section>
     </div>
   );

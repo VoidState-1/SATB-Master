@@ -325,6 +325,7 @@ function AppShell() {
         confirmation={confirmation}
         answerConfirmation={answerConfirmation}
         notice={notice}
+        showNotice={showNotice}
       />
     );
   }
@@ -405,7 +406,7 @@ function AppShell() {
             icon={<Download />}
             onClick={() => void handleExportMidi()}
           />
-          {developerMode.enabled ? (
+          {developerMode.enabled && developerMode.showRuleTestEntry ? (
             <IconButton
               label="规则测试工作台"
               icon={<FlaskConical />}
@@ -782,6 +783,8 @@ function AppShell() {
           onResetExternalRule={resetExternalRule}
           developerMode={developerMode.enabled}
           onSetDeveloperMode={developerMode.setEnabled}
+          showRuleTestEntry={developerMode.showRuleTestEntry}
+          onSetShowRuleTestEntry={developerMode.setShowRuleTestEntry}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}

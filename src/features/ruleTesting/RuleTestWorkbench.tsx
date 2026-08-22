@@ -7,7 +7,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { IconButton } from "../../components/IconButton";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { PianoRoll } from "../../features/editor";
+import { GRID_OPTIONS, PianoRoll, stepTimelineZoom } from "../../features/editor";
 import { TrackSidebar } from "../../features/tracks";
 import { SelectionInspector } from "../../features/inspector";
 import { PanelResizeHandle } from "../../components/PanelResizeHandle";
@@ -22,7 +22,8 @@ import { buildMeasures, formatPosition } from "../../domain/time";
 import { usePanelLayout, DEFAULT_PANEL_SIZES, PANEL_RESIZER_SIZE } from "../../hooks/usePanelLayout";
 import { useDeveloperMode } from "../../hooks/useDeveloperMode";
 import { useShortcutBindings } from "../../hooks/useShortcutBindings";
-import { useRuleTestKeyboard } from "./useRuleTestKeyboard";
+import { usePlaybackController } from "../../app/controllers/usePlaybackController";
+import { useKeyboardController } from "../../app/controllers/useKeyboardController";
 
 interface RuleTestWorkbenchProps {
   controller: RuleTestWorkspaceController;
@@ -36,6 +37,7 @@ interface RuleTestWorkbenchProps {
   confirmation?: ConfirmationState;
   answerConfirmation(confirmed: boolean): void;
   notice?: string;
+  showNotice(message: string): void;
 }
 
 function missingReferences(controller: RuleTestWorkspaceController) {
@@ -58,11 +60,11 @@ export function RuleTestWorkbench({
   confirmation,
   answerConfirmation,
   notice,
+  showNotice,
 }: RuleTestWorkbenchProps) {
   const panelLayout = usePanelLayout("rule-test");
   const developerMode = useDeveloperMode();
   const shortcutSettings = useShortcutBindings();
-  useRuleTestKeyboard(shortcutSettings.bindings, controller);
   const [leftTab, setLeftTab] = useState<"cases" | "voices">("cases");
   const [rightTab, setRightTab] = useState<"case" | "selection">("case");
   const missing = missingReferences(controller);
@@ -74,6 +76,68 @@ export function RuleTestWorkbench({
     history,
     lastRun,
   } = controller;
+  const {
+    activeVoice,
+    setActiveVoice,
+    tool,
+    setTool,
+    editorDomain,
+    editorInteractionActive,
+    setCancelEditorRequest,
+    gridTicks,
+    setGridTicks,
+    pixelsPerBeat,
+    setPixelsPerBeat,
+    selectedNoteIds,
+    selectedChordIds,
+    effectiveTool,
+    selectedNote,
+    selectedChord,
+  } = editor;
+  const commands = editorCommands;
+  const playback = usePlaybackController({
+    project,
+    history: { commit: controller.commitProject },
+    initialSoundFont: project.audio.soundFont,
+    gridTicks,
+    showNotice,
+    playheadTick: controller.playheadTick,
+    onPlayheadChange: controller.setPlayheadTick,
+  });
+  useKeyboardController({
+    bindings: shortcutSettings.bindings,
+    confirmation,
+    settingsOpen: false,
+    tool,
+    editorDomain,
+    editorInteractionActive,
+    gridTicks,
+    projectLengthTicks: project.lengthTicks,
+    selectedNoteIds,
+    selectedChordIds,
+    history,
+    setTool,
+    setPlayheadTick: controller.setPlayheadTick,
+    handleRunRuleTest: () => void controller.run(),
+    setCancelEditorRequest,
+    handleNew: async () => onCreateFromProject(),
+    handleOpen: async () => void controller.open(),
+    handleSave: async (forceDialog) => void controller.save(forceDialog),
+    handlePlay: playback.handlePlay,
+    handleDeleteChords: commands.handleDeleteChords,
+    handleDeleteNotes: commands.handleDeleteNotes,
+    selectAllInEditorDomain: commands.selectAllInEditorDomain,
+    clearSelection: commands.clearSelection,
+    copySelection: commands.copySelection,
+    cutSelection: commands.cutSelection,
+    pasteSelection: commands.pasteSelection,
+    duplicateSelection: commands.duplicateSelection,
+    cycleActiveVoice: commands.cycleActiveVoice,
+    movePlayheadByMeasure: commands.movePlayheadByMeasure,
+    changeGridResolution: commands.changeGridResolution,
+    changeTimelineZoom: commands.changeTimelineZoom,
+    transformSelection: commands.transformSelection,
+  });
   const measureCount = useMemo(() => buildMeasures(project).length, [project]);
   const selectDiagnostic = (diagnostic: HarmonyDiagnostic) => {
     controller.setPlayheadTick(diagnostic.tick);
@@ -121,7 +185,6 @@ export function RuleTestWorkbench({
     resultTargets[next].select();
     setResultCursor(next);
   };
-  const commands = editorCommands;
   return (
     <main className="app-shell rule-test-shell">
       <header
@@ -173,6 +236,21 @@ export function RuleTestWorkbench({
         batchRunState={controller.batchRunState}
         hasLibrary={controller.batchTotalCount > 0}
         hasActual={Boolean(lastRun)}
+        isPlaying={playback.isPlaying}
+        metronomeEnabled={playback.metronomeEnabled}
+        audioState={playback.audioState}
+        audioMessage={playback.audioMessage}
+        audioLevel={playback.audioLevel}
+        soundFontProgress={playback.soundFontProgress}
+        loopEnabled={project.loop.enabled}
+        loopStartLabel={formatPosition(project, project.loop.startTick)}
+        loopEndLabel={formatPosition(project, project.loop.endTick)}
+        gridTicks={gridTicks}
+        gridOptions={GRID_OPTIONS}
+        pixelsPerBeat={pixelsPerBeat}
+        effectiveTool={effectiveTool}
+        canUndo={history.canUndo}
+        canRedo={history.canRedo}
         onBack={onBack}
         onOpen={() => void controller.open()}
         onOpenDirectory={() => void controller.openDirectory()}
@@ -186,6 +264,28 @@ export function RuleTestWorkbench({
         onCancelLibrary={controller.cancelBatchRun}
         onAcceptAll={() => void controller.acceptAllActual()}
         onNormalize={controller.normalize}
+        onExportMidi={() => void controller.exportMidi()}
+        onUndo={history.undo}
+        onRedo={history.redo}
+        onCopy={commands.copySelection}
+        onPaste={commands.pasteSelection}
+        onDelete={() =>
+          editorDomain === "chords"
+            ? commands.handleDeleteChords(selectedChordIds)
+            : commands.handleDeleteNotes(selectedNoteIds)
+        }
+        onSetTool={setTool}
+        onGoToStart={() => playback.handleStop(true)}
+        onPlay={() => void playback.handlePlay()}
+        onStop={() => playback.handleStop()}
+        onToggleLoop={playback.toggleLoop}
+        onSetLoopBoundary={playback.setLoopBoundary}
+        onToggleMetronome={() => playback.setMetronomeEnabled((value) => !value)}
+        onSetGridTicks={setGridTicks}
+        onZoomOut={() => setPixelsPerBeat((value) => stepTimelineZoom(value, -1))}
+        onZoomIn={() => setPixelsPerBeat((value) => stepTimelineZoom(value, 1))}
+        onChooseSoundFont={() => void playback.handleChooseSoundFont()}
+        onUseDefaultSoundFont={() => void playback.handleUseDefaultSoundFont()}
       />
       <div
         className="rule-test-workspace"
@@ -264,12 +364,12 @@ export function RuleTestWorkbench({
             diagnostics={lastRun?.actual.diagnostics ?? []}
             missingExpectedNoteIds={missing.notes}
             missingExpectedChordIds={missing.chords}
-            playheadTick={controller.playheadTick}
+            playheadTick={playback.playheadTick}
             loopEnabled={project.loop.enabled}
             loopStartTick={project.loop.startTick}
             loopEndTick={project.loop.endTick}
             cancelRequest={editor.cancelEditorRequest}
-            onSetPlayhead={controller.setPlayheadTick}
+            onSetPlayhead={playback.setPlayheadTick}
             onSetPixelsPerBeat={editor.setPixelsPerBeat}
             onSetActiveVoice={editor.setActiveVoice}
             onSetEditorDomain={editor.setEditorDomain}
@@ -374,7 +474,7 @@ export function RuleTestWorkbench({
                 selectedChordCount={editor.selectedChordIds.size}
                 developerMode={developerMode.enabled}
                 chordBrush={editor.chordBrush}
-                playheadTick={controller.playheadTick}
+                playheadTick={playback.playheadTick}
                 onUpdateNote={commands.handleUpdateNote}
                 onUpdateChord={commands.handleUpdateChord}
                 onDeleteChords={commands.handleDeleteChords}
@@ -387,7 +487,7 @@ export function RuleTestWorkbench({
       <div className="rule-test-statusbar">
         <span>{testCase.target.ruleId}</span>
         <span>{measureCount} 小节</span>
-        <span>{formatPosition(project, controller.playheadTick)}</span>
+        <span>{formatPosition(project, playback.playheadTick)}</span>
         <span>{developerMode.enabled ? "开发者模式" : "隔离规则测试"}</span>
       </div>
       {confirmation ? (

@@ -58,14 +58,19 @@ export class SatbAudioEngine {
   private synthScheduleGeneration = 0;
   private animationFrame?: number;
   private stopTimer?: number;
-  private stateListener?: (state: AudioEngineState, message?: string) => void;
+  private stateListeners = new Set<
+    (state: AudioEngineState, message?: string) => void
+  >();
 
   onState(listener: (state: AudioEngineState, message?: string) => void) {
-    this.stateListener = listener;
+    this.stateListeners.add(listener);
+    return () => this.stateListeners.delete(listener);
   }
 
   private setState(state: AudioEngineState, message?: string) {
-    this.stateListener?.(state, message);
+    this.stateListeners.forEach((registeredListener) =>
+      registeredListener(state, message),
+    );
   }
 
   async initialize() {

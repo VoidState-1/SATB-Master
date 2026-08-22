@@ -23,6 +23,8 @@ interface PlaybackControllerOptions {
   initialSoundFont: ProjectDocument["audio"]["soundFont"];
   gridTicks: number;
   showNotice(message: string): void;
+  playheadTick?: number;
+  onPlayheadChange?(tick: number): void;
 }
 
 function soundFontId(soundFont: ProjectDocument["audio"]["soundFont"]) {
@@ -88,11 +90,21 @@ export function usePlaybackController({
   initialSoundFont,
   gridTicks,
   showNotice,
+  playheadTick: controlledPlayheadTick,
+  onPlayheadChange,
 }: PlaybackControllerOptions) {
   const loopEnabled = project.loop.enabled;
   const loopStartTick = project.loop.startTick;
   const loopEndTick = project.loop.endTick;
-  const [playheadTick, setPlayheadTick] = useState(0);
+  const [internalPlayheadTick, setInternalPlayheadTick] = useState(0);
+  const playheadTick = controlledPlayheadTick ?? internalPlayheadTick;
+  const setPlayheadTick = useCallback(
+    (tick: number) => {
+      onPlayheadChange?.(tick);
+      if (controlledPlayheadTick === undefined) setInternalPlayheadTick(tick);
+    },
+    [controlledPlayheadTick, onPlayheadChange],
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [audioState, setAudioState] = useState<AudioEngineState>("idle");
@@ -115,11 +127,14 @@ export function usePlaybackController({
   );
 
   useEffect(() => {
-    audioEngine.onState((state, message) => {
+    const unsubscribe = audioEngine.onState((state, message) => {
       setAudioState(state);
       if (message) setAudioMessage(message);
     });
-    return () => audioEngine.stop(false);
+    return () => {
+      unsubscribe();
+      audioEngine.stop(false);
+    };
   }, []);
 
   useEffect(() => {

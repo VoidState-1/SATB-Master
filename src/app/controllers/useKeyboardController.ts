@@ -27,6 +27,7 @@ interface KeyboardControllerOptions {
   history: HistoryKeyboardPort;
   setTool(tool: EditorTool): void;
   setPlayheadTick(tick: number): void;
+  handleRunRuleTest?(): void;
   setCancelEditorRequest: Dispatch<SetStateAction<number>>;
   handleNew(): Promise<void>;
   handleOpen(): Promise<void>;
@@ -54,6 +55,7 @@ interface KeyboardControllerOptions {
 export function useKeyboardController({
   enabled = true,
   bindings,
+  handleRunRuleTest,
   confirmation,
   settingsOpen,
   tool,
@@ -120,7 +122,7 @@ export function useKeyboardController({
         openProject: () => void handleOpen(),
         saveProject: () => void handleSave(false),
         saveProjectAs: () => void handleSave(true),
-        runRuleTest: () => undefined,
+        runRuleTest: () => handleRunRuleTest?.(),
         undo: () => history.undo(),
         redo: () => history.redo(),
         selectAll: selectAllInEditorDomain,
@@ -186,6 +188,7 @@ export function useKeyboardController({
     editorDomain,
     editorInteractionActive,
     gridTicks,
+    handleRunRuleTest,
     handleDeleteChords,
     handleDeleteNotes,
     handleNew,
