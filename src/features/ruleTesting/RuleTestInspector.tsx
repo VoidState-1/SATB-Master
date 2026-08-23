@@ -1,6 +1,8 @@
 import { useMemo } from "react";
+import { FolderOpen, RotateCcw, Volume2 } from "lucide-react";
 import type {
   ExpectedDiagnostic,
+  HarmonyRuleId,
   HarmonyRuleTestCase,
   RuleConfig,
   RuleExceptionPolicy,
@@ -11,12 +13,19 @@ import {
   RuleExceptionFields,
   RuleOptionFields,
 } from "../../features/settings";
+import { RuleSearch } from "./RuleSearch";
 
 interface RuleTestInspectorProps {
   testCase: HarmonyRuleTestCase;
   project: ProjectDocument;
   selectedExpectationId?: string;
+  audioState?: string;
+  audioMessage?: string;
+  soundFontProgress?: { completedBytes: number; totalBytes: number };
   onUpdateCase(update: (testCase: HarmonyRuleTestCase) => void): void;
+  onSetRule(ruleId: HarmonyRuleId): void;
+  onChooseSoundFont(): void;
+  onUseDefaultSoundFont(): void;
   onSelectExpectation(expectationId: string): void;
   onUpdateExpectation(
     expectationId: string,
@@ -24,21 +33,6 @@ interface RuleTestInspectorProps {
   ): void;
   onDeleteExpectation(expectationId: string): void;
 }
-
-const EXCEPTION_CONTEXT_LABELS: Record<string, string> = {
-  "same-harmony": "同和弦转换",
-  arpeggiation: "分解和弦式进行",
-  "voice-exchange": "声部交换",
-  "inner-voices": "包含内声部",
-  "bass-step-up": "低音上行级进",
-  sequence: "模进",
-  "pedal-point": "持续低音",
-  "nonchord-tone": "已确认非和弦音",
-  cadence: "终止语境",
-  modulation: "转调语境",
-  "ambiguous-semantics": "语义存在歧义",
-  "insufficient-context": "上下文不足",
-};
 
 function expectedReferenceSummary(item: ExpectedDiagnostic) {
   return [
@@ -54,7 +48,13 @@ export function RuleTestInspector({
   testCase,
   project,
   selectedExpectationId,
+  audioState,
+  audioMessage,
+  soundFontProgress,
   onUpdateCase,
+  onSetRule,
+  onChooseSoundFont,
+  onUseDefaultSoundFont,
   onSelectExpectation,
   onUpdateExpectation,
   onDeleteExpectation,
@@ -77,6 +77,13 @@ export function RuleTestInspector({
     onUpdateCase((next) => {
       next.execution.exceptions = exceptions ?? {};
     });
+  const soundFontPercent =
+    soundFontProgress && soundFontProgress.totalBytes > 0
+      ? Math.round(
+          (soundFontProgress.completedBytes / soundFontProgress.totalBytes) *
+            100,
+        )
+      : undefined;
 
   return (
     <aside className="rule-test-inspector" aria-label="规则测试用例详情">
@@ -126,8 +133,14 @@ export function RuleTestInspector({
           </label>
         </section>
         <section className="rule-test-form-section">
-          <h3>{definition.label}</h3>
-          <p className="rule-test-rule-description">{definition.description}</p>
+          <h3>测试规则</h3>
+          <RuleSearch
+            ruleId={testCase.target.ruleId}
+            onSelect={onSetRule}
+          />
+          <p className="rule-test-rule-description" style={{ marginTop: "8px" }}>
+            {definition.description}
+          </p>
           <label className="rule-test-field">
             <span>严重程度</span>
             <select
@@ -154,6 +167,45 @@ export function RuleTestInspector({
             exceptions={testCase.execution.exceptions}
             onChange={patchExceptions}
           />
+        </section>
+        <section className="rule-test-form-section">
+          <h3>SoundFont 音源</h3>
+          <div className="rule-test-soundfont-card">
+            <div className="rule-test-soundfont-name">
+              <Volume2 aria-hidden="true" />
+              <strong>{project.audio.soundFont.name || "默认音色"}</strong>
+            </div>
+            <div className="rule-test-soundfont-status">
+              <small>{audioMessage || "SoundFont 已就绪"}</small>
+              {soundFontPercent !== undefined ? (
+                <progress
+                  max="100"
+                  value={soundFontPercent}
+                  aria-label="SoundFont 加载进度"
+                />
+              ) : null}
+            </div>
+            <div className="rule-test-soundfont-actions">
+              <button
+                type="button"
+                className="command-button primary"
+                onClick={onChooseSoundFont}
+              >
+                <FolderOpen aria-hidden="true" />
+                选择本地 SF2
+              </button>
+              {project.audio.soundFont.kind === "user" ? (
+                <button
+                  type="button"
+                  className="command-button"
+                  onClick={onUseDefaultSoundFont}
+                >
+                  <RotateCcw aria-hidden="true" />
+                  恢复默认音色
+                </button>
+              ) : null}
+            </div>
+          </div>
         </section>
         <section className="rule-test-form-section">
           <div className="rule-test-section-heading">

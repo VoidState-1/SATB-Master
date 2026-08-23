@@ -228,9 +228,6 @@ export function RuleTestWorkbench({
         ) : null}
       </header>
       <RuleTestToolbar
-        title={testCase.title}
-        dirty={history.isDirty}
-        ruleId={testCase.target.ruleId}
         autoRun={controller.autoRun}
         runState={controller.runState}
         batchRunState={controller.batchRunState}
@@ -238,10 +235,7 @@ export function RuleTestWorkbench({
         hasActual={Boolean(lastRun)}
         isPlaying={playback.isPlaying}
         metronomeEnabled={playback.metronomeEnabled}
-        audioState={playback.audioState}
-        audioMessage={playback.audioMessage}
         audioLevel={playback.audioLevel}
-        soundFontProgress={playback.soundFontProgress}
         loopEnabled={project.loop.enabled}
         loopStartLabel={formatPosition(project, project.loop.startTick)}
         loopEndLabel={formatPosition(project, project.loop.endTick)}
@@ -257,7 +251,6 @@ export function RuleTestWorkbench({
         onSave={(forceDialog) => void controller.save(forceDialog)}
         onRun={() => void controller.run()}
         onSetAutoRun={controller.setAutoRun}
-        onSetRule={controller.setTargetRule}
         onCreateFromProject={onCreateFromProject}
         onClone={controller.cloneCurrent}
         onRunLibrary={() => void controller.runLibrary()}
@@ -284,8 +277,6 @@ export function RuleTestWorkbench({
         onSetGridTicks={setGridTicks}
         onZoomOut={() => setPixelsPerBeat((value) => stepTimelineZoom(value, -1))}
         onZoomIn={() => setPixelsPerBeat((value) => stepTimelineZoom(value, 1))}
-        onChooseSoundFont={() => void playback.handleChooseSoundFont()}
-        onUseDefaultSoundFont={() => void playback.handleUseDefaultSoundFont()}
       />
       <div
         className="rule-test-workspace"
@@ -459,7 +450,15 @@ export function RuleTestWorkbench({
               testCase={testCase}
               project={project}
               selectedExpectationId={controller.selectedExpectationId}
+              audioState={playback.audioState}
+              audioMessage={playback.audioMessage}
+              soundFontProgress={playback.soundFontProgress}
               onUpdateCase={controller.commitTestCase}
+              onSetRule={controller.setTargetRule}
+              onChooseSoundFont={() => void playback.handleChooseSoundFont()}
+              onUseDefaultSoundFont={() =>
+                void playback.handleUseDefaultSoundFont()
+              }
               onSelectExpectation={controller.setSelectedExpectationId}
               onUpdateExpectation={controller.updateExpectation}
               onDeleteExpectation={controller.deleteExpectation}
