@@ -71,7 +71,12 @@ export interface DesktopInvokeMap {
     response: { canceled: boolean; filePath?: string; document?: unknown };
   };
   "rule-test-case:save": {
-    request: { currentPath?: string; forceDialog: boolean; json: string };
+    request: {
+      currentPath?: string;
+      forceDialog: boolean;
+      json: string;
+      defaultName?: string;
+    };
     response: { canceled: boolean; filePath?: string };
   };
   "rule-test-case:open-directory": {

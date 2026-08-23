@@ -168,11 +168,13 @@ describe("规则测试用例存储端口", () => {
       currentPath: "C:\\cases\\sample.satb-rule-case.json",
       forceDialog: false,
       json: "{}\n",
+      defaultName: "sample",
     });
     expect(save).toHaveBeenNthCalledWith(2, {
       currentPath: undefined,
       forceDialog: true,
       json: "{}\n",
+      defaultName: "sample-copy",
     });
     await expect(store.openDirectory()).resolves.toMatchObject({
       directoryPath: "C:\\cases",

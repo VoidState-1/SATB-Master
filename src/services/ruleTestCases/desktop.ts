@@ -22,6 +22,7 @@ export function createDesktopRuleTestCaseStore(
         currentPath: request.currentPath,
         forceDialog: request.forceDialog,
         json: request.json,
+        defaultName: request.defaultName,
       });
       return result.canceled ? undefined : { filePath: result.filePath };
     },

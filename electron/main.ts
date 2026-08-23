@@ -5,6 +5,7 @@ import { registerProjectIpc } from './project-ipc.js'
 import { registerRuleLibraryIpc } from './rule-library.js'
 import { registerRuleTestCaseIpc } from './rule-test-cases.js'
 import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
+import { installReactDevToolsIfAvailable } from './dev-extensions.js'
 import { DESKTOP_CHANNELS } from '../shared/desktop.js'
 import { handleDesktop } from './typed-ipc.js'
 
@@ -82,7 +83,10 @@ function registerWindowIpc() {
   handleDesktop(DESKTOP_CHANNELS.windowClose, (event) => senderWindow(event)?.close())
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (developmentServerUrl || shouldOpenDevTools) {
+    await installReactDevToolsIfAvailable()
+  }
   registerSoundFontProtocol()
   registerProjectIpc()
   registerRuleTestCaseIpc()

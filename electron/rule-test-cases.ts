@@ -96,13 +96,19 @@ export function registerRuleTestCaseIpc() {
       ? path.join(e2eDirectory, `rule-case${RULE_TEST_CASE_EXTENSION}`)
       : request.currentPath;
     if (!e2eDirectory && (!filePath || request.forceDialog)) {
+      const requestedName =
+        typeof request.defaultName === "string" && request.defaultName.trim()
+          ? request.defaultName
+              .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+              .slice(0, 120)
+          : "未命名规则用例";
       const selection = await dialog.showSaveDialog({
         title: "保存规则测试用例",
         defaultPath:
           filePath ??
           (await rememberedDefaultPath(
             "rule-test-case",
-            `未命名规则用例${RULE_TEST_CASE_EXTENSION}`,
+            `${requestedName}${RULE_TEST_CASE_EXTENSION}`,
           )),
         filters: [
           { name: "SATB Master 规则测试用例", extensions: ["json"] },

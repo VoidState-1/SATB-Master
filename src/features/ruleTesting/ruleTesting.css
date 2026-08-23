@@ -4,7 +4,7 @@
 
 .rule-test-toolbar {
   position: relative;
-  z-index: 20;
+  z-index: 30;
   min-height: 52px;
   overflow: visible;
   gap: 8px;
@@ -109,7 +109,9 @@
 .rule-test-rule-filter > span {
   min-width: 30px;
   color: #8a8d85;
-  font: 10px Consolas, monospace;
+  font:
+    10px Consolas,
+    monospace;
   text-align: right;
 }
 
@@ -132,7 +134,9 @@
 
 .rule-test-rule-group h4 span {
   color: #92958d;
-  font: 10px Consolas, monospace;
+  font:
+    10px Consolas,
+    monospace;
   font-weight: 400;
 }
 
@@ -163,7 +167,9 @@
 
 .rule-test-rule-menu small {
   color: #7a7c74;
-  font: 10px Consolas, monospace;
+  font:
+    10px Consolas,
+    monospace;
 }
 
 .rule-test-auto-run {
@@ -453,7 +459,9 @@
   min-width: 0;
   overflow: hidden;
   color: #8b8e86;
-  font: 10px Consolas, monospace;
+  font:
+    10px Consolas,
+    monospace;
   font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -465,7 +473,7 @@
   grid-template-columns: 8px minmax(0, 1fr) 38px;
   align-items: start;
   gap: 9px;
-  padding: 12px 10px;
+  padding: 8px 8px;
   border: 0;
   border-bottom: 1px solid #dedfd9;
   background: transparent;
@@ -520,7 +528,9 @@
 .rule-test-case-item small {
   margin-top: 3px;
   color: #7d8078;
-  font: 10px Consolas, monospace;
+  font:
+    10px Consolas,
+    monospace;
 }
 
 .rule-test-case-status {
@@ -558,7 +568,9 @@
 }
 
 .rule-test-batch-progress strong {
-  font: 10px Consolas, monospace;
+  font:
+    10px Consolas,
+    monospace;
   font-weight: 600;
 }
 
@@ -722,7 +734,9 @@
 
 .rule-test-expectation small {
   color: #7c7f76;
-  font: 10px Consolas, monospace;
+  font:
+    10px Consolas,
+    monospace;
 }
 
 .text-button {
@@ -831,7 +845,9 @@
 
 .rule-test-result-position {
   color: #70736b;
-  font: 10px Consolas, monospace;
+  font:
+    10px Consolas,
+    monospace;
 }
 
 .rule-test-result-copy {
@@ -881,7 +897,9 @@
   border-top: 1px solid #cacbc5;
   background: #eeeeea;
   color: #777a72;
-  font: 10px Consolas, monospace;
+  font:
+    10px Consolas,
+    monospace;
 }
 
 .rule-test-statusbar span:last-child {

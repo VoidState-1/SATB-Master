@@ -114,14 +114,18 @@
 }
 
 .developer-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   overflow-y: auto;
   padding: 14px;
 }
 
 .developer-settings-section {
-  border-top: 1px solid #cfd1ca;
-  border-bottom: 1px solid #cfd1ca;
+  border: 1px solid #cfd1ca;
+  border-radius: 4px;
   background: #fff;
+  overflow: hidden;
 }
 
 .developer-settings-section > header {

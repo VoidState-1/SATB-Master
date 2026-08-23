@@ -346,7 +346,10 @@ export function useRuleTestWorkspace({
           currentPath: filePath,
           forceDialog,
           json: serializeRuleTestCase(parsed.testCase),
-          defaultName: parsed.testCase.id,
+          defaultName:
+            parsed.testCase.title?.trim() ||
+            parsed.testCase.id ||
+            "未命名规则用例",
         });
         if (!result) return false;
         const savedPath = result.filePath ?? filePath;

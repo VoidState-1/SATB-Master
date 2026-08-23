@@ -63,9 +63,9 @@ function CaseItem({
     <button
       ref={buttonRef}
       type="button"
-      className={`rule-test-case-item${active ? " is-active" : ""}`}
+      className={`rule-test-case-item ${active ? "is-active" : ""}`}
       aria-current={active ? "true" : undefined}
-      title={invalid ? detail : item.relativePath ?? item.filePath}
+      title={invalid ? detail : (item.relativePath ?? item.filePath)}
       onClick={onSelect}
       onKeyDown={onKeyDown}
     >
@@ -113,27 +113,17 @@ export function RuleTestCaseList({
     () => ({ query, tag: tag || undefined, status }),
     [query, status, tag],
   );
-  const visibleCurrent = filterRuleTestCaseLibraryItems(
-    [currentItem],
-    filter,
-  );
+  const visibleCurrent = filterRuleTestCaseLibraryItems([currentItem], filter);
   const visibleLibrary = filterRuleTestCaseLibraryItems(
     items.filter((item) => item.key !== currentItem.key),
     filter,
   );
-  const represented = new Set([
-    identity(currentItem),
-    ...items.map(identity),
-  ]);
+  const represented = new Set([identity(currentItem), ...items.map(identity)]);
   const visibleRecent = filterRuleTestCaseLibraryItems(
     recentItems.filter((item) => !represented.has(identity(item))),
     filter,
   );
-  const visibleItems = [
-    ...visibleCurrent,
-    ...visibleLibrary,
-    ...visibleRecent,
-  ];
+  const visibleItems = [...visibleCurrent, ...visibleLibrary, ...visibleRecent];
   const moveFocus = (
     event: KeyboardEvent<HTMLButtonElement>,
     item: RuleTestCaseLibraryViewItem,
