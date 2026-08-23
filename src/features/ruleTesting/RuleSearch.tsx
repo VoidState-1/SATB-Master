@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Search } from "lucide-react";
 import {
   HARMONY_RULE_GROUPS,
   HARMONY_RULE_DEFINITIONS,
@@ -110,26 +111,30 @@ export function RuleSearch({ ruleId, onSelect }: RuleSearchProps) {
 
   return (
     <div ref={rootRef} className="rule-test-rule-search">
-      <input
-        aria-label="搜索目标规则"
-        value={query}
-        onFocus={handleOpen}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          if (!open) handleOpen();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && matches[0]) {
-            onSelect(matches[0].id);
-            setQuery(`${matches[0].id} · ${matches[0].label}`);
-            setOpen(false);
-          }
-          if (event.key === "Escape") {
-            setQuery(selectedLabel);
-            setOpen(false);
-          }
-        }}
-      />
+      <div className="rule-search-input-wrapper">
+        <Search className="rule-search-icon" aria-hidden="true" />
+        <input
+          aria-label="搜索目标规则"
+          placeholder="搜索规则名称或 ID..."
+          value={query}
+          onFocus={handleOpen}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            if (!open) handleOpen();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && matches[0]) {
+              onSelect(matches[0].id);
+              setQuery(`${matches[0].id} · ${matches[0].label}`);
+              setOpen(false);
+            }
+            if (event.key === "Escape") {
+              setQuery(selectedLabel);
+              setOpen(false);
+            }
+          }}
+        />
+      </div>
       {open && menuStyle.width > 0
         ? createPortal(
             <div

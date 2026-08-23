@@ -1,5 +1,13 @@
 import { useMemo } from "react";
-import { FolderOpen, RotateCcw, Volume2 } from "lucide-react";
+import {
+  FileText,
+  FolderOpen,
+  ListChecks,
+  RotateCcw,
+  Settings2,
+  ShieldCheck,
+  Volume2,
+} from "lucide-react";
 import type {
   ExpectedDiagnostic,
   HarmonyRuleId,
@@ -87,15 +95,16 @@ export function RuleTestInspector({
 
   return (
     <aside className="rule-test-inspector" aria-label="规则测试用例详情">
-      <div className="rule-test-inspector-tabs">
-        <span className="is-active">用例</span>
-        <span>选中对象</span>
-      </div>
       <div className="rule-test-inspector-content">
         <section className="rule-test-form-section">
-          <h3>用例</h3>
+          <div className="rule-test-section-heading">
+            <h3>
+              <FileText aria-hidden="true" />
+              用例属性
+            </h3>
+          </div>
           <label className="rule-test-field">
-            <span>标题</span>
+            <span className="rule-test-field-label">标题</span>
             <input
               value={testCase.title}
               onChange={(event) =>
@@ -106,10 +115,11 @@ export function RuleTestInspector({
             />
           </label>
           <label className="rule-test-field">
-            <span>说明</span>
+            <span className="rule-test-field-label">说明</span>
             <textarea
-              rows={3}
+              rows={2}
               value={testCase.description ?? ""}
+              placeholder="添加用例说明（可选）"
               onChange={(event) =>
                 onUpdateCase((next) => {
                   next.description = event.target.value || undefined;
@@ -118,9 +128,10 @@ export function RuleTestInspector({
             />
           </label>
           <label className="rule-test-field">
-            <span>标签</span>
+            <span className="rule-test-field-label">标签</span>
             <input
               value={testCase.tags.join(", ")}
+              placeholder="用逗号分隔标签"
               onChange={(event) =>
                 onUpdateCase((next) => {
                   next.tags = event.target.value
@@ -132,17 +143,23 @@ export function RuleTestInspector({
             />
           </label>
         </section>
+
         <section className="rule-test-form-section">
-          <h3>测试规则</h3>
+          <div className="rule-test-section-heading">
+            <h3>
+              <ShieldCheck aria-hidden="true" />
+              测试规则
+            </h3>
+          </div>
           <RuleSearch
             ruleId={testCase.target.ruleId}
             onSelect={onSetRule}
           />
-          <p className="rule-test-rule-description" style={{ marginTop: "8px" }}>
+          <p className="rule-test-rule-description">
             {definition.description}
           </p>
           <label className="rule-test-field">
-            <span>严重程度</span>
+            <span className="rule-test-field-label">严重程度</span>
             <select
               value={testCase.execution.severity}
               onChange={(event) =>
@@ -151,9 +168,9 @@ export function RuleTestInspector({
                 })
               }
             >
-              <option value="error">错误</option>
-              <option value="warning">警告</option>
-              <option value="suggestion">建议</option>
+              <option value="error">错误 (Error)</option>
+              <option value="warning">警告 (Warning)</option>
+              <option value="suggestion">建议 (Suggestion)</option>
             </select>
           </label>
           <RuleOptionFields
@@ -168,23 +185,33 @@ export function RuleTestInspector({
             onChange={patchExceptions}
           />
         </section>
+
         <section className="rule-test-form-section">
-          <h3>SoundFont 音源</h3>
-          <div className="rule-test-soundfont-card">
-            <div className="rule-test-soundfont-name">
+          <div className="rule-test-section-heading">
+            <h3>
               <Volume2 aria-hidden="true" />
-              <strong>{project.audio.soundFont.name || "默认音色"}</strong>
+              SoundFont 音源
+            </h3>
+          </div>
+          <div className="rule-test-soundfont-card">
+            <div className="rule-test-soundfont-header">
+              <span className="rule-test-soundfont-name" title={project.audio.soundFont.name || "默认音色"}>
+                {project.audio.soundFont.name || "默认音色 (General MIDI)"}
+              </span>
+              <span className={`rule-test-soundfont-badge ${audioState === "ready" || !audioState ? "is-ready" : "is-loading"}`}>
+                {audioMessage || "SoundFont 已就绪"}
+              </span>
             </div>
-            <div className="rule-test-soundfont-status">
-              <small>{audioMessage || "SoundFont 已就绪"}</small>
-              {soundFontPercent !== undefined ? (
+            {soundFontPercent !== undefined ? (
+              <div className="rule-test-soundfont-progress">
                 <progress
                   max="100"
                   value={soundFontPercent}
                   aria-label="SoundFont 加载进度"
                 />
-              ) : null}
-            </div>
+                <small>{soundFontPercent}%</small>
+              </div>
+            ) : null}
             <div className="rule-test-soundfont-actions">
               <button
                 type="button"
@@ -207,10 +234,16 @@ export function RuleTestInspector({
             </div>
           </div>
         </section>
+
         <section className="rule-test-form-section">
           <div className="rule-test-section-heading">
-            <h3>预期诊断</h3>
-            <span>{testCase.expected.diagnostics.length}</span>
+            <h3>
+              <ListChecks aria-hidden="true" />
+              预期诊断
+            </h3>
+            <span className="rule-test-count-badge">
+              {testCase.expected.diagnostics.length}
+            </span>
           </div>
           <label className="rule-test-check-field">
             <input
@@ -222,7 +255,7 @@ export function RuleTestInspector({
                 })
               }
             />
-            <span>允许额外诊断</span>
+            <span>允许额外诊断（忽略未预期的诊断）</span>
           </label>
           <div className="rule-test-expectation-list">
             {testCase.expected.diagnostics.map((expectation) => (
@@ -232,36 +265,48 @@ export function RuleTestInspector({
                 key={expectation.id}
                 onClick={() => onSelectExpectation(expectation.id)}
               >
-                <strong>{expectation.messageKey}</strong>
-                <small>{expectation.id}</small>
-                <small>
-                  Tick {expectation.tick} · {expectedReferenceSummary(expectation) || "未限制对象"}
-                </small>
+                <div className="rule-test-expectation-header">
+                  <strong>{expectation.messageKey}</strong>
+                  <small>{expectation.id}</small>
+                </div>
+                <div className="rule-test-expectation-meta">
+                  <span>Tick {expectation.tick}</span>
+                  <span>
+                    {expectedReferenceSummary(expectation) || "未限制声部/音符"}
+                  </span>
+                </div>
               </button>
             ))}
             {testCase.expected.diagnostics.length === 0 ? (
-              <div className="rule-test-empty">暂无预期。可从实际结果添加。</div>
+              <div className="rule-test-empty-box">
+                <span>暂无预期诊断</span>
+                <small>运行测试后可从实际结果一键添加预期</small>
+              </div>
             ) : null}
           </div>
         </section>
+
         {selectedExpectation ? (
           <section className="rule-test-form-section">
             <div className="rule-test-section-heading">
-              <h3>预期属性</h3>
+              <h3>
+                <Settings2 aria-hidden="true" />
+                预期属性
+              </h3>
               <button
                 type="button"
                 className="text-button danger"
                 onClick={() => onDeleteExpectation(selectedExpectation.id)}
               >
-                删除
+                删除预期
               </button>
             </div>
             <label className="rule-test-field">
-              <span>诊断 ID</span>
+              <span className="rule-test-field-label">诊断 ID</span>
               <input value={selectedExpectation.id} readOnly />
             </label>
             <label className="rule-test-field">
-              <span>消息键</span>
+              <span className="rule-test-field-label">消息键</span>
               <input
                 value={selectedExpectation.messageKey}
                 onChange={(event) =>
@@ -273,7 +318,7 @@ export function RuleTestInspector({
             </label>
             <div className="rule-test-inline-fields">
               <label className="rule-test-field">
-                <span>起点 Tick</span>
+                <span className="rule-test-field-label">起点 Tick</span>
                 <input
                   type="number"
                   min={0}
@@ -287,7 +332,7 @@ export function RuleTestInspector({
                 />
               </label>
               <label className="rule-test-field">
-                <span>终点 Tick</span>
+                <span className="rule-test-field-label">终点 Tick</span>
                 <input
                   type="number"
                   min={selectedExpectation.tick}
@@ -304,7 +349,7 @@ export function RuleTestInspector({
               </label>
             </div>
             <label className="rule-test-field">
-              <span>声部引用</span>
+              <span className="rule-test-field-label">声部引用</span>
               <input
                 value={selectedExpectation.voiceIds?.join(", ") ?? ""}
                 placeholder="soprano, alto"
@@ -320,7 +365,7 @@ export function RuleTestInspector({
               />
             </label>
             <label className="rule-test-field">
-              <span>音符引用</span>
+              <span className="rule-test-field-label">音符引用</span>
               <input
                 value={selectedExpectation.noteIds?.join(", ") ?? ""}
                 placeholder="通过结果自动填充"
@@ -334,7 +379,7 @@ export function RuleTestInspector({
               />
             </label>
             <label className="rule-test-field">
-              <span>和弦引用</span>
+              <span className="rule-test-field-label">和弦引用</span>
               <input
                 value={selectedExpectation.chordIds?.join(", ") ?? ""}
                 placeholder="通过结果自动填充"
