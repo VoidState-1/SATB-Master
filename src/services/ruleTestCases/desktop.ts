@@ -27,13 +27,23 @@ export function createDesktopRuleTestCaseStore(
       return result.canceled ? undefined : { filePath: result.filePath };
     },
 
-    async openDirectory() {
-      const result = await api.ruleTestCases.openDirectory();
-      if (result.canceled) return undefined;
+    async openDirectory(directoryPath?: string) {
+      const result = await api.ruleTestCases.openDirectory(
+        directoryPath ? { directoryPath } : undefined,
+      );
+      if (!result || result.canceled || !result.directoryPath) return undefined;
       return {
         directoryPath: result.directoryPath,
         entries: result.entries,
       };
+    },
+
+    async delete(options: { filePath: string }) {
+      if (!api?.ruleTestCases || typeof api.ruleTestCases.delete !== "function") {
+        throw new Error("桌面端接口尚未加载，请重启应用以载入最新的删除功能接口");
+      }
+      const result = await api.ruleTestCases.delete(options);
+      return Boolean(result?.deleted);
     },
   };
 }

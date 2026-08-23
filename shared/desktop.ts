@@ -80,7 +80,7 @@ export interface DesktopInvokeMap {
     response: { canceled: boolean; filePath?: string };
   };
   "rule-test-case:open-directory": {
-    request: void;
+    request: { directoryPath?: string } | void;
     response: {
       canceled: boolean;
       directoryPath?: string;
@@ -93,6 +93,10 @@ export interface DesktopInvokeMap {
         error?: string;
       }>;
     };
+  };
+  "rule-test-case:delete": {
+    request: { filePath: string };
+    response: { deleted: boolean };
   };
   "midi:export": {
     request: { bytes: Uint8Array; defaultName: string };
@@ -177,6 +181,7 @@ export const DESKTOP_CHANNELS = Object.freeze({
   ruleTestCaseOpen: "rule-test-case:open",
   ruleTestCaseSave: "rule-test-case:save",
   ruleTestCaseOpenDirectory: "rule-test-case:open-directory",
+  ruleTestCaseDelete: "rule-test-case:delete",
   midiExport: "midi:export",
   ruleProfileOpen: "rule-profile:open",
   ruleProfileSave: "rule-profile:save",
@@ -213,7 +218,8 @@ export interface DesktopApi {
   ruleTestCases: {
     open(): Promise<DesktopInvokeMap["rule-test-case:open"]["response"]>;
     save(request: DesktopInvokeMap["rule-test-case:save"]["request"]): Promise<DesktopInvokeMap["rule-test-case:save"]["response"]>;
-    openDirectory(): Promise<DesktopInvokeMap["rule-test-case:open-directory"]["response"]>;
+    openDirectory(request?: DesktopInvokeMap["rule-test-case:open-directory"]["request"]): Promise<DesktopInvokeMap["rule-test-case:open-directory"]["response"]>;
+    delete(request: DesktopInvokeMap["rule-test-case:delete"]["request"]): Promise<DesktopInvokeMap["rule-test-case:delete"]["response"]>;
   };
   midi: {
     export(bytes: Uint8Array, defaultName: string): Promise<DesktopInvokeMap["midi:export"]["response"]>;

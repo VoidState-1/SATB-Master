@@ -34,5 +34,8 @@ export interface RuleTestCaseStore {
   save(
     request: SaveRuleTestCaseRequest,
   ): Promise<SavedRuleTestCase | undefined>;
-  openDirectory(): Promise<RuleTestCaseLibrarySnapshot | undefined>;
+  openDirectory(
+    directoryPath?: string,
+  ): Promise<RuleTestCaseLibrarySnapshot | undefined>;
+  delete(options: { filePath: string }): Promise<boolean>;
 }

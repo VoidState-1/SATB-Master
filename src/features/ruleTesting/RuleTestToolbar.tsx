@@ -3,9 +3,7 @@ import {
   BellRing,
   Clipboard,
   Copy,
-  Download,
   Eraser,
-  FilePlus2,
   FolderOpen,
   Magnet,
   MoreHorizontal,
@@ -15,8 +13,6 @@ import {
   Play,
   Redo2,
   Repeat2,
-  Save,
-  SaveAll,
   Scissors,
   SkipBack,
   Square,
@@ -47,18 +43,14 @@ interface RuleTestToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   onBack(): void;
-  onOpen(): void;
   onOpenDirectory(): void;
-  onSave(forceDialog: boolean): void;
   onRun(): void;
   onSetAutoRun(value: boolean): void;
-  onCreateFromProject(): void;
   onClone(): void;
   onRunLibrary(): void;
   onCancelLibrary(): void;
   onAcceptAll(): void;
   onNormalize(): void;
-  onExportMidi(): void;
   onUndo(): void;
   onRedo(): void;
   onCopy(): void;
@@ -71,7 +63,7 @@ interface RuleTestToolbarProps {
   onToggleLoop(): void;
   onSetLoopBoundary(boundary: "start" | "end"): void;
   onToggleMetronome(): void;
-  onSetGridTicks(value: number): void;
+  onChangeGrid(ticks: number): void;
   onZoomOut(): void;
   onZoomIn(): void;
 }
@@ -84,31 +76,6 @@ export function RuleTestToolbar(props: RuleTestToolbarProps) {
           label="返回普通工程"
           icon={<ArrowLeft />}
           onClick={props.onBack}
-        />
-        <IconButton
-          label="新建规则用例"
-          icon={<FilePlus2 />}
-          onClick={props.onCreateFromProject}
-        />
-        <IconButton
-          label="打开规则用例"
-          icon={<FolderOpen />}
-          onClick={props.onOpen}
-        />
-        <IconButton
-          label="保存规则用例"
-          icon={<Save />}
-          onClick={() => props.onSave(false)}
-        />
-        <IconButton
-          label="规则用例另存为"
-          icon={<SaveAll />}
-          onClick={() => props.onSave(true)}
-        />
-        <IconButton
-          label="导出 MIDI"
-          icon={<Download />}
-          onClick={props.onExportMidi}
         />
       </div>
 
@@ -235,7 +202,7 @@ export function RuleTestToolbar(props: RuleTestToolbarProps) {
             aria-label="时值对齐"
             value={props.gridTicks}
             onChange={(event) =>
-              props.onSetGridTicks(Number(event.target.value))
+              props.onChangeGrid(Number(event.target.value))
             }
           >
             {props.gridOptions.map((option) => (

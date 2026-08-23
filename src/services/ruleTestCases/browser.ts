@@ -124,7 +124,9 @@ export function createBrowserRuleTestCaseStore(
       return {};
     },
 
-    async openDirectory(): Promise<RuleTestCaseLibrarySnapshot | undefined> {
+    async openDirectory(
+      _directoryPath?: string,
+    ): Promise<RuleTestCaseLibrarySnapshot | undefined> {
       const files = await chooseDirectory();
       if (files.length === 0) return undefined;
       const entries = [] as RuleTestCaseLibrarySnapshot["entries"];
@@ -170,6 +172,10 @@ export function createBrowserRuleTestCaseStore(
       }
       const firstPath = files[0].webkitRelativePath?.split(/[\\/]/)[0];
       return { directoryPath: firstPath, entries };
+    },
+
+    async delete(_options: { filePath: string }) {
+      return true;
     },
   };
 }

@@ -15,6 +15,7 @@ import { RuleTestCaseList } from "./RuleTestCaseList";
 import { RuleTestInspector } from "./RuleTestInspector";
 import { RuleTestResultsPanel } from "./RuleTestResultsPanel";
 import { RuleTestToolbar } from "./RuleTestToolbar";
+import { CreateTestCaseDialog } from "./CreateTestCaseDialog";
 import type { RuleTestWorkspaceController } from "../../app/controllers/useRuleTestWorkspace";
 import type { ConfirmationState } from "../../app/controllers/useConfirmationController";
 import type { HarmonyDiagnostic } from "../../domain/harmony";
@@ -67,6 +68,7 @@ export function RuleTestWorkbench({
   const shortcutSettings = useShortcutBindings();
   const [leftTab, setLeftTab] = useState<"cases" | "voices">("cases");
   const [rightTab, setRightTab] = useState<"case" | "selection">("case");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const missing = missingReferences(controller);
   const {
     editor,
@@ -246,18 +248,14 @@ export function RuleTestWorkbench({
         canUndo={history.canUndo}
         canRedo={history.canRedo}
         onBack={onBack}
-        onOpen={() => void controller.open()}
         onOpenDirectory={() => void controller.openDirectory()}
-        onSave={(forceDialog) => void controller.save(forceDialog)}
         onRun={() => void controller.run()}
         onSetAutoRun={controller.setAutoRun}
-        onCreateFromProject={onCreateFromProject}
         onClone={controller.cloneCurrent}
         onRunLibrary={() => void controller.runLibrary()}
         onCancelLibrary={controller.cancelBatchRun}
         onAcceptAll={() => void controller.acceptAllActual()}
         onNormalize={controller.normalize}
-        onExportMidi={() => void controller.exportMidi()}
         onUndo={history.undo}
         onRedo={history.redo}
         onCopy={commands.copySelection}
@@ -274,7 +272,7 @@ export function RuleTestWorkbench({
         onToggleLoop={playback.toggleLoop}
         onSetLoopBoundary={playback.setLoopBoundary}
         onToggleMetronome={() => playback.setMetronomeEnabled((value) => !value)}
-        onSetGridTicks={setGridTicks}
+        onChangeGrid={setGridTicks}
         onZoomOut={() => setPixelsPerBeat((value) => stepTimelineZoom(value, -1))}
         onZoomIn={() => setPixelsPerBeat((value) => stepTimelineZoom(value, 1))}
       />
@@ -311,9 +309,10 @@ export function RuleTestWorkbench({
               batchRunState={controller.batchRunState}
               batchCompletedCount={controller.batchCompletedCount}
               batchTotalCount={controller.batchTotalCount}
-              onOpen={() => void controller.open()}
+              onCreateCase={() => setCreateDialogOpen(true)}
               onOpenDirectory={() => void controller.openDirectory()}
               onSelect={(key) => void controller.openLibraryItem(key)}
+              onDelete={(key) => void controller.deleteLibraryItem(key)}
             />
           ) : null}
           {leftTab === "voices" ? (
@@ -489,6 +488,18 @@ export function RuleTestWorkbench({
         <span>{formatPosition(project, playback.playheadTick)}</span>
         <span>{developerMode.enabled ? "开发者模式" : "隔离规则测试"}</span>
       </div>
+      {createDialogOpen ? (
+        <CreateTestCaseDialog
+          initialRuleId={testCase.target.ruleId}
+          libraryDirectory={controller.libraryDirectory}
+          onOpenDirectory={() => void controller.openDirectory()}
+          onClose={() => setCreateDialogOpen(false)}
+          onCreate={async (params) => {
+            const success = await controller.createTestCase(params);
+            if (success) setCreateDialogOpen(false);
+          }}
+        />
+      ) : null}
       {confirmation ? (
         <ConfirmDialog
           title={confirmation.title}

@@ -18,7 +18,7 @@ import {
 } from "../../domain/harmony";
 import { defaultChordDraftAtTick } from "../../domain/chords";
 import { buildMidi, midiFileName } from "../../domain/midi";
-import type { ProjectDocument } from "../../domain/project";
+import { createEmptyProject, type ProjectDocument } from "../../domain/project";
 import { exportMidi } from "../../services/desktop";
 import { useDocumentHistory } from "../../hooks/useDocumentHistory";
 import {
@@ -84,6 +84,8 @@ function uniqueExpectationId(
   return `${base}-${suffix}`;
 }
 
+const LAST_DIRECTORY_STORAGE_KEY = "satb_last_rule_test_directory";
+
 export function useRuleTestWorkspace({
   initialProject,
   showNotice,
@@ -132,6 +134,28 @@ export function useRuleTestWorkspace({
   const batchRequestRef = useRef(0);
   const revisionRef = useRef(history.revision);
   revisionRef.current = history.revision;
+
+  useEffect(() => {
+    let lastDir: string | null = null;
+    try {
+      lastDir = localStorage.getItem(LAST_DIRECTORY_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    if (lastDir) {
+      void (async () => {
+        try {
+          const snapshot = await store.openDirectory(lastDir);
+          if (!snapshot || !snapshot.directoryPath) return;
+          const items = buildRuleTestCaseLibraryItems(snapshot);
+          setLibraryDirectory(snapshot.directoryPath);
+          setLibraryItems(items);
+        } catch {
+          // ignore if directory is no longer accessible
+        }
+      })();
+    }
+  }, [store]);
 
   const resetEditor = useCallback(
     (project: ProjectDocument) => {
@@ -224,6 +248,25 @@ export function useRuleTestWorkspace({
     ],
   );
 
+function normalizePath(p: string) {
+  return p.replace(/\\/g, "/").toLowerCase();
+}
+
+function isPathInsideDirectory(filePath: string, dirPath: string) {
+  const normFile = normalizePath(filePath);
+  const normDir = normalizePath(dirPath).replace(/\/+$/, "");
+  return normFile.startsWith(normDir + "/");
+}
+
+function getRelativePath(dirPath: string, filePath: string) {
+  const normFile = filePath.replace(/\\/g, "/");
+  const normDir = dirPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (normFile.toLowerCase().startsWith(normDir.toLowerCase() + "/")) {
+    return normFile.slice(normDir.length + 1);
+  }
+  return filePath.split(/[\\/]/).at(-1) ?? filePath;
+}
+
   const open = useCallback(async () => {
     if (hasSession && !(await confirmReplacement())) return false;
     try {
@@ -243,7 +286,31 @@ export function useRuleTestWorkspace({
         displayName: opened.displayName,
       });
       setRecentItems((items) => addRecentRuleTestCaseItem(items, recent));
-      setActiveLibraryKey(recent.key);
+      let targetKey = recent.key;
+      if (opened.filePath) {
+        const matchingItem = libraryItems.find(
+          (item) => item.filePath === opened.filePath,
+        );
+        if (matchingItem) {
+          targetKey = matchingItem.key;
+        } else if (
+          libraryDirectory &&
+          isPathInsideDirectory(opened.filePath, libraryDirectory)
+        ) {
+          const relPath = getRelativePath(libraryDirectory, opened.filePath);
+          const newItem: RuleTestCaseLibraryItem = {
+            key: `${libraryDirectory}::${relPath}`,
+            displayName: parsed.testCase.title || relPath,
+            filePath: opened.filePath,
+            relativePath: relPath,
+            testCase: structuredClone(parsed.testCase),
+            issues: [],
+          };
+          targetKey = newItem.key;
+          setLibraryItems((items) => [...items, newItem]);
+        }
+      }
+      setActiveLibraryKey(targetKey);
       showNotice(`已打开 ${opened.displayName ?? parsed.testCase.title}`);
       return true;
     } catch (error) {
@@ -256,15 +323,17 @@ export function useRuleTestWorkspace({
     cancelRun,
     confirmReplacement,
     hasSession,
+    libraryDirectory,
+    libraryItems,
     replaceDocument,
     showNotice,
     store,
   ]);
 
-  const openDirectory = useCallback(async () => {
+  const openDirectory = useCallback(async (requestedPath?: string) => {
     try {
       cancelBatchRun();
-      const snapshot = await store.openDirectory();
+      const snapshot = await store.openDirectory(requestedPath);
       if (!snapshot) return false;
       const items = buildRuleTestCaseLibraryItems(snapshot);
       setLibraryDirectory(snapshot.directoryPath);
@@ -272,6 +341,13 @@ export function useRuleTestWorkspace({
       setBatchResults({});
       setBatchRunState("idle");
       setBatchRunningKey(undefined);
+      if (snapshot.directoryPath) {
+        try {
+          localStorage.setItem(LAST_DIRECTORY_STORAGE_KEY, snapshot.directoryPath);
+        } catch {
+          // ignore
+        }
+      }
       const activeMatch = items.find(
         (item) => filePath && item.filePath === filePath,
       );
@@ -291,6 +367,47 @@ export function useRuleTestWorkspace({
     }
   }, [cancelBatchRun, filePath, showNotice, store]);
 
+  const persistTestCase = useCallback(
+    async (targetPath: string, targetDoc: RuleTestWorkspaceDocument) => {
+      try {
+        const candidate = synchronizedTestCase(targetDoc);
+        const parsed = parseRuleTestCase(candidate);
+        const testCase = parsed.testCase;
+        if (!testCase) return false;
+        const result = await store.save({
+          currentPath: targetPath,
+          forceDialog: false,
+          json: serializeRuleTestCase(testCase),
+          defaultName: testCase.title || "规则用例",
+        });
+        return Boolean(result);
+      } catch {
+        return false;
+      }
+    },
+    [store],
+  );
+
+  useEffect(() => {
+    if (!history.isDirty || !filePath) return;
+    const targetPath = filePath;
+    const targetDoc = document;
+    const timer = window.setTimeout(async () => {
+      const success = await persistTestCase(targetPath, targetDoc);
+      if (success) {
+        history.markSaved();
+        setLibraryItems((items) =>
+          items.map((item) =>
+            item.filePath === targetPath
+              ? { ...item, testCase: structuredClone(targetDoc.testCase), issues: [] }
+              : item,
+          ),
+        );
+      }
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [document, filePath, history, persistTestCase]);
+
   const openLibraryItem = useCallback(
     async (key: string) => {
       if (key === activeLibraryKey) return true;
@@ -305,7 +422,10 @@ export function useRuleTestWorkspace({
         );
         return false;
       }
-      if (hasSession && !(await confirmReplacement())) return false;
+      if (history.isDirty && filePath) {
+        await persistTestCase(filePath, document);
+        history.markSaved();
+      }
       cancelRun();
       replaceDocument(workspaceDocument(structuredClone(item.testCase)), false);
       setFilePath(item.filePath);
@@ -317,12 +437,145 @@ export function useRuleTestWorkspace({
     [
       activeLibraryKey,
       cancelRun,
-      confirmReplacement,
-      hasSession,
+      document,
+      filePath,
+      history,
       libraryItems,
+      persistTestCase,
       recentItems,
       replaceDocument,
       showNotice,
+    ],
+  );
+
+  const createTestCase = useCallback(
+    async (options: {
+      title: string;
+      ruleId: HarmonyRuleId;
+      fileName: string;
+      template: "blank" | "inherit";
+    }) => {
+      if (!libraryDirectory) {
+        showNotice("请先打开用例目录");
+        return false;
+      }
+      if (history.isDirty && filePath) {
+        await persistTestCase(filePath, document);
+        history.markSaved();
+      }
+      cancelRun();
+      const newProject =
+        options.template === "inherit"
+          ? structuredClone(document.project)
+          : createEmptyProject(options.title);
+
+      const newTestCase = createRuleTestCase({
+        title: options.title,
+        ruleId: options.ruleId,
+        project: newProject,
+      });
+
+      const normalizedDir = libraryDirectory.replace(/\\/g, "/").replace(/\/+$/, "");
+      const targetFilePath = `${normalizedDir}/${options.fileName}`;
+
+      const saveResult = await store.save({
+        currentPath: targetFilePath,
+        forceDialog: false,
+        json: serializeRuleTestCase(newTestCase),
+        defaultName: options.title,
+      });
+      if (!saveResult) return false;
+
+      const savedPath = saveResult.filePath ?? targetFilePath;
+      const relPath = options.fileName;
+      const newItem: RuleTestCaseLibraryItem = {
+        key: `${libraryDirectory}::${relPath}`,
+        displayName: options.title,
+        filePath: savedPath,
+        relativePath: relPath,
+        testCase: structuredClone(newTestCase),
+        issues: [],
+      };
+
+      setLibraryItems((items) => [
+        ...items.filter((i) => i.filePath !== savedPath),
+        newItem,
+      ]);
+      replaceDocument(workspaceDocument(newTestCase), false);
+      setFilePath(savedPath);
+      setActiveLibraryKey(newItem.key);
+      showNotice(`已创建规则用例：“${options.title}”`);
+      return true;
+    },
+    [
+      cancelRun,
+      document,
+      filePath,
+      history,
+      libraryDirectory,
+      persistTestCase,
+      replaceDocument,
+      showNotice,
+      store,
+    ],
+  );
+
+  const deleteLibraryItem = useCallback(
+    async (key: string) => {
+      const item = libraryItems.find((candidate) => candidate.key === key);
+      if (!item || !item.filePath) {
+        showNotice("该用例文件不存在");
+        return false;
+      }
+      const displayName = item.testCase?.title || item.displayName;
+      const confirmed = await requestConfirmation({
+        title: "删除用例文件？",
+        message: `确定要永久删除“${displayName}”文件吗？此操作无法撤销。`,
+        confirmLabel: "删除",
+        cancelLabel: "取消",
+      });
+      if (!confirmed) return false;
+
+      try {
+        await store.delete({ filePath: item.filePath });
+        const remaining = libraryItems.filter((candidate) => candidate.key !== key);
+        setLibraryItems(remaining);
+        setRecentItems((recent) => recent.filter((candidate) => candidate.key !== key));
+
+        if (key === activeLibraryKey || item.filePath === filePath) {
+          cancelRun();
+          if (remaining.length > 0) {
+            const next = remaining[0];
+            if (next.testCase) {
+              replaceDocument(workspaceDocument(structuredClone(next.testCase)), false);
+              setFilePath(next.filePath);
+              setActiveLibraryKey(next.key);
+            }
+          } else {
+            const defaultCase = createRuleTestCase({
+              project: createEmptyProject("未命名用例"),
+            });
+            replaceDocument(workspaceDocument(defaultCase), false);
+            setFilePath(undefined);
+            setActiveLibraryKey(undefined);
+          }
+        }
+        showNotice(`已删除“${displayName}”`);
+        return true;
+      } catch (error) {
+        showNotice(error instanceof Error ? error.message : "删除用例失败");
+        return false;
+      }
+    },
+    [
+      activeLibraryKey,
+      cancelRun,
+      filePath,
+      libraryItems,
+      replaceDocument,
+      requestConfirmation,
+      showNotice,
+      store,
     ],
   );
 
@@ -340,37 +593,60 @@ export function useRuleTestWorkspace({
       try {
         const candidate = synchronizedTestCase(document);
         const parsed = parseRuleTestCase(candidate);
-        if (!parsed.testCase)
+        const testCase = parsed.testCase;
+        if (!testCase)
           throw new Error(parsed.issues.map((item) => item.message).join("；"));
         const result = await store.save({
           currentPath: filePath,
           forceDialog,
-          json: serializeRuleTestCase(parsed.testCase),
+          json: serializeRuleTestCase(testCase),
           defaultName:
-            parsed.testCase.title?.trim() ||
-            parsed.testCase.id ||
+            testCase.title?.trim() ||
+            testCase.id ||
             "未命名规则用例",
         });
         if (!result) return false;
         const savedPath = result.filePath ?? filePath;
         setFilePath(savedPath);
         const recent = createRecentRuleTestCaseItem({
-          testCase: parsed.testCase,
+          testCase,
           filePath: savedPath,
-          displayName: parsed.testCase.title,
+          displayName: testCase.title,
         });
         setRecentItems((items) => addRecentRuleTestCaseItem(items, recent));
-        setLibraryItems((items) =>
-          items.map((item) =>
-            savedPath && item.filePath === savedPath
-              ? { ...item, testCase: structuredClone(parsed.testCase), issues: [] }
-              : item,
-          ),
-        );
-        const libraryMatch = libraryItems.find(
-          (item) => savedPath && item.filePath === savedPath,
-        );
-        setActiveLibraryKey(libraryMatch?.key ?? recent.key);
+        let targetKey = recent.key;
+        setLibraryItems((items) => {
+          const index = items.findIndex(
+            (item) => savedPath && item.filePath === savedPath,
+          );
+          if (index >= 0) {
+            targetKey = items[index].key;
+            return items.map((item, i) =>
+              i === index
+                ? { ...item, testCase: structuredClone(testCase), issues: [] }
+                : item,
+            );
+          }
+          if (
+            libraryDirectory &&
+            savedPath &&
+            isPathInsideDirectory(savedPath, libraryDirectory)
+          ) {
+            const relPath = getRelativePath(libraryDirectory, savedPath);
+            const newItem: RuleTestCaseLibraryItem = {
+              key: `${libraryDirectory}::${relPath}`,
+              displayName: testCase.title || relPath,
+              filePath: savedPath,
+              relativePath: relPath,
+              testCase: structuredClone(testCase),
+              issues: [],
+            };
+            targetKey = newItem.key;
+            return [...items, newItem];
+          }
+          return items;
+        });
+        setActiveLibraryKey(targetKey);
         history.markSaved();
         showNotice(savedPath ? `已保存到 ${savedPath}` : "规则用例已下载");
         return true;
@@ -380,7 +656,14 @@ export function useRuleTestWorkspace({
         );
         return false;
       }
-    }, [document, filePath, history, libraryItems, showNotice, store]);
+    }, [
+      document,
+      filePath,
+      history,
+      libraryDirectory,
+      showNotice,
+      store,
+    ]);
 
   const exportMidiFile = useCallback(async () => {
     try {
@@ -767,9 +1050,11 @@ export function useRuleTestWorkspace({
     selectedExpectationId,
     setSelectedExpectationId,
     createFromProject,
+    createTestCase,
     open,
     openDirectory,
     openLibraryItem,
+    deleteLibraryItem,
     cloneCurrent,
     save,
     run,

@@ -134,8 +134,9 @@ describe("规则测试用例存储端口", () => {
         },
       ],
     });
+    const remove = vi.fn().mockResolvedValue({ deleted: true });
     const api = {
-      ruleTestCases: { open, save, openDirectory },
+      ruleTestCases: { open, save, openDirectory, delete: remove },
     } as unknown as Pick<
       DesktopApi,
       "ruleTestCases"
@@ -185,5 +186,11 @@ describe("规则测试用例存储端口", () => {
       ],
     });
     expect(openDirectory).toHaveBeenCalledOnce();
+    await expect(
+      store.delete({ filePath: "C:\\cases\\sample.satb-rule-case.json" }),
+    ).resolves.toBe(true);
+    expect(remove).toHaveBeenCalledWith({
+      filePath: "C:\\cases\\sample.satb-rule-case.json",
+    });
   });
 });

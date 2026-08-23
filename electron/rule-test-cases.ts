@@ -1,5 +1,5 @@
 import { dialog } from "electron";
-import { readdir, stat } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { DESKTOP_CHANNELS } from "../shared/desktop.js";
 import {
@@ -125,19 +125,52 @@ export function registerRuleTestCaseIpc() {
     return { canceled: false, filePath };
   });
 
-  handleDesktop(DESKTOP_CHANNELS.ruleTestCaseOpenDirectory, async () => {
-    const selection = await dialog.showOpenDialog({
-      title: "打开规则测试用例目录",
-      defaultPath: await rememberedDefaultPath("rule-test-case"),
-      properties: ["openDirectory"],
-    });
-    if (selection.canceled || !selection.filePaths[0])
-      return { canceled: true, entries: [] };
-    const directoryPath = selection.filePaths[0];
-    const info = await stat(directoryPath);
-    if (!info.isDirectory()) throw new Error("规则测试用例目录无效");
-    const entries = await scanRuleTestCaseDirectory(directoryPath);
-    await rememberDialogDirectory("rule-test-case", path.join(directoryPath, "placeholder.satb-rule-case.json"));
-    return { canceled: false, directoryPath, entries };
-  });
+  handleDesktop(
+    DESKTOP_CHANNELS.ruleTestCaseOpenDirectory,
+    async (_event, request) => {
+      let directoryPath =
+        typeof request === "object" && request && typeof request.directoryPath === "string"
+          ? request.directoryPath
+          : undefined;
+
+      if (!directoryPath) {
+        const selection = await dialog.showOpenDialog({
+          title: "打开规则测试用例目录",
+          defaultPath: await rememberedDefaultPath("rule-test-case"),
+          properties: ["openDirectory"],
+        });
+        if (selection.canceled || !selection.filePaths[0])
+          return { canceled: true, entries: [] };
+        directoryPath = selection.filePaths[0];
+      }
+
+      try {
+        const info = await stat(directoryPath);
+        if (!info.isDirectory()) throw new Error("规则测试用例目录无效");
+        const entries = await scanRuleTestCaseDirectory(directoryPath);
+        await rememberDialogDirectory(
+          "rule-test-case",
+          path.join(directoryPath, "placeholder.satb-rule-case.json"),
+        );
+        return { canceled: false, directoryPath, entries };
+      } catch (error) {
+        if (request && typeof request === "object" && request.directoryPath) {
+          return { canceled: true, entries: [] };
+        }
+        throw error;
+      }
+    },
+  );
+
+  handleDesktop(
+    DESKTOP_CHANNELS.ruleTestCaseDelete,
+    async (_event, request) => {
+      if (!request || typeof request.filePath !== "string") {
+        throw new Error("无效的用例文件路径");
+      }
+      ensureRuleTestCasePath(request.filePath);
+      await rm(request.filePath, { force: true });
+      return { deleted: true };
+    },
+  );
 }
