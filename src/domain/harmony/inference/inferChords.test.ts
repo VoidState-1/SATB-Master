@@ -126,6 +126,25 @@ describe("自动和弦推导", () => {
       .nonChordToneRole).toBe("passing");
   });
 
+  it("应用写回开关不会把未声明的额外音变成可接受候选", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ;
+    addLine(project, "soprano", [74]);
+    addLine(project, "alto", [67]);
+    addLine(project, "tenor", [64]);
+    addLine(project, "bass", [48]);
+
+    const result = inferChords(project);
+    const applied = applyChordInference(project, result, {
+      mode: "fill-gaps",
+      writeNonChordToneRoles: true,
+    });
+
+    expect(result.regions[0]?.selected).toBeUndefined();
+    expect(applied.appliedRegionCount).toBe(0);
+    expect(applied.project.chordTrack.regions).toHaveLength(0);
+  });
+
   it("手动编辑自动和弦后将语义来源改为 manual", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ;

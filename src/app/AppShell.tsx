@@ -310,7 +310,6 @@ function AppShell() {
       toTick: options.toTick,
       allowAbsoluteFallback: options.allowAbsoluteFallback,
       allowIncompleteVoicing: options.allowIncompleteVoicing,
-      allowNonChordToneCandidates: options.writeNonChordToneRoles,
       minConfidence: options.minConfidence,
     });
     const applied = applyChordInference(project, result, {
