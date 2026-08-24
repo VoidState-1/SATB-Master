@@ -104,6 +104,58 @@ describe("自动和弦推导", () => {
     expect(again.skipped[0]?.code).toBe("overlap");
   });
 
+  it("替换未锁定模式只替换可编辑重叠区域", () => {
+    const project = createEmptyProject();
+    addHarmony(project);
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions = [
+      {
+        id: "existing-tonic",
+        startTick: 0,
+        durationTicks: PPQ,
+        identity: {
+          root: { step: "C", alter: 0 },
+          bass: { step: "C", alter: 0 },
+          structure: {
+            kind: "tertian",
+            quality: "major",
+            extensions: [],
+            alterations: [],
+          },
+        },
+        locked: false,
+      },
+      {
+        id: "locked-dominant",
+        startTick: PPQ,
+        durationTicks: PPQ,
+        identity: {
+          root: { step: "G", alter: 0 },
+          bass: { step: "G", alter: 0 },
+          structure: {
+            kind: "tertian",
+            quality: "major",
+            extensions: [],
+            alterations: [],
+          },
+        },
+        locked: true,
+      },
+    ];
+
+    const applied = applyChordInference(project, inferChords(project), {
+      mode: "replace-unlocked",
+    });
+
+    expect(applied.appliedRegionCount).toBe(1);
+    expect(applied.project.chordTrack.regions).toHaveLength(2);
+    expect(applied.project.chordTrack.regions.some((region) => region.id === "existing-tonic"))
+      .toBe(false);
+    expect(applied.project.chordTrack.regions.find((region) => region.id === "locked-dominant")?.locked)
+      .toBe(true);
+    expect(applied.skipped.some((warning) => warning.code === "locked-chord")).toBe(true);
+  });
+
   it("应用阶段可选地写入已有依据的非和弦音角色", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ;

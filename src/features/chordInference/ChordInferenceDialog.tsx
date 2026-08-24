@@ -78,7 +78,13 @@ export function ChordInferenceDialog({
     [project, selectedChordIds, selectedNoteIds],
   );
   const measure = useMemo(
-    () => measureAtTick(buildMeasures(project), playheadTick),
+    () => {
+      const lastTick = Math.max(0, project.lengthTicks - 1);
+      const safePlayhead = Number.isFinite(playheadTick)
+        ? Math.max(0, Math.min(lastTick, playheadTick))
+        : 0;
+      return measureAtTick(buildMeasures(project), safePlayhead);
+    },
     [playheadTick, project],
   );
   const range =
