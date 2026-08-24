@@ -10,6 +10,7 @@ import type {
   RuleStepResult,
 } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
+import { sameChordIdentityWithoutBass } from "../../analysis";
 import { formatPitchClass, toMidi } from "../../../pitch";
 import {
   chordEvidence,
@@ -114,11 +115,19 @@ function openedSourceChord<Payload extends JsonValue>(
   environment: ObligationEnvironment<Payload>,
 ) {
   const chordId = environment.obligation.openedBy.chordIds?.[0];
-  return chordId
+  if (chordId) {
+    const chord = environment.context.rules
+      .spans()
+      .selectMany(({ chords }) => chords)
+      .first((candidate) => candidate.id === chordId);
+    if (chord) return chord;
+  }
+  const spanId = openedSpanId(environment);
+  return spanId
     ? environment.context.rules
-        .spans()
+        .spans({ id: spanId })
         .selectMany(({ chords }) => chords)
-        .first((chord) => chord.id === chordId)
+        .first()
     : undefined;
 }
 
@@ -353,6 +362,60 @@ function sameOpenedSpan<Payload extends JsonValue>(
   return Boolean(sourceSpanId && sourceSpanId === currentSpanId(environment));
 }
 
+/**
+ * 判断导音义务是否仍处于同一功能性和声上下文。
+ *
+ * HarmonySpan 会因为完整语义对象（尤其是转位推导出的 interpretation id）
+ * 变化而切分，但导音在同一调性、同一和弦实体和同一功能目标内仍可跨声部交接。
+ * 这个判断只供导音义务使用，不能替代全局 HarmonySpan 的严格边界。
+ */
+function sameLeadingToneContext(
+  environment: ObligationEnvironment<LeadingTonePayload>,
+) {
+  if (
+    !leadingTargetUnchanged(environment) ||
+    !environment.context.transitionFromPrevious?.contiguous
+  )
+    return false;
+
+  const sourceChord = openedSourceChord(environment);
+  const currentChord = environment.context.slice.chord;
+  if (
+    !sourceChord ||
+    !currentChord ||
+    !sameChordIdentityWithoutBass(sourceChord.identity, currentChord.identity)
+  )
+    return false;
+
+  const interpretationContext = (chord: typeof sourceChord) => {
+    if (!chord.semantics) return undefined;
+    const resolution = environment.context.rules.harmony.primaryInterpretation(
+      chord,
+    );
+    if (resolution.status !== "resolved") return undefined;
+    const interpretation = resolution.value;
+    return JSON.stringify({
+      localKey: interpretation.localKey ?? null,
+      degree: interpretation.degree,
+      degreeAlteration: interpretation.degreeAlteration,
+      appliedTarget: interpretation.appliedTarget ?? null,
+      designation: interpretation.designation ?? null,
+      mixture: chord.semantics.mixture ?? null,
+      cadenceRole: chord.semantics.cadenceRole ?? null,
+      cadenceType: chord.semantics.cadenceType ?? null,
+      pedalContext: chord.semantics.pedalContext ?? null,
+    });
+  };
+
+  const sourceContext = interpretationContext(sourceChord);
+  const currentContext = interpretationContext(currentChord);
+  if (sourceChord.semantics || currentChord.semantics)
+    return Boolean(
+      sourceContext && currentContext && sourceContext === currentContext,
+    );
+  return true;
+}
+
 function subjectAttacked<Payload extends VoiceObligationPayload>(
   environment: ObligationEnvironment<Payload>,
 ) {
@@ -406,16 +469,22 @@ function sameWrittenPitchAsSource<Payload extends VoiceObligationPayload>(
 function leadingToneTransferred(
   environment: ObligationEnvironment<LeadingTonePayload>,
 ) {
+  return leadingToneTransferVoiceIds(environment).length > 0;
+}
+
+function leadingToneTransferVoiceIds(
+  environment: ObligationEnvironment<LeadingTonePayload>,
+) {
   const payload = environment.obligation.payload;
   const currentSource = environment.context.slice.notes[payload.voiceId];
   const sourceStillLeading = Boolean(
     currentSource &&
       currentSource.pitch.step === payload.leadingStep &&
       currentSource.pitch.alter === payload.leadingAlter,
-  );
-  if (sourceStillLeading) return false;
+    );
+  if (sourceStillLeading) return [];
 
-  return environment.moment.attackedVoiceIds.some((voiceId) => {
+  return environment.moment.attackedVoiceIds.filter((voiceId) => {
     if (voiceId === payload.voiceId) return false;
     const note = environment.context.slice.notes[voiceId];
     return Boolean(
@@ -430,6 +499,7 @@ function decision<Payload extends VoiceObligationPayload>(
   environment: ObligationEnvironment<Payload>,
   outcome: ObligationDecision["outcome"],
   reason: string,
+  debugFacts?: Record<string, JsonValue>,
 ): ObligationDecision {
   const details = transitionEvidence(environment);
   return {
@@ -437,6 +507,7 @@ function decision<Payload extends VoiceObligationPayload>(
     reason,
     evidence: details.evidence,
     subjectRefs: details.subjectRefs,
+    ...(debugFacts ? { debugFacts } : {}),
   };
 }
 
@@ -445,22 +516,56 @@ function leadingToneTransition(
 ): ObligationDecision | undefined {
   const targetUnchanged = leadingTargetUnchanged(environment);
   const attacked = subjectAttacked(environment);
+  const transferVoiceIds = leadingToneTransferVoiceIds(environment);
+  const sameLeadingContext = sameLeadingToneContext(environment);
+  const currentNote = environment.context.slice.notes[
+    environment.obligation.payload.voiceId
+  ];
+  const debugFacts = {
+    sameOpenedSpan: sameOpenedSpan(environment),
+    sameLeadingToneContext: sameLeadingContext,
+    targetUnchanged,
+    attacked,
+    sourceStillLeading:
+      currentNote?.pitch.step === environment.obligation.payload.leadingStep &&
+      currentNote?.pitch.alter === environment.obligation.payload.leadingAlter,
+    transferredVoiceIds: transferVoiceIds,
+    ...(currentNote ? { currentNoteId: currentNote.id } : {}),
+    ...(currentSpanId(environment)
+      ? { currentSpanId: currentSpanId(environment) }
+      : {}),
+  } satisfies Record<string, JsonValue>;
 
   if (attacked && targetUnchanged && leadingToneResolves(environment))
-    return decision(environment, "resolve", "leading-tone-resolved");
+    return decision(
+      environment,
+      "resolve",
+      "leading-tone-resolved",
+      debugFacts,
+    );
 
   if (
     targetUnchanged &&
-    sameOpenedSpan(environment) &&
+    sameLeadingContext &&
     leadingToneTransferred(environment)
   )
-    return decision(environment, "cancel", "leading-tone-transferred");
+    return decision(
+      environment,
+      "cancel",
+      "leading-tone-transferred",
+      debugFacts,
+    );
 
   if (
     targetUnchanged &&
     (sameOpenedSpan(environment) || sameWrittenPitchAsSource(environment))
   )
-    return decision(environment, "continue", "leading-tone-repeated");
+    return decision(
+      environment,
+      "continue",
+      "leading-tone-repeated",
+      debugFacts,
+    );
 
   if (
     subjectEnteredRest(environment) ||
@@ -470,10 +575,20 @@ function leadingToneTransition(
     ) ||
     !targetUnchanged
   )
-    return decision(environment, "cancel", "leading-tone-context-ended");
+    return decision(
+      environment,
+      "cancel",
+      "leading-tone-context-ended",
+      debugFacts,
+    );
 
   if (attacked)
-    return decision(environment, "violate", "leading-tone-moved-elsewhere");
+    return decision(
+      environment,
+      "violate",
+      "leading-tone-moved-elsewhere",
+      debugFacts,
+    );
 
   return undefined;
 }

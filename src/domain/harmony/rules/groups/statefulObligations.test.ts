@@ -91,6 +91,38 @@ function projectFor(
   return project;
 }
 
+function projectForVoices(
+  regions: readonly ChordRegion[],
+  voices: Partial<Record<VoiceId, readonly SpelledPitch[]>>,
+) {
+  const project = createEmptyProject();
+  project.lengthTicks = PPQ * Math.max(
+    regions.length,
+    ...Object.values(voices).map((pitches) => pitches?.length ?? 0),
+  );
+  project.chordTrack.regions = [...regions];
+  (Object.keys(voices) as VoiceId[]).forEach((voiceId) => {
+    const pitches = voices[voiceId] ?? [];
+    project.satbTracks.find((track) => track.id === voiceId)!.notes = pitches.map(
+      (value, index) => note(`${voiceId}-${index}`, index, value),
+    );
+  });
+  return project;
+}
+
+function invertedTertianRegion(
+  id: string,
+  index: number,
+  root: ChordRegion["identity"]["root"],
+  bass: ChordRegion["identity"]["bass"],
+) {
+  const region = tertianRegion(id, index, root, "major");
+  return {
+    ...region,
+    identity: { ...region.identity, bass },
+  };
+}
+
 function stepContext(
   analysis: HarmonyAnalysis,
   sliceIndex: number,
@@ -400,6 +432,94 @@ describe("倾向音义务决策原因", () => {
     ).toHaveLength(2);
     expect(reasons).toContain("leading-tone-resolved");
     expect(reasons).not.toContain("leading-tone-moved-elsewhere");
+  });
+
+  it("导音可在同功能和声的转位变化中跨声部交接", () => {
+    const project = projectForVoices(
+      [
+        tertianRegion("dominant", 0, { step: "A", alter: 0 }, "major"),
+        invertedTertianRegion(
+          "dominant-sixth",
+          1,
+          { step: "A", alter: 0 },
+          { step: "C", alter: 1 },
+        ),
+        tertianRegion("tonic", 2, { step: "D", alter: 0 }, "major"),
+      ],
+      {
+        soprano: [
+          pitch("C", 1, 5),
+          pitch("E", 0, 5),
+          pitch("D", 0, 5),
+        ],
+        bass: [
+          pitch("A", 0, 2),
+          pitch("C", 1, 3),
+          pitch("D", 0, 3),
+        ],
+      },
+    );
+    project.keyEvents[0].tonic = { step: "D", alter: 0 };
+
+    const result = runObligation("resolution.leading-tone", project);
+    const reasons = result.trace.map((entry) => entry.reason);
+
+    expect(reasons).toContain("leading-tone-transferred");
+    expect(reasons).not.toContain("leading-tone-moved-elsewhere");
+    expect(result.diagnostics).not.toContainEqual(
+      expect.objectContaining({ ruleId: "resolution.leading-tone" }),
+    );
+  });
+
+  it("导音违规诊断附带来源、义务步骤和相关事件调试快照", () => {
+    const project = projectFor([V(), I()], "alto", [
+      pitch("B", 0, 4),
+      pitch("A", 0, 4),
+    ]);
+    const { diagnostics } = runObligation("resolution.leading-tone", project);
+    const diagnostic = diagnostics.find(
+      (item) => item.ruleId === "resolution.leading-tone",
+    );
+    const debug = diagnostic?.debug;
+
+    expect(debug).toMatchObject({
+      schemaVersion: "satb-diagnostic-debug/v1",
+      kind: "stateful-obligation",
+      runtime: { ruleId: "resolution.leading-tone", source: "builtin" },
+      subjects: {
+        origin: expect.arrayContaining([
+          { kind: "note", id: "alto-0", role: "origin" },
+        ]),
+        failure: expect.arrayContaining([
+          { kind: "note", id: "alto-1", role: "failure" },
+        ]),
+      },
+      obligation: {
+        partitionKey: "voice:alto|target:C:0",
+        steps: [
+          { reason: "obligation-opened", outcome: "continue" },
+          {
+            reason: "leading-tone-moved-elsewhere",
+            outcome: "violate",
+            facts: {
+              sameOpenedSpan: false,
+              targetUnchanged: true,
+              attacked: true,
+            },
+          },
+        ],
+      },
+    });
+    expect(debug?.relatedEvents.notes.map((item) => item.id)).toEqual(
+      expect.arrayContaining(["alto-0", "alto-1"]),
+    );
+    expect(debug?.subjects.failure).not.toEqual(
+      expect.arrayContaining([
+        { kind: "note", id: "alto-0", role: "failure" },
+      ]),
+    );
+    expect(debug?.relatedEvents.slices.length).toBeGreaterThan(0);
+    expect(debug?.relatedEvents.spans.length).toBeGreaterThan(0);
   });
 
   it.each([

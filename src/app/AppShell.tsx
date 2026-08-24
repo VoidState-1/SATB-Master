@@ -48,6 +48,7 @@ import { ChordInferenceDialog } from "../features/chordInference";
 import { replaceProject } from "../domain/editing";
 import {
   applyChordInference,
+  formatDiagnosticDebugReport,
   inferChords,
   type HarmonyDiagnostic,
 } from "../domain/harmony";
@@ -72,6 +73,7 @@ import { useProjectController } from "./controllers/useProjectController";
 import { useWindowController } from "./controllers/useWindowController";
 import { useRuleTestWorkspace } from "./controllers/useRuleTestWorkspace";
 import { formatShortcutBinding } from "../shortcuts/shortcutRegistry";
+import { copyText } from "../services/clipboard";
 
 function createProjectWithRuleProfileTemplate() {
   const project = createEmptyProject();
@@ -293,6 +295,11 @@ function AppShell() {
     setPlayheadTick(diagnostic.tick);
     setSelectedNoteIds(new Set(diagnostic.noteIds));
     setSelectedChordIds(new Set(diagnostic.chordIds));
+  };
+
+  const handleCopyDiagnostic = async (diagnostic: HarmonyDiagnostic) => {
+    const copied = await copyText(formatDiagnosticDebugReport(diagnostic));
+    showNotice(copied ? "已复制问题调试信息" : "复制问题调试信息失败");
   };
 
   const handleChordInferenceApply = (options: {
@@ -704,6 +711,8 @@ function AppShell() {
             project={project}
             result={harmonyResult}
             onSelect={handleDiagnostic}
+            onCopy={handleCopyDiagnostic}
+            developerMode={developerMode.enabled}
           />
         </section>
         <PanelResizeHandle

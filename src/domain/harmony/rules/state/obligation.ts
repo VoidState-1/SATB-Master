@@ -1,6 +1,7 @@
 import type { HarmonyAnalysis } from "../../analysis";
 import type {
   DiagnosticEvidence,
+  DiagnosticDebugObligationStep,
   DiagnosticSubjectRefs,
   DiagnosticSubjects,
   DiagnosticTraceEntry,
@@ -12,6 +13,7 @@ import type {
 import type { RuleConfig, RuleRequirement } from "../types";
 import { defineStatefulRule, type RuleMetadataInput } from "../defineRule";
 import { analysisMoment, type AnalysisMoment } from "./moment";
+import { createObligationDebugSnapshot } from "../../debug/diagnosticDebug";
 
 export type RetriggerPolicy =
   | "retain-existing"
@@ -86,6 +88,7 @@ export interface ObligationDecision {
   readonly reason: string;
   readonly evidence?: readonly DiagnosticEvidence[];
   readonly subjectRefs?: SubjectRefs;
+  readonly debugFacts?: Record<string, JsonValue>;
 }
 
 type StoredHistoryEntry = {
@@ -244,6 +247,10 @@ export function defineObligationRule<
   } = input;
   assertRequirements(metadata.id, metadata.requires, source.requires);
   const traces = new WeakMap<HarmonyAnalysis, ObligationRuntimeTraceEntry[]>();
+  const debugSteps = new WeakMap<
+    HarmonyAnalysis,
+    Map<string, DiagnosticDebugObligationStep[]>
+  >();
   const appendTrace = (
     analysis: HarmonyAnalysis,
     entry: ObligationRuntimeTraceEntry,
@@ -253,12 +260,44 @@ export function defineObligationRule<
     if (entries.length > 4096) entries.splice(0, entries.length - 4096);
     traces.set(analysis, entries);
   };
+  const appendDebugStep = (
+    analysis: HarmonyAnalysis,
+    context: RuleStepContext,
+    moment: AnalysisMoment,
+    obligation: ObligationView<Payload>,
+    outcome: ObligationOutcome,
+    reason: string,
+    facts?: Record<string, JsonValue>,
+    subjectRefs?: SubjectRefs,
+  ) => {
+    const byObligation = debugSteps.get(analysis) ?? new Map();
+    const entries = byObligation.get(obligation.id) ?? [];
+    const currentNoteIds = Object.values(context.slice.notes)
+      .filter((note): note is NonNullable<typeof note> => Boolean(note))
+      .map((note) => note.id);
+    entries.push({
+      tick: moment.tick,
+      sliceIndex: context.sliceIndex,
+      ...(context.span ? { spanId: context.span.id } : {}),
+      outcome,
+      reason,
+      ...(subjectRefs ? { subjectRefs: diagnosticRefs(subjectRefs) } : {}),
+      currentNoteIds,
+      attackedVoiceIds: [...moment.attackedVoiceIds],
+      ...(facts ? { facts } : {}),
+    });
+    if (entries.length > 64) entries.splice(0, entries.length - 64);
+    byObligation.set(obligation.id, entries);
+    debugSteps.set(analysis, byObligation);
+  };
 
   const definition = defineStatefulRule({
     ...metadata,
     process(context, incoming, config) {
-      if (context.sliceIndex === 0 && incoming.length === 0)
+      if (context.sliceIndex === 0 && incoming.length === 0) {
         traces.set(context.analysis, []);
+        debugSteps.set(context.analysis, new Map());
+      }
       const moment = analysisMoment(context);
       const diagnostics: RuleDiagnostic[] = [];
       const outgoing: RuleStateEnvelope[] = [];
@@ -266,7 +305,9 @@ export function defineObligationRule<
         obligation: ObligationView<Payload>,
         outcome: ObligationOutcome,
         reason: string,
-      ) =>
+        facts?: Record<string, JsonValue>,
+        subjectRefs?: SubjectRefs,
+      ) => {
         appendTrace(context.analysis, {
           ruleId: metadata.id,
           obligationId: obligation.id,
@@ -275,6 +316,17 @@ export function defineObligationRule<
           outcome,
           reason,
         });
+        appendDebugStep(
+          context.analysis,
+          context,
+          moment,
+          obligation,
+          outcome,
+          reason,
+          facts,
+          subjectRefs,
+        );
+      };
 
       for (const state of incoming) {
         const environment: ObligationEnvironment<Payload> = {
@@ -285,11 +337,26 @@ export function defineObligationRule<
         };
         const decision = transition(environment);
         if (!decision) {
-          if (onNoDecision === "continue") outgoing.push(state);
-          else recordTrace(environment.obligation, "cancel", "no-decision");
+          if (onNoDecision === "continue") {
+            outgoing.push(state);
+            appendDebugStep(
+              context.analysis,
+              context,
+              moment,
+              environment.obligation,
+              "continue",
+              "no-decision",
+            );
+          } else recordTrace(environment.obligation, "cancel", "no-decision");
           continue;
         }
-        recordTrace(environment.obligation, decision.outcome, decision.reason);
+        recordTrace(
+          environment.obligation,
+          decision.outcome,
+          decision.reason,
+          decision.debugFacts,
+          decision.subjectRefs,
+        );
         if (
           decision.outcome === "continue" ||
           decision.outcome === "indeterminate"
@@ -303,7 +370,25 @@ export function defineObligationRule<
           );
         } else if (decision.outcome === "violate") {
           const violation = reportViolation(environment, decision);
-          if (violation) diagnostics.push(violation);
+          if (violation) {
+            diagnostics.push({
+              ...violation,
+              debug: createObligationDebugSnapshot({
+                analysis: context.analysis,
+                context,
+                diagnostic: violation,
+                ruleId: metadata.id,
+                config,
+                obligation: {
+                  ...environment.obligation,
+                  openedBy: diagnosticRefs(environment.obligation.openedBy),
+                },
+                steps: debugSteps.get(context.analysis)?.get(
+                  environment.obligation.id,
+                ) ?? [],
+              }),
+            });
+          }
         }
       }
 
@@ -355,6 +440,14 @@ export function defineObligationRule<
             outcome: "cancel",
             reason: "project-ended",
           });
+          appendDebugStep(
+            context.analysis,
+            context,
+            analysisMoment(context),
+            obligation,
+            "cancel",
+            "project-ended",
+          );
         }
       }
       return { diagnostics: [] };

@@ -223,8 +223,8 @@ function sameSemanticContext(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-/** 内部辅助：判断两个和弦的客观实体是否相同（忽略低音与转位） */
-function sameChordIdentityWithoutBass(
+/** 判断两个和弦实体是否相同，忽略低音与转位。 */
+export function sameChordIdentityWithoutBass(
   left: AnalysisChord["identity"],
   right: AnalysisChord["identity"],
 ) {

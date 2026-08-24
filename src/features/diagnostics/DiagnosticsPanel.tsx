@@ -2,9 +2,11 @@ import {
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
+  Copy,
   Info,
   Lightbulb,
 } from "lucide-react";
+import { IconButton } from "../../components/IconButton";
 import type {
   HarmonyCheckResult,
   HarmonyDiagnostic,
@@ -16,12 +18,16 @@ interface DiagnosticsPanelProps {
   project: ProjectDocument;
   result: HarmonyCheckResult;
   onSelect(diagnostic: HarmonyDiagnostic): void;
+  onCopy?(diagnostic: HarmonyDiagnostic): void;
+  developerMode?: boolean;
 }
 
 export function DiagnosticsPanel({
   project,
   result,
   onSelect,
+  onCopy,
+  developerMode = false,
 }: DiagnosticsPanelProps) {
   const errors = result.diagnostics.filter(
     (item) => item.severity === "error",
@@ -69,27 +75,39 @@ export function DiagnosticsPanel({
       </header>
       <div className="diagnostic-list">
         {result.diagnostics.map((item) => (
-          <button
-            type="button"
+          <div
             key={item.id}
             className={`diagnostic-item ${item.severity}`}
-            onClick={() => onSelect(item)}
           >
-            {item.severity === "error" ? (
-              <AlertCircle />
-            ) : item.severity === "warning" ? (
-              <AlertTriangle />
-            ) : (
-              <Lightbulb />
-            )}
-            <span className="diagnostic-position">
-              {formatPosition(project, item.tick)}
-            </span>
-            <span className="diagnostic-copy">
-              <strong>{item.title}</strong>
-              <small>{item.message}</small>
-            </span>
-          </button>
+            <button
+              type="button"
+              className="diagnostic-select"
+              onClick={() => onSelect(item)}
+            >
+              {item.severity === "error" ? (
+                <AlertCircle />
+              ) : item.severity === "warning" ? (
+                <AlertTriangle />
+              ) : (
+                <Lightbulb />
+              )}
+              <span className="diagnostic-position">
+                {formatPosition(project, item.tick)}
+              </span>
+              <span className="diagnostic-copy">
+                <strong>{item.title}</strong>
+                <small>{item.message}</small>
+              </span>
+            </button>
+            {developerMode && onCopy ? (
+              <IconButton
+                className="diagnostic-copy-button"
+                label="复制此问题的调试信息"
+                icon={<Copy aria-hidden="true" />}
+                onClick={() => onCopy(item)}
+              />
+            ) : null}
+          </div>
         ))}
       </div>
     </section>

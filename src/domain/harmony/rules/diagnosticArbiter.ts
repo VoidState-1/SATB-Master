@@ -5,7 +5,8 @@ import type {
   RuleDiagnostic,
 } from "../runtime";
 import type { VoiceId } from "../../project/types";
-import type { DiagnosticSeverity } from "./types";
+import type { DiagnosticSeverity, RuleConfig, RuleExceptionPolicy } from "./types";
+import { createDiagnosticDebugSnapshot } from "../debug/diagnosticDebug";
 import {
   normalizeDiagnosticSubjects,
   validateDiagnosticReferences,
@@ -48,6 +49,8 @@ export function normalizeBuiltinDiagnostic(
   definition: RuleDefinition,
   analysis: HarmonyAnalysis,
   severity: DiagnosticSeverity,
+  config: RuleConfig = {},
+  exceptionPolicy: RuleExceptionPolicy = {},
 ): HarmonyDiagnostic | undefined {
   if (item.ruleId !== definition.id || item.source !== "builtin")
     return undefined;
@@ -82,6 +85,33 @@ export function normalizeBuiltinDiagnostic(
     subjects: normalizeDiagnosticSubjects(item.subjects),
     trace: item.trace?.map((entry) => ({ ...entry })),
   };
+  normalized.debug = item.debug
+    ? {
+        ...item.debug,
+        runtime: {
+          ...item.debug.runtime,
+          revision: analysis.revision,
+          severity,
+          config: Object.fromEntries(
+            Object.entries(config).map(([key, value]) => [key, value]),
+          ),
+          exceptionPolicy: Object.fromEntries(
+            Object.entries(exceptionPolicy).map(([key, value]) => [key, value]),
+          ),
+        },
+        diagnostic: {
+          ...item.debug.diagnostic,
+          id: normalized.id,
+          severity,
+        },
+      }
+    : createDiagnosticDebugSnapshot({
+        analysis,
+        diagnostic: normalized,
+        revision: analysis.revision,
+        config,
+        exceptionPolicy,
+      });
   return normalized;
 }
 
@@ -120,6 +150,24 @@ function mergeRanges(source: readonly HarmonyDiagnostic[]) {
       ) {
         previous.endTick = Math.max(previous.endTick, item.endTick);
         previous.id = stableRootCauseKey(previous);
+        if (previous.debug) {
+          previous.debug = {
+            ...previous.debug,
+            diagnostic: {
+              ...previous.debug.diagnostic,
+              id: previous.id,
+              endTick: previous.endTick,
+            },
+            location: {
+              ...previous.debug.location,
+              endTick: previous.endTick,
+            },
+            notes: [
+              ...(previous.debug.notes ?? []),
+              "相邻的同一根因诊断已合并；调试事件以首个诊断位置为中心。",
+            ],
+          };
+        }
       } else {
         result.push({ ...item });
       }

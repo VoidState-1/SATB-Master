@@ -15,6 +15,7 @@ import type {
   RuleDiagnostic,
   SkippedRule,
 } from "../runtime";
+import { createDiagnosticDebugSnapshot } from "../debug/diagnosticDebug";
 import type { ProjectDocument, RuleProfile } from "../../project/types";
 import { VOICE_ORDER } from "../../project/voice";
 import {
@@ -553,19 +554,20 @@ export function normalizeExternalRuleDiagnostics(options: {
       if (!effectiveSeverity)
         return undefined;
       const stableObjects = (items: string[]) => [...items].sort().join(",");
-      return {
-        id: [
-          "external",
-          installedPackage.manifest.packageId,
-          installedPackage.contentHash,
-          rule.id,
-          messageKey,
-          tick,
-          stableObjects(diagnosticNoteIds),
-          stableObjects(diagnosticChordIds),
-          stableObjects(voiceIds),
-          ...(causeRefs ?? []),
-        ].join(":"),
+      const id = [
+        "external",
+        installedPackage.manifest.packageId,
+        installedPackage.contentHash,
+        rule.id,
+        messageKey,
+        tick,
+        stableObjects(diagnosticNoteIds),
+        stableObjects(diagnosticChordIds),
+        stableObjects(voiceIds),
+        ...(causeRefs ?? []),
+      ].join(":");
+      const diagnostic: HarmonyDiagnostic = {
+        id,
         ...rawDiagnostic,
         severity: effectiveSeverity,
         exceptionContexts:
@@ -573,6 +575,23 @@ export function normalizeExternalRuleDiagnostics(options: {
             ? [...applicability.contexts]
             : undefined,
       };
+      const debug = createDiagnosticDebugSnapshot({
+        analysis,
+        diagnostic,
+        revision: analysis.revision,
+        kind: "external-rule",
+        package: {
+          packageId: installedPackage.manifest.packageId,
+          version: installedPackage.manifest.version,
+          contentHash: installedPackage.contentHash,
+        },
+      });
+      diagnostic.debug = {
+        ...debug,
+        runtime: { ...debug.runtime, severity: effectiveSeverity },
+        diagnostic: { ...debug.diagnostic, id, severity: effectiveSeverity },
+      };
+      return diagnostic;
     })
     .filter(
       (diagnostic): diagnostic is HarmonyDiagnostic => diagnostic !== undefined,

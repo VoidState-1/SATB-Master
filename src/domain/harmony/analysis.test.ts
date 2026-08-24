@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createChordRegion } from "../chords";
 import { checkHarmony } from "./registry";
 import { buildHarmonyAnalysis } from "./analysis";
+import { formatDiagnosticDebugReport } from "./debug/diagnosticDebug";
 import { defaultHarmonyRuleSeverities } from "./rules/catalog";
 import {
   createEmptyProject,
@@ -333,6 +334,29 @@ describe("斯波索宾基础规则检查", () => {
       outcome: "violate",
       reason: "leading-tone-moved-elsewhere",
     });
+    expect(result?.debug).toMatchObject({
+      schemaVersion: "satb-diagnostic-debug/v1",
+      runtime: {
+        ruleId: "resolution.leading-tone",
+        source: "builtin",
+        severity: "warning",
+      },
+      diagnostic: {
+        id: result?.id,
+        severity: "warning",
+      },
+      obligation: {
+        steps: expect.arrayContaining([
+          expect.objectContaining({
+            outcome: "violate",
+            reason: "leading-tone-moved-elsewhere",
+          }),
+        ]),
+      },
+    });
+    expect(formatDiagnosticDebugReport(result!)).toContain(
+      "SATB Master Diagnostic Debug Report",
+    );
   });
 
   it("小调自然七级不被误判为升高导音", () => {

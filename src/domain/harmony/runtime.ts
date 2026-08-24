@@ -36,6 +36,12 @@ export type { RuleConfig } from "./rules/types";
 
 type RuntimeRuleSeverities = Record<string, HarmonyRuleSeverity>;
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue =
+  | JsonPrimitive
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
 export type DiagnosticEvidenceKind =
   "note" | "chord" | "interval" | "key" | "function";
 
@@ -65,6 +71,106 @@ export interface DiagnosticTraceEntry {
   reason: string;
 }
 
+export type DiagnosticDebugEventKind =
+  | "note"
+  | "chord"
+  | "slice"
+  | "span"
+  | "melody-transition"
+  | "slice-transition"
+  | "connection";
+
+export interface DiagnosticDebugEventRef {
+  kind: DiagnosticDebugEventKind;
+  id: string;
+  role?: string;
+}
+
+export interface DiagnosticDebugEvent {
+  kind: DiagnosticDebugEventKind;
+  id: string;
+  role?: string;
+  data: Record<string, JsonValue>;
+}
+
+export interface DiagnosticDebugObligationStep {
+  tick: number;
+  sliceIndex: number;
+  spanId?: string;
+  outcome: DiagnosticTraceEntry["outcome"];
+  reason: string;
+  subjectRefs?: DiagnosticSubjectRefs;
+  currentNoteIds: string[];
+  attackedVoiceIds: VoiceId[];
+  facts?: Record<string, JsonValue>;
+}
+
+export interface DiagnosticDebugObligation {
+  id: string;
+  partitionKey: string;
+  openedAt: { tick: number; sliceIndex: number };
+  openedBy: DiagnosticSubjectRefs;
+  payload: JsonValue;
+  steps: DiagnosticDebugObligationStep[];
+}
+
+export interface DiagnosticDebugSnapshot {
+  schemaVersion: "satb-diagnostic-debug/v1";
+  kind: "stateful-obligation" | "stateless-rule" | "external-rule";
+  runtime: {
+    revision: number;
+    ruleId: string;
+    source: "builtin" | "external";
+    severity?: DiagnosticSeverity;
+    config?: Record<string, JsonValue>;
+    exceptionPolicy?: Record<string, string>;
+    package?: Record<string, string>;
+  };
+  diagnostic: {
+    id?: string;
+    ruleId: string;
+    source: "builtin" | "external";
+    severity?: DiagnosticSeverity;
+    tick: number;
+    endTick: number;
+    title: string;
+    message: string;
+    messageKey: string;
+    params: Record<string, JsonValue>;
+    evidence: {
+      kind: DiagnosticEvidenceKind;
+      id?: string;
+      label: string;
+      value: string;
+    }[];
+    confidence: number;
+    causeRefs: string[];
+    coverageRefs: string[];
+    trace: DiagnosticTraceEntry[];
+  };
+  location: {
+    tick: number;
+    endTick: number;
+    sliceIndex?: number;
+    spanId?: string;
+  };
+  subjects: {
+    origin: DiagnosticDebugEventRef[];
+    failure: DiagnosticDebugEventRef[];
+    context: DiagnosticDebugEventRef[];
+  };
+  relatedEvents: {
+    notes: DiagnosticDebugEvent[];
+    chords: DiagnosticDebugEvent[];
+    spans: DiagnosticDebugEvent[];
+    slices: DiagnosticDebugEvent[];
+    transitions: DiagnosticDebugEvent[];
+    connections: DiagnosticDebugEvent[];
+  };
+  obligation?: DiagnosticDebugObligation;
+  notes?: string[];
+}
+
 export interface HarmonyDiagnostic {
   id: string;
   ruleId: string;
@@ -90,6 +196,7 @@ export interface HarmonyDiagnostic {
   exceptionContexts?: RuleExceptionContext[];
   subjects?: DiagnosticSubjects;
   trace?: DiagnosticTraceEntry[];
+  debug?: DiagnosticDebugSnapshot;
 }
 
 export type RuleDiagnostic = Omit<
@@ -126,10 +233,6 @@ export type ReadonlyRuleContext = HarmonyRuleContext;
  * 规则之间不共享可变状态。每条有状态规则只能把自己的 JSON 信封沿切片链
  * 传给下一步；信封只是时间上下文的传递容器，生命周期和判定语义由规则自己决定。
  */
-export type JsonPrimitive = string | number | boolean | null;
-export type JsonValue =
-  JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
-
 export interface RuleStateEnvelope<T extends JsonValue = JsonValue> {
   readonly id: string;
   readonly ownerRuleId: string;
@@ -308,6 +411,7 @@ function collectEvaluation(
   evaluation: RuleEvaluation,
   analysis: HarmonyAnalysis,
   severity: DiagnosticSeverity,
+  config: RuleConfig = {},
   exceptionPolicy: RuleExceptionPolicy = {},
 ) {
   const effectiveExceptionPolicy = {
@@ -333,6 +437,8 @@ function collectEvaluation(
         definition,
         analysis,
         effectiveSeverity,
+        config,
+        exceptionPolicy,
       );
     })
     .filter((item): item is HarmonyDiagnostic => Boolean(item));
@@ -524,6 +630,7 @@ export function runRulesSynchronously(
         evaluation,
         analysis,
         severity,
+        configs[definition.id] ?? {},
         exceptions[definition.id],
       );
       diagnostics.push(...collected.diagnostics);
@@ -679,6 +786,7 @@ export class RuleScheduler {
         evaluation,
         analysis,
         severity,
+        request.configs?.[definition.id] ?? {},
         request.exceptions?.[definition.id],
       );
       diagnostics.push(...collected.diagnostics);
