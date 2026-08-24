@@ -4,7 +4,7 @@ import {
   Minus,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconButton } from "../../components/IconButton";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { GRID_OPTIONS, PianoRoll, stepTimelineZoom } from "../../features/editor";
@@ -19,6 +19,7 @@ import { CreateTestCaseDialog } from "./CreateTestCaseDialog";
 import type { RuleTestWorkspaceController } from "../../app/controllers/useRuleTestWorkspace";
 import type { ConfirmationState } from "../../app/controllers/useConfirmationController";
 import type { HarmonyDiagnostic } from "../../domain/harmony";
+import type { ProjectDocument } from "../../domain/project";
 import { buildMeasures, formatPosition } from "../../domain/time";
 import { usePanelLayout, DEFAULT_PANEL_SIZES, PANEL_RESIZER_SIZE } from "../../hooks/usePanelLayout";
 import { useDeveloperMode } from "../../hooks/useDeveloperMode";
@@ -53,6 +54,23 @@ function missingReferences(controller: RuleTestWorkspaceController) {
   };
 }
 
+const RULE_TEST_SOUNDFONT_STORAGE_KEY = "satb_rule_test_soundfont";
+
+function loadStoredRuleTestSoundFont(): ProjectDocument["audio"]["soundFont"] {
+  try {
+    const raw = localStorage.getItem(RULE_TEST_SOUNDFONT_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as ProjectDocument["audio"]["soundFont"];
+      if (parsed && (parsed.kind === "default" || parsed.kind === "user")) {
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return { kind: "default", name: "SATB Master 默认音色" };
+}
+
 export function RuleTestWorkbench({
   controller,
   windowController,
@@ -69,6 +87,25 @@ export function RuleTestWorkbench({
   const [leftTab, setLeftTab] = useState<"cases" | "voices">("cases");
   const [rightTab, setRightTab] = useState<"case" | "selection">("case");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [ruleTestSoundFont, setRuleTestSoundFont] = useState<
+    ProjectDocument["audio"]["soundFont"]
+  >(loadStoredRuleTestSoundFont);
+
+  const handleRuleTestSoundFontChange = useCallback(
+    (nextSoundFont: ProjectDocument["audio"]["soundFont"]) => {
+      setRuleTestSoundFont(nextSoundFont);
+      try {
+        localStorage.setItem(
+          RULE_TEST_SOUNDFONT_STORAGE_KEY,
+          JSON.stringify(nextSoundFont),
+        );
+      } catch {
+        // ignore
+      }
+    },
+    [],
+  );
+
   const missing = missingReferences(controller);
   const {
     editor,
@@ -100,7 +137,9 @@ export function RuleTestWorkbench({
   const playback = usePlaybackController({
     project,
     history: { commit: controller.commitProject },
-    initialSoundFont: project.audio.soundFont,
+    initialSoundFont: ruleTestSoundFont,
+    soundFont: ruleTestSoundFont,
+    onSoundFontChange: handleRuleTestSoundFontChange,
     gridTicks,
     showNotice,
     playheadTick: controller.playheadTick,
@@ -448,6 +487,7 @@ export function RuleTestWorkbench({
             <RuleTestInspector
               testCase={testCase}
               project={project}
+              soundFont={playback.soundFont}
               selectedExpectationId={controller.selectedExpectationId}
               audioState={playback.audioState}
               audioMessage={playback.audioMessage}

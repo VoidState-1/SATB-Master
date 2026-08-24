@@ -26,6 +26,7 @@ import { RuleSearch } from "./RuleSearch";
 interface RuleTestInspectorProps {
   testCase: HarmonyRuleTestCase;
   project: ProjectDocument;
+  soundFont?: ProjectDocument["audio"]["soundFont"];
   selectedExpectationId?: string;
   audioState?: string;
   audioMessage?: string;
@@ -65,6 +66,7 @@ function expectedReferenceSummary(item: ExpectedDiagnostic) {
 export function RuleTestInspector({
   testCase,
   project,
+  soundFont,
   selectedExpectationId,
   audioState,
   audioMessage,
@@ -79,6 +81,7 @@ export function RuleTestInspector({
   onUpdateExpectation,
   onDeleteExpectation,
 }: RuleTestInspectorProps) {
+  const effectiveSoundFont = soundFont ?? project.audio.soundFont;
   const definition = HARMONY_RULE_DEFINITIONS.find(
     (item) => item.id === testCase.target.ruleId,
   )!;
@@ -261,9 +264,9 @@ export function RuleTestInspector({
             <div className="rule-test-soundfont-header">
               <span
                 className="rule-test-soundfont-name"
-                title={project.audio.soundFont.name || "默认音色"}
+                title={effectiveSoundFont.name || "默认音色"}
               >
-                {project.audio.soundFont.name || "默认音色 (General MIDI)"}
+                {effectiveSoundFont.name || "默认音色 (General MIDI)"}
               </span>
               <span
                 className={`rule-test-soundfont-badge ${audioState === "ready" || !audioState ? "is-ready" : "is-loading"}`}
@@ -290,7 +293,7 @@ export function RuleTestInspector({
                 <FolderOpen aria-hidden="true" />
                 选择本地 SF2
               </button>
-              {project.audio.soundFont.kind === "user" ? (
+              {effectiveSoundFont.kind === "user" ? (
                 <button
                   type="button"
                   className="command-button"

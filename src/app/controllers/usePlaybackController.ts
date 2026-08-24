@@ -21,6 +21,8 @@ interface PlaybackControllerOptions {
   project: ProjectDocument;
   history: ProjectHistoryCommitter;
   initialSoundFont: ProjectDocument["audio"]["soundFont"];
+  soundFont?: ProjectDocument["audio"]["soundFont"];
+  onSoundFontChange?(soundFont: ProjectDocument["audio"]["soundFont"]): void;
   gridTicks: number;
   showNotice(message: string): void;
   playheadTick?: number;
@@ -88,11 +90,14 @@ export function usePlaybackController({
   project,
   history,
   initialSoundFont,
+  soundFont: controlledSoundFont,
+  onSoundFontChange,
   gridTicks,
   showNotice,
   playheadTick: controlledPlayheadTick,
   onPlayheadChange,
 }: PlaybackControllerOptions) {
+  const effectiveSoundFont = controlledSoundFont ?? project.audio.soundFont;
   const loopEnabled = project.loop.enabled;
   const loopStartTick = project.loop.startTick;
   const loopEndTick = project.loop.endTick;
@@ -279,11 +284,15 @@ export function usePlaybackController({
         ))
       )
         return;
-      history.commit(
-        replaceProject(project, (draft) => {
-          draft.audio.soundFont = selection;
-        }),
-      );
+      if (onSoundFontChange) {
+        onSoundFontChange(selection);
+      } else {
+        history.commit(
+          replaceProject(project, (draft) => {
+            draft.audio.soundFont = selection;
+          }),
+        );
+      }
       setSoundFontSizeBytes(sizeBytes);
       showNotice("SoundFont 已加载");
     } catch (error) {
@@ -303,7 +312,7 @@ export function usePlaybackController({
         setSoundFontProgress(undefined);
       }
     }
-  }, [history, project, reportSoundFontProgress, showNotice]);
+  }, [history, onSoundFontChange, project, reportSoundFontProgress, showNotice]);
 
   const handleUseDefaultSoundFont = useCallback(async () => {
     const generation = audioEngine.beginSoundFontChange();
@@ -315,11 +324,15 @@ export function usePlaybackController({
       kind: "default" as const,
       name: "SATB Master 默认音色",
     };
-    history.commit(
-      replaceProject(project, (draft) => {
-        draft.audio.soundFont = defaultSoundFont;
-      }),
-    );
+    if (onSoundFontChange) {
+      onSoundFontChange(defaultSoundFont);
+    } else {
+      history.commit(
+        replaceProject(project, (draft) => {
+          draft.audio.soundFont = defaultSoundFont;
+        }),
+      );
+    }
     try {
       const soundFont = await ensureSoundFontLoaded(
         defaultSoundFont,
@@ -338,7 +351,7 @@ export function usePlaybackController({
       if (audioEngine.isSoundFontChangeCurrent(generation))
         setSoundFontProgress(undefined);
     }
-  }, [history, project, reportSoundFontProgress, showNotice]);
+  }, [history, onSoundFontChange, project, reportSoundFontProgress, showNotice]);
 
   const handleStop = useCallback((returnToStart = false) => {
     playSessionRef.current += 1;
@@ -350,7 +363,7 @@ export function usePlaybackController({
   const startPlayback = useCallback(async () => {
     try {
       await audioEngine.resume();
-      const soundFontConfig = project.audio.soundFont;
+      const soundFontConfig = effectiveSoundFont;
       if (!audioEngine.isSoundFontLoaded(soundFontId(soundFontConfig))) {
         const generation = audioEngine.beginSoundFontChange();
         const reportProgress = (progress: SoundFontLoadProgress) => {
@@ -415,6 +428,7 @@ export function usePlaybackController({
       showNotice(error instanceof Error ? error.message : "播放失败");
     }
   }, [
+    effectiveSoundFont,
     loopEnabled,
     loopEndTick,
     loopStartTick,
@@ -422,6 +436,7 @@ export function usePlaybackController({
     playheadTick,
     project,
     reportSoundFontProgress,
+    setPlayheadTick,
     showNotice,
   ]);
 
@@ -444,6 +459,7 @@ export function usePlaybackController({
   const setLoopBoundary = useCallback(
     (boundary: "start" | "end", requestedTick = playheadTick) => {
       const tick = nearestGridTick(requestedTick, gridTicks, {
+        minimum: 0,
         maximum: project.lengthTicks,
       });
       if (boundary === "start") {
@@ -474,6 +490,7 @@ export function usePlaybackController({
   );
 
   return {
+    soundFont: effectiveSoundFont,
     playheadTick,
     setPlayheadTick,
     isPlaying,
@@ -492,3 +509,5 @@ export function usePlaybackController({
     setLoopBoundary,
   } as const;
 }
+
+export type PlaybackController = ReturnType<typeof usePlaybackController>;
