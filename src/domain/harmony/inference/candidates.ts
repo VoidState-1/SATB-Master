@@ -32,6 +32,10 @@ function confidenceFor(
   score: ChordInferenceScore,
   fit: ReturnType<typeof fitChordObservation>,
 ) {
+  // A fallback is useful as an explicit escape hatch, but it is never a
+  // functional conclusion and therefore must not reach the default apply
+  // path (which accepts medium confidence and above).
+  if (score.functionalTier === 4) return "low" as const;
   if (
     score.functionalTier <= 2 &&
     fit.omittedChordDegrees.length === 0 &&

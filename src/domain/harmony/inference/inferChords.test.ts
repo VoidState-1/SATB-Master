@@ -146,4 +146,74 @@ describe("自动和弦推导", () => {
       edited.project.chordTrack.regions[0].semantics?.interpretations[0].source,
     ).toBe("manual");
   });
+
+  it("绝对回退不会在默认中等置信度阈值下直接应用", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ;
+    addLine(project, "soprano", [73]);
+    addLine(project, "alto", [70]);
+    addLine(project, "tenor", [66]);
+    addLine(project, "bass", [54]);
+
+    const result = inferChords(project, { allowAbsoluteFallback: true });
+
+    expect(result.regions[0].selected?.confidence).toBe("low");
+    expect(result.regions[0].status).toBe("ambiguous");
+    expect(result.warnings[0]?.code).toBe("ambiguous");
+    expect(
+      applyChordInference(project, result, { mode: "fill-gaps" }).appliedRegionCount,
+    ).toBe(0);
+  });
+
+  it("不跨调性边界合并未归类区段", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.keyEvents.push({
+      id: "key-g",
+      tick: PPQ,
+      tonic: { step: "G", alter: 0 },
+      mode: "major",
+    });
+
+    const result = inferChords(project);
+
+    expect(result.regions.map((region) => [region.fromTick, region.toTick])).toEqual([
+      [0, PPQ],
+      [PPQ, PPQ * 2],
+    ]);
+  });
+
+  it("写入非和弦音角色时遵守锁定声部和不可编辑区间", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ;
+    project.satbTracks.find((track) => track.id === "soprano")!.notes = [
+      note("soprano-extra", 0, PPQ, 74, { nonChordToneRole: "passing" }),
+    ];
+    addLine(project, "alto", [67]);
+    addLine(project, "tenor", [64]);
+    addLine(project, "bass", [48]);
+    project.satbTracks.find((track) => track.id === "soprano")!.locked = true;
+    project.exercise.editableRanges = [
+      {
+        id: "locked-range",
+        voiceIds: ["soprano"],
+        fromTick: 0,
+        toTick: PPQ,
+        editable: false,
+      },
+    ];
+    const result = inferChords(project, {
+      allowNonChordToneCandidates: true,
+    });
+
+    const applied = applyChordInference(project, result, {
+      mode: "fill-gaps",
+      writeNonChordToneRoles: true,
+    });
+
+    expect(applied.project.satbTracks.find((track) => track.id === "soprano")!.notes[0]
+      .nonChordToneRole).toBe("passing");
+    expect(applied.writtenNonChordToneRoleCount).toBe(0);
+    expect(applied.skipped.some((warning) => warning.code === "locked-note")).toBe(true);
+  });
 });

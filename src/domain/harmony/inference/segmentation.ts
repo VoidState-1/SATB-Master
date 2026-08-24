@@ -25,7 +25,13 @@ function alternativeCandidates(
   for (const index of indices) {
     for (const candidate of candidateSets[index]) {
       if (selected && sameMeaning(selected, candidate)) continue;
-      if (!candidates.has(candidate.id)) candidates.set(candidate.id, candidate);
+      const meaningKey = JSON.stringify({
+        identity: candidate.identity,
+        semantics: candidate.semantics,
+      });
+      const previous = candidates.get(meaningKey);
+      if (!previous || candidate.score.total > previous.score.total)
+        candidates.set(meaningKey, candidate);
     }
   }
   return Object.freeze(
@@ -65,6 +71,10 @@ export function buildChordInferenceRegions(
     index += 1;
     while (
       index < observations.length &&
+      observations[index - 1].toTick === observations[index].fromTick &&
+      observations[index - 1].key.mode === observations[index].key.mode &&
+      observations[index - 1].key.tonic.step === observations[index].key.tonic.step &&
+      observations[index - 1].key.tonic.alter === observations[index].key.tonic.alter &&
       sameMeaning(firstSelected, selectedPath[index])
     ) {
       indices.push(index);

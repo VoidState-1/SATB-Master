@@ -81,4 +81,36 @@ describe("当前调性的功能和弦候选", () => {
 
     expect(candidates).toHaveLength(0);
   });
+
+  it("即使开启有限缺音，也拒绝缺少两个以上和弦音的解释", () => {
+    const project = createEmptyProject();
+    addChord(project, {
+      soprano: 60,
+      alto: 60,
+      tenor: 48,
+      bass: 48,
+    });
+
+    const observation = buildChordInferenceObservations(project)[0];
+    const candidates = buildChordInferenceCandidates(observation, {
+      allowIncompleteVoicing: true,
+    });
+
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("绝对和弦回退始终是低置信度候选", () => {
+    const project = createEmptyProject();
+    addChord(project, { soprano: 72, alto: 69, tenor: 66, bass: 54 });
+
+    const observation = buildChordInferenceObservations(project)[0];
+    const candidates = buildChordInferenceCandidates(observation, {
+      allowAbsoluteFallback: true,
+    });
+    const fallback = candidates.find((candidate) => !candidate.functionalBaseId);
+
+    expect(fallback).toBeDefined();
+    expect(fallback?.confidence).toBe("low");
+    expect(fallback?.semantics).toBeUndefined();
+  });
 });

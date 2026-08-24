@@ -22,6 +22,9 @@ export interface ChordFitOptions {
   readonly allowNonChordToneCandidates?: boolean;
 }
 
+/** 第一阶段只把一个缺失和弦音视为可接受的不完整织体。 */
+const MAX_INFERRED_OMISSIONS = 1;
+
 function chordDegrees(identity: ChordIdentity): readonly ChordToneDegree[] {
   if (identity.structure.kind !== "tertian") return [];
   const degrees: ChordToneDegree[] = [1, 3, 5];
@@ -131,6 +134,8 @@ export function fitChordObservation(
     !options.allowNonChordToneCandidates
   )
     hardRejected = "unexplained-extra-tone";
+  else if (omittedChordDegrees.length > MAX_INFERRED_OMISSIONS)
+    hardRejected = "too-many-omitted-chord-tones";
   else if (
     omittedChordDegrees.length > 0 &&
     !options.allowIncompleteVoicing

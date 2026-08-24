@@ -49,6 +49,21 @@ function addWarning(
   warnings.push(warning);
 }
 
+function noteIsLockedForInference(
+  project: ProjectDocument,
+  track: ProjectDocument["satbTracks"][number],
+  note: ProjectDocument["satbTracks"][number]["notes"][number],
+) {
+  if (track.locked || note.locked) return true;
+  return project.exercise.editableRanges.some(
+    (range) =>
+      range.editable === false &&
+      range.voiceIds.includes(track.voice) &&
+      note.startTick < range.toTick &&
+      note.startTick + note.durationTicks > range.fromTick,
+  );
+}
+
 export function applyChordInference(
   project: ProjectDocument,
   result: ChordInferenceResult,
@@ -140,7 +155,7 @@ export function applyChordInference(
         );
         const note = track?.notes.find((candidate) => candidate.id === noteId);
         if (!track || !note) continue;
-        if (note.locked) {
+        if (noteIsLockedForInference(next, track, note)) {
           addWarning(warnings, {
             code: "locked-note",
             fromTick: region.fromTick,
@@ -150,6 +165,7 @@ export function applyChordInference(
           });
           continue;
         }
+        if (note.nonChordToneRole === role) continue;
         note.nonChordToneRole = role;
         writtenNonChordToneRoleCount += 1;
       }
