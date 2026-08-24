@@ -411,6 +411,8 @@ export function updateChordRegion(
     const draft = {
       ...chordDraftFromIdentity(current.identity, current.semantics),
       ...draftPatch,
+      // A semantic edit is a new user confirmation, even when the region was inferred.
+      source: "manual" as const,
     } as ChordDraft;
     if (!hasValidChordDraft(draft))
       return { project, error: "和弦语义参数无效" };
