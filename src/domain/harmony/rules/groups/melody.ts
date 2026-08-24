@@ -380,7 +380,7 @@ export const MELODY_RULES = defineRuleGroup(
     rationale:
       "同和弦分解、序进、经过性低音和明确的旋律轮廓可豁免；“合理窗口”需金样本校准。",
     group: "melody",
-    defaultSeverity: "suggestion",
+    defaultSeverity: "off",
     requires: ["written-pitches"],
     dependencyScope: "note",
     supportedExceptionContexts: ["same-harmony", "arpeggiation"],
