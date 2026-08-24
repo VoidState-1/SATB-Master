@@ -3,6 +3,7 @@ import {
   FileText,
   FolderOpen,
   ListChecks,
+  Music2,
   RotateCcw,
   Settings2,
   ShieldCheck,
@@ -17,10 +18,9 @@ import type {
 } from "../../domain/harmony";
 import { HARMONY_RULE_DEFINITIONS } from "../../domain/harmony";
 import type { ProjectDocument } from "../../domain/project";
-import {
-  RuleExceptionFields,
-  RuleOptionFields,
-} from "../../features/settings";
+import { buildMeasures, ticksForMeasures } from "../../domain/time";
+import { CommitField } from "../inspector/CommitField";
+import { RuleExceptionFields, RuleOptionFields } from "../../features/settings";
 import { RuleSearch } from "./RuleSearch";
 
 interface RuleTestInspectorProps {
@@ -31,6 +31,16 @@ interface RuleTestInspectorProps {
   audioMessage?: string;
   soundFontProgress?: { completedBytes: number; totalBytes: number };
   onUpdateCase(update: (testCase: HarmonyRuleTestCase) => void): void;
+  onUpdateProject(
+    patch: Partial<
+      Pick<ProjectDocument, "title" | "author" | "notes" | "lengthTicks">
+    >,
+  ): void;
+  onUpdateChordTrack(
+    patch: Partial<
+      Pick<ProjectDocument["chordTrack"], "visible" | "locked" | "displayMode">
+    >,
+  ): void;
   onSetRule(ruleId: HarmonyRuleId): void;
   onChooseSoundFont(): void;
   onUseDefaultSoundFont(): void;
@@ -60,6 +70,8 @@ export function RuleTestInspector({
   audioMessage,
   soundFontProgress,
   onUpdateCase,
+  onUpdateProject,
+  onUpdateChordTrack,
   onSetRule,
   onChooseSoundFont,
   onUseDefaultSoundFont,
@@ -76,6 +88,10 @@ export function RuleTestInspector({
         (item) => item.id === selectedExpectationId,
       ),
     [selectedExpectationId, testCase.expected.diagnostics],
+  );
+  const projectMeasureCount = useMemo(
+    () => buildMeasures(project).length,
+    [project],
   );
   const patchConfig = (patch: RuleConfig) =>
     onUpdateCase((next) => {
@@ -115,6 +131,21 @@ export function RuleTestInspector({
             />
           </label>
           <label className="rule-test-field">
+            <span className="rule-test-field-label">总长度</span>
+            <CommitField
+              type="number"
+              min={1}
+              step={1}
+              value={projectMeasureCount}
+              onCommit={(value) => {
+                const measures = Math.max(1, parseInt(value, 10) || 1);
+                onUpdateProject({
+                  lengthTicks: ticksForMeasures(project, measures),
+                });
+              }}
+            />
+          </label>
+          <label className="rule-test-field">
             <span className="rule-test-field-label">说明</span>
             <textarea
               rows={2}
@@ -147,24 +178,57 @@ export function RuleTestInspector({
         <section className="rule-test-form-section">
           <div className="rule-test-section-heading">
             <h3>
+              <Music2 aria-hidden="true" />
+              和弦轨
+            </h3>
+          </div>
+          <label className="rule-test-field">
+            <span className="rule-test-field-label">显示方式</span>
+            <select
+              value={project.chordTrack.displayMode}
+              onChange={(event) =>
+                onUpdateChordTrack({
+                  displayMode: event.target
+                    .value as ProjectDocument["chordTrack"]["displayMode"],
+                })
+              }
+            >
+              <option value="functional">功能标记</option>
+              <option value="roman">罗马数字</option>
+              <option value="absolute">绝对和弦</option>
+              <option value="functional-absolute">功能 + 绝对</option>
+              <option value="roman-absolute">罗马 + 绝对</option>
+            </select>
+          </label>
+          <label className="rule-test-check-field">
+            <input
+              type="checkbox"
+              checked={project.chordTrack.visible}
+              onChange={(event) =>
+                onUpdateChordTrack({ visible: event.target.checked })
+              }
+            />
+            <span>显示和弦区域</span>
+          </label>
+        </section>
+
+        <section className="rule-test-form-section">
+          <div className="rule-test-section-heading">
+            <h3>
               <ShieldCheck aria-hidden="true" />
               测试规则
             </h3>
           </div>
-          <RuleSearch
-            ruleId={testCase.target.ruleId}
-            onSelect={onSetRule}
-          />
-          <p className="rule-test-rule-description">
-            {definition.description}
-          </p>
+          <RuleSearch ruleId={testCase.target.ruleId} onSelect={onSetRule} />
+          <p className="rule-test-rule-description">{definition.description}</p>
           <label className="rule-test-field">
             <span className="rule-test-field-label">严重程度</span>
             <select
               value={testCase.execution.severity}
               onChange={(event) =>
                 onUpdateCase((next) => {
-                  next.execution.severity = event.target.value as typeof next.execution.severity;
+                  next.execution.severity = event.target
+                    .value as typeof next.execution.severity;
                 })
               }
             >
@@ -195,10 +259,15 @@ export function RuleTestInspector({
           </div>
           <div className="rule-test-soundfont-card">
             <div className="rule-test-soundfont-header">
-              <span className="rule-test-soundfont-name" title={project.audio.soundFont.name || "默认音色"}>
+              <span
+                className="rule-test-soundfont-name"
+                title={project.audio.soundFont.name || "默认音色"}
+              >
                 {project.audio.soundFont.name || "默认音色 (General MIDI)"}
               </span>
-              <span className={`rule-test-soundfont-badge ${audioState === "ready" || !audioState ? "is-ready" : "is-loading"}`}>
+              <span
+                className={`rule-test-soundfont-badge ${audioState === "ready" || !audioState ? "is-ready" : "is-loading"}`}
+              >
                 {audioMessage || "SoundFont 已就绪"}
               </span>
             </div>
@@ -251,7 +320,8 @@ export function RuleTestInspector({
               checked={testCase.expected.allowUnexpectedDiagnostics}
               onChange={(event) =>
                 onUpdateCase((next) => {
-                  next.expected.allowUnexpectedDiagnostics = event.target.checked;
+                  next.expected.allowUnexpectedDiagnostics =
+                    event.target.checked;
                 })
               }
             />
@@ -358,7 +428,9 @@ export function RuleTestInspector({
                     voiceIds: event.target.value
                       ? (event.target.value
                           .split(",")
-                          .map((item) => item.trim()) as ExpectedDiagnostic["voiceIds"])
+                          .map((item) =>
+                            item.trim(),
+                          ) as ExpectedDiagnostic["voiceIds"])
                       : undefined,
                   })
                 }

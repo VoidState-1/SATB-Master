@@ -453,6 +453,8 @@ export function RuleTestWorkbench({
               audioMessage={playback.audioMessage}
               soundFontProgress={playback.soundFontProgress}
               onUpdateCase={controller.commitTestCase}
+              onUpdateProject={commands.handleUpdateProject}
+              onUpdateChordTrack={commands.handleUpdateChordTrack}
               onSetRule={controller.setTargetRule}
               onChooseSoundFont={() => void playback.handleChooseSoundFont()}
               onUseDefaultSoundFont={() =>
