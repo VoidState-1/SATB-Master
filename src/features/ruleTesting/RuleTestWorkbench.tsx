@@ -308,6 +308,7 @@ export function RuleTestWorkbench({
         onGoToStart={() => playback.handleStop(true)}
         onPlay={() => void playback.handlePlay()}
         onStop={() => playback.handleStop()}
+        onExportMidi={() => void controller.exportMidi()}
         onToggleLoop={playback.toggleLoop}
         onSetLoopBoundary={playback.setLoopBoundary}
         onToggleMetronome={() => playback.setMetronomeEnabled((value) => !value)}

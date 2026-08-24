@@ -3,6 +3,7 @@ import {
   BellRing,
   Clipboard,
   Copy,
+  Download,
   Eraser,
   FolderOpen,
   Magnet,
@@ -60,6 +61,7 @@ interface RuleTestToolbarProps {
   onGoToStart(): void;
   onPlay(): void;
   onStop(): void;
+  onExportMidi(): void;
   onToggleLoop(): void;
   onSetLoopBoundary(boundary: "start" | "end"): void;
   onToggleMetronome(): void;
@@ -149,6 +151,11 @@ export function RuleTestToolbar(props: RuleTestToolbarProps) {
           onClick={props.onPlay}
         />
         <IconButton label="停止" icon={<Square />} onClick={props.onStop} />
+        <IconButton
+          label="导出 MIDI"
+          icon={<Download />}
+          onClick={props.onExportMidi}
+        />
         <IconButton
           label="循环播放"
           icon={<Repeat2 />}

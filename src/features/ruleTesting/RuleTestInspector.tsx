@@ -288,21 +288,22 @@ export function RuleTestInspector({
               <button
                 type="button"
                 className="command-button primary"
+                aria-label="选择本地 SoundFont"
                 onClick={onChooseSoundFont}
               >
                 <FolderOpen aria-hidden="true" />
                 选择本地 SF2
               </button>
-              {effectiveSoundFont.kind === "user" ? (
-                <button
-                  type="button"
-                  className="command-button"
-                  onClick={onUseDefaultSoundFont}
-                >
-                  <RotateCcw aria-hidden="true" />
-                  恢复默认音色
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className="command-button"
+                aria-label="恢复默认音色"
+                disabled={effectiveSoundFont.kind === "default"}
+                onClick={onUseDefaultSoundFont}
+              >
+                <RotateCcw aria-hidden="true" />
+                恢复默认音色
+              </button>
             </div>
           </div>
         </section>
