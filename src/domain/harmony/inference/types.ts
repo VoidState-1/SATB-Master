@@ -96,7 +96,8 @@ export interface ChordInferenceCandidate {
   readonly id: string;
   readonly observationIndex: number;
   readonly identity: ChordIdentity;
-  readonly semantics: HarmonySemantics;
+  /** Absolute fallback candidates intentionally have no functional semantics. */
+  readonly semantics?: HarmonySemantics;
   readonly functionalBaseId?: FunctionalBaseId;
   readonly fit: ChordFitAssessment;
   readonly score: ChordInferenceScore;
