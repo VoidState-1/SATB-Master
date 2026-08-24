@@ -25,6 +25,7 @@ import {
   Square,
   Trash2,
   Undo2,
+  WandSparkles,
   ZoomIn,
   ZoomOut,
   X,
@@ -43,8 +44,13 @@ import {
 import { SettingsDialog } from "../features/settings";
 import { TrackSidebar } from "../features/tracks";
 import { RuleTestWorkbench } from "../features/ruleTesting";
+import { ChordInferenceDialog } from "../features/chordInference";
 import { replaceProject } from "../domain/editing";
-import type { HarmonyDiagnostic } from "../domain/harmony";
+import {
+  applyChordInference,
+  inferChords,
+  type HarmonyDiagnostic,
+} from "../domain/harmony";
 import { createEmptyProject, type ProjectDocument } from "../domain/project";
 import { buildMeasures, formatPosition } from "../domain/time";
 import { loadNewProjectRuleProfile } from "../domain/ruleProfile";
@@ -116,6 +122,7 @@ function AppShell() {
   const loopEndTick = project.loop.endTick;
   const [notice, setNotice] = useState<string>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chordInferenceOpen, setChordInferenceOpen] = useState(false);
   const [ruleTestMode, setRuleTestMode] = useState(false);
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
@@ -288,6 +295,46 @@ function AppShell() {
     setSelectedChordIds(new Set(diagnostic.chordIds));
   };
 
+  const handleChordInferenceApply = (options: {
+    rangeMode: "selection" | "current-measure" | "project";
+    fromTick: number;
+    toTick: number;
+    mode: "fill-gaps" | "replace-unlocked";
+    allowAbsoluteFallback: boolean;
+    allowIncompleteVoicing: boolean;
+    minConfidence: "high" | "medium" | "low";
+    writeNonChordToneRoles: boolean;
+  }) => {
+    const result = inferChords(project, {
+      fromTick: options.fromTick,
+      toTick: options.toTick,
+      allowAbsoluteFallback: options.allowAbsoluteFallback,
+      allowIncompleteVoicing: options.allowIncompleteVoicing,
+      allowNonChordToneCandidates: options.writeNonChordToneRoles,
+      minConfidence: options.minConfidence,
+    });
+    const applied = applyChordInference(project, result, {
+      mode: options.mode,
+      writeNonChordToneRoles: options.writeNonChordToneRoles,
+    });
+    if (applied.project !== project) history.commit(applied.project);
+    const warningText = applied.skipped.length
+      ? `，跳过 ${applied.skipped.length} 个区段`
+      : "";
+    const roleText = applied.writtenNonChordToneRoleCount
+      ? `，写入 ${applied.writtenNonChordToneRoleCount} 个非和弦音角色`
+      : "";
+    const unresolvedText = result.unresolvedObservationIndices.length
+      ? `，${result.unresolvedObservationIndices.length} 个时间片未归类`
+      : "";
+    showNotice(
+      applied.appliedRegionCount > 0
+        ? `已应用 ${applied.appliedRegionCount} 个和弦区段${roleText}${unresolvedText}${warningText}`
+        : `没有应用和弦区段${unresolvedText}${warningText}`,
+    );
+    setChordInferenceOpen(false);
+  };
+
   const measureCount = buildMeasures(project).length;
   const enterRuleTestMode = async () => {
     handleStop();
@@ -405,6 +452,11 @@ function AppShell() {
             label="导出 MIDI"
             icon={<Download />}
             onClick={() => void handleExportMidi()}
+          />
+          <IconButton
+            label="从音符推导和弦"
+            icon={<WandSparkles />}
+            onClick={() => setChordInferenceOpen(true)}
           />
           {developerMode.enabled && developerMode.showRuleTestEntry ? (
             <IconButton
@@ -786,6 +838,16 @@ function AppShell() {
           showRuleTestEntry={developerMode.showRuleTestEntry}
           onSetShowRuleTestEntry={developerMode.setShowRuleTestEntry}
           onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
+      {chordInferenceOpen ? (
+        <ChordInferenceDialog
+          project={project}
+          playheadTick={playheadTick}
+          selectedNoteIds={selectedNoteIds}
+          selectedChordIds={selectedChordIds}
+          onClose={() => setChordInferenceOpen(false)}
+          onApply={handleChordInferenceApply}
         />
       ) : null}
       {notice ? (

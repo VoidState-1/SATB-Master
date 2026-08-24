@@ -24,6 +24,10 @@ function normalizedRange(
   return { fromTick, toTick };
 }
 
+function confidenceRank(value: "high" | "medium" | "low") {
+  return value === "high" ? 2 : value === "medium" ? 1 : 0;
+}
+
 export function inferChords(
   project: Parameters<typeof buildChordInferenceObservations>[0],
   options: ChordInferenceOptions = {},
@@ -46,8 +50,12 @@ export function inferChords(
     };
   }
   const observations = buildChordInferenceObservations(project, range);
+  const minimumConfidence = options.minConfidence ?? "low";
   const candidateSets = observations.map((observation) =>
-    buildChordInferenceCandidates(observation, options),
+    buildChordInferenceCandidates(observation, options).filter(
+      (candidate) =>
+        confidenceRank(candidate.confidence) >= confidenceRank(minimumConfidence),
+    ),
   );
   const selectedPath = selectChordInferencePath(observations, candidateSets);
   const regions = buildChordInferenceRegions(

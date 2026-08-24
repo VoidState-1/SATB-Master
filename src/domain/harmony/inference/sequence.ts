@@ -37,6 +37,15 @@ function transitionScore(
     : undefined;
   if (target && currentDegree === target.degree) score += 10;
   if (
+    (previous.functionalBaseId === "K46" ||
+      previous.functionalBaseId === "N6" ||
+      previous.functionalBaseId === "It+6" ||
+      previous.functionalBaseId === "Fr+6" ||
+      previous.functionalBaseId === "Ger+6") &&
+    current.functionalBaseId === "D"
+  )
+    score += 14;
+  if (
     currentObservation.metric?.role === "subdivision" &&
     !samePitchStructure(previous, current)
   )
@@ -109,6 +118,31 @@ function chooseRun(
   return selected;
 }
 
+function addPathContextScores(
+  path: readonly ChordInferenceCandidate[],
+  observations: readonly ChordInferenceObservation[],
+  fromIndex: number,
+) {
+  return path.map((candidate, offset) => {
+    if (offset >= path.length - 1) return candidate;
+    const contextFit = transitionScore(
+      candidate,
+      path[offset + 1],
+      observations[fromIndex + offset],
+      observations[fromIndex + offset + 1],
+    );
+    if (contextFit === 0) return candidate;
+    return {
+      ...candidate,
+      score: {
+        ...candidate.score,
+        contextFit,
+        total: candidate.score.total + contextFit,
+      },
+    };
+  });
+}
+
 /** Selects one deterministic candidate path for each contiguous candidate run. */
 export function selectChordInferencePath(
   observations: readonly ChordInferenceObservation[],
@@ -126,7 +160,11 @@ export function selectChordInferencePath(
     while (index < observations.length && candidateSets[index].length > 0)
       index += 1;
     if (index <= fromIndex) continue;
-    const run = chooseRun(observations, candidateSets, fromIndex, index);
+    const run = addPathContextScores(
+      chooseRun(observations, candidateSets, fromIndex, index),
+      observations,
+      fromIndex,
+    );
     run.forEach((candidate, offset) => {
       selected[fromIndex + offset] = candidate;
     });

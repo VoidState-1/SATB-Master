@@ -59,7 +59,12 @@ export function applyChordInference(
     selectedForApply(region, options.selection),
   );
   if (selectedRegions.length === 0)
-    return { project, skipped: Object.freeze(warnings) };
+    return {
+      project,
+      skipped: Object.freeze(warnings),
+      appliedRegionCount: 0,
+      writtenNonChordToneRoleCount: 0,
+    };
   if (project.chordTrack.locked) {
     for (const region of selectedRegions)
       addWarning(warnings, {
@@ -68,11 +73,17 @@ export function applyChordInference(
         toTick: region.toTick,
         message: "和弦轨已锁定，推导结果未应用",
       });
-    return { project, skipped: Object.freeze(warnings) };
+    return {
+      project,
+      skipped: Object.freeze(warnings),
+      appliedRegionCount: 0,
+      writtenNonChordToneRoleCount: 0,
+    };
   }
 
   let next = cloneProject(project);
   const appliedRegions: ChordInferenceRegion[] = [];
+  let writtenNonChordToneRoleCount = 0;
   for (const region of selectedRegions) {
     const candidate = region.selected!;
     const proposed = regionFromCandidate(region, candidate);
@@ -140,9 +151,22 @@ export function applyChordInference(
           continue;
         }
         note.nonChordToneRole = role;
+        writtenNonChordToneRoleCount += 1;
       }
     }
   }
+  if (appliedRegions.length === 0)
+    return {
+      project,
+      skipped: Object.freeze(warnings),
+      appliedRegionCount: 0,
+      writtenNonChordToneRoleCount: 0,
+    };
   if (next !== project) next.updatedAt = new Date().toISOString();
-  return { project: next, skipped: Object.freeze(warnings) };
+  return {
+    project: next,
+    skipped: Object.freeze(warnings),
+    appliedRegionCount: appliedRegions.length,
+    writtenNonChordToneRoleCount,
+  };
 }

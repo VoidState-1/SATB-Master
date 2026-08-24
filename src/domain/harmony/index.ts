@@ -15,3 +15,4 @@ export * from "./rules/catalog";
 export * from "./rules/types";
 export * from "./external/api";
 export * from "./testing";
+export * from "./inference";

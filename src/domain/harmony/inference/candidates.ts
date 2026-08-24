@@ -33,7 +33,7 @@ function confidenceFor(
   fit: ReturnType<typeof fitChordObservation>,
 ) {
   if (
-    score.functionalTier <= 1 &&
+    score.functionalTier <= 2 &&
     fit.omittedChordDegrees.length === 0 &&
     fit.nonChordToneNoteIds.length === 0 &&
     fit.bassMatchesInversion &&

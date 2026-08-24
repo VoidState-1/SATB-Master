@@ -63,6 +63,20 @@ describe("自动和弦推导", () => {
     ]);
   });
 
+  it("结合后续属功能识别终止四六，而不是只按实体标记为 T", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    addLine(project, "soprano", [76, 77]);
+    addLine(project, "alto", [72, 74]);
+    addLine(project, "tenor", [67, 71]);
+    addLine(project, "bass", [55, 55]);
+
+    const result = inferChords(project);
+    expect(result.regions[0].selected?.functionalBaseId).toBe("K46");
+    expect(result.regions[0].status).toBe("resolved");
+    expect(result.regions[1].selected?.functionalBaseId).toBe("D");
+  });
+
   it("默认只应用已解析区段，并保护已有和弦", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ;

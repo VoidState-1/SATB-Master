@@ -1,0 +1,162 @@
+.chord-inference-dialog {
+  width: min(560px, calc(100vw - 40px));
+  max-height: min(720px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 22px;
+}
+
+.chord-inference-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.chord-inference-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #292b26;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.chord-inference-header h2 svg {
+  width: 18px;
+  height: 18px;
+  color: #2f7764;
+}
+
+.chord-inference-header p {
+  margin: 8px 0 0;
+  color: #6d7168;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chord-inference-form {
+  display: grid;
+  gap: 14px;
+}
+
+.chord-inference-field,
+.chord-inference-check,
+.chord-inference-option {
+  display: flex;
+  gap: 9px;
+}
+
+.chord-inference-field {
+  align-items: center;
+}
+
+.chord-inference-field > span,
+.chord-inference-field > small {
+  flex: 0 0 auto;
+}
+
+.chord-inference-field > span {
+  min-width: 72px;
+  color: #4e5249;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chord-inference-field > select {
+  min-width: 0;
+  flex: 1;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #c8cac2;
+  border-radius: 4px;
+  outline: 0;
+  background: #fff;
+  color: #2f332c;
+  font-size: 12px;
+}
+
+.chord-inference-field > select:focus {
+  border-color: #3b7b68;
+  box-shadow: 0 0 0 2px rgba(47, 119, 100, 0.14);
+}
+
+.chord-inference-field > small {
+  color: #7a7e75;
+  font: 10px Consolas, monospace;
+  white-space: nowrap;
+}
+
+.chord-inference-field.compact {
+  margin-top: 10px;
+}
+
+.chord-inference-field.compact > span {
+  min-width: 96px;
+}
+
+.chord-inference-form fieldset {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 13px 13px;
+  border: 1px solid #d5d7d0;
+  border-radius: 5px;
+  background: #f9f9f6;
+}
+
+.chord-inference-form legend {
+  padding: 0 5px;
+  color: #5b5f56;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.chord-inference-check,
+.chord-inference-option {
+  align-items: flex-start;
+  color: #454940;
+  cursor: pointer;
+}
+
+.chord-inference-check input,
+.chord-inference-option input {
+  margin: 3px 0 0;
+  accent-color: #2f7764;
+}
+
+.chord-inference-check span,
+.chord-inference-option span {
+  display: grid;
+  gap: 3px;
+}
+
+.chord-inference-check strong,
+.chord-inference-option strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chord-inference-check small,
+.chord-inference-option small {
+  color: #777b72;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.chord-inference-dialog .confirmation-actions {
+  margin-top: 2px;
+}
+
+.chord-inference-dialog .command-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.chord-inference-dialog .command-button svg {
+  width: 15px;
+  height: 15px;
+}
