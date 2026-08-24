@@ -415,6 +415,38 @@ describe("斯波索宾基础规则检查", () => {
     expect(ruleIds(project)).not.toContain("resolution.leading-tone");
   });
 
+  it("同和弦转换中导音可以在声部之间接力后再解决", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 4;
+    const dominant: TestChordDraft = {
+      degree: 5,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+    };
+    addChord(project, "dominant-1", 0, dominant);
+    addChord(project, "dominant-2", 1, { ...dominant, inversion: 1 });
+    addChord(project, "dominant-3", 2, { ...dominant, inversion: 2 });
+    addChord(project, "tonic", 3, {
+      degree: 1,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+    });
+
+    // B4（女低音） -> B4（女高音） -> B3（男低音） -> C4。
+    addLine(project, "soprano", [79, 71, 79, 72]);
+    addLine(project, "alto", [71, 67, 67, 67]);
+    addLine(project, "tenor", [62, 62, 62, 64]);
+    addLine(project, "bass", [55, 55, 59, 60]);
+
+    expect(
+      checkHarmony(project).diagnostics.filter(
+        (item) => item.ruleId === "resolution.leading-tone",
+      ),
+    ).toEqual([]);
+  });
+
   it("置信度变化会切断 HarmonySpan，避免确定语义覆盖歧义语义", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;

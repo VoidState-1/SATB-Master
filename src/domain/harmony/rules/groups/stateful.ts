@@ -398,6 +398,34 @@ function sameWrittenPitchAsSource<Payload extends VoiceObligationPayload>(
   );
 }
 
+/**
+ * 同一 HarmonySpan 内，导音可以从一个声部交接到另一个声部。
+ * 只有原义务声部已经离开导音，且另一声部在当前边界重新起奏导音时，
+ * 才取消旧义务；原声部仍保持导音时属于重复导音，不能误当作交接。
+ */
+function leadingToneTransferred(
+  environment: ObligationEnvironment<LeadingTonePayload>,
+) {
+  const payload = environment.obligation.payload;
+  const currentSource = environment.context.slice.notes[payload.voiceId];
+  const sourceStillLeading = Boolean(
+    currentSource &&
+      currentSource.pitch.step === payload.leadingStep &&
+      currentSource.pitch.alter === payload.leadingAlter,
+  );
+  if (sourceStillLeading) return false;
+
+  return environment.moment.attackedVoiceIds.some((voiceId) => {
+    if (voiceId === payload.voiceId) return false;
+    const note = environment.context.slice.notes[voiceId];
+    return Boolean(
+      note &&
+        note.pitch.step === payload.leadingStep &&
+        note.pitch.alter === payload.leadingAlter,
+    );
+  });
+}
+
 function decision<Payload extends VoiceObligationPayload>(
   environment: ObligationEnvironment<Payload>,
   outcome: ObligationDecision["outcome"],
@@ -420,6 +448,13 @@ function leadingToneTransition(
 
   if (attacked && targetUnchanged && leadingToneResolves(environment))
     return decision(environment, "resolve", "leading-tone-resolved");
+
+  if (
+    targetUnchanged &&
+    sameOpenedSpan(environment) &&
+    leadingToneTransferred(environment)
+  )
+    return decision(environment, "cancel", "leading-tone-transferred");
 
   if (
     targetUnchanged &&
@@ -636,7 +671,7 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "E.1",
     label: "导音未解决",
     description:
-      "导音义务按声部与解决目标分区；同一书写音高在目标不变时可跨和弦实体延续，声部转到其他音时检查是否上行半音到主音。",
+      "导音义务按声部与解决目标分区；同一书写音高在目标不变时可跨和弦实体延续。同和弦转换中，原声部离开导音且另一声部重新起奏导音时，义务转移到新声部，最终出口仍未解决才报告。",
     rationale:
       "内声部在特定不完全属和弦连接中的自由进行、阻碍进行及声部交换需专门金样本；休止中断状态。",
     group: "resolution",
