@@ -27,6 +27,8 @@ import type {
   PhraseBoundaryCandidate,
   PhraseSegment,
 } from "./phrase";
+import { detectCadences } from "./cadence";
+import type { CadenceCandidate } from "./cadence";
 import {
   buildHarmonyConnections,
   buildFunctionalTargetChains,
@@ -154,6 +156,7 @@ export interface HarmonyAnalysis {
   readonly phraseBoundaries: readonly PhraseBoundary[];
   readonly phraseBoundaryCandidates: readonly PhraseBoundaryCandidate[];
   readonly phraseSegments: readonly PhraseSegment[];
+  readonly cadenceCandidates: readonly CadenceCandidate[];
   readonly slices: readonly AnalysisSlice[];
   readonly harmonySpans: readonly HarmonySpan[];
   readonly sliceSpanIds: ReadonlyMap<number, string>;
@@ -796,6 +799,13 @@ export function buildHarmonyAnalysis(
     sliceTransitions,
     connections,
   });
+  const cadenceCandidates = detectCadences({
+    project: snapshot,
+    harmonySpans,
+    chordById,
+    slices,
+    phraseSegments: phraseAnalysis.segments,
+  });
 
   return Object.freeze({
     revision,
@@ -804,6 +814,7 @@ export function buildHarmonyAnalysis(
     phraseBoundaries: phraseAnalysis.boundaries,
     phraseBoundaryCandidates: phraseAnalysis.candidates,
     phraseSegments: phraseAnalysis.segments,
+    cadenceCandidates,
     slices,
     harmonySpans,
     sliceSpanIds,
