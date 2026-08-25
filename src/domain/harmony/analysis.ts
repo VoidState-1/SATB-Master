@@ -159,6 +159,10 @@ export interface HarmonyAnalysis {
   readonly phraseSegments: readonly PhraseSegment[];
   readonly cadenceCandidates: readonly CadenceCandidate[];
   readonly cadenceAnnotations: readonly DeepReadonly<ProjectCadenceAnnotation>[];
+  readonly cadenceAtTick: ReadonlyMap<
+    number,
+    CadenceCandidate | DeepReadonly<ProjectCadenceAnnotation>
+  >;
   readonly slices: readonly AnalysisSlice[];
   readonly harmonySpans: readonly HarmonySpan[];
   readonly sliceSpanIds: ReadonlyMap<number, string>;
@@ -811,6 +815,17 @@ export function buildHarmonyAnalysis(
     slices,
     phraseSegments: phraseAnalysis.segments,
   });
+  const cadenceAnnotations = snapshot.chordTrack.cadenceAnnotations;
+  const cadenceAtTick = new Map<
+    number,
+    CadenceCandidate | DeepReadonly<ProjectCadenceAnnotation>
+  >();
+  cadenceCandidates.forEach((candidate) =>
+    cadenceAtTick.set(candidate.fromTick, candidate),
+  );
+  cadenceAnnotations.forEach((annotation) =>
+    cadenceAtTick.set(annotation.fromTick, annotation),
+  );
 
   return Object.freeze({
     revision,
@@ -820,7 +835,8 @@ export function buildHarmonyAnalysis(
     phraseBoundaryCandidates: phraseAnalysis.candidates,
     phraseSegments: phraseAnalysis.segments,
     cadenceCandidates,
-    cadenceAnnotations: snapshot.chordTrack.cadenceAnnotations,
+    cadenceAnnotations,
+    cadenceAtTick,
     slices,
     harmonySpans,
     sliceSpanIds,
