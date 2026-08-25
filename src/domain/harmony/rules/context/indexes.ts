@@ -8,6 +8,7 @@ import type {
 } from "../../analysis";
 import type {
   ConnectionView,
+  CadenceView,
   NoteView,
   SpanView,
 } from "./views";
@@ -36,6 +37,8 @@ export interface HarmonyRuleIndexes {
   readonly spanViews: readonly SpanView[];
   readonly spanViewById: ReadonlyMap<string, SpanView>;
   readonly spanIndexById: ReadonlyMap<string, number>;
+  readonly cadenceViews: readonly CadenceView[];
+  readonly cadenceViewById: ReadonlyMap<string, CadenceView>;
   readonly connectionViews: readonly ConnectionView[];
   readonly connectionViewByKey: ReadonlyMap<string, ConnectionView>;
   readonly connectionsBySourceSpanId: ReadonlyMap<
@@ -74,6 +77,7 @@ export interface HarmonyRuleIndexes {
   sliceAt(tick: number): AnalysisSlice | undefined;
   slicesOverlapping(fromTick: number, toTick: number): readonly AnalysisSlice[];
   spanAt(tick: number): SpanView | undefined;
+  cadenceAt(tick: number): CadenceView | undefined;
   notesStarting(
     source: readonly NoteView[],
     options: { readonly at?: number; readonly after?: number },
@@ -113,6 +117,71 @@ export function createHarmonyRuleIndexes(
   const frozenSpanViews = Object.freeze(spanViews);
   const spanIndexById = new Map(
     frozenSpanViews.map((view, index) => [view.span.id, index] as const),
+  );
+
+  const phraseById = new Map(
+    analysis.phraseSegments.map((phrase) => [phrase.id, phrase] as const),
+  );
+  const spanViewsInRange = (fromTick: number, toTick: number) =>
+    frozenSpanViews.filter(
+      (view) => view.span.fromTick >= fromTick && view.span.toTick <= toTick,
+    );
+  const chordViewsInRange = (fromTick: number, toTick: number) =>
+    analysis.project.chordTrack.regions.filter(
+      (chord) =>
+        chord.startTick >= fromTick &&
+        chord.startTick + chord.durationTicks <= toTick,
+    );
+  const candidateViews = analysis.cadenceCandidates.map((candidate) => {
+    const spans = spanViewsInRange(candidate.fromTick, candidate.toTick);
+    return Object.freeze({
+      id: candidate.id,
+      fromTick: candidate.fromTick,
+      toTick: candidate.toTick,
+      phraseId: candidate.phraseId,
+      kind: candidate.kind,
+      form: candidate.form,
+      completion: candidate.completion,
+      confidence: candidate.confidence,
+      source: "candidate" as const,
+      candidate,
+      phrase: phraseById.get(candidate.phraseId),
+      spans: Object.freeze(spans),
+      chords: Object.freeze(chordViewsInRange(candidate.fromTick, candidate.toTick)),
+      evidence: candidate.evidence,
+    });
+  });
+  const annotationViews = analysis.cadenceAnnotations.map((annotation) => {
+    const spans = spanViewsInRange(annotation.fromTick, annotation.toTick);
+    return Object.freeze({
+      id: annotation.id,
+      fromTick: annotation.fromTick,
+      toTick: annotation.toTick,
+      phraseId: annotation.phraseId,
+      kind: annotation.kind,
+      form: annotation.form,
+      completion: annotation.completion,
+      confidence: annotation.confidence,
+      source: annotation.source,
+      annotation,
+      phrase: phraseById.get(annotation.phraseId),
+      spans: Object.freeze(spans),
+      chords: Object.freeze(chordViewsInRange(annotation.fromTick, annotation.toTick)),
+      evidence: Object.freeze([]),
+    });
+  });
+  const annotatedRangeKeys = new Set(
+    annotationViews.map((view) => `${view.phraseId}:${view.fromTick}:${view.toTick}`),
+  );
+  const cadenceViews = Object.freeze([
+    ...annotationViews,
+    ...candidateViews.filter(
+      (view) =>
+        !annotatedRangeKeys.has(`${view.phraseId}:${view.fromTick}:${view.toTick}`),
+    ),
+  ]);
+  const cadenceViewById = new Map(
+    cadenceViews.map((view) => [view.id, view] as const),
   );
 
   const connectionsBySource = new Map<string, ConnectionView[]>();
@@ -209,6 +278,8 @@ export function createHarmonyRuleIndexes(
     spanViews: frozenSpanViews,
     spanViewById,
     spanIndexById,
+    cadenceViews,
+    cadenceViewById,
     connectionViews: Object.freeze(connectionViews),
     connectionViewByKey,
     connectionsBySourceSpanId: freezeMapValues(connectionsBySource),
@@ -243,6 +314,11 @@ export function createHarmonyRuleIndexes(
       return analysis.slices.slice(start, end);
     },
     spanAt,
+    cadenceAt(tick: number) {
+      return cadenceViews.find(
+        (view) => view.fromTick <= tick && tick < view.toTick,
+      );
+    },
     notesStarting(
       source: readonly NoteView[],
       options: { readonly at?: number; readonly after?: number },

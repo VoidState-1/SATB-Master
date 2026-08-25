@@ -257,6 +257,58 @@ describe("工程文件校验", () => {
     expect(validateProject(project)).toBe(false);
   });
 
+  it("校验终止式范围必须对齐和弦边界且不能部分重叠", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.loop.endTick = PPQ * 2;
+    project.chordTrack.regions.push(
+      createChordRegion(
+        project,
+        0,
+        PPQ,
+        {
+          degree: 1,
+          degreeAlteration: 0,
+          quality: "major",
+          inversion: 0,
+          source: "manual",
+          confidence: "certain",
+        },
+        "cadence-chord-1",
+      ),
+      createChordRegion(
+        project,
+        PPQ,
+        PPQ,
+        {
+          degree: 5,
+          degreeAlteration: 0,
+          quality: "major",
+          inversion: 0,
+          source: "manual",
+          confidence: "certain",
+        },
+        "cadence-chord-2",
+      ),
+    );
+    project.chordTrack.cadenceAnnotations = [
+      {
+        id: "cadence-range",
+        phraseId: "phrase",
+        fromTick: 0,
+        toTick: PPQ * 2,
+        kind: "full",
+        source: "manual",
+        confidence: "certain",
+        locked: false,
+      },
+    ];
+    expect(validateProject(project)).toBe(true);
+
+    project.chordTrack.cadenceAnnotations[0].toTick = PPQ + 1;
+    expect(validateProject(project)).toBe(false);
+  });
+
   it("拒绝重复解释 ID、缺失主解释和无效和弦结构", () => {
     const project = createEmptyProject();
     project.chordTrack.regions.push(

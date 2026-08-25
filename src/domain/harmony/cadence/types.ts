@@ -1,3 +1,6 @@
+import type {
+  CadenceAnnotation as ProjectCadenceAnnotation,
+} from "../../project/types";
 import type { HarmonySpan, AnalysisChord, AnalysisSlice } from "../analysis";
 import type { PhraseSegment } from "../phrase";
 
@@ -45,16 +48,16 @@ export interface CadenceCandidate {
 }
 
 export interface CadenceAnnotation {
-  readonly id: string;
-  readonly phraseId: string;
-  readonly fromTick: number;
-  readonly toTick: number;
-  readonly kind: CadenceKind;
-  readonly form?: CadenceForm;
-  readonly completion?: CadenceCompletion;
-  readonly source: "manual" | "accepted-candidate";
-  readonly confidence: Exclude<CadenceConfidence, "ambiguous">;
-  readonly locked: boolean;
+  readonly id: ProjectCadenceAnnotation["id"];
+  readonly phraseId: ProjectCadenceAnnotation["phraseId"];
+  readonly fromTick: ProjectCadenceAnnotation["fromTick"];
+  readonly toTick: ProjectCadenceAnnotation["toTick"];
+  readonly kind: ProjectCadenceAnnotation["kind"];
+  readonly form?: ProjectCadenceAnnotation["form"];
+  readonly completion?: ProjectCadenceAnnotation["completion"];
+  readonly source: ProjectCadenceAnnotation["source"];
+  readonly confidence: ProjectCadenceAnnotation["confidence"];
+  readonly locked: ProjectCadenceAnnotation["locked"];
 }
 
 export interface CadenceSpanFacts {

@@ -15,11 +15,14 @@ import { createPitchAnalysisService, type PitchAnalysisService } from "../servic
 import { createVoiceLeadingService, type VoiceLeadingService } from "../services/voiceLeading";
 import type {
   ConnectionView,
+  CadenceView,
   NoteNeighborhood,
   NoteView,
   SpanNeighborhood,
   SpanView,
 } from "./views";
+import type { CadenceKind } from "../../../project/types";
+import type { PhraseSegment } from "../../phrase";
 import { createHarmonyRuleIndexes } from "./indexes";
 
 export interface NoteQueryOptions {
@@ -44,6 +47,19 @@ export interface ConnectionQueryOptions {
   readonly targetSpanId?: string;
 }
 
+export interface PhraseQueryOptions {
+  readonly id?: string;
+  readonly containingTick?: number;
+}
+
+export interface CadenceQueryOptions {
+  readonly id?: string;
+  readonly phraseId?: string;
+  readonly kind?: CadenceKind;
+  readonly containingTick?: number;
+  readonly source?: CadenceView["source"];
+}
+
 export interface MelodyTransitionQueryOptions {
   readonly voiceId?: VoiceId;
 }
@@ -59,6 +75,8 @@ export interface HarmonyRuleContext {
   slices(options?: SliceQueryOptions): HarmonyQuery<AnalysisSlice>;
   spans(options?: SpanQueryOptions): HarmonyQuery<SpanView>;
   connections(options?: ConnectionQueryOptions): HarmonyQuery<ConnectionView>;
+  phrases(options?: PhraseQueryOptions): HarmonyQuery<PhraseSegment>;
+  cadences(options?: CadenceQueryOptions): HarmonyQuery<CadenceView>;
   melodyTransitions(
     options?: MelodyTransitionQueryOptions,
   ): HarmonyQuery<MelodyTransition>;
@@ -69,6 +87,9 @@ export interface HarmonyRuleContext {
   spanNeighborhood(span: SpanView): SpanNeighborhood;
   sliceAt(tick: number): AnalysisSlice | undefined;
   spanAt(tick: number): SpanView | undefined;
+  phraseAt(tick: number): PhraseSegment | undefined;
+  boundaryAt(tick: number): HarmonyAnalysis["phraseBoundaries"][number] | undefined;
+  cadenceAt(tick: number): CadenceView | undefined;
   keyAt(tick: number): HarmonyAnalysis["slices"][number]["key"] | undefined;
   readonly pitch: PitchAnalysisService;
   readonly metric: MetricAnalysisService;
@@ -173,6 +194,39 @@ export function createHarmonyRuleContext(
         );
       return HarmonyQuery.from(indexes.connectionViews);
     },
+    phrases(options = {}) {
+      return HarmonyQuery.from(analysis.phraseSegments).where((phrase) => {
+        if (options.id !== undefined && phrase.id !== options.id) return false;
+        if (
+          options.containingTick !== undefined &&
+          !(
+            phrase.fromTick <= options.containingTick &&
+            options.containingTick < phrase.toTick
+          )
+        )
+          return false;
+        return true;
+      });
+    },
+    cadences(options = {}) {
+      if (options.id !== undefined) {
+        const item = indexes.cadenceViewById.get(options.id);
+        return item ? HarmonyQuery.from([item]) : HarmonyQuery.empty();
+      }
+      return HarmonyQuery.from(indexes.cadenceViews).where((cadence) => {
+        if (options.phraseId !== undefined && cadence.phraseId !== options.phraseId)
+          return false;
+        if (options.kind !== undefined && cadence.kind !== options.kind) return false;
+        if (options.source !== undefined && cadence.source !== options.source)
+          return false;
+        if (
+          options.containingTick !== undefined &&
+          !(cadence.fromTick <= options.containingTick && options.containingTick < cadence.toTick)
+        )
+          return false;
+        return true;
+      });
+    },
     melodyTransitions(options = {}) {
       return HarmonyQuery.from(
         options.voiceId
@@ -222,6 +276,15 @@ export function createHarmonyRuleContext(
     },
     sliceAt: indexes.sliceAt,
     spanAt: indexes.spanAt,
+    phraseAt(tick) {
+      return analysis.phraseSegments.find(
+        (phrase) => phrase.fromTick <= tick && tick < phrase.toTick,
+      );
+    },
+    boundaryAt(tick) {
+      return analysis.phraseBoundaries.find((boundary) => boundary.tick === tick);
+    },
+    cadenceAt: indexes.cadenceAt,
     keyAt(tick) {
       return indexes.sliceAt(tick)?.key;
     },

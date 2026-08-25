@@ -23,6 +23,7 @@ import {
 } from "../pitch";
 import type {
   ChordRegion,
+  CadenceAnnotation,
   KeyEvent,
   PhraseBoundary,
   NonChordToneRole,
@@ -204,6 +205,56 @@ function validateProjectStructure(value: unknown, projectLength: number) {
     return false;
   const ticks = boundaries.map((boundary) => (boundary as PhraseBoundary).tick);
   return ticks.every((tick, index) => index === 0 || tick > ticks[index - 1]);
+}
+
+function validateCadenceAnnotation(
+  value: unknown,
+  projectLength: number,
+): value is CadenceAnnotation {
+  return (
+    isRecord(value) &&
+    hasString(value, "id") &&
+    hasString(value, "phraseId") &&
+    isInteger(value.fromTick, 0, projectLength) &&
+    isInteger(value.toTick, 1, projectLength) &&
+    (value.toTick as number) > (value.fromTick as number) &&
+    ["full", "half", "supplementary", "deceptive"].includes(
+      value.kind as string,
+    ) &&
+    (value.form === undefined || ["authentic", "plagal"].includes(value.form as string)) &&
+    (value.completion === undefined ||
+      ["perfect", "imperfect"].includes(value.completion as string)) &&
+    ["manual", "accepted-candidate"].includes(value.source as string) &&
+    ["certain", "probable"].includes(value.confidence as string) &&
+    typeof value.locked === "boolean"
+  );
+}
+
+function validateCadenceAnnotations(
+  value: unknown,
+  projectLength: number,
+  regions: readonly ChordRegion[],
+) {
+  if (!Array.isArray(value) || !value.every((item) => validateCadenceAnnotation(item, projectLength)))
+    return false;
+  const annotations = value as CadenceAnnotation[];
+  if (new Set(annotations.map((item) => item.id)).size !== annotations.length)
+    return false;
+  const ordered = [...annotations].sort((left, right) => left.fromTick - right.fromTick);
+  if (
+    ordered.some(
+      (item, index) =>
+        index > 0 && ordered[index - 1].toTick > item.fromTick,
+    )
+  )
+    return false;
+  return annotations.every((annotation) => {
+    const startAligned = regions.some((region) => region.startTick === annotation.fromTick);
+    const endAligned = regions.some(
+      (region) => region.startTick + region.durationTicks === annotation.toTick,
+    );
+    return startAligned && endAligned;
+  });
 }
 
 function validateKeyReference(value: unknown): value is KeyReference {
@@ -588,6 +639,11 @@ export function validateProject(value: unknown): value is ProjectDocument {
     !Array.isArray(project.chordTrack.regions) ||
     !project.chordTrack.regions.every((region) =>
       validateChordRegion(region, project.lengthTicks as number),
+    ) ||
+    !validateCadenceAnnotations(
+      project.chordTrack.cadenceAnnotations,
+      project.lengthTicks as number,
+      project.chordTrack.regions as ChordRegion[],
     )
   )
     return false;

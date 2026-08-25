@@ -115,7 +115,8 @@ export interface ExternalRuleContext {
       | "lengthTicks"
       | "tempoEvents"
       | "meterEvents"
-      | "keyEvents"
+       | "keyEvents"
+       | "structure"
       | "satbTracks"
       | "chordTrack"
     >,
@@ -126,6 +127,7 @@ export interface ExternalRuleContext {
       locked: boolean;
       displayMode: HarmonyAnalysis["project"]["chordTrack"]["displayMode"];
       regions: ExternalRuleChordRegionV3[];
+      cadenceAnnotations: HarmonyAnalysis["project"]["chordTrack"]["cadenceAnnotations"];
     };
   };
   sharedSettings: HarmonyAnalysis["project"]["ruleProfile"]["shared"];
@@ -145,6 +147,9 @@ export interface ExternalRuleContext {
   >;
   connections: HarmonyAnalysis["connections"];
   targetChains: HarmonyAnalysis["targetChains"];
+  phraseSegments: HarmonyAnalysis["phraseSegments"];
+  phraseBoundaryCandidates: HarmonyAnalysis["phraseBoundaryCandidates"];
+  cadenceCandidates: HarmonyAnalysis["cadenceCandidates"];
   auxiliarySummary: HarmonyAnalysis["auxiliarySummary"];
 }
 
@@ -253,12 +258,14 @@ export function buildExternalRuleContext(
       tempoEvents: currentProject.tempoEvents,
       meterEvents: currentProject.meterEvents,
       keyEvents: currentProject.keyEvents,
+      structure: currentProject.structure,
       satbTracks: currentProject.satbTracks,
       chordTrack: {
         visible: currentProject.chordTrack.visible,
         locked: currentProject.chordTrack.locked,
         displayMode: currentProject.chordTrack.displayMode,
         regions: [...currentProject.chordTrack.regions],
+        cadenceAnnotations: currentProject.chordTrack.cadenceAnnotations,
       },
     },
     sharedSettings: currentProject.ruleProfile.shared,
@@ -274,6 +281,9 @@ export function buildExternalRuleContext(
     })),
     connections: analysis.connections,
     targetChains: analysis.targetChains,
+    phraseSegments: analysis.phraseSegments,
+    phraseBoundaryCandidates: analysis.phraseBoundaryCandidates,
+    cadenceCandidates: analysis.cadenceCandidates,
     auxiliarySummary: analysis.auxiliarySummary,
   };
 }

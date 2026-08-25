@@ -17,7 +17,6 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import type { SpanView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 function keyEquals(left: KeyReference, right: KeyReference) {
@@ -119,53 +118,37 @@ export function cadential64MetricPositionRule(context: HarmonyRuleContext) {
   return diagnostics;
 }
 
-function cadenceContext(context: HarmonyRuleContext, current: SpanView) {
-  const { span } = current;
-  const previous = context.spanNeighborhood(current).previous;
-  if (!previous || previous.span.toTick !== span.fromTick) return undefined;
-  const previousSpan = previous.span;
-  const sourceSlice = previous.lastSlice;
-  const targetSlice = current.firstSlice;
-  if (!sourceSlice?.chord || !targetSlice?.chord) return undefined;
-  const sourceChord = sourceSlice.chord;
-  const targetChord = targetSlice.chord;
-  return {
-    previousSpan,
-    sourceSlice,
-    targetSlice,
-    sourceChord,
-    targetChord,
-    sourceInterpretation: spanInterpretation(context, previousSpan),
-    targetInterpretation: spanInterpretation(context, span),
-  };
-}
-
 function cadenceRuleContexts(context: HarmonyRuleContext) {
-  return context.spans().selectMany((current) => {
-    const { span } = current;
-    const cadenceType = span.semantics?.cadenceType;
-    if (!cadenceType || cadenceType === "open") return [];
-    const cadence = cadenceContext(context, current);
-    if (!cadence) return [];
-    const {
-      sourceSlice,
-      targetSlice,
-      sourceChord,
-      targetChord,
-      sourceInterpretation,
-      targetInterpretation,
-    } = cadence;
+  return context
+    .cadences()
+    .where(
+      (cadence) =>
+        cadence.source !== "candidate" || cadence.confidence === "certain",
+    )
+    .selectMany((cadence) => {
+    const target = cadence.spans.at(-1);
+    const source = cadence.spans.at(-2);
+    if (!target) return [];
+    const sourceSlice = source?.lastSlice;
+    const targetSlice = target.firstSlice;
+    const sourceChord = sourceSlice?.chord;
+    const targetChord = targetSlice.chord;
+    if (!targetChord) return [];
+    const sourceInterpretation = source
+      ? spanInterpretation(context, source.span)
+      : undefined;
+    const targetInterpretation = spanInterpretation(context, target.span);
     const key = targetInterpretation?.localKey ?? targetSlice.key;
-    const sourceBass = sourceSlice.notes.bass;
+    const sourceBass = sourceSlice?.notes.bass;
     const targetBass = targetSlice.notes.bass;
-    if (!sourceBass || !targetBass) return [];
+    if (!targetBass) return [];
     const degreePitch = (degree: 1 | 4 | 5 | 6) =>
       scaleDegreePitchClass(key, degree, 0);
     const sourceFamily = sourceInterpretation?.designation?.primaryFunction;
     const targetFamily = targetInterpretation?.designation?.primaryFunction;
     return [
       {
-        cadenceType,
+        cadence,
         sourceSlice,
         targetSlice,
         sourceChord,
@@ -178,34 +161,44 @@ function cadenceRuleContexts(context: HarmonyRuleContext) {
         targetInterpretation,
       },
     ];
-  }).toArray();
+  })
+    .toArray();
 }
+
+const CADENCE_KIND_LABELS = {
+  full: "全终止",
+  half: "半终止",
+  supplementary: "补充终止",
+  deceptive: "阻碍终止",
+} as const;
 
 export function cadenceBassFormulaRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   cadenceRuleContexts(context).forEach((context) => {
     const valid =
-      context.cadenceType === "perfect-authentic" ||
-      context.cadenceType === "imperfect-authentic"
-        ? context.sourceFamily === "dominant" &&
+      context.cadence.kind === "full"
+        ? Boolean(context.sourceBass) &&
+          context.sourceFamily === "dominant" &&
           context.targetFamily === "tonic" &&
-          pitchClassEquals(context.sourceBass.pitch, context.degreePitch(5)) &&
+          pitchClassEquals(context.sourceBass!.pitch, context.degreePitch(5)) &&
           pitchClassEquals(context.targetBass.pitch, context.degreePitch(1))
-        : context.cadenceType === "half"
+        : context.cadence.kind === "half"
           ? context.targetFamily === "dominant" &&
             pitchClassEquals(context.targetBass.pitch, context.degreePitch(5))
-          : context.cadenceType === "plagal"
-            ? context.sourceFamily === "subdominant" &&
+          : context.cadence.kind === "supplementary"
+            ? Boolean(context.sourceBass) &&
+              context.sourceFamily === "subdominant" &&
               context.targetFamily === "tonic" &&
               pitchClassEquals(
-                context.sourceBass.pitch,
+                context.sourceBass!.pitch,
                 context.degreePitch(4),
               ) &&
               pitchClassEquals(context.targetBass.pitch, context.degreePitch(1))
-            : context.sourceFamily === "dominant" &&
+            : Boolean(context.sourceBass) &&
+              context.sourceFamily === "dominant" &&
               context.targetInterpretation?.degree === 6 &&
               pitchClassEquals(
-                context.sourceBass.pitch,
+                context.sourceBass!.pitch,
                 context.degreePitch(5),
               ) &&
               pitchClassEquals(
@@ -219,15 +212,21 @@ export function cadenceBassFormulaRule(context: HarmonyRuleContext) {
         context.targetSlice.tick,
         context.targetSlice.endTick,
         ["bass"],
-        [context.sourceBass, context.targetBass],
+        context.sourceBass
+          ? [context.sourceBass, context.targetBass]
+          : [context.targetBass],
         "终止低音公式不成立",
-        `标注的 ${context.cadenceType} 终止与末端功能或低音级数不一致。`,
+        `标注的${CADENCE_KIND_LABELS[context.cadence.kind]}与末端功能或低音级数不一致。`,
         {
-          chordIds: [context.sourceChord.id, context.targetChord.id],
+          chordIds: context.cadence.chords.map((chord) => chord.id),
           evidence: [
-            chordEvidence(context.sourceChord),
+            ...(context.sourceChord
+              ? [chordEvidence(context.sourceChord)]
+              : []),
             chordEvidence(context.targetChord),
-            noteEvidence(context.sourceBass, "终止前低音"),
+            ...(context.sourceBass
+              ? [noteEvidence(context.sourceBass, "终止前低音")]
+              : []),
             noteEvidence(context.targetBass, "终止低音"),
           ],
         },
@@ -240,7 +239,14 @@ export function cadenceBassFormulaRule(context: HarmonyRuleContext) {
 export function perfectAuthenticSopranoRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   cadenceRuleContexts(context).forEach((context) => {
-    if (context.cadenceType !== "perfect-authentic") return;
+    if (
+      context.cadence.kind !== "full" ||
+      context.cadence.form !== "authentic" ||
+      context.cadence.completion !== "perfect" ||
+      !context.sourceChord ||
+      !context.sourceBass
+    )
+      return;
     const soprano = context.targetSlice.notes.soprano;
     if (!soprano) return;
     const valid =
@@ -260,7 +266,7 @@ export function perfectAuthenticSopranoRule(context: HarmonyRuleContext) {
         "完全终止的旋律位置不成立",
         "完全终止要求原位 D 进入原位 T，并由女高音落在主音。",
         {
-          chordIds: [context.sourceChord.id, context.targetChord.id],
+          chordIds: context.cadence.chords.map((chord) => chord.id),
           evidence: [
             chordEvidence(context.sourceChord),
             chordEvidence(context.targetChord),
@@ -276,7 +282,10 @@ export function perfectAuthenticSopranoRule(context: HarmonyRuleContext) {
 export function unstableEndingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   cadenceRuleContexts(context).forEach((context) => {
-    if (context.cadenceType === "half" || context.cadenceType === "deceptive")
+    if (
+      context.cadence.kind !== "full" &&
+      context.cadence.kind !== "supplementary"
+    )
       return;
     const valid =
       context.targetFamily === "tonic" &&

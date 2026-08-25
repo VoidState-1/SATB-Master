@@ -103,6 +103,7 @@ export function createEmptyProject(title = "未命名练习"): ProjectDocument {
       locked: false,
       displayMode: "roman",
       regions: [],
+      cadenceAnnotations: [],
     },
     loop: {
       enabled: false,

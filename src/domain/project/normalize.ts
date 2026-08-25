@@ -60,6 +60,9 @@ export function normalizeProject(project: ProjectDocument): ProjectDocument {
   // 调号编辑会改变其后功能和弦的书写实体；保存前统一收敛为同一事实来源。
   reconcileChordIdentities(normalized);
   normalized.chordTrack.regions.sort((a, b) => a.startTick - b.startTick);
+  normalized.chordTrack.cadenceAnnotations.sort(
+    (left, right) => left.fromTick - right.fromTick || left.toTick - right.toTick,
+  );
   getAllPlayableTracks(normalized).forEach((track) =>
     track.notes.sort(
       (a, b) => a.startTick - b.startTick || toMidi(a.pitch) - toMidi(b.pitch),

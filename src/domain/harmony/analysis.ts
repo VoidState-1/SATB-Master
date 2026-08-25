@@ -29,6 +29,7 @@ import type {
 } from "./phrase";
 import { detectCadences } from "./cadence";
 import type { CadenceCandidate } from "./cadence";
+import type { CadenceAnnotation as ProjectCadenceAnnotation } from "../project/types";
 import {
   buildHarmonyConnections,
   buildFunctionalTargetChains,
@@ -157,6 +158,7 @@ export interface HarmonyAnalysis {
   readonly phraseBoundaryCandidates: readonly PhraseBoundaryCandidate[];
   readonly phraseSegments: readonly PhraseSegment[];
   readonly cadenceCandidates: readonly CadenceCandidate[];
+  readonly cadenceAnnotations: readonly DeepReadonly<ProjectCadenceAnnotation>[];
   readonly slices: readonly AnalysisSlice[];
   readonly harmonySpans: readonly HarmonySpan[];
   readonly sliceSpanIds: ReadonlyMap<number, string>;
@@ -815,6 +817,7 @@ export function buildHarmonyAnalysis(
     phraseBoundaryCandidates: phraseAnalysis.candidates,
     phraseSegments: phraseAnalysis.segments,
     cadenceCandidates,
+    cadenceAnnotations: snapshot.chordTrack.cadenceAnnotations,
     slices,
     harmonySpans,
     sliceSpanIds,

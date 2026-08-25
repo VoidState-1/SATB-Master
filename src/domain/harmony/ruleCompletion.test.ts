@@ -218,8 +218,22 @@ describe("完整规则目录首版实现", () => {
       functionalChord(
         "cad-t",
         PPQ,
-        draft(1, "major", "tonic", { cadenceType: "perfect-authentic" }),
+        draft(1, "major", "tonic"),
       ),
+    ];
+    project.chordTrack.cadenceAnnotations = [
+      {
+        id: "cadence-manual",
+        phraseId: "phrase-0-1920",
+        fromTick: 0,
+        toTick: PPQ * 2,
+        kind: "full",
+        form: "authentic",
+        completion: "perfect",
+        source: "manual",
+        confidence: "certain",
+        locked: false,
+      },
     ];
     setVoice(project, "soprano", [
       note("cs1", 0, pitch("D", 0, 5)),
@@ -239,7 +253,7 @@ describe("完整规则目录首版实现", () => {
     ]);
     expect(hasRule(project, "cadence.perfect-authentic-soprano")).toBe(true);
 
-    project.chordTrack.regions[1].semantics!.cadenceType = undefined;
+    project.chordTrack.cadenceAnnotations = [];
     expect(hasRule(project, "cadence.perfect-authentic-soprano")).toBe(false);
   });
 

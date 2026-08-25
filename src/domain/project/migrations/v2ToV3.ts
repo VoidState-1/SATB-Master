@@ -117,6 +117,8 @@ function migrateV2Project(value: Record<string, unknown>) {
   delete migrated.tracks;
   migrated.ruleProfile = createDefaultRuleProfile();
   if (isRecord(migrated.chordTrack)) {
+    if (!Array.isArray(migrated.chordTrack.cadenceAnnotations))
+      migrated.chordTrack.cadenceAnnotations = [];
     migrated.chordTrack.displayMode =
       migrated.chordTrack.displayMode === "both"
         ? "roman-absolute"
@@ -158,6 +160,8 @@ export function migrateProject(value: unknown): ProjectDocument | undefined {
     const upgraded = structuredClone(value);
     if (!isRecord(upgraded.structure))
       upgraded.structure = { phraseBoundaries: [] };
+    if (isRecord(upgraded.chordTrack) && !Array.isArray(upgraded.chordTrack.cadenceAnnotations))
+      upgraded.chordTrack.cadenceAnnotations = [];
     if (validateProject(upgraded))
       return normalizeProject(upgraded as unknown as ProjectDocument);
   }

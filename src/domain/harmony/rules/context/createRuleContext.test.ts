@@ -245,4 +245,44 @@ describe("HarmonyRuleContext", () => {
     expect(context.spanAt(-1)).toBeUndefined();
     expect(context.spanAt(PPQ * 3)).toBeUndefined();
   });
+
+  it("查询乐句与终止范围，并优先返回人工终止标注", () => {
+    const project = createEmptyProject("终止查询测试");
+    project.lengthTicks = PPQ * 2;
+    project.structure.phraseBoundaries = [
+      {
+        id: "phrase-end",
+        tick: PPQ,
+        source: "manual",
+        confidence: "certain",
+      },
+    ];
+    project.chordTrack.regions = [
+      correctionChord("source", 0, PPQ),
+      correctionChord("target", PPQ, PPQ),
+    ];
+    project.chordTrack.cadenceAnnotations = [
+      {
+        id: "manual-cadence",
+        phraseId: "phrase-0-960",
+        fromTick: 0,
+        toTick: PPQ,
+        kind: "half",
+        source: "manual",
+        confidence: "certain",
+        locked: false,
+      },
+    ];
+    const context = createHarmonyRuleContext(buildHarmonyAnalysis(project));
+
+    expect(context.phrases().toArray()).toHaveLength(2);
+    expect(context.phraseAt(0)?.id).toBe("phrase-0-960");
+    expect(context.boundaryAt(PPQ)?.id).toBe("phrase-end");
+    expect(context.cadenceAt(0)).toMatchObject({
+      id: "manual-cadence",
+      source: "manual",
+      kind: "half",
+    });
+    expect(context.cadences({ kind: "full" }).toArray()).toEqual([]);
+  });
 });

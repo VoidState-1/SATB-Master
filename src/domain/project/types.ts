@@ -85,6 +85,27 @@ export interface ProjectStructure {
   phraseBoundaries: PhraseBoundary[];
 }
 
+export type CadenceKind =
+  | "full"
+  | "half"
+  | "supplementary"
+  | "deceptive";
+export type CadenceForm = "authentic" | "plagal";
+export type CadenceCompletion = "perfect" | "imperfect";
+
+export interface CadenceAnnotation {
+  id: string;
+  phraseId: string;
+  fromTick: number;
+  toTick: number;
+  kind: CadenceKind;
+  form?: CadenceForm;
+  completion?: CadenceCompletion;
+  source: "manual" | "accepted-candidate";
+  confidence: "certain" | "probable";
+  locked: boolean;
+}
+
 export interface MidiImportOrigin {
   importId: string;
   sourceTrack: number;
@@ -183,6 +204,7 @@ export interface ChordTrack {
     | "functional-absolute"
     | "roman-absolute";
   regions: ChordRegion[];
+  cadenceAnnotations: CadenceAnnotation[];
 }
 
 export interface LoopSettings {

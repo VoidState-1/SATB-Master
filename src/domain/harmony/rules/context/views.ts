@@ -5,6 +5,9 @@ import type {
   AnalysisSlice,
   HarmonySpan,
 } from "../../analysis";
+import type { CadenceCandidate } from "../../cadence";
+import type { CadenceAnnotation } from "../../../project/types";
+import type { PhraseSegment } from "../../phrase";
 import type { HarmonyConnectionAssessment } from "../connector";
 
 export interface NoteView {
@@ -34,6 +37,24 @@ export interface SpanNeighborhood {
   readonly next?: SpanView;
   readonly incoming?: ConnectionView;
   readonly outgoing?: ConnectionView;
+}
+
+export interface CadenceView {
+  readonly id: string;
+  readonly fromTick: number;
+  readonly toTick: number;
+  readonly phraseId: string;
+  readonly kind: CadenceCandidate["kind"];
+  readonly form?: CadenceCandidate["form"];
+  readonly completion?: CadenceCandidate["completion"];
+  readonly confidence: CadenceCandidate["confidence"];
+  readonly source: "candidate" | "manual" | "accepted-candidate";
+  readonly candidate?: CadenceCandidate;
+  readonly annotation?: CadenceAnnotation;
+  readonly phrase?: PhraseSegment;
+  readonly spans: readonly SpanView[];
+  readonly chords: readonly AnalysisChord[];
+  readonly evidence: readonly CadenceCandidate["evidence"][number][];
 }
 
 export interface NoteNeighborhood {
