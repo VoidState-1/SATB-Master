@@ -785,7 +785,7 @@ data-cadence-kind="full|half|supplementary|deceptive"
 2. 范围内所有和弦读取相同的终止类型；
 3. 移动或删除范围内和弦后标注进入 `stale`；
 4. 锁定和弦或锁定和弦轨时不能修改终止标注；
-5. 旧 `cadenceType` 值按迁移表转换；
+5. 旧 `cadenceType` 不参与新模型；规范化时仅清理残留字段；
 6. 终止标注不复制到和弦 `HarmonySemantics`。
 
 ### 13.4 UI 测试
