@@ -203,6 +203,8 @@ function validateProjectStructure(value: unknown, projectLength: number) {
   const boundaries = value.phraseBoundaries as unknown[];
   if (!boundaries.every((boundary) => validatePhraseBoundary(boundary, projectLength)))
     return false;
+  if (boundaries.some((boundary) => (boundary as PhraseBoundary).tick <= 0 || (boundary as PhraseBoundary).tick >= projectLength))
+    return false;
   const ticks = boundaries.map((boundary) => (boundary as PhraseBoundary).tick);
   return ticks.every((tick, index) => index === 0 || tick > ticks[index - 1]);
 }
@@ -228,6 +230,10 @@ function validateCadenceAnnotation(
     ["certain", "probable"].includes(value.confidence as string) &&
     typeof value.locked === "boolean" &&
     (value.stale === undefined || typeof value.stale === "boolean")
+    &&
+    (value.kind === "full" || value.completion === undefined) &&
+    (value.kind !== "supplementary" || value.form === "plagal") &&
+    (value.form !== "plagal" || value.kind === "full" || value.kind === "supplementary")
   );
 }
 
