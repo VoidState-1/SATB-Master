@@ -88,6 +88,9 @@ export function createEmptyProject(title = "未命名练习"): ProjectDocument {
         mode: "major",
       },
     ],
+    structure: {
+      phraseBoundaries: [],
+    },
     satbTracks: [
       createTrack("soprano", 52),
       createTrack("alto", 52),

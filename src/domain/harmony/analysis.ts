@@ -21,6 +21,12 @@ import {
   type MetricTimeline,
 } from "../rhythm/metric";
 import type { RuleDependencyScope } from "./rules/types";
+import { analyzePhrases } from "./phrase";
+import type {
+  PhraseBoundary,
+  PhraseBoundaryCandidate,
+  PhraseSegment,
+} from "./phrase";
 import {
   buildHarmonyConnections,
   buildFunctionalTargetChains,
@@ -145,6 +151,9 @@ export interface HarmonyAnalysis {
   readonly revision: number;
   readonly project: ProjectSnapshot;
   readonly metricTimeline: MetricTimeline;
+  readonly phraseBoundaries: readonly PhraseBoundary[];
+  readonly phraseBoundaryCandidates: readonly PhraseBoundaryCandidate[];
+  readonly phraseSegments: readonly PhraseSegment[];
   readonly slices: readonly AnalysisSlice[];
   readonly harmonySpans: readonly HarmonySpan[];
   readonly sliceSpanIds: ReadonlyMap<number, string>;
@@ -698,6 +707,9 @@ export function computeAnalysisInvalidationRanges(
   ) {
     ranges.push(changeRange(0, current.lengthTicks, ["phrase", "project"]));
   }
+  if (entitySignature(previous.structure) !== entitySignature(current.structure)) {
+    ranges.push(changeRange(0, current.lengthTicks, ["phrase", "project"]));
+  }
   if (previous.lengthTicks !== current.lengthTicks) {
     ranges.push(
       changeRange(
@@ -743,6 +755,7 @@ export function buildHarmonyAnalysis(
   // 调度器只向规则暴露冻结后的克隆，避免内置或未来外置规则意外改写编辑器状态。
   const snapshot = deepFreeze(structuredClone(project));
   const metricTimeline = buildMetricTimeline(snapshot);
+  const phraseAnalysis = analyzePhrases(snapshot);
   const analysisShell = { project: snapshot } as Pick<
     HarmonyAnalysis,
     "project"
@@ -788,6 +801,9 @@ export function buildHarmonyAnalysis(
     revision,
     project: snapshot,
     metricTimeline,
+    phraseBoundaries: phraseAnalysis.boundaries,
+    phraseBoundaryCandidates: phraseAnalysis.candidates,
+    phraseSegments: phraseAnalysis.segments,
     slices,
     harmonySpans,
     sliceSpanIds,

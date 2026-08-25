@@ -70,6 +70,21 @@ export type NonChordToneRole =
   | "pedal"
   | "other";
 
+export type PhraseBoundarySource = "manual" | "inferred";
+export type PhraseConfidence = "certain" | "probable" | "ambiguous";
+
+export interface PhraseBoundary {
+  id: string;
+  tick: number;
+  source: PhraseBoundarySource;
+  confidence: PhraseConfidence;
+  locked?: boolean;
+}
+
+export interface ProjectStructure {
+  phraseBoundaries: PhraseBoundary[];
+}
+
 export interface MidiImportOrigin {
   importId: string;
   sourceTrack: number;
@@ -223,6 +238,7 @@ export interface ProjectDocument {
   tempoEvents: TempoEvent[];
   meterEvents: MeterEvent[];
   keyEvents: KeyEvent[];
+  structure: ProjectStructure;
   satbTracks: SatbTrack[];
   auxiliaryTracks: AuxiliaryTrack[];
   chordTrack: ChordTrack;

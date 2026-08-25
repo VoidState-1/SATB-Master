@@ -152,6 +152,15 @@ function migrateV2Project(value: Record<string, unknown>) {
 
 export function migrateProject(value: unknown): ProjectDocument | undefined {
   if (validateProject(value)) return normalizeProject(value);
+  // schema v3 工程在引入乐句结构前没有 structure 字段；补充空结构后
+  // 仍按当前模型完整校验，避免在各个读取入口重复做兼容分支。
+  if (isRecord(value) && value.schemaVersion === PROJECT_SCHEMA_VERSION) {
+    const upgraded = structuredClone(value);
+    if (!isRecord(upgraded.structure))
+      upgraded.structure = { phraseBoundaries: [] };
+    if (validateProject(upgraded))
+      return normalizeProject(upgraded as unknown as ProjectDocument);
+  }
   if (!isRecord(value) || value.schemaVersion !== 2) return undefined;
   const migrated = migrateV2Project(value);
   if (!migrated || !validateProject(migrated)) return undefined;

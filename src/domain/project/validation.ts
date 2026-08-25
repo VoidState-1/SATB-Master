@@ -24,6 +24,7 @@ import {
 import type {
   ChordRegion,
   KeyEvent,
+  PhraseBoundary,
   NonChordToneRole,
   ProjectDocument,
   VoiceId,
@@ -178,6 +179,31 @@ function validateAuxiliaryTrack(value: unknown, projectLength: number) {
     value.participatesInHarmony === false &&
     value.monophonic === false
   );
+}
+
+function validatePhraseBoundary(
+  value: unknown,
+  projectLength: number,
+): value is PhraseBoundary {
+  return (
+    isRecord(value) &&
+    hasString(value, "id") &&
+    isInteger(value.tick, 0, projectLength) &&
+    ["manual", "inferred"].includes(value.source as string) &&
+    ["certain", "probable", "ambiguous"].includes(
+      value.confidence as string,
+    ) &&
+    (value.locked === undefined || typeof value.locked === "boolean")
+  );
+}
+
+function validateProjectStructure(value: unknown, projectLength: number) {
+  if (!isRecord(value) || !Array.isArray(value.phraseBoundaries)) return false;
+  const boundaries = value.phraseBoundaries as unknown[];
+  if (!boundaries.every((boundary) => validatePhraseBoundary(boundary, projectLength)))
+    return false;
+  const ticks = boundaries.map((boundary) => (boundary as PhraseBoundary).tick);
+  return ticks.every((tick, index) => index === 0 || tick > ticks[index - 1]);
 }
 
 function validateKeyReference(value: unknown): value is KeyReference {
@@ -543,6 +569,9 @@ export function validateProject(value: unknown): value is ProjectDocument {
     ) ||
     !project.keyEvents.some((event) => isRecord(event) && event.tick === 0)
   )
+    return false;
+
+  if (!validateProjectStructure(project.structure, project.lengthTicks as number))
     return false;
 
   if (
