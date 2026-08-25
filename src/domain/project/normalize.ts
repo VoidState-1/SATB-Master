@@ -23,6 +23,20 @@ export function reconcileChordIdentities(project: ProjectDocument) {
   return project;
 }
 
+function stripLegacyCadenceTypes(project: ProjectDocument) {
+  project.chordTrack.regions = project.chordTrack.regions.map((region) => {
+    if (!region.semantics) return region;
+    const semantics = region.semantics as unknown as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(semantics, "cadenceType"))
+      return region;
+    const { cadenceType: _legacyCadenceType, ...cleanSemantics } = semantics;
+    return {
+      ...region,
+      semantics: cleanSemantics,
+    } as unknown as typeof region;
+  });
+}
+
 function normalizePhraseBoundaries(project: ProjectDocument) {
   const byTick = new Map<number, ProjectDocument["structure"]["phraseBoundaries"][number]>();
   for (const boundary of project.structure.phraseBoundaries) {
@@ -85,6 +99,7 @@ export function normalizeProject(project: ProjectDocument): ProjectDocument {
   normalized.tempoEvents.sort((a, b) => a.tick - b.tick);
   normalized.meterEvents.sort((a, b) => a.tick - b.tick);
   normalized.keyEvents.sort((a, b) => a.tick - b.tick);
+  stripLegacyCadenceTypes(normalized);
   normalizePhraseBoundaries(normalized);
   // 调号编辑会改变其后功能和弦的书写实体；保存前统一收敛为同一事实来源。
   reconcileChordIdentities(normalized);
