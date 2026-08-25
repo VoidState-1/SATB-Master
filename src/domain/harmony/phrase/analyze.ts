@@ -183,7 +183,10 @@ function inferBoundaryCandidates(
  */
 export function analyzePhrases(project: PhraseAnalysisInput): PhraseAnalysis {
   const boundaries = normalizeBoundaries(project);
-  const candidates = inferBoundaryCandidates(project);
+  const knownTicks = new Set(boundaries.map((boundary) => boundary.tick));
+  const candidates = inferBoundaryCandidates(project).filter(
+    (candidate) => !knownTicks.has(candidate.tick),
+  );
   const segments = buildSegments(boundaries);
   return {
     boundaries: Object.freeze(boundaries),

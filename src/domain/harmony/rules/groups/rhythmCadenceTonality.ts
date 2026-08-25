@@ -123,7 +123,8 @@ function cadenceRuleContexts(context: HarmonyRuleContext) {
     .cadences()
     .where(
       (cadence) =>
-        cadence.source !== "candidate" || cadence.confidence === "certain",
+        !cadence.annotation?.stale &&
+        (cadence.source !== "candidate" || cadence.confidence === "certain"),
     )
     .selectMany((cadence) => {
     const target = cadence.spans.at(-1);
