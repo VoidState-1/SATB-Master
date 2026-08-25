@@ -51,7 +51,18 @@ export interface PhraseAnalysis {
 
 export interface PhraseAnalysisInput {
   readonly lengthTicks: number;
+  readonly ppq?: number;
   readonly structure?: {
     readonly phraseBoundaries?: readonly PhraseBoundary[];
   };
+  readonly satbTracks?: readonly {
+    readonly notes: readonly {
+      readonly startTick: number;
+      readonly durationTicks: number;
+    }[];
+  }[];
+  readonly chordRegions?: readonly {
+    readonly startTick: number;
+    readonly durationTicks: number;
+  }[];
 }

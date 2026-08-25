@@ -8,7 +8,10 @@ import type {
   SatbTrack,
   VoiceId,
 } from "../../domain/project";
-import type { CadenceCandidate } from "../../domain/harmony";
+import type {
+  CadenceCandidate,
+  PhraseBoundaryCandidate,
+} from "../../domain/harmony";
 import type { CadenceAnnotationPatch } from "../../domain/editing";
 
 export interface InspectorProps {
@@ -22,6 +25,7 @@ export interface InspectorProps {
   chordBrush: ChordDraft;
   playheadTick: number;
   cadenceCandidates?: readonly CadenceCandidate[];
+  phraseBoundaryCandidates?: readonly PhraseBoundaryCandidate[];
   audioStatus: string;
   soundFontSize?: string;
   soundFontLoad?: { percent: number; detail: string };
@@ -35,6 +39,7 @@ export interface InspectorProps {
   onUpdateEditableRange(rangeId: string, patch: Partial<EditableRange>): void;
   onDeleteEditableRange(rangeId: string): void;
   onAddPhraseBoundary(): void;
+  onAddPhraseBoundaryAt(tick: number): void;
   onDeletePhraseBoundary(boundaryId: string): void;
   onUpdateNote(
     voiceId: VoiceId,
@@ -79,6 +84,7 @@ export type SelectionInspectorProps = Pick<
   | "onUpdateChord"
   | "onDeleteChords"
   | "cadenceCandidates"
+  | "phraseBoundaryCandidates"
   | "onAddCadenceAnnotation"
   | "onUpdateCadenceAnnotation"
   | "onDeleteCadenceAnnotation"
@@ -87,6 +93,7 @@ export type SelectionInspectorProps = Pick<
 
 export type ProjectInspectorProps = Pick<
   InspectorProps,
+  | "phraseBoundaryCandidates"
   | "project"
   | "onUpdateProject"
   | "onUpdateInstructions"
@@ -94,6 +101,7 @@ export type ProjectInspectorProps = Pick<
   | "onUpdateEditableRange"
   | "onDeleteEditableRange"
   | "onAddPhraseBoundary"
+  | "onAddPhraseBoundaryAt"
   | "onDeletePhraseBoundary"
   | "onUpdateChordTrack"
   | "onAddTimingEvent"

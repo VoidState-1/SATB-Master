@@ -24,7 +24,9 @@ export function ProjectInspector({
   onUpdateEditableRange,
   onDeleteEditableRange,
   onAddPhraseBoundary,
+  onAddPhraseBoundaryAt,
   onDeletePhraseBoundary,
+  phraseBoundaryCandidates = [],
   onUpdateChordTrack,
   onAddTimingEvent,
   onUpdateTimingEvent,
@@ -103,6 +105,23 @@ export function ProjectInspector({
             />
           </div>
         ))}
+        {phraseBoundaryCandidates.length > 0 ? (
+          <div className="property-hint">
+            <strong>检测到的边界候选</strong>
+            {phraseBoundaryCandidates.map((candidate) => (
+              <div className="timing-row" key={candidate.tick}>
+                <span>
+                  {formatPosition(project, candidate.tick)} · {candidate.confidence}
+                </span>
+                <IconButton
+                  label="确认乐句边界候选"
+                  icon={<Plus />}
+                  onClick={() => onAddPhraseBoundaryAt(candidate.tick)}
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="property-section">

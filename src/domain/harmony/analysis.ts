@@ -760,7 +760,10 @@ export function buildHarmonyAnalysis(
   // 调度器只向规则暴露冻结后的克隆，避免内置或未来外置规则意外改写编辑器状态。
   const snapshot = deepFreeze(structuredClone(project));
   const metricTimeline = buildMetricTimeline(snapshot);
-  const phraseAnalysis = analyzePhrases(snapshot);
+  const phraseAnalysis = analyzePhrases({
+    ...snapshot,
+    chordRegions: snapshot.chordTrack.regions,
+  });
   const analysisShell = { project: snapshot } as Pick<
     HarmonyAnalysis,
     "project"

@@ -194,6 +194,7 @@ function AppShell() {
     handleUpdateEditableRange,
     handleDeleteEditableRange,
     handleAddPhraseBoundary,
+    handleAddPhraseBoundaryAt,
     handleDeletePhraseBoundary,
     handleAddChord,
     handleUpdateChord,
@@ -779,7 +780,9 @@ function AppShell() {
           onUpdateEditableRange={handleUpdateEditableRange}
           onDeleteEditableRange={handleDeleteEditableRange}
           onAddPhraseBoundary={handleAddPhraseBoundary}
+          onAddPhraseBoundaryAt={handleAddPhraseBoundaryAt}
           onDeletePhraseBoundary={handleDeletePhraseBoundary}
+          phraseBoundaryCandidates={cadenceAnalysis.phraseBoundaryCandidates}
           onUpdateNote={handleUpdateNote}
           onUpdateChord={handleUpdateChord}
           onDeleteChords={handleDeleteChords}

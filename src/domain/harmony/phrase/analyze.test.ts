@@ -66,4 +66,34 @@ describe("乐句分析", () => {
       expect.objectContaining({ id: "certain", source: "manual" }),
     ]);
   });
+
+  it("从全声部结束和结束后空白生成只读边界候选", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = 960 * 4;
+    project.loop.endTick = project.lengthTicks;
+    project.satbTracks.forEach((track) => {
+      track.notes = [
+        {
+          id: `${track.id}-ending`,
+          startTick: 0,
+          durationTicks: 960 * 2,
+          pitch: { step: "C", alter: 0, octave: 4 },
+          velocity: 80,
+          locked: false,
+          spellingSource: "manual",
+        },
+      ];
+    });
+
+    const result = analyzePhrases(project);
+
+    expect(result.candidates).toMatchObject([
+      {
+        tick: 960 * 2,
+        score: 6,
+        confidence: "probable",
+      },
+    ]);
+    expect(result.segments).toHaveLength(1);
+  });
 });
