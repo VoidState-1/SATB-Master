@@ -66,6 +66,7 @@ export function PianoRoll({
   diagnostics,
   missingExpectedNoteIds,
   missingExpectedChordIds,
+  cadenceCandidates,
   playheadTick,
   loopEnabled,
   loopStartTick,
@@ -400,6 +401,7 @@ export function PianoRoll({
           selectedChordIds={selectedChordIds}
           diagnosticsByChord={diagnosticsByChord}
           missingExpectedChordIds={missingExpectedChordIds}
+          cadenceCandidates={cadenceCandidates}
           measureGuidePositions={measureGuidePositions}
           playheadX={playheadX}
           onPointerDown={handleChordPointerDown}

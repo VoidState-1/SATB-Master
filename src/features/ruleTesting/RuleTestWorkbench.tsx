@@ -18,7 +18,7 @@ import { RuleTestToolbar } from "./RuleTestToolbar";
 import { CreateTestCaseDialog } from "./CreateTestCaseDialog";
 import type { RuleTestWorkspaceController } from "../../app/controllers/useRuleTestWorkspace";
 import type { ConfirmationState } from "../../app/controllers/useConfirmationController";
-import type { HarmonyDiagnostic } from "../../domain/harmony";
+import { buildHarmonyAnalysis, type HarmonyDiagnostic } from "../../domain/harmony";
 import type { ProjectDocument } from "../../domain/project";
 import { buildMeasures, formatPosition } from "../../domain/time";
 import { usePanelLayout, DEFAULT_PANEL_SIZES, PANEL_RESIZER_SIZE } from "../../hooks/usePanelLayout";
@@ -115,6 +115,7 @@ export function RuleTestWorkbench({
     history,
     lastRun,
   } = controller;
+  const cadenceAnalysis = useMemo(() => buildHarmonyAnalysis(project), [project]);
   const {
     activeVoice,
     setActiveVoice,
@@ -392,6 +393,7 @@ export function RuleTestWorkbench({
             selectedChordIds={editor.selectedChordIds}
             chordBrush={editor.chordBrush}
             diagnostics={lastRun?.actual.diagnostics ?? []}
+            cadenceCandidates={cadenceAnalysis.cadenceCandidates}
             missingExpectedNoteIds={missing.notes}
             missingExpectedChordIds={missing.chords}
             playheadTick={playback.playheadTick}
@@ -515,10 +517,14 @@ export function RuleTestWorkbench({
                 selectedChordCount={editor.selectedChordIds.size}
                 developerMode={developerMode.enabled}
                 chordBrush={editor.chordBrush}
+                cadenceCandidates={cadenceAnalysis.cadenceCandidates}
                 playheadTick={playback.playheadTick}
                 onUpdateNote={commands.handleUpdateNote}
                 onUpdateChord={commands.handleUpdateChord}
                 onDeleteChords={commands.handleDeleteChords}
+                onAddCadenceAnnotation={commands.handleAddCadenceAnnotation}
+                onUpdateCadenceAnnotation={commands.handleUpdateCadenceAnnotation}
+                onDeleteCadenceAnnotation={commands.handleDeleteCadenceAnnotation}
                 onUpdateChordBrush={commands.handleUpdateChordBrush}
               />
             </aside>

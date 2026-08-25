@@ -1,5 +1,6 @@
 import type { ChordRegionPatch } from "../../domain/editing";
 import type { HarmonyDiagnostic } from "../../domain/harmony";
+import type { CadenceCandidate } from "../../domain/harmony";
 import type {
   ChordDraft,
   NoteEvent,
@@ -22,6 +23,7 @@ export interface PianoRollProps {
   diagnostics: HarmonyDiagnostic[];
   missingExpectedNoteIds?: ReadonlySet<string>;
   missingExpectedChordIds?: ReadonlySet<string>;
+  cadenceCandidates?: readonly CadenceCandidate[];
   playheadTick: number;
   loopEnabled: boolean;
   loopStartTick: number;

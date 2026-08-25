@@ -48,6 +48,7 @@ import { ChordInferenceDialog } from "../features/chordInference";
 import { replaceProject } from "../domain/editing";
 import {
   applyChordInference,
+  buildHarmonyAnalysis,
   formatDiagnosticDebugReport,
   inferChords,
   type HarmonyDiagnostic,
@@ -95,6 +96,7 @@ function AppShell() {
   );
   const { history, project, editor, resetWorkspace } =
     useProjectController(initialProject);
+  const cadenceAnalysis = useMemo(() => buildHarmonyAnalysis(project), [project]);
   const {
     activeVoice,
     setActiveVoice,
@@ -198,6 +200,9 @@ function AppShell() {
     handleSplitChord,
     handleUpdateChordBrush,
     handleUpdateChordTrack,
+    handleAddCadenceAnnotation,
+    handleUpdateCadenceAnnotation,
+    handleDeleteCadenceAnnotation,
     handleAddTimingEvent,
     handleUpdateTimingEvent,
     handleDeleteTimingEvent,
@@ -669,6 +674,7 @@ function AppShell() {
             selectedChordIds={selectedChordIds}
             chordBrush={chordBrush}
             diagnostics={harmonyResult.diagnostics}
+            cadenceCandidates={cadenceAnalysis.cadenceCandidates}
             playheadTick={playheadTick}
             loopEnabled={loopEnabled}
             loopStartTick={loopStartTick}
@@ -734,6 +740,7 @@ function AppShell() {
           selectedChordCount={selectedChordIds.size}
           developerMode={developerMode.enabled}
           chordBrush={chordBrush}
+          cadenceCandidates={cadenceAnalysis.cadenceCandidates}
           playheadTick={playheadTick}
           audioStatus={audioMessage}
           soundFontSize={
@@ -772,6 +779,9 @@ function AppShell() {
           onUpdateNote={handleUpdateNote}
           onUpdateChord={handleUpdateChord}
           onDeleteChords={handleDeleteChords}
+          onAddCadenceAnnotation={handleAddCadenceAnnotation}
+          onUpdateCadenceAnnotation={handleUpdateCadenceAnnotation}
+          onDeleteCadenceAnnotation={handleDeleteCadenceAnnotation}
           onUpdateChordBrush={handleUpdateChordBrush}
           onUpdateChordTrack={handleUpdateChordTrack}
           onAddTimingEvent={handleAddTimingEvent}

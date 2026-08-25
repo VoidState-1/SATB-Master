@@ -8,6 +8,8 @@ import type {
   SatbTrack,
   VoiceId,
 } from "../../domain/project";
+import type { CadenceCandidate } from "../../domain/harmony";
+import type { CadenceAnnotationPatch } from "../../domain/editing";
 
 export interface InspectorProps {
   project: ProjectDocument;
@@ -19,6 +21,7 @@ export interface InspectorProps {
   developerMode: boolean;
   chordBrush: ChordDraft;
   playheadTick: number;
+  cadenceCandidates?: readonly CadenceCandidate[];
   audioStatus: string;
   soundFontSize?: string;
   soundFontLoad?: { percent: number; detail: string };
@@ -38,6 +41,9 @@ export interface InspectorProps {
   ): void;
   onUpdateChord(chordId: string, patch: ChordRegionPatch): void;
   onDeleteChords(chordIds: Set<string>): void;
+  onAddCadenceAnnotation?(annotation: ProjectDocument["chordTrack"]["cadenceAnnotations"][number]): void;
+  onUpdateCadenceAnnotation?(annotationId: string, patch: CadenceAnnotationPatch): void;
+  onDeleteCadenceAnnotation?(annotationId: string): void;
   onUpdateChordBrush(patch: Partial<ChordDraft>): void;
   onUpdateChordTrack(
     patch: Partial<
@@ -70,6 +76,10 @@ export type SelectionInspectorProps = Pick<
   | "onUpdateNote"
   | "onUpdateChord"
   | "onDeleteChords"
+  | "cadenceCandidates"
+  | "onAddCadenceAnnotation"
+  | "onUpdateCadenceAnnotation"
+  | "onDeleteCadenceAnnotation"
   | "onUpdateChordBrush"
 >;
 

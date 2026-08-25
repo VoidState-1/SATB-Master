@@ -19,6 +19,7 @@ import {
 import { spellMidi, toMidi } from "../../domain/pitch";
 import { keyAtTick } from "../../domain/time";
 import { ChordSemanticsEditor } from "./ChordSemanticsEditor";
+import { CadenceEditor } from "./CadenceEditor";
 import { CommitField } from "./CommitField";
 import { DeveloperEventInspector } from "./DeveloperEventInspector";
 import type { SelectionInspectorProps } from "./types";
@@ -48,6 +49,10 @@ export function SelectionInspector({
   onUpdateChord,
   onDeleteChords,
   onUpdateChordBrush,
+  cadenceCandidates,
+  onAddCadenceAnnotation,
+  onUpdateCadenceAnnotation,
+  onDeleteCadenceAnnotation,
 }: SelectionInspectorProps) {
   const noteInspection = useMemo(
     () =>
@@ -267,6 +272,14 @@ export function SelectionInspector({
                     },
               })
             }
+          />
+          <CadenceEditor
+            project={project}
+            selectedChord={selectedChord}
+            candidates={cadenceCandidates}
+            onAdd={onAddCadenceAnnotation}
+            onUpdate={onUpdateCadenceAnnotation}
+            onDelete={onDeleteCadenceAnnotation}
           />
           <label>
             <span>起点</span>

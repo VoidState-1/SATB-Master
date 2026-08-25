@@ -7,6 +7,8 @@ import {
 } from "../../../domain/chords";
 import {
   addChordRegion,
+  addCadenceAnnotation,
+  deleteCadenceAnnotation,
   addNote,
   deleteChordRegions,
   deleteNotes,
@@ -17,6 +19,7 @@ import {
   transformChordRegions,
   transformNotes,
   updateChordRegion,
+  updateCadenceAnnotation,
   updateNote,
   type ChordRegionPatch,
 } from "../../../domain/editing";
@@ -27,6 +30,7 @@ import {
   reconcileChordIdentities,
   type ChordDraft,
   type ChordRegion,
+  type CadenceAnnotation,
   type EditableRange,
   type NoteEvent,
   type ProjectDocument,
@@ -159,6 +163,24 @@ export function useChordCommands({
     [commitResult, project],
   );
 
+  const handleAddCadenceAnnotation = useCallback(
+    (annotation: CadenceAnnotation) =>
+      commitResult(addCadenceAnnotation(project, annotation)),
+    [commitResult, project],
+  );
+
+  const handleUpdateCadenceAnnotation = useCallback(
+    (annotationId: string, patch: Parameters<typeof updateCadenceAnnotation>[2]) =>
+      commitResult(updateCadenceAnnotation(project, annotationId, patch)),
+    [commitResult, project],
+  );
+
+  const handleDeleteCadenceAnnotation = useCallback(
+    (annotationId: string) =>
+      commitResult(deleteCadenceAnnotation(project, annotationId)),
+    [commitResult, project],
+  );
+
   return {
     handleAddChord,
     handleUpdateChord,
@@ -167,5 +189,8 @@ export function useChordCommands({
     handleSplitChord,
     handleUpdateChordBrush,
     handleUpdateChordTrack,
+    handleAddCadenceAnnotation,
+    handleUpdateCadenceAnnotation,
+    handleDeleteCadenceAnnotation,
   } as const;
 }

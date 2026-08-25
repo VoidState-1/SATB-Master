@@ -1,4 +1,4 @@
-import type { HarmonyDiagnostic } from "../../../domain/harmony";
+import type { CadenceCandidate, HarmonyDiagnostic } from "../../../domain/harmony";
 import { formatChord, formatChordRegion } from "../../../domain/chords";
 import { keyAtTick } from "../../../domain/time";
 import type { ChordDraft, ProjectDocument } from "../../../domain/project";
@@ -19,6 +19,7 @@ interface ChordTrackProps {
   selectedChordIds: Set<string>;
   diagnosticsByChord: Map<string, HarmonyDiagnostic[]>;
   missingExpectedChordIds?: ReadonlySet<string>;
+  cadenceCandidates?: readonly CadenceCandidate[];
   measureGuidePositions: MeasureGuidePosition[];
   playheadX: number;
   onPointerDown(event: React.PointerEvent<HTMLDivElement>): void;
@@ -46,6 +47,7 @@ export function ChordTrack({
   selectedChordIds,
   diagnosticsByChord,
   missingExpectedChordIds,
+  cadenceCandidates,
   measureGuidePositions,
   playheadX,
   onPointerDown,
@@ -90,6 +92,17 @@ export function ChordTrack({
           });
           const chordDiagnostics = diagnosticsByChord.get(chord.id) ?? [];
           const issue = primaryDiagnostic(chordDiagnostics);
+          const annotation = project.chordTrack.cadenceAnnotations.find(
+            (candidate) =>
+              candidate.fromTick <= startTick &&
+              startTick + durationTicks <= candidate.toTick,
+          );
+          const detected = cadenceCandidates?.find(
+            (candidate) =>
+              candidate.fromTick <= startTick &&
+              startTick + durationTicks <= candidate.toTick,
+          );
+          const cadence = annotation ?? detected;
           const display =
             project.chordTrack.displayMode === "functional"
               ? formatted.functional
@@ -106,11 +119,11 @@ export function ChordTrack({
               type="button"
               key={chord.id}
               tabIndex={-1}
-              className={`chord-block ${selectedChordIds.has(chord.id) ? "is-selected" : ""} ${chord.locked ? "is-locked" : ""} ${issue ? `has-${issue.severity}` : ""} ${missingExpectedChordIds?.has(chord.id) ? "has-missing-expectation" : ""}`}
+              className={`chord-block ${cadence ? `cadence-${cadence.kind}` : ""} ${detected && !annotation ? "cadence-is-candidate" : ""} ${selectedChordIds.has(chord.id) ? "is-selected" : ""} ${chord.locked ? "is-locked" : ""} ${issue ? `has-${issue.severity}` : ""} ${missingExpectedChordIds?.has(chord.id) ? "has-missing-expectation" : ""}`}
               style={{ left: x, width }}
               title={
                 chordDiagnostics.length === 0
-                  ? `${fullLabel}${chord.locked ? "（已锁定）" : ""}`
+                ? `${fullLabel}${cadence ? ` · ${cadence.kind}` : ""}${chord.locked ? "（已锁定）" : ""}`
                   : undefined
               }
               onPointerEnter={(event) =>

@@ -367,6 +367,30 @@
   box-shadow: inset 0 0 0 1px #776b43;
 }
 
+.chord-block.cadence-full {
+  background: #dfe9df;
+  border-color: #739477;
+}
+
+.chord-block.cadence-half {
+  background: #e5e1ef;
+  border-color: #8176a3;
+}
+
+.chord-block.cadence-supplementary {
+  background: #e8e1d4;
+  border-color: #a4875d;
+}
+
+.chord-block.cadence-deceptive {
+  background: #f1dfd8;
+  border-color: #b87762;
+}
+
+.chord-block.cadence-is-candidate {
+  border-style: dashed;
+}
+
 .chord-block.has-missing-expectation {
   border-color: #bd433b;
   border-style: dashed;

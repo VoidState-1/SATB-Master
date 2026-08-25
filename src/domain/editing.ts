@@ -11,6 +11,7 @@ import {
   getAllPlayableTracks,
   getMusicalTrack,
   type ChordDraft,
+  type CadenceAnnotation,
   type ChordRegion,
   type ChordTrack,
   type NoteEvent,
@@ -379,6 +380,125 @@ export function addChordRegion(
   const next = cloneProject(project);
   next.chordTrack.regions.push(normalizedRegion);
   next.chordTrack.regions.sort((a, b) => a.startTick - b.startTick);
+  next.updatedAt = new Date().toISOString();
+  return { project: next };
+}
+
+function cadenceAnnotationError(
+  project: ProjectDocument,
+  annotation: CadenceAnnotation,
+  excludedId?: string,
+) {
+  if (
+    !annotation.id ||
+    !annotation.phraseId ||
+    !Number.isInteger(annotation.fromTick) ||
+    !Number.isInteger(annotation.toTick) ||
+    annotation.fromTick < 0 ||
+    annotation.toTick > project.lengthTicks ||
+    annotation.toTick <= annotation.fromTick
+  )
+    return "终止式范围参数无效";
+  if (project.keyEvents.some((event) => event.tick > annotation.fromTick && event.tick < annotation.toTick))
+    return "终止式范围不能跨越调性变化";
+  const regions = [...project.chordTrack.regions]
+    .filter(
+      (region) =>
+        region.startTick >= annotation.fromTick &&
+        region.startTick + region.durationTicks <= annotation.toTick,
+    )
+    .sort((left, right) => left.startTick - right.startTick);
+  if (
+    regions.length === 0 ||
+    regions[0].startTick !== annotation.fromTick ||
+    regions.at(-1)!.startTick + regions.at(-1)!.durationTicks !== annotation.toTick ||
+    regions.some(
+      (region, index) =>
+        index > 0 &&
+        regions[index - 1].startTick + regions[index - 1].durationTicks !==
+          region.startTick,
+    )
+  )
+    return "终止式范围必须覆盖连续的和弦区域";
+  if (
+    project.chordTrack.cadenceAnnotations.some(
+      (candidate) =>
+        candidate.id !== excludedId &&
+        candidate.fromTick < annotation.toTick &&
+        annotation.fromTick < candidate.toTick,
+    )
+  )
+    return "终止式范围不能与其他标注重叠";
+  if (annotation.kind !== "full" && annotation.completion !== undefined)
+    return "只有全终止可以设置完满性";
+  if (annotation.kind !== "full" && annotation.form === "plagal")
+    return "变格限定只适用于全终止或补充终止";
+  if (annotation.kind === "supplementary" && annotation.form !== "plagal")
+    return "补充终止必须使用变格限定";
+  return undefined;
+}
+
+export function addCadenceAnnotation(
+  project: ProjectDocument,
+  annotation: CadenceAnnotation,
+): EditResult {
+  if (project.chordTrack.locked) return { project, error: "和弦轨已锁定" };
+  const error = cadenceAnnotationError(project, annotation);
+  if (error) return { project, error };
+  const next = cloneProject(project);
+  next.chordTrack.cadenceAnnotations.push(annotation);
+  next.chordTrack.cadenceAnnotations.sort(
+    (left, right) => left.fromTick - right.fromTick,
+  );
+  next.updatedAt = new Date().toISOString();
+  return { project: next };
+}
+
+export type CadenceAnnotationPatch = Partial<
+  Pick<
+    CadenceAnnotation,
+    "phraseId" | "fromTick" | "toTick" | "kind" | "form" | "completion" | "confidence" | "locked"
+  >
+>;
+
+export function updateCadenceAnnotation(
+  project: ProjectDocument,
+  annotationId: string,
+  patch: CadenceAnnotationPatch,
+): EditResult {
+  const current = project.chordTrack.cadenceAnnotations.find(
+    (annotation) => annotation.id === annotationId,
+  );
+  if (!current) return { project, error: "找不到要编辑的终止式" };
+  if (project.chordTrack.locked) return { project, error: "和弦轨已锁定" };
+  if (current.locked && patch.locked !== false)
+    return { project, error: "该终止式已锁定" };
+  const updated = { ...current, ...patch };
+  const error = cadenceAnnotationError(project, updated, annotationId);
+  if (error) return { project, error };
+  const next = cloneProject(project);
+  const index = next.chordTrack.cadenceAnnotations.findIndex(
+    (annotation) => annotation.id === annotationId,
+  );
+  next.chordTrack.cadenceAnnotations[index] = updated;
+  next.updatedAt = new Date().toISOString();
+  return { project: next };
+}
+
+export function deleteCadenceAnnotation(
+  project: ProjectDocument,
+  annotationId: string,
+): EditResult {
+  const current = project.chordTrack.cadenceAnnotations.find(
+    (annotation) => annotation.id === annotationId,
+  );
+  if (!current) return { project, error: "找不到要删除的终止式" };
+  if (project.chordTrack.locked || current.locked)
+    return { project, error: "该终止式或和弦轨已锁定" };
+  const next = cloneProject(project);
+  next.chordTrack.cadenceAnnotations = next.chordTrack.cadenceAnnotations.filter(
+    (annotation) => annotation.id !== annotationId,
+  );
   next.updatedAt = new Date().toISOString();
   return { project: next };
 }

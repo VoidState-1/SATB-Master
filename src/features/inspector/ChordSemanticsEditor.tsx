@@ -153,52 +153,30 @@ export function ChordSemanticsEditor({
           <option value="modal">调式借用</option>
         </select>
       </label>
-      <label>
-        <span>终止 / 六四角色</span>
-        <select
-          value={draft.cadenceRole ?? ""}
-          onChange={(event) =>
-            onChange(
-              applyChordEditorAction(draft, keyEvent, {
-                type: "set-cadence-role",
-                cadenceRole: (event.target.value || undefined) as
-                  | NonNullable<ChordDraft["cadenceRole"]>
-                  | undefined,
-              }),
-            )
-          }
-        >
-          <option value="">无</option>
-          <option value="deceptive">阻碍进行起点</option>
-          <option value="cadential64">终止四六</option>
-          <option value="passing64">经过四六</option>
-          <option value="pedal64">辅助四六</option>
-        </select>
-      </label>
-      <label>
-        <span>终止类型</span>
-        <select
-          value={draft.cadenceType ?? ""}
-          onChange={(event) =>
-            onChange(
-              applyChordEditorAction(draft, keyEvent, {
-                type: "set-cadence-type",
-                cadenceType: (event.target.value || undefined) as
-                  | NonNullable<ChordDraft["cadenceType"]>
-                  | undefined,
-              }),
-            )
-          }
-        >
-          <option value="">无</option>
-          <option value="perfect-authentic">完全终止</option>
-          <option value="imperfect-authentic">不完全终止</option>
-          <option value="half">半终止</option>
-          <option value="plagal">变格终止</option>
-          <option value="deceptive">阻碍终止</option>
-          <option value="open">开放结束</option>
-        </select>
-      </label>
+      {draft.inversion === 2 || draft.cadenceRole ? (
+        <label>
+          <span>四六 / 局部角色</span>
+          <select
+            value={draft.cadenceRole ?? ""}
+            onChange={(event) =>
+              onChange(
+                applyChordEditorAction(draft, keyEvent, {
+                  type: "set-cadence-role",
+                  cadenceRole: (event.target.value || undefined) as
+                    | NonNullable<ChordDraft["cadenceRole"]>
+                    | undefined,
+                }),
+              )
+            }
+          >
+            <option value="">无</option>
+            <option value="deceptive">阻碍进行起点</option>
+            <option value="cadential64">终止四六</option>
+            <option value="passing64">经过四六</option>
+            <option value="pedal64">辅助四六</option>
+          </select>
+        </label>
+      ) : null}
       <label>
         <span>构成音变化</span>
         <select
