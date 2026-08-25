@@ -25,6 +25,40 @@ export interface EditResult {
   error?: string;
 }
 
+export function addPhraseBoundary(project: ProjectDocument, tick: number): EditResult {
+  if (!Number.isInteger(tick) || tick <= 0 || tick >= project.lengthTicks)
+    return { project, error: "乐句边界必须位于工程内部" };
+  if (project.structure.phraseBoundaries.some((boundary) => boundary.tick === tick))
+    return { project, error: "该位置已经存在乐句边界" };
+  const next = cloneProject(project);
+  next.structure.phraseBoundaries.push({
+    id: createId("phrase-boundary"),
+    tick,
+    source: "manual",
+    confidence: "certain",
+  });
+  next.structure.phraseBoundaries.sort((left, right) => left.tick - right.tick);
+  next.updatedAt = new Date().toISOString();
+  return { project: next };
+}
+
+export function deletePhraseBoundary(
+  project: ProjectDocument,
+  boundaryId: string,
+): EditResult {
+  const boundary = project.structure.phraseBoundaries.find(
+    (item) => item.id === boundaryId,
+  );
+  if (!boundary) return { project, error: "找不到要删除的乐句边界" };
+  if (boundary.locked) return { project, error: "该乐句边界已锁定" };
+  const next = cloneProject(project);
+  next.structure.phraseBoundaries = next.structure.phraseBoundaries.filter(
+    (item) => item.id !== boundaryId,
+  );
+  next.updatedAt = new Date().toISOString();
+  return { project: next };
+}
+
 function overlaps(a: NoteEvent, b: NoteEvent) {
   return (
     a.startTick < b.startTick + b.durationTicks &&
@@ -132,7 +166,7 @@ export function updateNote(
   if (isRangeLocked(project, trackId, current))
     return { project, error: "该音符位于锁定区间" };
 
-  const updated = { ...current, ...patch };
+  const updated = { ...current, ...patch, stale: false };
   if (!hasValidNoteValues(updated)) return { project, error: "音符参数无效" };
   if (
     updated.startTick < 0 ||

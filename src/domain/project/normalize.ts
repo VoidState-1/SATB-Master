@@ -37,6 +37,35 @@ function normalizePhraseBoundaries(project: ProjectDocument) {
   );
 }
 
+function reconcileCadenceAnnotationStaleness(project: ProjectDocument) {
+  const regions = [...project.chordTrack.regions].sort(
+    (left, right) => left.startTick - right.startTick,
+  );
+  project.chordTrack.cadenceAnnotations = project.chordTrack.cadenceAnnotations.map(
+    (annotation) => {
+      const covered = regions
+        .filter(
+          (region) =>
+            region.startTick >= annotation.fromTick &&
+            region.startTick + region.durationTicks <= annotation.toTick,
+        )
+        .sort((left, right) => left.startTick - right.startTick);
+      const active =
+        covered.length > 0 &&
+        covered[0].startTick === annotation.fromTick &&
+        covered.at(-1)!.startTick + covered.at(-1)!.durationTicks ===
+          annotation.toTick &&
+        covered.every(
+          (region, index) =>
+            index === 0 ||
+            covered[index - 1].startTick + covered[index - 1].durationTicks ===
+              region.startTick,
+        );
+      return { ...annotation, stale: !active };
+    },
+  );
+}
+
 export function normalizeProject(project: ProjectDocument): ProjectDocument {
   const normalized = cloneProject(project);
   const maximumStartTick = Math.max(0, normalized.lengthTicks - 1);
@@ -63,6 +92,7 @@ export function normalizeProject(project: ProjectDocument): ProjectDocument {
   normalized.chordTrack.cadenceAnnotations.sort(
     (left, right) => left.fromTick - right.fromTick || left.toTick - right.toTick,
   );
+  reconcileCadenceAnnotationStaleness(normalized);
   getAllPlayableTracks(normalized).forEach((track) =>
     track.notes.sort(
       (a, b) => a.startTick - b.startTick || toMidi(a.pitch) - toMidi(b.pitch),

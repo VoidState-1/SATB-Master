@@ -193,6 +193,8 @@ function AppShell() {
     handleAddEditableRange,
     handleUpdateEditableRange,
     handleDeleteEditableRange,
+    handleAddPhraseBoundary,
+    handleDeletePhraseBoundary,
     handleAddChord,
     handleUpdateChord,
     handleMoveChords,
@@ -776,6 +778,8 @@ function AppShell() {
           onAddEditableRange={handleAddEditableRange}
           onUpdateEditableRange={handleUpdateEditableRange}
           onDeleteEditableRange={handleDeleteEditableRange}
+          onAddPhraseBoundary={handleAddPhraseBoundary}
+          onDeletePhraseBoundary={handleDeletePhraseBoundary}
           onUpdateNote={handleUpdateNote}
           onUpdateChord={handleUpdateChord}
           onDeleteChords={handleDeleteChords}

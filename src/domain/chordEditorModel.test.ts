@@ -70,7 +70,6 @@ describe("ChordEditorModel", () => {
     const actions = [
       { type: "set-mixture", mixture: "modal" },
       { type: "set-cadence-role", cadenceRole: "passing64" },
-      { type: "set-cadence-type", cadenceType: "half" },
       { type: "set-pedal-role", role: "start" },
       { type: "set-pedal-pitch", pitch: { step: "G", alter: 0 } },
     ] as const;
@@ -91,7 +90,6 @@ describe("ChordEditorModel", () => {
     expect(once).toMatchObject({
       mixture: "modal",
       cadenceRole: "passing64",
-      cadenceType: "half",
       pedalContext: { role: "start", pitch: { step: "G", alter: 0 } },
     });
   });

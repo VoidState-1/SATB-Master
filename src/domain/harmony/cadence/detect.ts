@@ -224,11 +224,21 @@ function candidate(
   kind: CadenceKind,
   path: readonly CadenceSpanFacts[],
   evidence: readonly CadenceEvidence[],
-  options: { readonly form?: CadenceForm; readonly completion?: CadenceCompletion } = {},
+  options: {
+    readonly form?: CadenceForm;
+    readonly completion?: CadenceCompletion;
+    readonly confidenceCap?: CadenceConfidence;
+  } = {},
 ): CadenceCandidate {
   const score = scoreFor(kind, phrase, evidence);
   const first = path[0].span;
   const last = path.at(-1)!.span;
+  const evidenceConfidence = confidenceFor(score, phrase);
+  const confidence =
+    options.confidenceCap &&
+    confidenceRank[evidenceConfidence] > confidenceRank[options.confidenceCap]
+      ? options.confidenceCap
+      : evidenceConfidence;
   return {
     id: `cadence:${phrase.id}:${kind}:${first.id}:${last.id}`,
     phraseId: phrase.id,
@@ -237,7 +247,7 @@ function candidate(
     kind,
     form: options.form,
     completion: options.completion,
-    confidence: confidenceFor(score, phrase),
+    confidence,
     score,
     spanIds: path.map((item) => item.span.id),
     chordIds: path.flatMap((item) => item.span.regionIds),
@@ -346,10 +356,12 @@ export function detectCadences(
           : []),
         { code: "stable-ending", value: "末端主功能稳定" },
       ];
+      const completion = completionFor(analysis, previous, terminal);
       allCandidates.push(
         candidate(phrase, "full", path, evidence, {
           form: "authentic",
-          completion: completionFor(analysis, previous, terminal),
+          completion,
+          confidenceCap: completion ? undefined : "probable",
         }),
       );
     }

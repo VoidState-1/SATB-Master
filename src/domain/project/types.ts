@@ -104,6 +104,7 @@ export interface CadenceAnnotation {
   source: "manual" | "accepted-candidate";
   confidence: "certain" | "probable";
   locked: boolean;
+  stale?: boolean;
 }
 
 export interface MidiImportOrigin {

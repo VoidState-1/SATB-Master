@@ -55,7 +55,6 @@ export type ChordEditorAction =
   | { type: "set-degree-alteration"; alteration: ChordDraft["degreeAlteration"] }
   | { type: "set-mixture"; mixture?: ChordDraft["mixture"] }
   | { type: "set-cadence-role"; cadenceRole?: ChordDraft["cadenceRole"] }
-  | { type: "set-cadence-type"; cadenceType?: ChordDraft["cadenceType"] }
   | {
       type: "set-pedal-role";
       role?: NonNullable<ChordDraft["pedalContext"]>["role"];
@@ -267,8 +266,6 @@ export function applyChordEditorAction(
       };
     case "set-cadence-role":
       return applyCadenceRole(draft, action.cadenceRole, keyEvent.mode);
-    case "set-cadence-type":
-      return { ...draft, cadenceType: action.cadenceType };
     case "set-pedal-role":
       return {
         ...draft,

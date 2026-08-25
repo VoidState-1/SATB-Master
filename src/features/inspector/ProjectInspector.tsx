@@ -23,6 +23,8 @@ export function ProjectInspector({
   onAddEditableRange,
   onUpdateEditableRange,
   onDeleteEditableRange,
+  onAddPhraseBoundary,
+  onDeletePhraseBoundary,
   onUpdateChordTrack,
   onAddTimingEvent,
   onUpdateTimingEvent,
@@ -75,6 +77,32 @@ export function ProjectInspector({
             placeholder="例如：给定低音，完成其余三个声部"
           />
         </label>
+      </section>
+
+      <section className="property-section timing-section">
+        <header>
+          <span>乐句边界</span>
+          <IconButton
+            label="在播放头添加乐句边界"
+            icon={<Plus />}
+            onClick={onAddPhraseBoundary}
+          />
+        </header>
+        {project.structure.phraseBoundaries.length === 0 ? (
+          <p className="property-hint">当前使用工程首尾作为单个乐句。</p>
+        ) : null}
+        {project.structure.phraseBoundaries.map((boundary) => (
+          <div className="timing-row" key={boundary.id}>
+            <small>{formatPosition(project, boundary.tick)}</small>
+            <span>{boundary.source === "manual" ? "人工" : "推测"}</span>
+            <IconButton
+              label="删除乐句边界"
+              icon={<Trash2 />}
+              disabled={boundary.locked}
+              onClick={() => onDeletePhraseBoundary(boundary.id)}
+            />
+          </div>
+        ))}
       </section>
 
       <section className="property-section">

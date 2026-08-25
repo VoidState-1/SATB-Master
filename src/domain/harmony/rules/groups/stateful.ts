@@ -402,7 +402,6 @@ function sameLeadingToneContext(
       designation: interpretation.designation ?? null,
       mixture: chord.semantics.mixture ?? null,
       cadenceRole: chord.semantics.cadenceRole ?? null,
-      cadenceType: chord.semantics.cadenceType ?? null,
       pedalContext: chord.semantics.pedalContext ?? null,
     });
   };

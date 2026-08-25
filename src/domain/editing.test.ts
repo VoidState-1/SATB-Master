@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { addNote, deleteNotes, transformNotes, updateNote } from "./editing";
+import {
+  addCadenceAnnotation,
+  addNote,
+  addPhraseBoundary,
+  deleteCadenceAnnotation,
+  deletePhraseBoundary,
+  deleteNotes,
+  transformNotes,
+  updateCadenceAnnotation,
+  updateNote,
+} from "./editing";
+import { createChordRegion } from "./chords";
 import { createEmptyProject, PPQ, type NoteEvent } from "./project";
 
 function note(id: string, startTick: number): NoteEvent {
@@ -126,5 +137,64 @@ describe("辅助轨编辑能力", () => {
     const deleted = deleteNotes(moved.project, new Set(["aux-1", "aux-2"]));
     expect(deleted.error).toBeUndefined();
     expect(deleted.project.auxiliaryTracks[0].notes).toEqual([]);
+  });
+});
+
+describe("结构与终止式范围编辑", () => {
+  it("在播放头添加并删除人工乐句边界", () => {
+    const project = createEmptyProject();
+    const added = addPhraseBoundary(project, PPQ);
+    expect(added.error).toBeUndefined();
+    expect(added.project.structure.phraseBoundaries[0].tick).toBe(PPQ);
+    expect(
+      deletePhraseBoundary(
+        added.project,
+        added.project.structure.phraseBoundaries[0].id,
+      ).error,
+    ).toBeUndefined();
+  });
+
+  it("只用一个范围对象更新终止类型", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.loop.endTick = PPQ * 2;
+    project.chordTrack.regions = [
+      createChordRegion(project, 0, PPQ, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        source: "manual",
+        confidence: "certain",
+      }, "source"),
+      createChordRegion(project, PPQ, PPQ, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        source: "manual",
+        confidence: "certain",
+      }, "target"),
+    ];
+    const added = addCadenceAnnotation(project, {
+      id: "cadence-1",
+      phraseId: "phrase-0-1920",
+      fromTick: 0,
+      toTick: PPQ * 2,
+      kind: "full",
+      form: "authentic",
+      source: "manual",
+      confidence: "certain",
+      locked: false,
+    });
+    expect(added.error).toBeUndefined();
+    const updated = updateCadenceAnnotation(added.project, "cadence-1", {
+      kind: "deceptive",
+      form: undefined,
+    });
+    expect(updated.error).toBeUndefined();
+    expect(updated.project.chordTrack.cadenceAnnotations).toHaveLength(1);
+    expect(updated.project.chordTrack.cadenceAnnotations[0].kind).toBe("deceptive");
+    expect(deleteCadenceAnnotation(updated.project, "cadence-1").error).toBeUndefined();
   });
 });

@@ -114,6 +114,7 @@ function migrateV2Project(value: Record<string, unknown>) {
   migrated.keyEvents = keyEvents;
   migrated.satbTracks = satbTracks;
   migrated.auxiliaryTracks = [];
+  migrated.structure = { phraseBoundaries: [] };
   delete migrated.tracks;
   migrated.ruleProfile = createDefaultRuleProfile();
   if (isRecord(migrated.chordTrack)) {

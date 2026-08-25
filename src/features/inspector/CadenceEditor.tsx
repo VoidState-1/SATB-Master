@@ -62,7 +62,7 @@ export function CadenceEditor({
       <header>终止式范围</header>
       <p className="property-hint">
         {annotation
-          ? `${annotation.fromTick} – ${annotation.toTick} · ${annotation.source === "manual" ? "人工标注" : "已确认候选"}`
+          ? `${annotation.fromTick} – ${annotation.toTick} · ${annotation.source === "manual" ? "人工标注" : "已确认候选"}${annotation.stale ? " · 需要复核" : ""}`
           : `检测候选 · ${candidate!.fromTick} – ${candidate!.toTick} · ${candidate!.confidence}`}
       </p>
       {!annotation ? (

@@ -199,11 +199,6 @@ export function inspectChordRegion(
       chord.semantics?.cadenceRole,
     ),
     row(
-      "semantics.cadenceType",
-      "string | undefined",
-      chord.semantics?.cadenceType,
-    ),
-    row(
       "semantics.pedalContext",
       "PedalContext | undefined",
       chord.semantics?.pedalContext ? "{…}" : undefined,

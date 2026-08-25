@@ -117,14 +117,6 @@ export interface HarmonySemantics {
   alternatives?: readonly HarmonyInterpretation[];
   mixture?: "parallel-major" | "parallel-minor" | "modal";
   cadenceRole?: "cadential64" | "passing64" | "pedal64" | "deceptive";
-  /** 终止类型属于乐句末端语意，不与四六和弦用途或阻碍进行起点混用。 */
-  cadenceType?:
-    | "perfect-authentic"
-    | "imperfect-authentic"
-    | "half"
-    | "plagal"
-    | "deceptive"
-    | "open";
   pedalContext?: {
     pitch: SpelledPitchClass;
     role: "start" | "continue" | "end";
@@ -158,7 +150,6 @@ export interface ChordDraft {
   alternatives?: readonly HarmonyInterpretation[];
   mixture?: HarmonySemantics["mixture"];
   cadenceRole?: HarmonySemantics["cadenceRole"];
-  cadenceType?: HarmonySemantics["cadenceType"];
   pedalContext?: HarmonySemantics["pedalContext"];
   source: HarmonyInterpretation["source"];
   confidence: SemanticConfidence;
@@ -532,7 +523,6 @@ export function semanticsFromChordDraft(draft: ChordDraft): HarmonySemantics {
     alternatives: draft.alternatives,
     mixture: draft.mixture,
     cadenceRole: draft.cadenceRole,
-    cadenceType: draft.cadenceType,
     pedalContext: draft.pedalContext,
   };
 }
@@ -589,7 +579,6 @@ export function chordDraftFromIdentity(
     alternatives: semantics.alternatives,
     mixture: semantics.mixture,
     cadenceRole: semantics.cadenceRole,
-    cadenceType: semantics.cadenceType,
     pedalContext: semantics.pedalContext,
     source: primary.source,
     confidence: primary.confidence,

@@ -34,6 +34,8 @@ export interface InspectorProps {
   onAddEditableRange(): void;
   onUpdateEditableRange(rangeId: string, patch: Partial<EditableRange>): void;
   onDeleteEditableRange(rangeId: string): void;
+  onAddPhraseBoundary(): void;
+  onDeletePhraseBoundary(boundaryId: string): void;
   onUpdateNote(
     voiceId: VoiceId,
     noteId: string,
@@ -91,6 +93,8 @@ export type ProjectInspectorProps = Pick<
   | "onAddEditableRange"
   | "onUpdateEditableRange"
   | "onDeleteEditableRange"
+  | "onAddPhraseBoundary"
+  | "onDeletePhraseBoundary"
   | "onUpdateChordTrack"
   | "onAddTimingEvent"
   | "onUpdateTimingEvent"

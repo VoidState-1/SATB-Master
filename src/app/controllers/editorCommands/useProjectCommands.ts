@@ -7,6 +7,7 @@ import {
 } from "../../../domain/chords";
 import {
   addChordRegion,
+  addPhraseBoundary,
   addNote,
   deleteChordRegions,
   deleteNotes,
@@ -18,6 +19,7 @@ import {
   transformNotes,
   updateChordRegion,
   updateNote,
+  deletePhraseBoundary,
   type ChordRegionPatch,
 } from "../../../domain/editing";
 import {
@@ -182,11 +184,24 @@ export function useProjectCommands({
     [history, project],
   );
 
+  const handleAddPhraseBoundary = useCallback(() => {
+    commitResult(addPhraseBoundary(project, playheadTick));
+  }, [commitResult, playheadTick, project]);
+
+  const handleDeletePhraseBoundary = useCallback(
+    (boundaryId: string) => {
+      commitResult(deletePhraseBoundary(project, boundaryId));
+    },
+    [commitResult, project],
+  );
+
   return {
     handleUpdateProject,
     handleUpdateInstructions,
     handleAddEditableRange,
     handleUpdateEditableRange,
     handleDeleteEditableRange,
+    handleAddPhraseBoundary,
+    handleDeletePhraseBoundary,
   } as const;
 }
