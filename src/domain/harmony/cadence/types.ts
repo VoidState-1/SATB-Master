@@ -1,17 +1,15 @@
 import type {
   CadenceAnnotation as ProjectCadenceAnnotation,
+  CadenceCompletion as ProjectCadenceCompletion,
+  CadenceForm as ProjectCadenceForm,
+  CadenceKind as ProjectCadenceKind,
 } from "../../project/types";
 import type { HarmonySpan, AnalysisChord, AnalysisSlice } from "../analysis";
 import type { PhraseSegment } from "../phrase";
 
-export type CadenceKind =
-  | "full"
-  | "half"
-  | "supplementary"
-  | "deceptive";
-
-export type CadenceForm = "authentic" | "plagal";
-export type CadenceCompletion = "perfect" | "imperfect";
+export type CadenceKind = ProjectCadenceKind;
+export type CadenceForm = ProjectCadenceForm;
+export type CadenceCompletion = ProjectCadenceCompletion;
 export type CadenceConfidence = "certain" | "probable" | "ambiguous";
 
 export interface CadenceEvidence {
@@ -47,18 +45,7 @@ export interface CadenceCandidate {
   readonly alternatives?: readonly CadenceCandidate[];
 }
 
-export interface CadenceAnnotation {
-  readonly id: ProjectCadenceAnnotation["id"];
-  readonly phraseId: ProjectCadenceAnnotation["phraseId"];
-  readonly fromTick: ProjectCadenceAnnotation["fromTick"];
-  readonly toTick: ProjectCadenceAnnotation["toTick"];
-  readonly kind: ProjectCadenceAnnotation["kind"];
-  readonly form?: ProjectCadenceAnnotation["form"];
-  readonly completion?: ProjectCadenceAnnotation["completion"];
-  readonly source: ProjectCadenceAnnotation["source"];
-  readonly confidence: ProjectCadenceAnnotation["confidence"];
-  readonly locked: ProjectCadenceAnnotation["locked"];
-}
+export type CadenceAnnotation = ProjectCadenceAnnotation;
 
 export interface CadenceSpanFacts {
   readonly span: HarmonySpan;

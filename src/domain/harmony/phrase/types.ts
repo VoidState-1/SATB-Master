@@ -1,13 +1,11 @@
-export type PhraseBoundarySource = "manual" | "inferred";
-export type PhraseConfidence = "certain" | "probable" | "ambiguous";
+import type {
+  PhraseBoundary as ProjectPhraseBoundary,
+  PhraseConfidence as ProjectPhraseConfidence,
+} from "../../project/types";
 
-export interface PhraseBoundary {
-  readonly id: string;
-  readonly tick: number;
-  readonly source: PhraseBoundarySource;
-  readonly confidence: PhraseConfidence;
-  readonly locked?: boolean;
-}
+export type PhraseBoundarySource = ProjectPhraseBoundary["source"];
+export type PhraseConfidence = ProjectPhraseConfidence;
+export type PhraseBoundary = ProjectPhraseBoundary;
 
 export interface PhraseEvidence {
   readonly code:
