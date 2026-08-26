@@ -35,6 +35,9 @@ SATB Master 是一款离线优先的四部和声学习与编辑软件。主要�
 - 默认及本地 SF2/SF3、播放/暂停/循环/节拍器、MIDI Type 1 导出。
 - `.satb` 工程文件、自动恢复、v2 到 v3 迁移、最近对话框目录和开发者属性检查器。
 - 目录修订 2 的 81 条内置规则均有首版实现并进入调度；规则配置变更可复用既有分析，5,000 音符单规则重检已有性能回归测试。
+- 节拍强弱层级、乐句边界推导、终止式检测，以及工程级乐句边界与终止式标注。
+- 面向空工程的自动和弦推导，包含候选预览、空白填充/替换未锁定写回与乐句结构联动。
+- 规则测试工作台与 `.satb-rule-case.json` 用例格式，支持单规则隔离运行、用例目录与批量运行。
 
 尚未实现或仍需完善：
 
@@ -43,6 +46,7 @@ SATB Master 是一款离线优先的四部和声学习与编辑软件。主要�
 - 辅助轨的完整编辑 UI；现阶段模型、播放和导出能力先于交互界面。
 - 每次发布前的 Windows 安装后端到端验证；该结果依赖具体机器环境，不能由一次历史通过长期替代。
 - 81 条规则的首版实现仍需持续用斯波索宾教材例题和院校口径校准；缺少人工语义或上下文时，部分规则会保守跳过，这不同于“尚未实现”。
+- 自动和弦推导、乐句边界与终止式检测的首版实现同样需要教材例题校准；歧义时保守跳过或降级为 `ambiguous`，不会伪造确定结论。
 - 音乐事件变化后的局部分析重建、设置列表虚拟化和覆盖更多编辑场景的完整性能基准。
 
 当前需要区分三个版本号：
@@ -91,10 +95,16 @@ npm run generate:assets
 3. [editor-and-state.md](./editor-and-state.md)：编辑命令、历史记录、交互与 Canvas 性能模型。
 4. [functional-harmony.md](./functional-harmony.md)：斯波索宾功能和弦模型、注册表、调色盘与兼容边界。
 5. [harmony-engine.md](./harmony-engine.md)：切片、跨度、连接、适用性、规则状态和诊断仲裁。
-6. [external-rules.md](./external-rules.md)：规则包契约、QuickJS 沙箱与本机规则库。
-7. [audio-midi-and-time.md](./audio-midi-and-time.md)：统一时间轴、播放、SoundFont 和 MIDI。
-8. [desktop-and-persistence.md](./desktop-and-persistence.md)：Electron 安全边界、IPC、工程保存和恢复。
-9. [testing-build-release.md](./testing-build-release.md)：验证矩阵、桌面 E2E、打包和发布检查。
+6. [harmony-query.md](./harmony-query.md)：HarmonyRuleContext、HarmonyQuery 算子和查询边界。
+7. [harmony-rule-runtime.md](./harmony-rule-runtime.md)：无状态规则、obligation 状态和跨切片运行时。
+8. [diagnostics-and-debugging.md](./diagnostics-and-debugging.md)：诊断字段、根因仲裁和详细调试报告。
+9. [analysis-inference.md](./analysis-inference.md)：节拍层级、乐句边界、终止式检测与自动和弦推导。
+10. [analysis-lifecycle.md](./analysis-lifecycle.md)：分析快照、候选、写回和缓存失效边界。
+11. [rule-testing.md](./rule-testing.md)：规则测试用例格式、隔离运行器与工作台。
+12. [external-rules.md](./external-rules.md)：规则包契约、QuickJS 沙箱与本机规则库。
+13. [audio-midi-and-time.md](./audio-midi-and-time.md)：统一时间轴、播放、SoundFont 和 MIDI。
+14. [desktop-and-persistence.md](./desktop-and-persistence.md)：Electron 安全边界、IPC、工程保存和恢复。
+15. [testing-build-release.md](./testing-build-release.md)：验证矩阵、桌面 E2E、打包和发布检查。
 
 按任务也可以直接定位：
 
@@ -102,6 +112,11 @@ npm run generate:assets
 | --- | --- |
 | 修改音符、和弦、锁定或撤销 | [data-model.md](./data-model.md)、[editor-and-state.md](./editor-and-state.md) |
 | 新增或修正规则 | [harmony-engine.md](./harmony-engine.md) |
+| 维护规则查询、领域视图或算子 | [harmony-query.md](./harmony-query.md)、[harmony-engine.md](./harmony-engine.md) |
+| 维护规则状态或跨切片义务 | [harmony-rule-runtime.md](./harmony-rule-runtime.md) |
+| 排查误报、诊断覆盖或复制报告 | [diagnostics-and-debugging.md](./diagnostics-and-debugging.md) |
+| 维护和弦推导、乐句或终止式 | [analysis-inference.md](./analysis-inference.md) |
+| 维护规则金样本或测试工作台 | [rule-testing.md](./rule-testing.md) |
 | 开发外置规则 | [external-rules.md](./external-rules.md) |
 | 排查播放、循环、节拍器或 MIDI | [audio-midi-and-time.md](./audio-midi-and-time.md) |
 | 修改文件对话框、恢复、窗口或本地资源 | [desktop-and-persistence.md](./desktop-and-persistence.md) |
@@ -113,17 +128,20 @@ npm run generate:assets
 src/
   App.tsx                  稳定入口，仅转出 app/AppShell
   app/                     应用壳、会话编排与工作流控制器
-  features/                编辑器、设置、属性、诊断和轨道功能模块
+  features/                编辑器、设置、属性、诊断、轨道、和弦推导与规则测试功能模块
   components/              跨 feature 复用的通用 UI 原语
-  domain/                  纯数据模型、编辑命令、时间、MIDI、和声分析与规则目录
+  domain/                  纯数据模型、编辑命令、时间、节拍、MIDI、和声分析与规则目录
+  domain/harmony/          切片、跨度、规则、乐句、终止式、和弦推导与规则测试
+  domain/project/          工程 schema、验证、规范化与迁移
   hooks/                   React 状态适配、历史、快捷键和布局
-  services/                Electron/浏览器服务适配与外置规则运行时
+  services/                Electron/浏览器服务适配、外置规则运行时与规则用例库
   audio/                   合成器、SoundFont 生命周期和播放辅助
   workers/                 外置规则 QuickJS Worker
   shortcuts/               快捷键注册表
 electron/                  主进程、preload、安全策略和 IPC
 scripts/                   资源生成、清理、桌面 E2E
 public/soundfonts/         默认 SoundFont、哈希、许可证和来源说明
+RuleCases/                 随代码维护的规则测试金样本
 ```
 
 领域层是维护项目正确性的核心。UI 可以表达意图，但不能成为音符不重叠、锁定区间、和弦范围或时间换算的唯一实现位置。
@@ -137,6 +155,7 @@ public/soundfonts/         默认 SoundFont、哈希、许可证和来源说明
 - **主进程只暴露窄接口。** renderer 不应直接获得 Node、任意文件路径或通用 IPC 能力。
 - **规则失败不能破坏编辑。** 缺少上下文应形成结构化 skip；外置规则异常应隔离并保留内置结果。
 - **性能以视口为边界。** 长工程的逻辑坐标可以很大，但 Canvas 位图、绘制和命中候选应限制在可见区域附近。
+- **区分候选与自动应用。** 终止式检测和和弦推导先产出带证据的候选；自动乐句推导可在专用推导流程中直接应用选定结构。所有写回仍必须经过编辑命令与锁定判断。
 - **文档随契约更新。** schema、外置 API、IPC、规则清单、脚本或发布流程变化时，同一提交更新 `Docs`。
 
 ## 7. 文档维护规则

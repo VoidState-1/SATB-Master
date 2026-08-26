@@ -194,8 +194,9 @@ apiVersion / revision
 project
   schemaVersion / id / title / ppq / lengthTicks
   tempoEvents / meterEvents / keyEvents
+  structure { phraseBoundaries }
   satbTracks
-  chordTrack { visible, locked, displayMode, regions }
+  chordTrack { visible, locked, displayMode, regions, cadenceAnnotations }
 sharedSettings
 slices
 harmonySpans
@@ -205,10 +206,13 @@ melodyTransitions
 sliceTransitions
 connections
 targetChains
+phraseSegments
+phraseBoundaryCandidates
+cadenceCandidates
 auxiliarySummary { trackCount, noteCount }
 ```
 
-`ChordRegion` 保留完整 `ChordIdentity`、一个或两个 `HarmonyInterpretation`、`FunctionalDesignation`、离调目标、混合、终止角色和持续低音上下文。`HarmonySpan` 聚合同一调性、相同实体和相同语义的连续和弦区域；`connections` 提供稳定 `connectionKey`、精确 span 间关系、目标是否匹配、证据与置信度；`targetChains` 展开允许经过 `K46` 的副属/重属目标路径。
+`ChordRegion` 保留完整 `ChordIdentity`、一个或两个 `HarmonyInterpretation`、`FunctionalDesignation`、离调目标、混合、`cadenceRole` 和持续低音上下文。`HarmonySpan` 聚合同一调性、相同实体和相同语义的连续和弦区域；`connections` 提供稳定 `connectionKey`、精确 span 间关系、目标是否匹配、证据与置信度；`targetChains` 展开允许经过 `K46` 的副属/重属目标路径。`phraseSegments`、`phraseBoundaryCandidates` 与 `cadenceCandidates` 提供乐句与终止式的只读候选（见 [analysis-inference.md](./analysis-inference.md)）；乐句边界和终止式标注通过 `project.structure.phraseBoundaries` 与 `project.chordTrack.cadenceAnnotations` 暴露。
 
 边界约束：
 
@@ -261,7 +265,7 @@ userData/rule-library/
 
 导入时依次检查扩展名和大小、在 QuickJS 中读取注册信息、校验 manifest 与实现 ID、计算 SHA-256，再写入规则库。renderer 的 API parser 与 Electron 主进程的 `rule-library-policy` 都只接受 API v3；主进程存储元数据时保留 `configVersion`、配置 schema、特例上下文和默认策略。工程保存每条规则的包标识、版本、hash、规则 ID、严重程度、`configVersion`、配置和特例覆盖；脚本正文不进入 `.satb` 文件。
 
-本机缺少匹配 hash 时，引用保留并显示“未挂载”，内置规则继续运行。重新安装相同内容后可恢复匹配。浏览器预览使用 localStorage 降级存储，不能代替桌面内容寻址行为验证。
+本机缺少匹配 hash 时，引用保留并显示“未挂载”，内置规则继续运行。重新安装相同内容后可恢复匹配。浏览器预览使用文件选择读取与 Blob 下载保存，不能代替桌面内容寻址行为验证。
 
 规则配置还可通过 `.satb-rule-profile.json` 导入导出。配置档案保留缺失外置包引用，安装状态不参与便携格式；禁用的外置规则以 `severity: "off"` 表示。
 

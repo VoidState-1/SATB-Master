@@ -48,12 +48,17 @@ flowchart LR
 | [`project/`](../src/domain/project) | 工程 schema、轨道和事件、默认工程、选择器、规范化、验证与 v2 -> v3 迁移 |
 | [`pitch.ts`](../src/domain/pitch.ts) | 书写音高、MIDI 转换、音程与调号相关计算 |
 | [`chordModel.ts`](../src/domain/chordModel.ts) | 和弦实体、结构联合、语义解释、草稿解析与配器策略 |
+| [`chordEditorModel.ts`](../src/domain/chordEditorModel.ts) | 和弦编辑器动作、共同和弦候选与草稿修正的纯逻辑 |
 | [`functionalHarmonyCatalog.ts`](../src/domain/functionalHarmonyCatalog.ts) | 斯波索宾 A/B/C 功能词汇、组合约束与共同和弦候选 |
 | [`chords.ts`](../src/domain/chords.ts) | 功能、罗马与绝对名称投影 |
 | [`editing.ts`](../src/domain/editing.ts) | 新增、移动、调整、删除、锁定检查和批量命令 |
 | [`time.ts`](../src/domain/time.ts) | tick、秒、小节、变拍号、变速与双向吸附 |
+| [`rhythm/`](../src/domain/rhythm) | 节拍层级与强弱位置，供乐句、终止式和规则共用 |
+| [`timelineRuler.ts`](../src/domain/timelineRuler.ts) | 标尺刻度与时间变化标签分组 |
+| [`developerInspection.ts`](../src/domain/developerInspection.ts) | 开发者属性检查器的字段投影 |
 | [`midi.ts`](../src/domain/midi.ts) | MIDI Type 1 事件与轨道构造 |
-| [`harmony/`](../src/domain/harmony) | 不可变分析快照、规则运行时、规则注册表、按领域分组的实现、配置 schema、共享事实、连接器、适用性与仲裁 |
+| [`harmony/`](../src/domain/harmony) | 不可变分析快照、规则运行时、规则注册表、按领域分组的实现、配置 schema、共享事实、连接器、适用性与仲裁，以及乐句、终止式和自动和弦推导 |
+| [`harmony/testing/`](../src/domain/harmony/testing) | 规则测试用例模型、解析、运行器与比较器 |
 | [`ruleProfile.ts`](../src/domain/ruleProfile.ts) | 工程规则设置命令、便携配置档案和新工程模板 |
 | [`harmony/external/api.ts`](../src/domain/harmony/external/api.ts) | 外置 API v3 manifest、公开上下文、配置和结果验证 |
 
@@ -74,8 +79,11 @@ flowchart LR
 `src/features` 按用户工作区拆分：
 
 - [`features/editor`](../src/features/editor)：钢琴卷帘、交互联合类型、诊断聚合和统一 tick/MIDI 坐标。`viewport.ts` 是所有轨道共享的坐标源，主组件位于 [`features/editor/PianoRoll.tsx`](../src/features/editor/PianoRoll.tsx)；重构前的 `components/PianoRoll.tsx` 已删除，不再保留兼容入口。
-- [`features/inspector`](../src/features/inspector)：属性面板、和弦语义、时间事件和提交字段。
+- [`features/inspector`](../src/features/inspector)：属性面板、和弦语义、时间事件、终止式编辑和提交字段。
 - [`features/settings`](../src/features/settings)：设置窗口、规则字段和快捷键/规则配置子区。
+- [`features/chordInference`](../src/features/chordInference)：自动和弦推导的引导与对话框，见 [analysis-inference.md](./analysis-inference.md)。
+- [`features/ruleTesting`](../src/features/ruleTesting)：规则测试工作台，见 [rule-testing.md](./rule-testing.md)。
+- [`features/tracks`](../src/features/tracks)：声部/轨道侧栏与赞助对话框。
 
 组件负责：
 
@@ -113,6 +121,8 @@ services 是环境适配层。桌面模式转发到 `window.desktop`，浏览器
 - [`externalRuleLibrary.ts`](../src/services/externalRuleLibrary.ts)：导入、安装和查询规则包。
 - [`externalRuleRuntime.ts`](../src/services/externalRuleRuntime.ts)：Worker 生命周期、revision 竞争和结果汇总。
 
+规则测试用例通过 [`services/ruleTestCases`](../src/services/ruleTestCases) 提供桌面/浏览器两套 store 与用例库，见 [rule-testing.md](./rule-testing.md)。
+
 ### 3.4 `src/audio`
 
 音频层包装 AudioContext、SpessaSynth 和回退合成器。它维护的是运行时资源，不属于工程历史。工程只保存 SoundFont 引用和播放相关持久配置，实际合成器、节点和待执行事件不能写入 `ProjectDocument`。
@@ -127,6 +137,7 @@ services 是环境适配层。桌面模式转发到 `window.desktop`，浏览器
 - [`soundfont-resource.ts`](../electron/soundfont-resource.ts)：大 SoundFont 的 token、哈希和流读取。
 - [`rule-library.ts`](../electron/rule-library.ts)：本机规则包内容寻址存储。
 - [`rule-library-policy.ts`](../electron/rule-library-policy.ts)：Electron 边界上的 API v3 manifest、hash、容量和元数据校验。
+- [`rule-test-cases.ts`](../electron/rule-test-cases.ts) 与 [`rule-test-case-file.ts`](../electron/rule-test-case-file.ts)：规则测试用例目录扫描与原子写盘，见 [rule-testing.md](./rule-testing.md)。
 
 策略类纯逻辑尽量放入可测试模块，例如 SoundFont 和规则库的路径/容量策略，而不是埋在 IPC handler 中。
 

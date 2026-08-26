@@ -143,6 +143,8 @@ roman-absolute
 
 外置 API v3 暴露裁剪后的完整 `ChordRegion`、`HarmonySpan` 和 `connections`，并保留一个或两个 `HarmonyInterpretation`。脚本不能读取辅助轨明细，也不能修改宿主语义。完整契约见 [external-rules.md](./external-rules.md)。
 
+终止式不再由单个和弦的 `cadenceRole` 承担“乐句末端整体类型”语义：完全/半/补充/阻碍终止属于工程级 `chordTrack.cadenceAnnotations`，由终止式检测产生候选、用户确认后写回（见 [analysis-inference.md](./analysis-inference.md)）。`cadenceRole` 仅保留终止四六、经过四六、辅助四六与阻碍进行起点等局部角色。
+
 ## 9. 扩展步骤
 
 增加一个功能标记时至少需要：

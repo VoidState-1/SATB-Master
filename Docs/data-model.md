@@ -27,16 +27,23 @@ ProjectDocument
   schemaVersion / id / title / author / notes
   createdAt / updatedAt / ppq / lengthTicks
   tempoEvents[] / meterEvents[] / keyEvents[]
+  structure
+    phraseBoundaries[]
   satbTracks[4]
     notes[]
   auxiliaryTracks[]
     notes[]
   chordTrack
     regions[]
+    cadenceAnnotations[]
   loop
   ruleProfile
-  exercise.editableRanges[]
-  audio.soundFont
+  exercise
+    instructions
+    editableRanges[]
+  audio
+    masterVolume
+    soundFont
 ```
 
 完整字段见 [`ProjectDocument`](../src/domain/project/types.ts)。新增持久字段时必须同步：
@@ -82,7 +89,9 @@ interface SpelledPitch {
 
 ## 4. 音符与轨道
 
-`NoteEvent` 除 ID、位置、时值和书写音高外，还可以包含锁定、人工非和弦音角色与 MIDI 导入来源等属性。人工角色包括经过音、辅助音、挂留音、延宕音、倚音、先现音、逃逸音和持续音；规则不会根据单个和弦外音自动写回角色。以后添加奏法、力度或声部来源时，应先判断它是音符事实、分析结果还是临时 UI 状态。
+`NoteEvent` 除 ID、位置、时值和书写音高外，还包含 `velocity`（力度）、`spellingSource`（`manual` / `migrated` / `midi-inferred`）、锁定、可选人工非和弦音角色与 MIDI 导入来源 `importOrigin`。人工角色包括经过音、辅助音、挂留音、延宕音、倚音、先现音、逃逸音和持续音；规则不会根据单个和弦外音自动写回角色（自动和弦推导写回角色时也遵守锁定，见 [analysis-inference.md](./analysis-inference.md)）。以后添加奏法或声部来源时，应先判断它是音符事实、分析结果还是临时 UI 状态。
+
+每条轨道（SATB 与辅助轨）都带可持久化的 `visible` / `muted` / `solo` / `locked` / `volume` / `pan` / `program` 字段。`muted` / `solo` / `volume` / `pan` 是播放属性，不影响和声分析；`locked` 是编辑权限，参与锁定判断。
 
 ### 4.1 SATB 轨
 
@@ -133,10 +142,12 @@ soprano -> alto -> tenor -> bass
 | 类型 | 核心字段 | 影响 |
 | --- | --- | --- |
 | `TempoEvent` | tick、BPM | tick 与秒的换算、播放、MIDI tempo |
-| `MeterEvent` | tick、分子、分母 | 小节边界、刻度、节拍器、工程“小节数”显示 |
+| `MeterEvent` | tick、分子、分母、可选 `beatGrouping` | 小节边界、刻度、节拍器、工程“小节数”显示与节拍层级 |
 | `KeyEvent` | tick、主音、调式 | 拼写、和弦解析、规则语境、MIDI key signature |
 
 事件列表需要按 tick 排序，同一类型在同一 tick 不应存在互相竞争的多个值。工程起点需要有可解释的初始事件；默认工程创建和 validator 负责提供或拒绝缺失状态。
+
+`MeterEvent.beatGrouping` 是可选拍组划分，例如 5/8 的 `[2, 3]` 或 7/8 的 `[2, 2, 3]`。它用于 [`rhythm/metric.ts`](../src/domain/rhythm/metric.ts) 的节拍强弱层级；缺失时按分子分母推断或标记为 `ambiguous`，但拍组之和必须等于分子，否则视为无效。
 
 变拍号意味着“总小节数”不是简单的 `lengthTicks / 固定每小节 tick`。任何小节计算都必须调用 [`src/domain/time.ts`](../src/domain/time.ts) 的 `buildMeasures`、`ticksForMeasures` 等函数。
 
@@ -168,7 +179,9 @@ interface ChordToneAlteration {
 
 ### 6.2 `HarmonySemantics`
 
-`HarmonySemantics` 保存一个或两个 `HarmonyInterpretation`，并用 `primaryInterpretationId` 指定主要解释。单项解释包含局部调性、级数、变化音、结构化目标、斯波索宾 `FunctionalDesignation`、来源和置信度；外层保存借用、终止/四六角色、终止类型和持续低音上下文。`cadenceRole` 描述当前和弦在连接中的局部用途，例如终止四六、经过四六、辅助四六或阻碍进行起点；`cadenceType` 独立描述乐句末端的完全终止、不完全终止、半终止、变格终止、阻碍终止或开放结束。普通 `D -> VI` 不会仅凭局部连接自动获得终止标记。共同和弦的两个确认解释必须都能解析为同一实体，不能只复制不同 ID。
+`HarmonySemantics` 保存一个或两个 `HarmonyInterpretation`，并用 `primaryInterpretationId` 指定主要解释。单项解释包含局部调性、级数、变化音、结构化目标、斯波索宾 `FunctionalDesignation`、来源和置信度；外层保存借用、`cadenceRole` 和持续低音上下文。`cadenceRole` 描述当前和弦在连接中的局部用途，取值限 `cadential64`、`passing64`、`pedal64` 或 `deceptive`。普通 `D -> VI` 不会仅凭局部连接自动获得阻碍标记。共同和弦的两个确认解释必须都能解析为同一实体，不能只复制不同 ID。
+
+终止式类型不再保存在和弦语义中，而是工程级范围标注 `chordTrack.cadenceAnnotations`（见 [§7.4](#74-乐句边界与终止式标注) 与 [analysis-inference.md](./analysis-inference.md)）。`cadenceRole` 只表达单个和弦的局部角色，`CadenceAnnotation` 才表达乐句末端整体属于完全终止、半终止、补充终止还是阻碍终止。
 
 代码中避免再使用宽泛的 `FunctionalAnalysis` 名称：中文“功能”既可能指 T/S/D，又可能泛指用途。当前约定是：
 
@@ -208,7 +221,7 @@ interface ChordToneAlteration {
 
 ### 7.2 练习可编辑范围
 
-`exercise.editableRanges` 定义允许编辑的时间区间。音符或和弦自身也可以锁定。锁定的最终判断在命令层执行，必须覆盖：
+`exercise.editableRanges` 定义允许编辑的范围。每个 `EditableRange` 带 `voiceIds`、`fromTick`、`toTick` 与 `editable` 布尔值，因此可编辑性可以按声部和时间区间分别限制；`exercise.instructions` 保存练习说明。音符或和弦自身也可以锁定。锁定的最终判断在命令层执行，必须覆盖：
 
 - 新增、删除、移动和调整时值。
 - 批量剪切、粘贴、移调和删除。
@@ -222,7 +235,8 @@ interface ChordToneAlteration {
 
 ```ts
 interface RuleProfile {
-  profileVersion: 1;
+  profileVersion: 2;
+  catalogRevision: number;
   title: string;
   shared: SharedHarmonySettings;
   builtin: Record<string, RuleInstanceSettings>;
@@ -230,7 +244,7 @@ interface RuleProfile {
 }
 ```
 
-`shared` 保存四声部建议音域和严格四声部织体开关。每个内置规则实例保存严重程度、`configVersion`、声明式配置和特例策略。严重程度为：
+`shared` 保存四声部建议音域和严格四声部织体开关。`catalogRevision` 是规则目录修订号（当前为 2），决定内置规则集合与默认配置的兼容性。每个内置规则实例保存严重程度、`configVersion`、声明式配置和特例策略。严重程度为：
 
 ```text
 error | warning | suggestion | off
@@ -240,11 +254,27 @@ error | warning | suggestion | off
 
 外置 v3 引用还保存 `configVersion` 和特例策略。运行时同时尊重旧字段 `enabled` 与严重程度；便携 `.satb-rule-profile.json` 不重复保存 `enabled`，而用 `severity: "off"` 表达禁用。缺失的外置包引用必须保留，以便安装相同 hash 后恢复。
 
-设置修改通过工程历史命令提交，因此随 `.satb` 保存、可撤销/重做，也不会被另一台机器的应用偏好静默覆盖。localStorage 只可保存“新建工程默认模板”。配置档案导入会规范化已知 schema、报告修复与未知 ID，并以一次历史提交替换当前 profile。
+设置修改通过工程历史命令提交，因此随 `.satb` 保存、可撤销/重做，也不会被另一台机器的应用偏好静默覆盖。localStorage 只可保存“新建工程默认模板”。配置档案导入会规范化已知 schema、报告修复与未知 ID，并以一次历史提交替换当前 profile。便携档案 `PortableRuleProfile` 使用独立的 `formatVersion`（当前为 2）与 `catalogRevision`，与工程内 `profileVersion` 是两个不同契约。
+
+### 7.4 乐句边界与终止式标注
+
+以下不变量是领域目标；具体命令和校验实现若未覆盖某项，不能仅凭 schema 说明视为已强制执行。当前分析参与规则前仍会过滤无效或 stale 结构。
+
+工程级结构 `structure.phraseBoundaries` 保存乐句边界（见 [analysis-inference.md](./analysis-inference.md)）。每个 `PhraseBoundary` 带 `id`、`tick`、`source`（`manual` / `inferred`）、`confidence`、可选 `locked`、自动推导用的 `inferenceFingerprint` 与 `stale` 标记。工程起点和终点由分析端点补全，不要求显式保存。
+
+`chordTrack.cadenceAnnotations` 保存乐句末端的终止式范围标注。每个 `CadenceAnnotation` 带 `id`、`phraseId`、`fromTick`、`toTick`、`kind`（`full` / `half` / `supplementary` / `deceptive`）、可选 `form`（`authentic` / `plagal`）与 `completion`（`perfect` / `imperfect`）、`source`（`manual` / `accepted-candidate`）、`confidence`、`locked` 与 `stale`。
+
+两者都是可编辑工程数据，遵循以下不变量：
+
+- 标注范围必须位于所属乐句内，且乐句 ID 有效。
+- 终止式标注不跨越乐句边界，也不与同一乐句内其它同类标注冲突。
+- 编辑命令负责校验范围、绑定和锁定；`stale` 标注保留供用户核对，但不参与规则分析。
+
+终止式检测产生的是候选（`CadenceCandidate`），只有用户确认或应用命令后才成为 `CadenceAnnotation`。和弦级的 `cadenceRole` 与乐句级的 `CadenceAnnotation.kind` 是不同层次的事实，不能互相替代。
 
 ## 8. 音频引用
 
-工程的 `audio.soundFont` 保存可持久化的音色选择。运行时加载状态、AudioContext、合成器实例和临时资源 token 不属于工程。
+工程的 `audio` 保存 `masterVolume` 与 `audio.soundFont` 音色选择。运行时加载状态、AudioContext、合成器实例和临时资源 token 不属于工程。
 
 本地 SoundFont 可能在另一台机器不存在。打开工程时应保留用户选择的引用和明确的缺失状态，不能因为播放按钮初始化音频而静默回退并覆盖工程选择。默认音色是可用性回退，不是用户引用的替代值。
 
@@ -284,6 +314,8 @@ schema v3 --直接验证-->
 - 将临时 playhead 或打开的弹窗写入 `ProjectDocument`。
 - 把 SATB 与辅助轨统一设为“允许重叠”，再依赖检查器报错。
 - 变拍号工程中用固定 `PPQ * 4` 推导所有小节。
+- 把终止式类型写回单个和弦语义，而不是乐句级 `cadenceAnnotations`。
+- 把自动分析候选直接写回工程，绕过 `editing.ts` 命令与锁定判断。
 
 ## 11. 数据模型变更检查表
 
