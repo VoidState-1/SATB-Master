@@ -154,6 +154,32 @@ describe("结构与终止式范围编辑", () => {
     ).toBeUndefined();
   });
 
+  it("在自动边界处添加边界时，将其转换为人工覆盖", () => {
+    const project = createEmptyProject();
+    project.structure.phraseBoundaries = [
+      {
+        id: "inferred-boundary",
+        tick: PPQ,
+        source: "inferred",
+        confidence: "probable",
+        inferenceFingerprint: "old-input",
+        stale: true,
+      },
+    ];
+
+    const result = addPhraseBoundary(project, PPQ);
+
+    expect(result.error).toBeUndefined();
+    expect(result.project.structure.phraseBoundaries).toEqual([
+      {
+        id: "inferred-boundary",
+        tick: PPQ,
+        source: "manual",
+        confidence: "certain",
+      },
+    ]);
+  });
+
   it("只用一个范围对象更新终止类型", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;

@@ -17,11 +17,15 @@ export type {
 } from "./cadence";
 export {
   analyzePhrases,
+  inferPhrases,
+  isCurrentPhraseBoundary,
   phraseAtTick,
+  phraseInferenceFingerprint,
 } from "./phrase";
 export type {
   PhraseAnalysis,
   PhraseAnalysisInput,
+  PhraseAnalysisOptions,
   PhraseBoundary,
   PhraseBoundaryCandidate,
   PhraseConfidence,

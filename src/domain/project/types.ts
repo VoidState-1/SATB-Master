@@ -79,6 +79,10 @@ export interface PhraseBoundary {
   source: PhraseBoundarySource;
   confidence: PhraseConfidence;
   locked?: boolean;
+  /** 自动推导所依据的和声输入指纹；人工边界不使用该字段。 */
+  inferenceFingerprint?: string;
+  /** 保留旧结构以供用户核对，但不应再参与规则分析。 */
+  stale?: boolean;
 }
 
 export interface ProjectStructure {

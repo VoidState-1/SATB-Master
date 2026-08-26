@@ -4,6 +4,7 @@ import { addChordRegion } from "../../editing";
 import type { ChordRegion, ProjectDocument } from "../../project";
 import type {
   ChordInferenceApplyOptions,
+  ChordInferenceApplyResult,
   ChordInferenceCandidate,
   ChordInferenceRegion,
   ChordInferenceResult,
@@ -68,7 +69,7 @@ export function applyChordInference(
   project: ProjectDocument,
   result: ChordInferenceResult,
   options: ChordInferenceApplyOptions,
-) {
+): ChordInferenceApplyResult {
   const warnings: ChordInferenceWarning[] = [];
   const selectedRegions = result.regions.filter((region) =>
     selectedForApply(region, options.selection),

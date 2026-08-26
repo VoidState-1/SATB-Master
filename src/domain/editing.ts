@@ -28,15 +28,36 @@ export interface EditResult {
 export function addPhraseBoundary(project: ProjectDocument, tick: number): EditResult {
   if (!Number.isInteger(tick) || tick <= 0 || tick >= project.lengthTicks)
     return { project, error: "乐句边界必须位于工程内部" };
-  if (project.structure.phraseBoundaries.some((boundary) => boundary.tick === tick))
-    return { project, error: "该位置已经存在乐句边界" };
+  const existing = project.structure.phraseBoundaries.find(
+    (boundary) => boundary.tick === tick,
+  );
+  if (existing?.source === "manual")
+    return { project, error: "该位置已经存在人工乐句边界" };
   const next = cloneProject(project);
-  next.structure.phraseBoundaries.push({
-    id: createId("phrase-boundary"),
-    tick,
-    source: "manual",
-    confidence: "certain",
-  });
+  if (existing) {
+    next.structure.phraseBoundaries = next.structure.phraseBoundaries.map(
+      (boundary) => {
+        if (boundary.id !== existing.id) return boundary;
+        const {
+          inferenceFingerprint: _inferenceFingerprint,
+          stale: _stale,
+          ...manualBoundary
+        } = boundary;
+        return {
+          ...manualBoundary,
+          source: "manual",
+          confidence: "certain",
+        };
+      },
+    );
+  } else {
+    next.structure.phraseBoundaries.push({
+      id: createId("phrase-boundary"),
+      tick,
+      source: "manual",
+      confidence: "certain",
+    });
+  }
   next.structure.phraseBoundaries.sort((left, right) => left.tick - right.tick);
   next.updatedAt = new Date().toISOString();
   return { project: next };

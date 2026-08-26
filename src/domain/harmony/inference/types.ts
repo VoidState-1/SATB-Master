@@ -154,6 +154,24 @@ export interface ChordInferenceApplyOptions {
   readonly writeNonChordToneRoles?: boolean;
 }
 
+export interface ChordInferenceApplyResult {
+  readonly project: ProjectDocument;
+  readonly skipped: readonly ChordInferenceWarning[];
+  readonly appliedRegionCount: number;
+  readonly writtenNonChordToneRoleCount: number;
+}
+
+/** 一次完整和声推导：和弦推导是第一阶段，乐句结构在应用后生成。 */
+export interface HarmonyInferenceResult {
+  readonly chordInference: ChordInferenceResult;
+}
+
+export type HarmonyInferenceApplyOptions = ChordInferenceApplyOptions;
+
+export interface HarmonyInferenceApplyResult extends ChordInferenceApplyResult {
+  readonly appliedPhraseBoundaryCount: number;
+}
+
 export interface ChordInferenceSource {
   readonly project: ProjectDocument;
 }

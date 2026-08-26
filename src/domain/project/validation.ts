@@ -194,7 +194,10 @@ function validatePhraseBoundary(
     ["certain", "probable", "ambiguous"].includes(
       value.confidence as string,
     ) &&
-    (value.locked === undefined || typeof value.locked === "boolean")
+    (value.locked === undefined || typeof value.locked === "boolean") &&
+    (value.inferenceFingerprint === undefined ||
+      typeof value.inferenceFingerprint === "string") &&
+    (value.stale === undefined || typeof value.stale === "boolean")
   );
 }
 

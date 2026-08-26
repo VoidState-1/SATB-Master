@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Lock, LockOpen, Plus, Trash2 } from "lucide-react";
 import type { KeyMode, ProjectDocument } from "../../domain/project";
+import { isCurrentPhraseBoundary } from "../../domain/harmony";
 import {
   formatPitchClass,
   keyTonicOptions,
@@ -24,9 +25,7 @@ export function ProjectInspector({
   onUpdateEditableRange,
   onDeleteEditableRange,
   onAddPhraseBoundary,
-  onAddPhraseBoundaryAt,
   onDeletePhraseBoundary,
-  phraseBoundaryCandidates = [],
   onUpdateChordTrack,
   onAddTimingEvent,
   onUpdateTimingEvent,
@@ -83,20 +82,28 @@ export function ProjectInspector({
 
       <section className="property-section timing-section">
         <header>
-          <span>乐句边界</span>
+          <span>乐句结构</span>
           <IconButton
-            label="在播放头添加乐句边界"
+            label="在播放头添加人工乐句边界"
             icon={<Plus />}
             onClick={onAddPhraseBoundary}
           />
         </header>
         {project.structure.phraseBoundaries.length === 0 ? (
-          <p className="property-hint">当前使用工程首尾作为单个乐句。</p>
+          <p className="property-hint">
+            运行和弦推导后会自动生成乐句边界；也可在播放头添加人工覆盖。
+          </p>
         ) : null}
         {project.structure.phraseBoundaries.map((boundary) => (
           <div className="timing-row" key={boundary.id}>
             <small>{formatPosition(project, boundary.tick)}</small>
-            <span>{boundary.source === "manual" ? "人工" : "推测"}</span>
+            <span>
+              {boundary.source === "manual"
+                ? "人工"
+                : isCurrentPhraseBoundary(project, boundary)
+                  ? "自动"
+                  : "需要重新推导"}
+            </span>
             <IconButton
               label="删除乐句边界"
               icon={<Trash2 />}
@@ -105,23 +112,6 @@ export function ProjectInspector({
             />
           </div>
         ))}
-        {phraseBoundaryCandidates.length > 0 ? (
-          <div className="property-hint">
-            <strong>检测到的边界候选</strong>
-            {phraseBoundaryCandidates.map((candidate) => (
-              <div className="timing-row" key={candidate.tick}>
-                <span>
-                  {formatPosition(project, candidate.tick)} · {candidate.confidence}
-                </span>
-                <IconButton
-                  label="确认乐句边界候选"
-                  icon={<Plus />}
-                  onClick={() => onAddPhraseBoundaryAt(candidate.tick)}
-                />
-              </div>
-            ))}
-          </div>
-        ) : null}
       </section>
 
       <section className="property-section">

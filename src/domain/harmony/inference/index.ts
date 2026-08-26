@@ -4,6 +4,7 @@ export * from "./apply";
 export * from "./fit";
 export * from "./functionalTemplates";
 export * from "./inferChords";
+export * from "./harmonyInference";
 export * from "./segmentation";
 export * from "./sequence";
 export {

@@ -1,4 +1,6 @@
 import type {
+  ChordRegion,
+  MeterEvent,
   PhraseBoundary as ProjectPhraseBoundary,
   PhraseConfidence as ProjectPhraseConfidence,
 } from "../../project/types";
@@ -49,20 +51,32 @@ export interface PhraseAnalysis {
   readonly segments: readonly PhraseSegment[];
 }
 
+export interface PhraseAnalysisOptions {
+  /** 实时分析只读取工程中已保存的边界，推导流程才开启候选扫描。 */
+  readonly generateCandidates?: boolean;
+  /** 将高置信度的自动边界合并为本次分析使用的结构边界。 */
+  readonly includeInferredBoundaries?: boolean;
+  /** 重建自动边界时保留人工边界，丢弃上一次推导生成的边界。 */
+  readonly replaceInferredBoundaries?: boolean;
+}
+
 export interface PhraseAnalysisInput {
   readonly lengthTicks: number;
   readonly ppq?: number;
+  readonly meterEvents?: readonly MeterEvent[];
   readonly structure?: {
     readonly phraseBoundaries?: readonly PhraseBoundary[];
   };
   readonly satbTracks?: readonly {
+    readonly id?: string;
     readonly notes: readonly {
+      readonly id?: string;
       readonly startTick: number;
       readonly durationTicks: number;
     }[];
   }[];
-  readonly chordRegions?: readonly {
-    readonly startTick: number;
-    readonly durationTicks: number;
-  }[];
+  readonly chordRegions?: readonly ChordRegion[];
+  readonly chordTrack?: {
+    readonly regions: readonly ChordRegion[];
+  };
 }

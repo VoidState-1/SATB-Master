@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyHarmonyInference,
   applyChordInference,
+  inferHarmony,
   inferChords,
 } from "./index";
 import { updateChordRegion } from "../../editing";
 import { createEmptyProject, PPQ, type NoteEvent, type VoiceId } from "../../project";
 import { spellMidi } from "../../pitch";
+import { buildHarmonyAnalysis } from "../analysis";
 
 function note(
   id: string,
@@ -102,6 +105,69 @@ describe("自动和弦推导", () => {
     });
     expect(again.project.chordTrack.regions).toHaveLength(1);
     expect(again.skipped[0]?.code).toBe("overlap");
+  });
+
+  it("应用和弦推导时自动写入乐句结构，并让终止检测读取该结构", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    addLine(project, "soprano", [72, 74, 72]);
+    addLine(project, "alto", [67, 71, 69]);
+    addLine(project, "tenor", [64, 67, 65]);
+    addLine(project, "bass", [48, 55, 53]);
+
+    const applied = applyHarmonyInference(project, inferHarmony(project), {
+      mode: "fill-gaps",
+    });
+    const analysis = buildHarmonyAnalysis(applied.project);
+
+    expect(applied.appliedPhraseBoundaryCount).toBeGreaterThan(0);
+    expect(applied.project.structure.phraseBoundaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tick: PPQ * 2,
+          source: "inferred",
+          confidence: "probable",
+          inferenceFingerprint: expect.any(String),
+        }),
+      ]),
+    );
+    expect(analysis.cadenceCandidates).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "half" })]),
+    );
+  });
+
+  it("重新推导只替换自动边界，并保留人工覆盖", () => {
+    const project = createEmptyProject();
+    addHarmony(project);
+    project.structure.phraseBoundaries = [
+      {
+        id: "manual-boundary",
+        tick: PPQ,
+        source: "manual",
+        confidence: "certain",
+        locked: true,
+      },
+    ];
+
+    const applied = applyHarmonyInference(project, inferHarmony(project), {
+      mode: "fill-gaps",
+    });
+
+    expect(applied.project.structure.phraseBoundaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "manual-boundary",
+          tick: PPQ,
+          source: "manual",
+          locked: true,
+        }),
+      ]),
+    );
+    expect(
+      applied.project.structure.phraseBoundaries.some(
+        (boundary) => boundary.source === "inferred",
+      ),
+    ).toBe(true);
   });
 
   it("替换未锁定模式只替换可编辑重叠区域", () => {

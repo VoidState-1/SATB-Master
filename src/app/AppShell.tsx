@@ -47,10 +47,10 @@ import { RuleTestWorkbench } from "../features/ruleTesting";
 import { ChordInferenceDialog } from "../features/chordInference";
 import { replaceProject } from "../domain/editing";
 import {
-  applyChordInference,
+  applyHarmonyInference,
   buildHarmonyAnalysis,
   formatDiagnosticDebugReport,
-  inferChords,
+  inferHarmony,
   type HarmonyDiagnostic,
 } from "../domain/harmony";
 import { createEmptyProject, type ProjectDocument } from "../domain/project";
@@ -194,7 +194,6 @@ function AppShell() {
     handleUpdateEditableRange,
     handleDeleteEditableRange,
     handleAddPhraseBoundary,
-    handleAddPhraseBoundaryAt,
     handleDeletePhraseBoundary,
     handleAddChord,
     handleUpdateChord,
@@ -320,14 +319,14 @@ function AppShell() {
     minConfidence: "high" | "medium" | "low";
     writeNonChordToneRoles: boolean;
   }) => {
-    const result = inferChords(project, {
+    const result = inferHarmony(project, {
       fromTick: options.fromTick,
       toTick: options.toTick,
       allowAbsoluteFallback: options.allowAbsoluteFallback,
       allowIncompleteVoicing: options.allowIncompleteVoicing,
       minConfidence: options.minConfidence,
     });
-    const applied = applyChordInference(project, result, {
+    const applied = applyHarmonyInference(project, result, {
       mode: options.mode,
       writeNonChordToneRoles: options.writeNonChordToneRoles,
     });
@@ -338,12 +337,15 @@ function AppShell() {
     const roleText = applied.writtenNonChordToneRoleCount
       ? `，写入 ${applied.writtenNonChordToneRoleCount} 个非和弦音角色`
       : "";
-    const unresolvedText = result.unresolvedObservationIndices.length
-      ? `，${result.unresolvedObservationIndices.length} 个时间片未归类`
+    const phraseText = applied.appliedPhraseBoundaryCount
+      ? `，生成 ${applied.appliedPhraseBoundaryCount} 个自动乐句边界`
+      : "";
+    const unresolvedText = result.chordInference.unresolvedObservationIndices.length
+      ? `，${result.chordInference.unresolvedObservationIndices.length} 个时间片未归类`
       : "";
     showNotice(
       applied.appliedRegionCount > 0
-        ? `已应用 ${applied.appliedRegionCount} 个和弦区段${roleText}${unresolvedText}${warningText}`
+        ? `已应用 ${applied.appliedRegionCount} 个和弦区段${phraseText}${roleText}${unresolvedText}${warningText}`
         : `没有应用和弦区段${unresolvedText}${warningText}`,
     );
     setChordInferenceOpen(false);
@@ -780,9 +782,7 @@ function AppShell() {
           onUpdateEditableRange={handleUpdateEditableRange}
           onDeleteEditableRange={handleDeleteEditableRange}
           onAddPhraseBoundary={handleAddPhraseBoundary}
-          onAddPhraseBoundaryAt={handleAddPhraseBoundaryAt}
           onDeletePhraseBoundary={handleDeletePhraseBoundary}
-          phraseBoundaryCandidates={cadenceAnalysis.phraseBoundaryCandidates}
           onUpdateNote={handleUpdateNote}
           onUpdateChord={handleUpdateChord}
           onDeleteChords={handleDeleteChords}

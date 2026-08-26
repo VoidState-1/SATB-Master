@@ -4,6 +4,7 @@ import { createEmptyProject, PPQ, type ChordDraft, type NoteEvent } from "../../
 import { spellMidi } from "../../pitch";
 import { buildHarmonyAnalysis } from "../analysis";
 import { detectCadences } from "./detect";
+import { phraseInferenceFingerprint } from "../phrase";
 
 function note(id: string, startTick: number, midi: number): NoteEvent {
   return {
@@ -106,6 +107,7 @@ describe("终止候选检测", () => {
         tick: PPQ,
         source: "inferred",
         confidence: "probable",
+        inferenceFingerprint: phraseInferenceFingerprint(project),
       },
     ];
     const analysis = buildHarmonyAnalysis(project);

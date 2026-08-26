@@ -767,7 +767,7 @@ export function buildHarmonyAnalysis(
   const phraseAnalysis = analyzePhrases({
     ...snapshot,
     chordRegions: snapshot.chordTrack.regions,
-  });
+  }, { generateCandidates: false });
   const analysisShell = { project: snapshot } as Pick<
     HarmonyAnalysis,
     "project"

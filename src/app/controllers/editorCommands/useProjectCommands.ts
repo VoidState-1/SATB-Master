@@ -188,13 +188,6 @@ export function useProjectCommands({
     commitResult(addPhraseBoundary(project, playheadTick));
   }, [commitResult, playheadTick, project]);
 
-  const handleAddPhraseBoundaryAt = useCallback(
-    (tick: number) => {
-      commitResult(addPhraseBoundary(project, tick));
-    },
-    [commitResult, project],
-  );
-
   const handleDeletePhraseBoundary = useCallback(
     (boundaryId: string) => {
       commitResult(deletePhraseBoundary(project, boundaryId));
@@ -209,7 +202,6 @@ export function useProjectCommands({
     handleUpdateEditableRange,
     handleDeleteEditableRange,
     handleAddPhraseBoundary,
-    handleAddPhraseBoundaryAt,
     handleDeletePhraseBoundary,
   } as const;
 }
