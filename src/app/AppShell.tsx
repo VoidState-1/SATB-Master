@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BellRing,
   Clipboard,
@@ -46,7 +46,7 @@ import { SettingsDialog } from "../features/settings";
 import { TrackSidebar } from "../features/tracks";
 import { RuleTestWorkbench } from "../features/ruleTesting";
 import { ChordInferenceDialog } from "../features/chordInference";
-import { ScorePreviewDialog } from "../features/scorePreview";
+import { ScorePreviewDialog, loadVexFlow } from "../features/scorePreview";
 import { replaceProject } from "../domain/editing";
 import {
   applyHarmonyInference,
@@ -134,6 +134,14 @@ function AppShell() {
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
   const developerMode = useDeveloperMode();
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadVexFlow().catch(() => undefined);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const showNotice = useCallback((message: string) => {
     setNotice(message);
     window.setTimeout(
@@ -307,22 +315,31 @@ function AppShell() {
     setSelectedChordIds(new Set(diagnostic.chordIds));
   };
 
-  const handleScorePreviewNoteSelection = ({
-    sourceNoteId,
-    voiceId,
-    tick,
-  }: {
-    sourceNoteId: string;
-    voiceId: ProjectDocument["satbTracks"][number]["id"];
-    tick: number;
-  }) => {
-    // 谱面是只读投影；点击只更新编辑器选择和播放头，不提交历史。
-    setEditorDomain("notes");
-    setActiveVoice(voiceId);
-    setSelectedNoteIds(new Set([sourceNoteId]));
-    setSelectedChordIds(new Set());
-    setPlayheadTick(tick);
-  };
+  const handleScorePreviewNoteSelection = useCallback(
+    ({
+      sourceNoteId,
+      voiceId,
+      tick,
+    }: {
+      sourceNoteId: string;
+      voiceId: ProjectDocument["satbTracks"][number]["id"];
+      tick: number;
+    }) => {
+      // 谱面是只读投影；点击只更新编辑器选择和播放头，不提交历史。
+      setEditorDomain("notes");
+      setActiveVoice(voiceId);
+      setSelectedNoteIds(new Set([sourceNoteId]));
+      setSelectedChordIds(new Set());
+      setPlayheadTick(tick);
+    },
+    [
+      setActiveVoice,
+      setEditorDomain,
+      setPlayheadTick,
+      setSelectedChordIds,
+      setSelectedNoteIds,
+    ],
+  );
 
   const handleCopyDiagnostic = async (diagnostic: HarmonyDiagnostic) => {
     const copied = await copyText(formatDiagnosticDebugReport(diagnostic));

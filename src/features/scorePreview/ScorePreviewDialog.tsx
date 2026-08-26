@@ -43,14 +43,17 @@ export function ScorePreviewDialog({
     "loading",
   );
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const noteClickRef = useRef(onSelectNote);
+  noteClickRef.current = onSelectNote;
   const model = useMemo(
     () => buildScorePreviewModel(project, { revision }),
     [project, revision],
   );
   const handleNoteClick = useCallback(
-    (selection: ScoreNoteSelection) => onSelectNote?.(selection),
-    [onSelectNote],
+    (selection: ScoreNoteSelection) => noteClickRef.current?.(selection),
+    [],
   );
+  const hasNoteClick = onSelectNote !== undefined;
 
   useEffect(() => {
     const surface = surfaceRef.current;
@@ -68,7 +71,7 @@ export function ScorePreviewDialog({
           model,
           {
             scale,
-            onNoteClick: onSelectNote ? handleNoteClick : undefined,
+            onNoteClick: hasNoteClick ? handleNoteClick : undefined,
           },
           vexflow,
         );
@@ -97,7 +100,7 @@ export function ScorePreviewDialog({
       active = false;
       cleanup?.();
     };
-  }, [handleNoteClick, model, onSelectNote, scale]);
+  }, [handleNoteClick, hasNoteClick, model, scale]);
 
   useEffect(() => {
     const surface = surfaceRef.current;

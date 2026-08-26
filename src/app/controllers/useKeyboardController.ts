@@ -91,8 +91,9 @@ export function useKeyboardController({
     if (!enabled) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (confirmation || settingsOpen || event.isComposing) return;
+      // SVG 音符也是 Element；否则在谱面内按键会被误判为来自 body。
       const target =
-        event.target instanceof HTMLElement ? event.target : document.body;
+        event.target instanceof Element ? event.target : document.body;
       if (
         target.matches('input, textarea, select, [contenteditable="true"]') ||
         target.closest('[role="dialog"]')
