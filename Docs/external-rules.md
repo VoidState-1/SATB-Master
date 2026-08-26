@@ -194,8 +194,9 @@ apiVersion / revision
 project
   schemaVersion / id / title / ppq / lengthTicks
   tempoEvents / meterEvents / keyEvents
+  structure { phraseBoundaries }
   satbTracks
-  chordTrack { visible, locked, displayMode, regions }
+  chordTrack { visible, locked, displayMode, regions, cadenceAnnotations }
 sharedSettings
 slices
 harmonySpans
@@ -205,10 +206,13 @@ melodyTransitions
 sliceTransitions
 connections
 targetChains
+phraseSegments
+phraseBoundaryCandidates
+cadenceCandidates
 auxiliarySummary { trackCount, noteCount }
 ```
 
-`ChordRegion` 保留完整 `ChordIdentity`、一个或两个 `HarmonyInterpretation`、`FunctionalDesignation`、离调目标、混合、终止角色和持续低音上下文。`HarmonySpan` 聚合同一调性、相同实体和相同语义的连续和弦区域；`connections` 提供稳定 `connectionKey`、精确 span 间关系、目标是否匹配、证据与置信度；`targetChains` 展开允许经过 `K46` 的副属/重属目标路径。
+`ChordRegion` 保留完整 `ChordIdentity`、一个或两个 `HarmonyInterpretation`、`FunctionalDesignation`、离调目标、混合、`cadenceRole` 和持续低音上下文。`HarmonySpan` 聚合同一调性、相同实体和相同语义的连续和弦区域；`connections` 提供稳定 `connectionKey`、精确 span 间关系、目标是否匹配、证据与置信度；`targetChains` 展开允许经过 `K46` 的副属/重属目标路径。`phraseSegments`、`phraseBoundaryCandidates` 与 `cadenceCandidates` 提供乐句与终止式的只读候选（见 [analysis-inference.md](./analysis-inference.md)）；乐句边界和终止式标注通过 `project.structure.phraseBoundaries` 与 `project.chordTrack.cadenceAnnotations` 暴露。
 
 边界约束：
 

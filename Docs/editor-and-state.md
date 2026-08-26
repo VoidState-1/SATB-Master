@@ -27,6 +27,11 @@ TrackSidebar | PianoRoll + DiagnosticsPanel | Inspector
 - 下方诊断面板列出规则结果。
 - 右侧属性面板显示所选事件，开发者模式下列出模型中的全部属性。
 
+除主工作区外还有两个独立工作区：
+
+- **和弦推导**：由 [`ChordInferenceDialog`](../src/features/chordInference/ChordInferenceDialog.tsx) 弹出，按全工程、选区或乐句范围推导候选并在应用前预览（见 [analysis-inference.md](./analysis-inference.md)）。
+- **规则测试工作台**：[`RuleTestWorkbench`](../src/features/ruleTesting/RuleTestWorkbench.tsx) 提供独立的用例编辑与运行区，进入/退出时隔离面板尺寸偏好（见 [rule-testing.md](./rule-testing.md)）。
+
 左右分栏和下方面板可拖动调整。布局尺寸由 [`usePanelLayout.ts`](../src/hooks/usePanelLayout.ts) 管理并保存到 localStorage；它们是用户偏好，不进入工程历史。分隔命中区可以比视觉线更宽，视觉上不应额外出现粗重边框。
 
 ## 3. 领域命令是编辑入口
@@ -189,11 +194,13 @@ Ctrl+滚轮横向缩放以鼠标所指 tick 为锚点：缩放前后该 tick 应
 - 速度、拍号、调号在同一变化标签中只显示实际变化项。
 - 双击变化标签打开编辑浮窗；右键标尺可添加变化或设置循环端点。
 
+标尺刻度与时间变化标签的纯计算位于 [`src/domain/timelineRuler.ts`](../src/domain/timelineRuler.ts)（`buildTimelineRulerTicks`、`buildTimingMarkerGroups`），图层位于 [`features/editor/layers/TimelineRuler.tsx`](../src/features/editor/layers/TimelineRuler.tsx) 与 [`TimingMarkerPopover.tsx`](../src/features/editor/layers/TimingMarkerPopover.tsx)。同一 tick 的速度、拍号、调号合并为单个标签，避免重复渲染。
+
 修复对齐问题时应查共同的坐标原点和裁剪边界，而不是对单个图层添加 1px 偏移补丁。
 
 ### 8.1 和弦调色盘
 
-和弦浮窗使用“功能 / 级数 / 绝对”分段视图。功能视图直接读取领域注册表，组合选择基础功能、三/七/九和弦形态、合法转位、离调目标和构成音变化；级数与绝对视图继续使用结构化选项，不提供自由名称输入。
+和弦浮窗使用“功能 / 级数 / 绝对”分段视图。功能视图直接读取领域注册表，组合选择基础功能、三/七/九和弦形态、合法转位、离调目标和构成音变化；级数与绝对视图继续使用结构化选项，不提供自由名称输入。草稿的修正逻辑集中在 [`src/domain/chordEditorModel.ts`](../src/domain/chordEditorModel.ts) 的 `applyChordEditorAction`，调色盘与 Inspector 只选择 action，不各自决定如何清除第二解释等副作用。
 
 借用、持续低音和共同和弦属于语义上下文，放在调色盘底部及 Inspector。共同和弦选项必须来自 `compatibleFunctionalInterpretations`，没有同实体候选时禁用，不能让 UI 临时制造两个互相矛盾的解释。
 

@@ -49,6 +49,8 @@ preload API 按能力分组：
 | `midi` | export |
 | `soundFont` | open、load path/default、hash、release |
 | `ruleLibrary` | list、import、install、load source、remove |
+| `ruleProfile` | open、save（便携规则配置档案） |
+| `ruleTestCases` | open、save、openDirectory、delete（规则测试用例） |
 
 renderer 通过 [`src/services/desktop.ts`](../src/services/desktop.ts) 和规则库 service 调用这些能力。组件不应直接散布 `window.desktop?.x` 分支；集中适配能保证浏览器降级和桌面错误语义一致。
 
@@ -193,13 +195,24 @@ userData/rule-library/
 
 具体规则 API 见 [external-rules.md](./external-rules.md)。
 
-## 9. MIDI 导出
+## 9. 规则测试用例文件
+
+规则测试工作台通过 preload 的 `ruleTestCases` 分组读写用例文件。实现位于 [`electron/rule-test-cases.ts`](../electron/rule-test-cases.ts) 与 [`electron/rule-test-case-file.ts`](../electron/rule-test-case-file.ts)：
+
+- 文件扩展名 `.satb-rule-case.json`，单文件上限 20 MiB，UTF-8 JSON。
+- 支持打开单文件、打开目录（递归扫描）与删除；目录扫描只接受扩展名匹配的文件。
+- 写入使用同目录临时文件 + rename 原子替换，扩展名与绝对路径在主进程校验。
+- 对话框目录记忆复用 `rule-test-case` 类别，与工程、SoundFont、规则包分开。
+
+用例格式与运行器见 [rule-testing.md](./rule-testing.md)。用例文件不进入工程、不参与自动恢复，也不受工程 schema 迁移影响。
+
+## 10. MIDI 导出
 
 renderer 在领域层构建字节，主进程只负责系统保存对话框和写入。请求包含 `Uint8Array` 和建议文件名；主进程需要校验数据类型、文件名和选定路径。
 
 MIDI 的音乐正确性由 [`src/domain/midi.ts`](../src/domain/midi.ts) 测试，文件对话框和写盘由桌面 E2E 覆盖。不要在主进程重新解释音符和 tempo 事件。
 
-## 10. 自定义窗口与焦点
+## 11. 自定义窗口与焦点
 
 无边框窗口需要自行实现：
 
@@ -216,7 +229,7 @@ MIDI 的音乐正确性由 [`src/domain/midi.ts`](../src/domain/midi.ts) 测试�
 
 不要用对 select 发送虚假 click/focus 的组件补丁掩盖主窗口焦点问题。
 
-## 11. 浏览器 service 降级
+## 12. 浏览器 service 降级
 
 无 `window.desktop` 时：
 
@@ -228,13 +241,13 @@ MIDI 的音乐正确性由 [`src/domain/midi.ts`](../src/domain/midi.ts) 测试�
 
 service 应返回清楚的能力错误，例如“浏览器预览无法重新读取本地 SoundFont”，而不是假造一个成功路径。UI 可以降级，但不能让开发者误以为桌面安全边界已经测试。
 
-## 12. 数据位置与卸载
+## 13. 数据位置与卸载
 
 用户数据位于 Electron `app.getPath('userData')`，包含恢复、对话框目录和规则库。NSIS 配置当前 `deleteAppDataOnUninstall: false`，卸载不会自动删除这些数据。
 
 正式排查时应使用隔离的 userData，而不是让测试覆盖真实用户恢复和规则库。桌面 E2E 使用 `SATB_MASTER_E2E_DIRECTORY` 指向独立目录。
 
-## 13. 桌面变更检查表
+## 14. 桌面变更检查表
 
 - renderer 是否仍保持 `nodeIntegration: false`、`contextIsolation: true`、`sandbox: true`？
 - 新能力是否经过固定 preload 方法，而非通用 IPC？
