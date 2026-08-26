@@ -44,6 +44,7 @@ function applyInferredPhraseBoundaries(project: ProjectDocument) {
       project,
       boundaryCount: boundaries.filter((boundary) => boundary.source === "inferred")
         .length,
+      template: phraseAnalysis.template.kind,
     };
   }
   const next = cloneProject(project);
@@ -55,6 +56,7 @@ function applyInferredPhraseBoundaries(project: ProjectDocument) {
     project: next,
     boundaryCount: boundaries.filter((boundary) => boundary.source === "inferred")
       .length,
+    template: phraseAnalysis.template.kind,
   };
 }
 
@@ -86,5 +88,6 @@ export function applyHarmonyInference(
     ...chordApplied,
     project: phrasesApplied.project,
     appliedPhraseBoundaryCount: phrasesApplied.boundaryCount,
+    appliedPhraseTemplate: phrasesApplied.template,
   };
 }

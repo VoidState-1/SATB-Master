@@ -170,6 +170,7 @@ export type HarmonyInferenceApplyOptions = ChordInferenceApplyOptions;
 
 export interface HarmonyInferenceApplyResult extends ChordInferenceApplyResult {
   readonly appliedPhraseBoundaryCount: number;
+  readonly appliedPhraseTemplate: "single" | "duple" | "triple";
 }
 
 export interface ChordInferenceSource {

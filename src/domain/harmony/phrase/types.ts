@@ -22,6 +22,8 @@ export interface PhraseEvidence {
     | "metric-support"
     | "new-material"
     | "continuous-following-harmony"
+    | "regular-template-target"
+    | "regular-template-boundary"
     | "semantic-ambiguity";
   readonly value: string;
   readonly refs?: readonly string[];
@@ -40,15 +42,38 @@ export interface PhraseSegment {
 
 export interface PhraseBoundaryCandidate {
   readonly tick: number;
+  readonly targetRatio: PhraseTargetRatio;
+  readonly distanceToTarget: number;
+  readonly support: PhraseSupport;
   readonly score: number;
   readonly confidence: Exclude<PhraseConfidence, "certain">;
   readonly evidence: readonly PhraseEvidence[];
 }
 
+export type PhraseTargetRatio = "half" | "third" | "two-thirds";
+export type PhraseSupport = "strong" | "moderate" | "weak";
+export type PhraseStructureTemplate =
+  | {
+      readonly kind: "single";
+      readonly boundaries: readonly [];
+    }
+  | {
+      readonly kind: "duple";
+      readonly boundaries: readonly [PhraseBoundaryCandidate];
+    }
+  | {
+      readonly kind: "triple";
+      readonly boundaries: readonly [
+        PhraseBoundaryCandidate,
+        PhraseBoundaryCandidate,
+      ];
+    };
+
 export interface PhraseAnalysis {
   readonly boundaries: readonly PhraseBoundary[];
   readonly candidates: readonly PhraseBoundaryCandidate[];
   readonly segments: readonly PhraseSegment[];
+  readonly template: PhraseStructureTemplate;
 }
 
 export interface PhraseAnalysisOptions {

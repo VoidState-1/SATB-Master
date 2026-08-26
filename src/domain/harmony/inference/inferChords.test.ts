@@ -107,7 +107,7 @@ describe("自动和弦推导", () => {
     expect(again.skipped[0]?.code).toBe("overlap");
   });
 
-  it("应用和弦推导时自动写入乐句结构，并让终止检测读取该结构", () => {
+  it("无停顿的短和声进行不会被自动切成多个乐句", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 3;
     addLine(project, "soprano", [72, 74, 72]);
@@ -120,20 +120,44 @@ describe("自动和弦推导", () => {
     });
     const analysis = buildHarmonyAnalysis(applied.project);
 
-    expect(applied.appliedPhraseBoundaryCount).toBeGreaterThan(0);
-    expect(applied.project.structure.phraseBoundaries).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          tick: PPQ * 2,
-          source: "inferred",
-          confidence: "probable",
-          inferenceFingerprint: expect.any(String),
-        }),
-      ]),
-    );
-    expect(analysis.cadenceCandidates).toEqual(
-      expect.arrayContaining([expect.objectContaining({ kind: "half" })]),
-    );
+    expect(applied.appliedPhraseBoundaryCount).toBe(0);
+    expect(applied.appliedPhraseTemplate).toBe("single");
+    expect(applied.project.structure.phraseBoundaries).toEqual([]);
+    expect(analysis.phraseSegments).toHaveLength(1);
+    expect(analysis.cadenceCandidates.some((candidate) =>
+      candidate.kind === "half")).toBe(false);
+  });
+
+  it("应用和弦推导后按中点实际停顿写入双乐句结构", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 8;
+    project.loop.endTick = project.lengthTicks;
+    const pitches: Record<VoiceId, number> = {
+      soprano: 72,
+      alto: 67,
+      tenor: 64,
+      bass: 48,
+    };
+    project.satbTracks.forEach((track) => {
+      track.notes = [
+        note(`${track.id}-first`, 0, PPQ * 4, pitches[track.voice]),
+        note(`${track.id}-second`, PPQ * 5, PPQ * 3, pitches[track.voice]),
+      ];
+    });
+
+    const applied = applyHarmonyInference(project, inferHarmony(project), {
+      mode: "fill-gaps",
+    });
+
+    expect(applied.appliedPhraseTemplate).toBe("duple");
+    expect(applied.appliedPhraseBoundaryCount).toBe(1);
+    expect(applied.project.structure.phraseBoundaries).toEqual([
+      expect.objectContaining({
+        tick: PPQ * 4,
+        source: "inferred",
+        inferenceFingerprint: expect.any(String),
+      }),
+    ]);
   });
 
   it("重新推导只替换自动边界，并保留人工覆盖", () => {
@@ -146,6 +170,14 @@ describe("自动和弦推导", () => {
         source: "manual",
         confidence: "certain",
         locked: true,
+      },
+      {
+        id: "old-inferred-boundary",
+        tick: PPQ * 2,
+        source: "inferred",
+        confidence: "probable",
+        inferenceFingerprint: "outdated",
+        stale: true,
       },
     ];
 
@@ -163,11 +195,10 @@ describe("自动和弦推导", () => {
         }),
       ]),
     );
-    expect(
-      applied.project.structure.phraseBoundaries.some(
-        (boundary) => boundary.source === "inferred",
-      ),
-    ).toBe(true);
+    expect(applied.project.structure.phraseBoundaries).toHaveLength(1);
+    expect(applied.project.structure.phraseBoundaries.some(
+      (boundary) => boundary.source === "inferred",
+    )).toBe(false);
   });
 
   it("替换未锁定模式只替换可编辑重叠区域", () => {

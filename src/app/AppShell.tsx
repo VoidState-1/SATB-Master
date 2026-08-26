@@ -337,9 +337,14 @@ function AppShell() {
     const roleText = applied.writtenNonChordToneRoleCount
       ? `，写入 ${applied.writtenNonChordToneRoleCount} 个非和弦音角色`
       : "";
+    const phraseTemplateLabel = {
+      single: "单乐句",
+      duple: "双乐句",
+      triple: "三乐句",
+    }[applied.appliedPhraseTemplate];
     const phraseText = applied.appliedPhraseBoundaryCount
-      ? `，生成 ${applied.appliedPhraseBoundaryCount} 个自动乐句边界`
-      : "";
+      ? `，按${phraseTemplateLabel}处理，生成 ${applied.appliedPhraseBoundaryCount} 个自动边界`
+      : `，按${phraseTemplateLabel}处理`;
     const unresolvedText = result.chordInference.unresolvedObservationIndices.length
       ? `，${result.chordInference.unresolvedObservationIndices.length} 个时间片未归类`
       : "";

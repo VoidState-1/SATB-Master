@@ -21,6 +21,7 @@ export {
   isCurrentPhraseBoundary,
   phraseAtTick,
   phraseInferenceFingerprint,
+  REGULAR_PHRASE_POLICY,
 } from "./phrase";
 export type {
   PhraseAnalysis,
@@ -31,6 +32,9 @@ export type {
   PhraseConfidence,
   PhraseEvidence,
   PhraseSegment,
+  PhraseStructureTemplate,
+  PhraseSupport,
+  PhraseTargetRatio,
 } from "./phrase";
 export type {
   DiagnosticDebugEvent,

@@ -1,4 +1,9 @@
-export { analyzePhrases, inferPhrases, phraseAtTick } from "./analyze";
+export {
+  analyzePhrases,
+  inferPhrases,
+  phraseAtTick,
+  REGULAR_PHRASE_POLICY,
+} from "./analyze";
 export {
   isCurrentPhraseBoundary,
   phraseInferenceFingerprint,
@@ -12,4 +17,7 @@ export type {
   PhraseConfidence,
   PhraseEvidence,
   PhraseSegment,
+  PhraseStructureTemplate,
+  PhraseSupport,
+  PhraseTargetRatio,
 } from "./types";

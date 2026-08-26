@@ -1,12 +1,15 @@
 import type {
   PhraseAnalysis,
+  PhraseAnalysisInput,
+  PhraseAnalysisOptions,
   PhraseBoundary,
   PhraseBoundaryCandidate,
   PhraseConfidence,
   PhraseEvidence,
-  PhraseAnalysisInput,
-  PhraseAnalysisOptions,
   PhraseSegment,
+  PhraseStructureTemplate,
+  PhraseSupport,
+  PhraseTargetRatio,
 } from "./types";
 import {
   chordStructureQuality,
@@ -17,25 +20,36 @@ import {
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
 import type { ChordRegion } from "../../project/types";
-import {
-  isCurrentPhraseBoundary,
-  phraseInferenceFingerprint,
-} from "./fingerprint";
+import { isCurrentPhraseBoundary, phraseInferenceFingerprint } from "./fingerprint";
+
+export const REGULAR_PHRASE_POLICY = Object.freeze({
+  maxAutomaticPhrases: 3,
+  searchWindowRatio: 0.08,
+  minimumAutomaticPhraseMeasures: 1,
+  shortPhraseStrongBreakMeasures: 2,
+});
 
 const confidenceRank: Record<PhraseConfidence, number> = {
   ambiguous: 0,
   probable: 1,
   certain: 2,
 };
+const supportRank: Record<PhraseSupport, number> = {
+  weak: 0,
+  moderate: 1,
+  strong: 2,
+};
+const targetRatioValue: Record<PhraseTargetRatio, number> = {
+  half: 0.5,
+  third: 1 / 3,
+  "two-thirds": 2 / 3,
+};
 
 function boundaryId(tick: number) {
-  return `phrase-boundary-${tick}`;
+  return "phrase-boundary-" + tick;
 }
 
-function endpointBoundary(
-  tick: number,
-  code: "project-start" | "project-end",
-): PhraseBoundary {
+function endpointBoundary(tick: number): PhraseBoundary {
   return {
     id: boundaryId(tick),
     tick,
@@ -59,74 +73,61 @@ function normalizeBoundaries(
     const tick = Math.max(0, Math.min(project.lengthTicks, boundary.tick));
     if (tick === 0 || tick === project.lengthTicks) continue;
     const previous = byTick.get(tick);
-    if (
-      !previous ||
-      confidenceRank[boundary.confidence] > confidenceRank[previous.confidence]
-    ) {
+    if (!previous || confidenceRank[boundary.confidence] > confidenceRank[previous.confidence])
       byTick.set(tick, { ...boundary, tick });
-    }
   }
   return [
-    endpointBoundary(0, "project-start"),
+    endpointBoundary(0),
     ...[...byTick.values()].sort((left, right) => left.tick - right.tick),
-    endpointBoundary(project.lengthTicks, "project-end"),
+    endpointBoundary(project.lengthTicks),
   ];
 }
 
-function boundaryEvidence(boundary: PhraseBoundary): PhraseEvidence[] {
+function boundaryEvidence(
+  boundary: PhraseBoundary,
+  projectLength: number,
+): PhraseEvidence[] {
   if (boundary.tick === 0)
     return [{ code: "project-start", value: "工程起点" }];
+  if (boundary.tick === projectLength)
+    return [{ code: "project-end", value: "工程终点" }];
   if (boundary.source === "manual")
-    return [
-      {
-        code: "manual-boundary",
-        value: "用户确认的乐句边界",
-        refs: [boundary.id],
-      },
-    ];
-  return [{ code: "project-end", value: "工程终点" }];
+    return [{ code: "manual-boundary", value: "用户确认的乐句边界", refs: [boundary.id] }];
+  return [{
+    code: "regular-template-boundary",
+    value: "规整结构模板选中的自动乐句边界",
+    refs: [boundary.id],
+  }];
 }
 
-function segmentSource(
-  startBoundary: PhraseBoundary,
-  endBoundary: PhraseBoundary,
-): PhraseSegment["source"] {
-  const sources = new Set([startBoundary.source, endBoundary.source]);
-  if (sources.size === 1) return [...sources][0];
-  return "mixed";
-}
-
-function segmentConfidence(
-  startBoundary: PhraseBoundary,
-  endBoundary: PhraseBoundary,
-): PhraseConfidence {
-  return confidenceRank[startBoundary.confidence] <=
-    confidenceRank[endBoundary.confidence]
-    ? startBoundary.confidence
-    : endBoundary.confidence;
-}
-
-function buildSegments(boundaries: readonly PhraseBoundary[]): PhraseSegment[] {
-  const segments: PhraseSegment[] = [];
-  for (let index = 0; index < boundaries.length - 1; index += 1) {
-    const startBoundary = boundaries[index];
+function buildSegments(
+  boundaries: readonly PhraseBoundary[],
+  projectLength: number,
+): PhraseSegment[] {
+  return boundaries.slice(0, -1).flatMap((startBoundary, index) => {
     const endBoundary = boundaries[index + 1];
-    if (endBoundary.tick <= startBoundary.tick) continue;
-    segments.push({
-      id: `phrase-${startBoundary.tick}-${endBoundary.tick}`,
+    if (endBoundary.tick <= startBoundary.tick) return [];
+    const sources = new Set([startBoundary.source, endBoundary.source]);
+    const source: PhraseSegment["source"] =
+      sources.size === 1 ? [...sources][0] : "mixed";
+    const confidence = confidenceRank[startBoundary.confidence] <=
+      confidenceRank[endBoundary.confidence]
+      ? startBoundary.confidence
+      : endBoundary.confidence;
+    return [{
+      id: "phrase-" + startBoundary.tick + "-" + endBoundary.tick,
       fromTick: startBoundary.tick,
       toTick: endBoundary.tick,
       startBoundary,
       endBoundary,
-      source: segmentSource(startBoundary, endBoundary),
-      confidence: segmentConfidence(startBoundary, endBoundary),
+      source,
+      confidence,
       evidence: [
-        ...boundaryEvidence(startBoundary),
-        ...boundaryEvidence(endBoundary),
+        ...boundaryEvidence(startBoundary, projectLength),
+        ...boundaryEvidence(endBoundary, projectLength),
       ],
-    });
-  }
-  return segments;
+    }];
+  });
 }
 
 function functionalFamily(region: ChordRegion | undefined): FunctionalFamily | undefined {
@@ -137,213 +138,320 @@ function functionalFamily(region: ChordRegion | undefined): FunctionalFamily | u
     confidence === "ambiguous" ||
     confidence === "unknown" ||
     Boolean(interpretation.appliedTarget)
-  )
-    return undefined;
+  ) return undefined;
   return effectiveFunctionalDesignation(
     region.semantics,
     chordStructureQuality(region.identity),
   )?.primaryFunction;
 }
 
-function terminalRegionAt(
-  regions: readonly ChordRegion[],
+function regionsOf(project: PhraseAnalysisInput) {
+  return [...(project.chordRegions ?? project.chordTrack?.regions ?? [])].sort(
+    (left, right) => left.startTick - right.startTick,
+  );
+}
+
+function effectiveRange(project: PhraseAnalysisInput) {
+  const starts: number[] = [];
+  const ends: number[] = [];
+  project.satbTracks?.forEach((track) => track.notes.forEach((note) => {
+    starts.push(note.startTick);
+    ends.push(note.startTick + note.durationTicks);
+  }));
+  regionsOf(project).forEach((region) => {
+    starts.push(region.startTick);
+    ends.push(region.startTick + region.durationTicks);
+  });
+  if (starts.length === 0)
+    return { startTick: 0, endTick: project.lengthTicks };
+  return {
+    startTick: Math.max(0, Math.min(...starts)),
+    endTick: Math.min(project.lengthTicks, Math.max(...ends)),
+  };
+}
+
+function measureAt(
+  timeline: ReturnType<typeof buildMetricTimeline>,
   tick: number,
 ) {
+  return timeline.measures.find(
+    (measure) => measure.startTick <= tick && tick < measure.endTick,
+  ) ?? timeline.measures.at(-1);
+}
+
+function measureLengthAt(
+  timeline: ReturnType<typeof buildMetricTimeline>,
+  tick: number,
+) {
+  const measure = measureAt(timeline, tick);
+  return measure ? measure.endTick - measure.startTick : timeline.ppq * 4;
+}
+
+function eventTicks(
+  project: PhraseAnalysisInput,
+  timeline: ReturnType<typeof buildMetricTimeline>,
+) {
+  const ticks = new Set<number>();
+  timeline.measures.forEach((measure) => {
+    ticks.add(measure.startTick);
+    ticks.add(measure.endTick);
+    measure.beatTicks.forEach((tick) => ticks.add(tick));
+  });
+  project.satbTracks?.forEach((track) => track.notes.forEach((note) => {
+    ticks.add(note.startTick);
+    ticks.add(note.startTick + note.durationTicks);
+  }));
+  regionsOf(project).forEach((region) => {
+    ticks.add(region.startTick);
+    ticks.add(region.startTick + region.durationTicks);
+  });
+  return [...ticks].filter(
+    (tick) => Number.isInteger(tick) && tick > 0 && tick < project.lengthTicks,
+  );
+}
+
+function voicesEndingAt(project: PhraseAnalysisInput, tick: number) {
+  return project.satbTracks?.filter((track) => track.notes.some(
+    (note) => note.startTick + note.durationTicks === tick,
+  )).length ?? 0;
+}
+
+function voicesStartingAt(project: PhraseAnalysisInput, tick: number) {
+  return project.satbTracks?.filter((track) => track.notes.some(
+    (note) => note.startTick === tick,
+  )).length ?? 0;
+}
+
+function hasSoundAcross(project: PhraseAnalysisInput, tick: number) {
+  return project.satbTracks?.some((track) => track.notes.some(
+    (note) => note.startTick < tick && note.startTick + note.durationTicks > tick,
+  )) ?? false;
+}
+
+function nextAttackAfter(project: PhraseAnalysisInput, tick: number) {
+  const attacks = project.satbTracks?.flatMap((track) => track.notes
+    .filter((note) => note.startTick >= tick)
+    .map((note) => note.startTick)) ?? [];
+  return attacks.length ? Math.min(...attacks) : undefined;
+}
+
+function longestEndingDuration(project: PhraseAnalysisInput, tick: number) {
+  return Math.max(0, ...(project.satbTracks?.flatMap((track) => track.notes
+    .filter((note) => note.startTick + note.durationTicks === tick)
+    .map((note) => note.durationTicks)) ?? []));
+}
+
+function terminalRegionAt(regions: readonly ChordRegion[], tick: number) {
   return regions.find((region) => region.startTick + region.durationTicks === tick);
 }
 
-function precedingRegion(
-  regions: readonly ChordRegion[],
-  region: ChordRegion | undefined,
-) {
+function previousRegion(regions: readonly ChordRegion[], region: ChordRegion | undefined) {
   return region
     ? regions.find((candidate) => candidate.startTick + candidate.durationTicks === region.startTick)
     : undefined;
 }
 
-function followingRegion(
-  regions: readonly ChordRegion[],
-  tick: number,
-) {
+function followingRegion(regions: readonly ChordRegion[], tick: number) {
   return regions.find((region) => region.startTick === tick);
 }
 
-function candidateTicks(project: PhraseAnalysisInput) {
-  const ticks = new Set<number>();
-  project.satbTracks?.forEach((track) =>
-    track.notes.forEach((note) => ticks.add(note.startTick + note.durationTicks)),
-  );
-  (project.chordRegions ?? project.chordTrack?.regions ?? []).forEach((region) =>
-    ticks.add(region.startTick + region.durationTicks),
-  );
-  return [...ticks].sort((left, right) => left - right);
-}
-
-function minimumBoundarySpacingAt(
+function boundaryFacts(
   project: PhraseAnalysisInput,
+  timeline: ReturnType<typeof buildMetricTimeline>,
+  regions: readonly ChordRegion[],
   tick: number,
 ) {
-  const timeline =
-    project.ppq && project.meterEvents
-      ? buildMetricTimeline({
-          ppq: project.ppq,
-          meterEvents: project.meterEvents,
-          lengthTicks: project.lengthTicks,
-        })
-      : undefined;
-  const measure = timeline?.measures.find(
-    (candidate) =>
-      candidate.startTick === tick ||
-      (candidate.startTick < tick && tick <= candidate.endTick),
+  const evidence: PhraseEvidence[] = [];
+  const trackCount = project.satbTracks?.length ?? 0;
+  const endingVoices = voicesEndingAt(project, tick);
+  const startingVoices = voicesStartingAt(project, tick);
+  const allVoicesEnd = trackCount > 0 && endingVoices === trackCount;
+  const soundAcross = hasSoundAcross(project, tick);
+  const measure = measureAt(timeline, tick);
+  const beatLength = measure?.beatLength ?? timeline.ppq;
+  const nextAttack = nextAttackAfter(project, tick);
+  const actualSilence = allVoicesEnd && !soundAcross &&
+    (nextAttack === undefined || nextAttack - tick >= beatLength);
+  const longRelease = longestEndingDuration(project, tick) >= beatLength * 2;
+
+  if (allVoicesEnd)
+    evidence.push({ code: "all-voices-end", value: "全部 SATB 声部在此处释放" });
+  if (actualSilence)
+    evidence.push({ code: "silence-after-target", value: "释放后至少一拍实际静音" });
+  if (longRelease)
+    evidence.push({ code: "long-note-release", value: "长时值音符在此处释放" });
+
+  const metric = metricPositionAt(timeline, tick);
+  if (metric && metric.level >= 2 && metric.confidence === "certain")
+    evidence.push({
+      code: "metric-support",
+      value: metric.role === "downbeat" ? "位于小节线" : "位于次强拍",
+    });
+
+  const terminal = terminalRegionAt(regions, tick);
+  const previous = previousRegion(regions, terminal);
+  const following = followingRegion(regions, tick);
+  const terminalFamily = functionalFamily(terminal);
+  const previousFamily = functionalFamily(previous);
+  const followingFamily = functionalFamily(following);
+  if (terminalFamily)
+    evidence.push({ code: "stable-harmony", value: "末端具有确定功能和声" });
+  if (
+    terminalFamily === "dominant" ||
+    (terminalFamily === "tonic" &&
+      (previousFamily === "dominant" || previousFamily === "subdominant"))
+  ) evidence.push({ code: "cadential-connection", value: "末端具有和声收束" });
+  if (followingFamily && terminalFamily && followingFamily !== terminalFamily)
+    evidence.push({ code: "new-material", value: "边界后进入不同功能材料" });
+  else if (following)
+    evidence.push({ code: "continuous-following-harmony", value: "边界后和声材料连续" });
+
+  // 长音释放本身不足以证明断句；若下一拍立即重新进入，仍视为连续材料。
+  const strongBreak = actualSilence;
+  const moderate = new Set<string>();
+  if (metric && metric.level >= 2 && metric.confidence === "certain")
+    moderate.add("metric");
+  if (evidence.some((item) => item.code === "cadential-connection"))
+    moderate.add("harmony");
+  if (longRelease) moderate.add("duration");
+  if (evidence.some((item) => item.code === "new-material"))
+    moderate.add("material");
+  if (endingVoices >= 2 && startingVoices < 2 && !soundAcross)
+    moderate.add("release");
+  const hasStructuralCategory = ["duration", "material", "release"]
+    .some((category) => moderate.has(category));
+  const sameMaterial = evidence.some(
+    (item) => item.code === "continuous-following-harmony",
   );
-  return measure ? measure.endTick - measure.startTick : project.ppq ?? 960;
+  const synchronizedReattack = allVoicesEnd && startingVoices === trackCount;
+  const support: PhraseSupport = strongBreak
+    ? "strong"
+    : moderate.size >= 2 && hasStructuralCategory && !sameMaterial && !synchronizedReattack
+      ? "moderate"
+      : "weak";
+  return { evidence, support };
 }
 
-/**
- * 为自动边界执行保守的频率约束：相邻边界至少间隔一个完整小节。
- * 高分的结构终点可以替换同一局部窗口中较弱的候选，避免每次和声变换都切分乐句。
- */
-function selectBoundaryCandidates(
+function candidateAtRatio(
   project: PhraseAnalysisInput,
+  timeline: ReturnType<typeof buildMetricTimeline>,
+  targetRatio: PhraseTargetRatio,
+): PhraseBoundaryCandidate | undefined {
+  const range = effectiveRange(project);
+  const length = range.endTick - range.startTick;
+  if (length <= 0) return undefined;
+  const targetTick = range.startTick + length * targetRatioValue[targetRatio];
+  const window = Math.max(
+    timeline.ppq / 4,
+    Math.min(measureLengthAt(timeline, targetTick), length * REGULAR_PHRASE_POLICY.searchWindowRatio),
+  );
+  const regions = regionsOf(project);
+  const candidates = eventTicks(project, timeline)
+    .filter((tick) =>
+      tick >= targetTick - window && tick <= targetTick + window &&
+      tick > range.startTick && tick < range.endTick)
+    .map((tick) => {
+      const facts = boundaryFacts(project, timeline, regions, tick);
+      const metric = metricPositionAt(timeline, tick);
+      const snapPriority = metric?.role === "downbeat"
+        ? 0
+        : metric && metric.level >= 2
+          ? 1
+          : voicesEndingAt(project, tick) >= 2
+            ? 2
+            : terminalRegionAt(regions, tick)
+              ? 3
+              : 4;
+      return {
+        tick,
+        facts,
+        distance: Math.abs(tick - targetTick),
+        snapPriority,
+      };
+    })
+    .filter((item) => item.facts.support !== "weak")
+    .sort((left, right) =>
+      supportRank[right.facts.support] - supportRank[left.facts.support] ||
+      left.snapPriority - right.snapPriority ||
+      left.distance - right.distance || left.tick - right.tick);
+  const best = candidates[0];
+  if (!best) return undefined;
+  const ratioLabel = targetRatio === "half"
+    ? "1/2"
+    : targetRatio === "third" ? "1/3" : "2/3";
+  return {
+    tick: best.tick,
+    targetRatio,
+    distanceToTarget: best.distance,
+    support: best.facts.support,
+    score: best.facts.support === "strong" ? 2 : 1,
+    confidence: "probable",
+    evidence: [
+      { code: "regular-template-target", value: "接近有效时长的 " + ratioLabel + " 位置" },
+      ...best.facts.evidence,
+    ],
+  };
+}
+
+function boundariesMeetLength(
+  timeline: ReturnType<typeof buildMetricTimeline>,
+  range: { startTick: number; endTick: number },
   candidates: readonly PhraseBoundaryCandidate[],
 ) {
-  const selected: PhraseBoundaryCandidate[] = [];
-  for (const candidate of candidates) {
-    const previous = selected.at(-1);
-    if (!previous) {
-      selected.push(candidate);
-      continue;
-    }
-    const minimumSpacing = minimumBoundarySpacingAt(project, previous.tick);
-    if (candidate.tick - previous.tick >= minimumSpacing) {
-      selected.push(candidate);
-      continue;
-    }
-    if (candidate.score > previous.score) selected[selected.length - 1] = candidate;
-  }
-  return selected;
+  const points = [range.startTick, ...candidates.map((item) => item.tick), range.endTick];
+  return points.slice(0, -1).every((point, index) => {
+    const length = points[index + 1] - point;
+    const measureLength = measureLengthAt(timeline, point);
+    if (length < measureLength * REGULAR_PHRASE_POLICY.minimumAutomaticPhraseMeasures)
+      return false;
+    if (length >= measureLength * REGULAR_PHRASE_POLICY.shortPhraseStrongBreakMeasures)
+      return true;
+    const adjacentBoundary = candidates[index] ?? candidates[index - 1];
+    return adjacentBoundary?.support === "strong";
+  });
 }
 
-function inferBoundaryCandidates(
+function selectTemplate(
   project: PhraseAnalysisInput,
-): PhraseBoundaryCandidate[] {
-  const tracks = project.satbTracks ?? [];
-  const regions = [
-    ...(project.chordRegions ?? project.chordTrack?.regions ?? []),
-  ].sort(
-    (left, right) => left.startTick - right.startTick,
+  timeline: ReturnType<typeof buildMetricTimeline>,
+  candidates: readonly PhraseBoundaryCandidate[],
+): PhraseStructureTemplate {
+  const range = effectiveRange(project);
+  const byRatio = new Map(candidates.map((candidate) => [candidate.targetRatio, candidate]));
+  const half = byRatio.get("half");
+  const firstThird = byRatio.get("third");
+  const secondThird = byRatio.get("two-thirds");
+  const dupleValid = Boolean(half && boundariesMeetLength(timeline, range, [half]));
+  const tripleValid = Boolean(
+    firstThird && secondThird &&
+    boundariesMeetLength(timeline, range, [firstThird, secondThird]) &&
+    (firstThird.support === "strong" || secondThird.support === "strong"),
   );
-  if (tracks.length === 0 && regions.length === 0) return [];
-  const ppq = project.ppq ?? 960;
-  const timeline =
-    project.ppq && project.meterEvents
-      ? buildMetricTimeline({
-          ppq: project.ppq,
-          meterEvents: project.meterEvents,
-          lengthTicks: project.lengthTicks,
-        })
-      : undefined;
-  const candidates: PhraseBoundaryCandidate[] = [];
-  for (const tick of candidateTicks(project)) {
-    if (tick <= 0 || tick >= project.lengthTicks) continue;
-    const evidence: PhraseEvidence[] = [];
-    const allVoicesEnd =
-      tracks.length > 0 &&
-      tracks.every((track) =>
-        track.notes.some((note) => note.startTick + note.durationTicks === tick),
-      );
-    if (allVoicesEnd)
-      evidence.push({ code: "all-voices-end", value: "全部 SATB 声部在此处结束" });
-    const silenceAfterTarget =
-      tracks.length > 0 &&
-      tracks.every((track) =>
-        track.notes.every(
-          (note) => note.startTick < tick || note.startTick >= tick + ppq,
-        ),
-      );
-    if (silenceAfterTarget)
-      evidence.push({
-        code: "silence-after-target",
-        value: "结束后至少一拍没有新起奏音符",
-      });
-    const longRelease = tracks.some((track) =>
-      track.notes.some(
-        (note) =>
-          note.startTick + note.durationTicks === tick &&
-          note.durationTicks >= ppq * 2,
-      ),
-    );
-    if (longRelease)
-      evidence.push({ code: "long-note-release", value: "长时值终止音在此处释放" });
-
-    const terminal = terminalRegionAt(regions, tick);
-    const previous = precedingRegion(regions, terminal);
-    const following = followingRegion(regions, tick);
-    const terminalFamily = functionalFamily(terminal);
-    const previousFamily = functionalFamily(previous);
-    const followingFamily = functionalFamily(following);
-    const stableTerminal = Boolean(terminalFamily);
-    if (stableTerminal)
-      evidence.push({ code: "stable-harmony", value: "末端具有确定功能和声" });
-    if (terminalFamily === "dominant")
-      evidence.push({
-        code: "cadential-connection",
-        value: "属功能位于潜在乐句末端",
-      });
-    if (
-      previousFamily === "dominant" &&
-      terminalFamily === "tonic"
-    )
-      evidence.push({
-        code: "cadential-connection",
-        value: "当前调性 D -> T 收束",
-      });
-    if (
-      previousFamily === "subdominant" &&
-      terminalFamily === "tonic"
-    )
-      evidence.push({
-        code: "cadential-connection",
-        value: "当前调性 S -> T 收束",
-      });
-    const metric = timeline ? metricPositionAt(timeline, tick) : undefined;
-    if (metric && metric.level >= 2 && metric.confidence === "certain")
-      evidence.push({
-        code: "metric-support",
-        value: metric.role === "downbeat" ? "位于小节线" : "位于次强拍",
-      });
-    if (following && followingFamily && followingFamily !== terminalFamily)
-      evidence.push({
-        code: "new-material",
-        value: "后续立即进入不同功能和声",
-      });
-    else if (following)
-      evidence.push({
-        code: "continuous-following-harmony",
-        value: "后续和声持续同一功能",
-      });
-
-    const score =
-      (allVoicesEnd ? 3 : 0) +
-      (silenceAfterTarget ? 2 : 0) +
-      (longRelease ? 1 : 0) +
-      (stableTerminal ? 1 : 0) +
-      (terminalFamily === "dominant" ? 3 : 0) +
-      // D -> T 与 S -> T 是闭合证据，必须压过其前一属和弦的半终止假设。
-      (previousFamily === "dominant" && terminalFamily === "tonic" ? 5 : 0) +
-      (previousFamily === "subdominant" && terminalFamily === "tonic" ? 4 : 0) +
-      (metric && metric.level >= 2 && metric.confidence === "certain" ? 1 : 0) +
-      (following && followingFamily && followingFamily !== terminalFamily ? 1 : 0) -
-      (following && followingFamily === terminalFamily ? 2 : 0);
-    if (score < 3) continue;
-    candidates.push({
-      tick,
-      score,
-      confidence: score >= 4 ? "probable" : "ambiguous",
-      evidence,
-    });
+  if (tripleValid && firstThird && secondThird) {
+    const tripleStrength = supportRank[firstThird.support] + supportRank[secondThird.support];
+    const dupleStrength = half ? supportRank[half.support] : -1;
+    if (!dupleValid || tripleStrength >= dupleStrength + 2)
+      return { kind: "triple", boundaries: [firstThird, secondThird] };
   }
-  return selectBoundaryCandidates(project, candidates);
+  if (dupleValid && half) return { kind: "duple", boundaries: [half] };
+  return { kind: "single", boundaries: [] };
+}
+
+function inferRegularStructure(project: PhraseAnalysisInput) {
+  if (!project.ppq || !project.meterEvents?.length)
+    return {
+      candidates: [] as PhraseBoundaryCandidate[],
+      template: { kind: "single", boundaries: [] } as PhraseStructureTemplate,
+    };
+  const timeline = buildMetricTimeline({
+    ppq: project.ppq,
+    meterEvents: project.meterEvents,
+    lengthTicks: project.lengthTicks,
+  });
+  const candidates = (["half", "third", "two-thirds"] as const)
+    .map((ratio) => candidateAtRatio(project, timeline, ratio))
+    .filter((candidate): candidate is PhraseBoundaryCandidate => Boolean(candidate));
+  return { candidates, template: selectTemplate(project, timeline, candidates) };
 }
 
 function inferredBoundaryFromCandidate(
@@ -360,76 +468,38 @@ function inferredBoundaryFromCandidate(
   };
 }
 
-function candidateHasSufficientSupport(candidate: PhraseBoundaryCandidate) {
-  const hasReleaseOrSilence = candidate.evidence.some(
-    (evidence) =>
-      evidence.code === "all-voices-end" ||
-      evidence.code === "silence-after-target" ||
-      evidence.code === "long-note-release",
-  );
-  const hasCadentialPlacement =
-    candidate.evidence.some(
-      (evidence) => evidence.code === "cadential-connection",
-    ) &&
-    candidate.evidence.some(
-      (evidence) =>
-        evidence.code === "metric-support" || evidence.code === "new-material",
-    );
-  return hasReleaseOrSilence || hasCadentialPlacement;
-}
-
-/**
- * 实时分析只读取已保存的结构；候选扫描由和声推导事务显式开启。
- */
 export function analyzePhrases(
   project: PhraseAnalysisInput,
   options: PhraseAnalysisOptions = {},
 ): PhraseAnalysis {
-  const shouldGenerateCandidates = options.generateCandidates ?? true;
   const boundaries = normalizeBoundaries(project, options);
+  const generated = (options.generateCandidates ?? true)
+    ? inferRegularStructure(project)
+    : {
+        candidates: [] as PhraseBoundaryCandidate[],
+        template: { kind: "single", boundaries: [] } as PhraseStructureTemplate,
+      };
   const knownTicks = new Set(boundaries.map((boundary) => boundary.tick));
-  const candidates = shouldGenerateCandidates
-    ? inferBoundaryCandidates(project).filter(
-        (candidate) => !knownTicks.has(candidate.tick),
-      )
+  const candidates = generated.candidates.filter((candidate) => !knownTicks.has(candidate.tick));
+  const selected = options.includeInferredBoundaries
+    ? generated.template.boundaries.filter((candidate) => !knownTicks.has(candidate.tick))
     : [];
-  const inferredBoundaries = options.includeInferredBoundaries
-    ? candidates
-        .filter(
-          (candidate) =>
-            candidate.confidence === "probable" &&
-            candidateHasSufficientSupport(candidate),
-        )
-        .map((candidate) =>
-          inferredBoundaryFromCandidate(
-            candidate,
-            phraseInferenceFingerprint(project),
-          ),
-        )
-    : [];
-  const mergedBoundaries = inferredBoundaries.length
-    ? normalizeBoundaries(
-        {
-          ...project,
-          structure: {
-            phraseBoundaries: [...boundaries, ...inferredBoundaries],
-          },
-        },
-        { replaceInferredBoundaries: false },
-      )
+  const inferred = selected.map((candidate) =>
+    inferredBoundaryFromCandidate(candidate, phraseInferenceFingerprint(project)));
+  const merged = inferred.length
+    ? normalizeBoundaries({
+        ...project,
+        structure: { phraseBoundaries: [...boundaries, ...inferred] },
+      }, { replaceInferredBoundaries: false })
     : boundaries;
-  const segments = buildSegments(mergedBoundaries);
   return {
-    boundaries: Object.freeze(mergedBoundaries),
+    boundaries: Object.freeze(merged),
     candidates: Object.freeze(candidates),
-    segments: Object.freeze(segments),
+    segments: Object.freeze(buildSegments(merged, project.lengthTicks)),
+    template: generated.template,
   };
 }
 
-/**
- * 在和声推导事务中生成新的自动乐句边界。
- * 人工边界始终保留，旧的自动边界会被本次推导结果替换。
- */
 export function inferPhrases(project: PhraseAnalysisInput): PhraseAnalysis {
   return analyzePhrases(project, {
     generateCandidates: true,
@@ -438,11 +508,6 @@ export function inferPhrases(project: PhraseAnalysisInput): PhraseAnalysis {
   });
 }
 
-export function phraseAtTick(
-  segments: readonly PhraseSegment[],
-  tick: number,
-) {
-  return segments.find(
-    (segment) => segment.fromTick <= tick && tick < segment.toTick,
-  );
+export function phraseAtTick(segments: readonly PhraseSegment[], tick: number) {
+  return segments.find((segment) => segment.fromTick <= tick && tick < segment.toTick);
 }
