@@ -10,6 +10,7 @@ import {
   FolderOpen,
   Magnet,
   Maximize2,
+  Music2,
   Minimize2,
   Minus,
   MousePointer2,
@@ -45,6 +46,7 @@ import { SettingsDialog } from "../features/settings";
 import { TrackSidebar } from "../features/tracks";
 import { RuleTestWorkbench } from "../features/ruleTesting";
 import { ChordInferenceDialog } from "../features/chordInference";
+import { ScorePreviewDialog } from "../features/scorePreview";
 import { replaceProject } from "../domain/editing";
 import {
   applyHarmonyInference,
@@ -127,6 +129,7 @@ function AppShell() {
   const [notice, setNotice] = useState<string>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chordInferenceOpen, setChordInferenceOpen] = useState(false);
+  const [scorePreviewOpen, setScorePreviewOpen] = useState(false);
   const [ruleTestMode, setRuleTestMode] = useState(false);
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
@@ -304,6 +307,23 @@ function AppShell() {
     setSelectedChordIds(new Set(diagnostic.chordIds));
   };
 
+  const handleScorePreviewNoteSelection = ({
+    sourceNoteId,
+    voiceId,
+    tick,
+  }: {
+    sourceNoteId: string;
+    voiceId: ProjectDocument["satbTracks"][number]["id"];
+    tick: number;
+  }) => {
+    // 谱面是只读投影；点击只更新编辑器选择和播放头，不提交历史。
+    setEditorDomain("notes");
+    setActiveVoice(voiceId);
+    setSelectedNoteIds(new Set([sourceNoteId]));
+    setSelectedChordIds(new Set());
+    setPlayheadTick(tick);
+  };
+
   const handleCopyDiagnostic = async (diagnostic: HarmonyDiagnostic) => {
     const copied = await copyText(formatDiagnosticDebugReport(diagnostic));
     showNotice(copied ? "已复制问题调试信息" : "复制问题调试信息失败");
@@ -473,6 +493,12 @@ function AppShell() {
             label="导出 MIDI"
             icon={<Download />}
             onClick={() => void handleExportMidi()}
+          />
+          <IconButton
+            label="打开五线谱预览"
+            icon={<Music2 />}
+            active={scorePreviewOpen}
+            onClick={() => setScorePreviewOpen(true)}
           />
           <IconButton
             label="从音符推导和弦"
@@ -878,6 +904,15 @@ function AppShell() {
           selectedChordIds={selectedChordIds}
           onClose={() => setChordInferenceOpen(false)}
           onApply={handleChordInferenceApply}
+        />
+      ) : null}
+      {scorePreviewOpen ? (
+        <ScorePreviewDialog
+          project={project}
+          revision={history.revision}
+          playheadTick={playheadTick}
+          onClose={() => setScorePreviewOpen(false)}
+          onSelectNote={handleScorePreviewNoteSelection}
         />
       ) : null}
       {notice ? (

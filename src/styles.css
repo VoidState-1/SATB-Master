@@ -6,4 +6,5 @@
 @import "./features/inspector/inspector.css";
 @import "./features/settings/settings.css";
 @import "./features/ruleTesting/ruleTesting.css";
+@import "./features/scorePreview/scorePreview.css";
 @import "./styles/dialogs.css";

@@ -12,5 +12,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 Examples
-DesignDocs
+DesignDocs/*
+!DesignDocs/vexflow-score-preview-design.md
 Report

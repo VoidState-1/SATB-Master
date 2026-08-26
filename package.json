@@ -30,7 +30,8 @@
     "quickjs-emscripten-core": "0.32.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "spessasynth_lib": "^4.3.11"
+    "spessasynth_lib": "^4.3.11",
+    "vexflow": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
