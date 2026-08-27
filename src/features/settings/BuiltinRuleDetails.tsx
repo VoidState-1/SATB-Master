@@ -35,21 +35,27 @@ export function BuiltinRuleDetails({
   return (
     <>
       <header className="rule-details-header">
+        <div className="rule-details-title-row">
+          <h3>{rule.label}</h3>
+          <span
+            className={`rule-hit-count ${
+              (ruleHitCounts[rule.id] ?? 0) > 0 ? "has-hits" : ""
+            }`}
+          >
+            当前工程命中 {ruleHitCounts[rule.id] ?? 0} 项
+          </span>
+        </div>
         <div className="rule-details-badges">
           <span className="rule-source-badge">内置规则</span>
           <span className="rule-catalog-badge">{rule.catalogNumber}</span>
+          <code className="rule-id-badge">{rule.id}</code>
         </div>
-        <h3>{rule.label}</h3>
-        <code>{rule.id}</code>
-        <span className="rule-hit-count">
-          当前工程命中 {ruleHitCounts[rule.id] ?? 0} 项
-        </span>
       </header>
       <section className="rule-details-section">
         <h4>判断说明</h4>
         <p>{rule.description}</p>
       </section>
-      <section className="rule-details-section">
+      <section className="rule-details-section rule-rationale-section">
         <h4>理论依据</h4>
         <p>{rule.rationale}</p>
       </section>

@@ -36,17 +36,23 @@ export function ExternalRuleSettingsPane({
   return (
     <>
       <header className="rule-details-header">
+        <div className="rule-details-title-row">
+          <h3>{entry.rule?.label ?? entry.reference?.ruleId}</h3>
+          <span
+            className={`rule-hit-count ${
+              (ruleHitCounts[ruleId] ?? 0) > 0 ? "has-hits" : ""
+            }`}
+          >
+            当前工程命中 {ruleHitCounts[ruleId] ?? 0} 项
+          </span>
+        </div>
         <div className="rule-details-badges">
           <span className="rule-source-badge">外置规则</span>
           {!entry.installedPackage ? (
             <span className="rule-unimplemented-badge">未挂载</span>
           ) : null}
+          <code className="rule-id-badge">{ruleId}</code>
         </div>
-        <h3>{entry.rule?.label ?? entry.reference?.ruleId}</h3>
-        <code>{ruleId}</code>
-        <span className="rule-hit-count">
-          当前工程命中 {ruleHitCounts[ruleId] ?? 0} 项
-        </span>
       </header>
       <section className="rule-details-section external-rule-source">
         <h4>来源</h4>

@@ -212,7 +212,7 @@ export function RuleOptionFields({
                             })
                           }
                         />
-                        <span>至</span>
+                        <span className="rule-range-separator">至</span>
                         <NumberEditor
                           value={range.maxMidi}
                           min={range.minMidi}

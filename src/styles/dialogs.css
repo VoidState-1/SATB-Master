@@ -1,4 +1,4 @@
-﻿.external-rule-empty {
+.external-rule-empty {
   padding: 20px 14px;
   color: #7d8179;
   font-size: 10px;
@@ -72,7 +72,7 @@
   }
 
   .settings-layout {
-    grid-template-columns: 126px minmax(0, 1fr);
+    grid-template-columns: 140px minmax(0, 1fr);
   }
 
   .shortcut-row {
@@ -84,11 +84,11 @@
   }
 
   .rule-settings-main {
-    grid-template-columns: minmax(300px, 0.9fr) minmax(320px, 1.1fr);
+    grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.2fr);
   }
 
   .rule-row {
-    grid-template-columns: minmax(0, 1fr) 84px;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }
 

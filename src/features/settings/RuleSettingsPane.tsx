@@ -253,10 +253,11 @@ export function RuleSettingsPane({
                         </strong>
                         <small>{rule.description}</small>
                       </span>
-                      <span className="rule-row-status">
-                        {severityLabel(severity)}
-                        {modified ? <b>已修改</b> : null}
-                      </span>
+                      {modified ? (
+                        <span className="rule-row-status">
+                          <b>已修改</b>
+                        </span>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -292,14 +293,20 @@ export function RuleSettingsPane({
                           "未知来源"}
                       </small>
                     </span>
-                    <span className="rule-row-status">
-                      {!entry.installedPackage
-                        ? "未挂载"
-                        : !entry.reference
-                          ? "未加入工程"
-                          : severityLabel(severity)}
-                      {isExternalRuleModified(entry) ? <b>已修改</b> : null}
-                    </span>
+                    {!entry.installedPackage ||
+                    !entry.reference ||
+                    isExternalRuleModified(entry) ? (
+                      <span className="rule-row-status">
+                        {!entry.installedPackage ? (
+                          <b>未挂载</b>
+                        ) : !entry.reference ? (
+                          <b>未加入工程</b>
+                        ) : null}
+                        {isExternalRuleModified(entry) ? (
+                          <b>已修改</b>
+                        ) : null}
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
