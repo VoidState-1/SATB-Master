@@ -770,9 +770,9 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "G.6",
     label: "功能连接语义不足",
     description:
-      "和弦实体有效，但前后 interpretation 候选导致不同的合法性结论，且没有人工确认主解释时给出提示。",
+      "检查和弦连接是否存在多种模棱两可的功能解释且缺乏主导调性支持。",
     rationale:
-      "这是需要用户确认的语义提示，不得同时产生任何基于任意候选的功能违规。",
+      "良好的和声进行应具备清晰明确的功能逻辑序列。当和弦音响可以被解释为多种相互冲突的功能关系时，表明调性中心模糊或声部连接逻辑欠明确。",
     group: "function",
     defaultSeverity: "suggestion",
     requires: ["chords"],
@@ -784,9 +784,9 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.1",
     label: "D7 解决配置",
     description:
-      "综合检查导音上行、七音下行、共同音保持和目标主和弦的完整/不完整配置；根据 `D7/D56/D34/D2` 分别验证低音走向。",
+      "检查大小七和弦（D7 及其转位）进入主和弦时导音、七音及低音的解决规范。",
     rationale:
-      "本条覆盖同一连接上的通用 E.1/E.2 诊断；阻碍解决和转调使用独立 profile。",
+      "属七和弦包含三全音矛盾（导音与下属音）。标准解决要求：导音（3音）上行半音至主音，七音（7音）下行级进至三音，低音由 5 级跳至 1 级（原位）或级进（转位）。原位 D7 解决到原位 T 通常为“完全到不完全”（三根一三，省略五音）或“不完全到完全”。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -799,8 +799,9 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.2",
     label: "D9 解决配置",
     description:
-      "在 `D9 -> T` 或确认目标连接中联合验证九音下行、七音下行、导音上行和目标和弦配置。",
-    rationale: "只处理当前支持的原位 `D9`；覆盖 E.1、E.2、E.3 的同源诊断。",
+      "检查大/小属九和弦（D9）进入主和弦时九音、七音、导音的同步解决。",
+    rationale:
+      "属九和弦拥有两个核心倾向音——九音与七音。解决时，九音与七音必须同时向下级进解决至主和弦的五音与三音，导音向上解决至主音，低音跳进至主音。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -817,8 +818,9 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.3",
     label: "DVII7 解决配置",
     description:
-      "依据 `DVII7` 种类、转位和目标调性，逐声部检查倾向音级进与目标和弦允许重复音。",
-    rationale: "减七和弦的等音转调必须先确认新解释，不能沿旧调性误判。",
+      "检查导七和弦（减七或半减七和弦）进入主和弦时的声部倾向解决。",
+    rationale:
+      "导七和弦（DVII7）包含两个减五度/增四度音程，紧张度极高。低音（导音）上行解决至主音，七音下行解决至五音，减五度音（三音与五音）分别向内级进收缩解决，通常直接导向重复三音的主三和弦。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -830,8 +832,9 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.4",
     label: "SII7 进入属功能",
     description:
-      "根据转位和目标类型检查七音下行、共同音与低音走向，并验证后继属于允许的属功能集合。",
-    rationale: "序进中的 `SII7` 可能采用不同解决；由序进语境豁免。",
+      "检查二级七和弦（SII7）连接至属和弦（V）或终止四六（K46）时的声部进行。",
+    rationale:
+      "二级七和弦（大调小七、小调半减七）是主要的下属功能七和弦。连接到 Ⅴ 级时，七音（调式主音 1 级）必须顺应倾向下行级进至导音（7 级），或保持为 K46 的六度挂留音。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -843,9 +846,9 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.5",
     label: "S7 进入属功能",
     description:
-      "依据 IV 级七和弦的具体转位检查进入 D 类或其他已允许目标时的声部进行。",
+      "检查四级七和弦（S7）连接到属功能和弦时的七音下行解决与平稳进行。",
     rationale:
-      "`S7` 不能机械复用 `SII7` 的所有低音与重复规则；需要独立金样本。",
+      "四级七和弦七音为调式第 3 级音。连接到属和弦时，该七音应平稳下行级进至属和弦的 2 级音（五音），低音走级进或四五度跳进，避免不良平行。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -857,8 +860,9 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.6",
     label: "DD7 解决配置",
     description:
-      "在 G.3 已确认目标成立后，按 D 调性化语境检查变化导音、七音和各转位低音的进行。",
-    rationale: "目标调性改变时重新建立局部调性，不能沿主调拼写判断。",
+      "检查重属七和弦（DD7）引入升4级变化导音后是否规范进入属和弦或 K46。",
+    rationale:
+      "重属七和弦是向属和弦离调的大附属性和弦。其三音（升Ⅳ级，即属调导音）必须严格上行半音解决至属音（Ⅴ级），七音（调式主音 1 级）下行半音/全音至导音或作为共同音保持。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -869,8 +873,10 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     id: "connection.double-dominant-leading-tone",
     catalogNumber: "H.7",
     label: "DDVII7 解决配置",
-    description: "按属调的导七和弦解释检查四个倾向音及后继目标配置。",
-    rationale: "等音转调语境优先；与 H.3 共用算法但使用不同局部目标。",
+    description:
+      "检查重属导七和弦（DDVII7）中各变化倾向音向属和弦的平稳解决。",
+    rationale:
+      "重属导七和弦（通常为减七和弦结构）蕴含极强的色彩张力。升Ⅳ级低音上行至属音，其降Ⅵ级七音下行至属和弦五音，多用于高潮段落的属和声准备。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -882,9 +888,9 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.8",
     label: "N6 连接",
     description:
-      "检查第一转位、通常重复低音所代表的调内 IV 级音，并验证降 II 级音按书写方向进入 D 或经 `K46` 进入 D。",
+      "检查那波里六和弦（降II级六和弦 N6）进入属和弦或 K46 时的低音重复与降2级解决。",
     rationale:
-      "调式、旋律位置和是否经过 `K46` 会影响声部走向；具体例外待金样本校准。",
+      "那波里六和弦是包含降Ⅱ级音的大三和弦第一转位。低音为调内下属音（Ⅳ级），四声部中必须重复低音（Ⅳ级）；最具特征的降Ⅱ级音必须严格下行减三度跳进至导音，或下行半音至主音（经 K46 解决）。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -896,8 +902,9 @@ export const SPECIALIZED_CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.13",
     label: "六四和弦进入与离开",
     description:
-      "结合前后 span、低音方向和拍位，验证人工标注的四六类型；经过四六要求低音级进贯穿，辅助四六要求低音保持并回到原和弦。",
-    rationale: "首版只验证人工确认类型，不自动给所有 `T46/S46/D46` 指派用途。",
+      "检查经过四六、辅助四六等第二转位和弦的低音线条是否具有连贯的级进或保持。",
+    rationale:
+      "由于第二转位和弦低音与上方声部的四度不协和性，四六和弦绝不能随意跳进进入或跳进离开。经过四六和弦的低音必须由级进经过形成（如 Ⅰ-Ⅴ46-Ⅰ6）；辅助四六和弦的低音必须保持同音不动（如 Ⅰ-Ⅳ46-Ⅰ）。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],

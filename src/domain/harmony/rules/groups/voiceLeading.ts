@@ -402,8 +402,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.1",
     label: "声部超越",
     description:
-      "较低声部的新音高于较高相邻声部的前一音，或较高声部的新音低于较低相邻声部的前一音时触发。",
-    rationale: "同和弦转换和明确声部交换允许；不得与同一时刻的声部交叉混淆。",
+      "检查后一和弦中较低声部是否高过了前一和弦中相邻较高声部的音高（或反之）。",
+    rationale:
+      "声部超越（Voice Overlap）发生在横向进行上，即一个声部越过了相邻声部刚刚唱过的音高界限。这会使听觉误以为声部线条发生了突兀跳跃或声部合并，破坏各声部线条独立行进的清晰度。",
     group: "voiceLeading",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
@@ -420,9 +421,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.4.1",
     label: "纯五度到减五度",
     description:
-      "连续结构切片中，同一对声部同向实际运动，前一书写音程为纯五度类、后一书写音程为减五度类时命中本规则。",
+      "检查两个声部同向运动时是否由纯五度进入减五度。",
     rationale:
-      "按斯波索宾口径通常允许，尤其是包含内声部或低音级进时；保留为可选规则只为支持更严格的院校 profile。",
+      "由纯五度同向进入减五度，音程性质由完全协和变为不协和，声部倾向性发生了质的转变。斯波索宾等古典和声体系中在内声部或低音级进时通常允许，但在部分极其严谨的对位法中仍作为提示关注。",
     group: "voiceLeading",
     defaultSeverity: "off",
     requires: ["written-pitches"],
@@ -435,9 +436,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.4.2",
     label: "外声部减五度到纯五度",
     description:
-      "声部对必须恰好为 B-S，连续结构切片中两声部同向实际运动，前一书写音程为减五度类、后一书写音程为纯五度类时触发。",
+      "检查外声部（女高音与男低音）同向运动时是否由减五度进入纯五度。",
     rationale:
-      "斯波索宾口径严格禁止；不能因同和弦转换或低音级进而自动豁免。用户仍可在规则 profile 中降为警告或关闭。",
+      "减五度到纯五度是不协和音程向完全协和音程的同向开放，外声部（S-B）处于听觉最敏感的边缘位置，同向进入纯五度极易产生平行五度的空洞听感与倾向音解决不良，在古典和声学中被严格禁止。",
     group: "voiceLeading",
     defaultSeverity: "error",
     requires: ["written-pitches"],
@@ -449,9 +450,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.4.3",
     label: "涉及内声部的减五度到纯五度",
     description:
-      "同一对声部包含 A 或 T，连续结构切片中由减五度同向进入纯五度；若全局低音同时按书写音级上行二度，则按斯波索宾口径允许，否则触发。",
+      "检查涉及内声部（A 或 T）时，是否由减五度同向进入纯五度且低音未上行级进。",
     rationale:
-      "“低音上行级进”必须按相邻字母音级和实际方向共同判断，不能只检查 1 或 2 个半音；严格 profile 可以选择无视该允许条件继续报告。",
+      "涉及内声部由减五度进入纯五度时，如果低音声部呈二度上行级进（如 Ⅶ7 到 Ⅰ 的典型解决），内声部的五度变换被低音的强烈支持所掩盖，斯波索宾和声学允许此用法；若低音非上行级进，则容易暴露空洞五度。",
     group: "voiceLeading",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
@@ -467,9 +468,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.2",
     label: "平行纯五度",
     description:
-      "同一对声部在连续有效起奏关系上均形成纯五度类音程，两个声部同向运动且均实际改变音高时触发；复合十二度按五度类处理。",
+      "检查任意两个声部是否同向进行并连续构成纯五度（或纯十二度）。",
     rationale:
-      "同和弦转换、声部交换和非和弦音都不能自动豁免；装饰音造成的表面平行需按结构音层级校准。",
+      "纯五度是极完全协和音程，声学共鸣高度融合。两个声部同方向平行进行纯五度，会使两个声部的独立性完全丧失，听觉上如同一个声部的加倍强化，在复调与传统四部和声中是最严重的禁忌之一。",
     group: "voiceLeading",
     defaultSeverity: "error",
     requires: ["written-pitches"],
@@ -481,8 +482,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.3",
     label: "平行八度或同度",
     description:
-      "同一对声部连续形成同度/八度类音程，并且两个声部同向实际运动时触发；跨越多个八度仍按八度类处理。",
-    rationale: "同和弦转换不豁免；同音保持且只有一个声部运动不是平行。",
+      "检查任意两个声部是否同向进行并连续构成纯八度或同度。",
+    rationale:
+      "纯八度与同度是泛音列中最为融为一体的音程。两个声部平行进行纯八度或同度，会使四部和声实质退化为三部或二部和声，严重破坏声部独立性与织体丰富度。",
     group: "voiceLeading",
     defaultSeverity: "error",
     requires: ["written-pitches"],
@@ -494,8 +496,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.5",
     label: "外声部隐伏五度",
     description:
-      "男低音与女高音同向运动到纯五度类音程，且女高音以跳进到达时触发。",
-    rationale: "女高音级进时通常允许；同和弦转换放宽；必须与真正平行五度去重。",
+      "检查外声部（高音与低音）同向跳进进入纯五度。",
+    rationale:
+      "当高音声部与低音声部同方向运动且高音声部为跳进时，人耳会不自觉地在高音跳进的空隙中脑补出经过音，从而产生“隐伏的平行五度”不良听感。若高音声部为级进，则旋律线条的连贯性能够掩盖此现象。",
     group: "voiceLeading",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
@@ -511,8 +514,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.6",
     label: "外声部隐伏八度",
     description:
-      "男低音与女高音同向运动到八度/同度类音程，且女高音以跳进到达时触发。",
-    rationale: "女高音级进和同和弦转换按教学口径放宽；与平行八度去重。",
+      "检查外声部（高音与低音）同向跳进进入纯八度或同度。",
+    rationale:
+      "外声部同向跳进进入纯八度会形成极其刺眼的“隐伏八度”空洞感，削弱外声部对和声织体的张力支撑。要求高音声部必须以级进进入八度，或两外声部反向进行。",
     group: "voiceLeading",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
@@ -528,9 +532,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.7",
     label: "同时对斜",
     description:
-      "同一切片中不同声部出现相同字母名但不同 accidental 的书写音高，并且不是已确认的特殊变化和弦构成时触发。",
+      "检查同一瞬间不同声部中是否同时出现了同一音级的本位音与变化音。",
     rationale:
-      "增六和弦等合法构成按和弦 identity 豁免；只比较 MIDI pitch class 会产生误判，必须使用 `SpelledPitch`。",
+      "同一音级的两个变化形态（如 C 与 #C）在纵向上同时发响，会产生极其尖锐突兀的半音撞音（增一度/减八度不协和冲突），造成调式调性听觉严重混乱。",
     group: "voiceLeading",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
@@ -547,9 +551,9 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.8",
     label: "先后对斜",
     description:
-      "一个声部的音结束或延续后，在限定窗口内由另一声部出现同字母异 accidental，且没有合法半音化、转调或和弦解释时触发。",
+      "检查一个声部刚唱完某音级后，另一声部紧接着出现该音级的变化形态。",
     rationale:
-      "窗口应按起奏链和和声边界定义，不按固定毫秒；变化和弦、共同和弦转调和半音进行需要专用例外。",
+      "调式变化音（如半音化升降）应当由产生该音的同一声部直接进行半音级进完成（半音进行原则）。如果将变化音交由另一个声部发出，前一声部的音高记忆尚未消退便产生冲突，形成“先后对斜（Cross-relation）”。",
     group: "voiceLeading",
     defaultSeverity: "suggestion",
     requires: ["written-pitches"],

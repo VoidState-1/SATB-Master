@@ -502,9 +502,9 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     catalogNumber: "A.5",
     label: "四声部不完整",
     description:
-      "在启用“严格四声部习题”profile 且和弦区间要求完整配置时，任一 SATB 声部没有有效音符即触发。",
+      "检查在严格四部和声写作中各声部是否均有有效发音。",
     rationale:
-      "弱起、分句休止、导入后的未完成片段和自由写作 profile 默认不检查。",
+      "严格四部和声练习要求 SATB 四个声部自始至终保持连续发声与织体丰满，无特殊声部减缩或休息设计时不应出现声部缺位。",
     group: "voice",
     defaultSeverity: "suggestion",
     requires: ["written-pitches"],
@@ -516,9 +516,9 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     catalogNumber: "C.9",
     label: "四声部同向进行",
     description:
-      "相邻结构切片中四个 SATB 声部全部实际起奏并向同一方向移动时提示。",
+      "检查四个声部是否在同一时刻全部向同一方向（全部上行或全部下行）运动。",
     rationale:
-      "本条只评价织体独立性；若同时产生平行五八度，只显示更具体的平行诊断为主。",
+      "声部独立性的最高原则是动向对比。四个声部全部同向运动会使整个和声织体出现“全体倾斜”，破坏多声部多向交织的张力平衡与独立性。通常应保持低音与上方声部形成反向或斜向进行。",
     group: "voiceLeading",
     defaultSeverity: "suggestion",
     requires: ["written-pitches"],
@@ -530,9 +530,9 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     catalogNumber: "D.5",
     label: "原位三和弦重复音",
     description:
-      "完整四声部原位三和弦通常应重复根音；重复三音或省略必要构成音时根据和弦级数、调式和连接语境提示。",
+      "检查原位大/小三和弦是否按照标准规范重复根音。",
     rationale:
-      "不得与“重复导音”等硬限制重复报警；具体副三和弦允许的重复方式需由 voicing profile 给出。",
+      "原位正三和弦（Ⅰ、Ⅳ、Ⅴ）的根音是和弦的稳定支柱，四部和声中首选重复根音以强化和声功能；三音具有鲜明的色彩感，非特定连接（如 Ⅵ 级阻碍进行）一般不重复三音，以免和弦色彩过浓或引发平行进行。",
     group: "chord",
     defaultSeverity: "suggestion",
     requires: ["written-pitches", "chords"],
@@ -544,9 +544,9 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     catalogNumber: "D.6",
     label: "六和弦重复音",
     description:
-      "根据具体功能和级数选择允许/优先的重复音；导音、变化音和不稳定三音不得因一般“自由重复”而被重复。",
+      "检查第一转位（六和弦）的重复音选择是否符合功能与调式规范。",
     rationale:
-      "`SII6`、减三和弦、经过六和弦等必须使用各自 profile，不能用一条“所有六和弦都重复低音”的简化规则。",
+      "六和弦低音为三音，具有较强的旋律流动性。通常首选重复根音或五音（主调体系的稳定主干音），避免重复正三和弦的三音（特别是 Ⅴ6 的三音即导音）；在 Ⅱ6 等副三和弦六和弦中则允许重复低音（下属音）。",
     group: "chord",
     defaultSeverity: "suggestion",
     requires: ["written-pitches", "chords"],
@@ -558,9 +558,9 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     catalogNumber: "D.7",
     label: "四六和弦配置",
     description:
-      "检查低音是否为五音、通常是否重复低音，以及该四六和弦是否具有终止、经过、辅助或持续低音等可解释语境。",
+      "检查第二转位（四六和弦）是否重复五音（低音）并符合规范的结构语境。",
     rationale:
-      "`K46` 使用专用规则；没有角色标注时只提示，不凭单个切片武断判断用途。",
+      "四六和弦低音为五音，与上方声部构成不稳定的四度音程，因此四六和弦本身不具备独立功能，主要作为经过、辅助或终止四六使用。四声部中必须重复其低音（五音），以强化其低音线条的依托。",
     group: "chord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -572,8 +572,9 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     catalogNumber: "I.1",
     label: "四五度关系共同音保持",
     description:
-      "两个原位三和弦根音为四度或五度关系，且不存在旋律或功能例外时，检查上方声部是否保持共同音，其余声部是否采用最近进行。",
-    rationale: "这是初级连接法，不得因为未保持共同音而掩盖一个实际合法连接。",
+      "检查四五度根音关系的三和弦连接是否采用和声连接法保持共同音。",
+    rationale:
+      "根音相距四、五度的两个三和弦包含一个共同音。采用和声连接法时，将共同音保持在同一声部，其余两个上方声部以级进或小跳移至最近的和弦音，能确保声部进行最平稳、最连贯，有效避免平行五八度。",
     group: "connection",
     defaultSeverity: "suggestion",
     requires: ["written-pitches", "chords", "semantics"],
@@ -589,9 +590,9 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     catalogNumber: "I.2",
     label: "二度关系反向进行",
     description:
-      "两原位三和弦根音相差二度且没有共同音时，检查上三声部整体是否采用与低音相反的最近进行。",
+      "检查二度根音关系（无共同音）的三和弦连接中，上三声部是否与低音呈反向进行。",
     rationale:
-      "平行五八度由 C.2/C.3 独立判断；旋律给定题可能采用其他合法配置。",
+      "根音相距二度的三和弦（如 Ⅳ-Ⅴ、Ⅴ-Ⅵ）完全没有共同音。如果低音与上方声部同向移动，极易形成连续的平行五度和平行八度。因此，古典和声规范要求上三声部必须全体与低音声部呈反向进行，走最近路线。",
     group: "connection",
     defaultSeverity: "suggestion",
     requires: ["written-pitches", "chords", "semantics"],
@@ -603,8 +604,9 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     catalogNumber: "I.3",
     label: "三度关系共同音保持",
     description:
-      "两个三和弦根音为三度关系时，提示保留共同音并使其余声部最近进行。",
-    rationale: "属于基础连接方法而非绝对禁令；不得与声部交换或旋律目标冲突。",
+      "检查三度根音关系的三和弦连接是否保持了两个共同音。",
+    rationale:
+      "根音相距三度的三和弦拥有两个共同音，和声亲缘关系极近。将两个共同音保持在原有声部、另一声部走级进，是实现平滑和声过渡与色彩柔和变化的经典连接范式。",
     group: "connection",
     defaultSeverity: "suggestion",
     requires: ["written-pitches", "chords", "semantics"],
@@ -620,9 +622,9 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     catalogNumber: "I.4",
     label: "不必要的声部大幅移动",
     description:
-      "连接器比较满足硬约束的候选配置；当前配置总移动代价显著高于最近进行候选时提示。",
+      "检查在和弦连接中声部是否违背了“平稳进行与最近路线”原则而发生多余的大幅跳跃。",
     rationale:
-      "旋律线、音域调整、同和弦转换、声部交换和后继准备均可构成合理原因；首版不应自动启用。",
+      "古典和声声部进行的基本法则是“省力法则（Law of Shortest Way）”——除非有明确的旋律构思或声部排列法转换需求，各声部应优先选择保持同音、半音级进、全音级进或三度小跳，避免无理由的大幅跳动破坏织体连贯性。",
     group: "connection",
     defaultSeverity: "suggestion",
     requires: ["written-pitches", "chords", "semantics"],

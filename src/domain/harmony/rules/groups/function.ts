@@ -246,9 +246,9 @@ export const FUNCTION_RULES = defineRuleGroup(
     catalogNumber: "G.1",
     label: "逆功能进行",
     description:
-      "专用和弦连接器确认前一 span 为 D 类、后一 span 为 S 类，并且不存在序进、共同和弦重解释、转调、持续低音或其他已确认例外时触发。",
+      "检查和声进行中是否出现了属功能（D）直接进入下属功能（S）的逆向进行。",
     rationale:
-      "不再使用粗粒度 `FunctionalClass` 字符比较；`D -> S` 只是连接图中的一种违规结果。",
+      "调式和声的功能逻辑以 T → S → D → T 的向心循环为基石。下属功能是远离主功能的离心力量，属功能是高度紧张、强烈倾向主功能的向心力量。由 D 直接进入 S 违背了功能张力递增并在主和弦释放的自然逻辑，在古典和声中被称为“逆功能进行”（例外如模进或特定阻碍连接除外）。",
     group: "function",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],
@@ -265,8 +265,9 @@ export const FUNCTION_RULES = defineRuleGroup(
     catalogNumber: "G.3",
     label: "重属功能未进入属功能",
     description:
-      "重属 span 结束后应进入 `D`、其合法转位/扩展，或作为中介进入 `K46 -> D`；其他目标触发。",
-    rationale: "转调后 `DD` 被共同和弦重新解释时由转调语境接管。",
+      "检查重属和弦（DD，即属调的属功能）是否按照规范引入属功能（D）或终止四六。",
+    rationale:
+      "重属和弦（如 Ⅱ级七和弦变和弦、#Ⅳ级导和弦）引入了属调的导音（调内升Ⅳ级），其全部动力在于强化向属和弦（Ⅴ级）或终止四六（K46）的解决。若离开重属和弦后未能导入属功能，则离调倾向落空，造成调性逻辑混乱。",
     group: "function",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],
@@ -282,9 +283,9 @@ export const FUNCTION_RULES = defineRuleGroup(
     catalogNumber: "G.4",
     label: "终止四六未进入属功能",
     description:
-      "`K46` 后继结构和弦必须为 D 类，通常保持属音低音，并实现 6-5、4-3 的声部解决关系。",
+      "检查终止四六和弦（K46）是否紧接着解决到同低音的属和弦。",
     rationale:
-      "中间允许由同一 `K46` span 的转换构成，不能跨休止或无关和弦追认。",
+      "终止四六（K46）表面上是主和弦的第二转位（T46），但其实质是建立在属音低音之上的重拍双重挂留和弦（六度音与四度音同时挂留）。它必须紧随同低音的属和弦（Ⅴ或Ⅴ7），使六度音下行解决到五度、四度音下行解决到三度（6-5, 4-3），不可单独挪作他用。",
     group: "function",
     defaultSeverity: "error",
     requires: ["chords", "semantics"],
@@ -296,9 +297,9 @@ export const FUNCTION_RULES = defineRuleGroup(
     catalogNumber: "K.4",
     label: "借用和弦来源不一致",
     description:
-      "依据 `mixture` 来源调式生成规范构成，与 identity 和 designation 比较。",
+      "检查借用和弦（同主音大小调调式交替和弦）的音符构成是否与所声明的来源调式一致。",
     rationale:
-      "变化和弦与借用和弦必须先由结构化语义区分，不能按调外音数量猜测。",
+      "调式交替（Modal Mixture）通常是在大调中引入同主音同名小调的特有和弦（如小下属三和弦 s、降Ⅵ级大和弦 bVI、降Ⅱ级那波里六和弦 N6 等）。借用和弦必须精确保持其源调式的音级结构与升降号特征。",
     group: "tonality",
     defaultSeverity: "error",
     requires: ["chords", "semantics"],

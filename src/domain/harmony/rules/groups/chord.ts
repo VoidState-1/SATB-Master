@@ -534,9 +534,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.1",
     label: "未标注的和弦外音",
     description:
-      "按实际书写音高与当前 `ChordIdentity` 比较；音符不属于构成音集合且没有人工确认角色时触发。",
+      "检查声部中是否存在不属于当前标注和弦构成音、且未说明角色的音符。",
     rationale:
-      "持续低音、经过音等只有在角色得到确认后豁免；和弦区域没有可靠 identity 时跳过。",
+      "四部和声织体中的每一个音符必须具有明确的和声归属——要么为和弦构成音，要么为经过音、辅助音、挂留音等合法非和弦音。未定义角色的离和弦音会导致和声色彩混乱与声部功能不明。",
     group: "chord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -549,9 +549,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.2",
     label: "和弦构成音不完整",
     description:
-      "在同和弦 span 的最后一个完整有效切片，对照 `ChordVoicingPolicy.requiredDegrees` 检查缺失成员。",
+      "检查和弦中是否缺少了不可或缺的关键构成音（如根音或三音）。",
     rationale:
-      "允许省略的和弦音不触发；span 中间转换暂不检查；诊断只归属和弦轨。",
+      "三音决定和弦的调式性质（大/小），根音确定和弦的低音骨架与功能定位。四部和声中三和弦通常允许省略五音，但绝不可轻易省略根音与三音（七和弦亦同），否则会导致和弦性质模糊或功能瘫痪。",
     group: "chord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -563,9 +563,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.3",
     label: "低音与转位不一致",
     description:
-      "在每个有完整低音的切片中，将男低音书写音高映射到 identity degree，并与和弦转位比较。",
+      "检查男低音声部实际发音是否与当前和弦标注的转位形态相符。",
     rationale:
-      "已确认的持续低音语境由踏板规则接管；无法映射为和弦音时同时属于 D.1，但只保留更具体根因。",
+      "和弦的转位完全取决于最低声部（男低音）所承担的和弦音级：原位必须是根音，第一转位必须是三音，第二转位必须是五音，第三转位必须是七音。低音音级错误将直接导致和弦转位与功能属性的根本性错乱。",
     group: "chord",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
@@ -577,9 +577,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.4",
     label: "功能标记与和弦实体冲突",
     description:
-      "用局部调性和 `FunctionalDesignation` 重新生成规范 identity，与持久化 identity 的书写构成、低音约束和结构类别比较。",
+      "检查和弦的音符拼写构成与所标注的功能代号是否存在矛盾。",
     rationale:
-      "正常编辑命令应提前阻止该状态；本规则用于导入、迁移、外置工具或损坏数据后的防御诊断。",
+      "和声分析中罗马数字或功能标记必须严格忠实于实际发音的音程结构与调式音级关系。标记与音符实体不符通常意味着调性误判、音名拼写错误或功能定义不当。",
     group: "chord",
     defaultSeverity: "error",
     requires: ["chords", "semantics"],
@@ -591,9 +591,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.8",
     label: "重复导音",
     description:
-      "在 span 出口或独立和弦的最后有效配置中，按 `SpelledPitch` 和局部调性识别导音并计数。",
+      "检查和弦配置中是否在两个或以上声部中同时出现了调式导音（Ⅶ级）。",
     rationale:
-      "span 中间的暂时重复延迟判断；共同和弦歧义时只使用已确认局部调性。",
+      "导音是调式中最不稳定、具有最强烈向上半音倾向主音的倾向音。如果重复导音，按规范解决时必然导致两个声部同向级进进入主音，从而产生不可避免的平行八度；若其中一个导音不解决，又会违背倾向音解决法则。",
     group: "chord",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
@@ -605,9 +605,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.9",
     label: "重复和弦七音",
     description:
-      "在稳定配置中按 identity degree 识别七音，出现两个或更多时触发。",
+      "检查七和弦配置中是否在多个声部重复了七音。",
     rationale:
-      "同和弦转换中间切片延迟判断；人工装饰音不能被误算为第二个和弦七音。",
+      "七音是七和弦的不协和核心音，具有严格向向下级进解决的强制倾向。重复七音会导致声部解决时产生平行八度，或者导致其中一个七音无法按规范下行解决，造成不协和音处理不当。",
     group: "chord",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
@@ -619,9 +619,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.10",
     label: "重复变化倾向音",
     description:
-      "根据和弦 identity 和功能目标识别带方向性的变化构成音，稳定配置中重复该音时触发。",
+      "检查和弦中具有特定解决方向的变化音（如升五音、降五音等）是否被重复。",
     rationale:
-      "必须读取结构化 alteration，不能把所有调外音都当作倾向音；具体和弦可覆盖默认策略。",
+      "变化音（Altered tones）带有强烈的半音级进倾向性（升高音倾向向上、降低音倾向向下）。重复带有单一明确倾向的变化音，在声部规范解决时必然引发平行八度或声部阻碍。",
     group: "chord",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
@@ -633,9 +633,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.11",
     label: "D9 四声部配置",
     description:
-      "四声部 `D9` 必须恰好实现项目已审定的 `1/3/7/9` 配置；缺少必需音或出现五音时触发。",
+      "检查原位属九和弦在四声部中是否按照标准的 1/3/7/9 结构配置。",
     rationale:
-      "仅适用于本项目支持的原位 `D9`；未来扩展五声部或其他九和弦时不得复用该固定策略。",
+      "属九和弦为五音和弦，在四部和声中必须省略一个音。由于根音（1）、三音（3，导音）、七音（7，下属音）与九音（9）均直接决定该和弦的功能特征与倾向性，因此传统和声学严格规定四部和声中的属九和弦必须省略纯五度的五音，保留 1、3、7、9。",
     group: "chord",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
@@ -647,9 +647,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.12",
     label: "D9 根音与九音间距",
     description:
-      "在当前支持的原位四声部 `D9` 中，定位唯一根音与九音；九音实际音高必须高于根音 12 个半音以上，并在书写上形成复九度而不是同一八度内的二度。",
+      "检查属九和弦中九音是否置于根音之上九度（即大于一个八度）。",
     rationale:
-      "当前 `D9` 固定根音位于男低音且配置为 `1/3/7/9`；如果未来支持省略根音、多个根音、转位九和弦或五声部配置，必须为新结构单独定义策略。",
+      "九音与根音在纵向上如果处于同一八度内（形成二度关系），会导致极度粗糙刺耳的二度撞音，且九音的冠音色彩完全丧失。古典和声学要求九音必须置于根音上方九度以上，且九音通常位于最高声部（女高音）。",
     group: "chord",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
@@ -661,9 +661,9 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.13",
     label: "增六和弦配置",
     description:
-      "分别按 It+6、Fr+6、Ger+6 的规范书写构成检查，确保增六两端音存在且不重复具有强烈解决方向的变化音。",
+      "检查增六和弦（意大利/法国/德国增六）的特征构成音与重复音是否合乎规范。",
     rationale:
-      "三种结构不能只按 pitch class 合并；具体允许重复成员需建立调性金样本。",
+      "增六和弦由降Ⅵ级与升Ⅳ级构成其标志性的增六度骨架。该增六度两端音均具有强烈的向外反向解决倾向，因此两端音绝对不可重复；意大利增六和弦（三音和弦）在四声部中必须重复调式主音（主干音）。",
     group: "chord",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],

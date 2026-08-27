@@ -785,9 +785,9 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "E.1",
     label: "导音未解决",
     description:
-      "导音义务按声部与解决目标分区；同一书写音高在目标不变时可跨和弦实体延续。同和弦转换中，原声部离开导音且另一声部重新起奏导音时，义务转移到新声部，最终出口仍未解决才报告。",
+      "检查调式导音（Ⅶ级）在属功能进入主功能时是否在同一声部向上半音级进解决至主音。",
     rationale:
-      "内声部在特定不完全属和弦连接中的自由进行、阻碍进行及声部交换需专门金样本；休止中断状态。",
+      "导音位于主音下方半音，对主音具有极其强烈的上行吸引力。在外声部（女高音与男低音）中的导音必须严格上行半音解决至主音（7→1）；唯有在内声部（中音或次中音）且主和弦为完全三和弦时，方可例外进行三度下行跳进至五音（7→5）。",
     group: "resolution",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
@@ -808,9 +808,9 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "E.2",
     label: "和弦七音未解决",
     description:
-      "七音状态可在同和弦转换内延续；离开 span 后检查同一声部是否下行半音或全音到目标和弦允许音。",
+      "检查各类七和弦中的七音在和弦转换后是否顺应倾向在同一声部向下级进解决。",
     rationale:
-      "同和弦内声部交换不能由另一声部替代解决；特殊延迟解决由专用和弦规则声明。",
+      "从声学起源与历史对位看，和弦七音是由经过音或挂留音演化而来的下行倾向音。在古典和声的所有七和弦解决中，七音均具有绝对强制性的下行二度级进要求，逆向跳进或上行均属严重违规。",
     group: "resolution",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -827,9 +827,9 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "E.3",
     label: "属九音未解决",
     description:
-      "识别 `D9` 的九音并跟踪同一声部，在离开属九 span 时要求级进下行到目标和弦允许音。",
+      "检查属九和弦中的九音是否在同一声部向下二度级进解决至主和弦的五音。",
     rationale:
-      "与通用七音、变化音规则共享证据时使用本条专用诊断；具体转位不在当前产品范围。",
+      "九和弦的九音是不协和度极高的音，在传统和声中必须顺应声学重力向下二度级进解决到主和弦的五音，不可反向上行或跳进脱离。",
     group: "resolution",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -845,9 +845,9 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "E.4",
     label: "变化音方向性解决",
     description:
-      "只对和弦模型明确标记为 directional alteration 的构成音建状态；通常升高音向上、降低音向下解决到目标和弦音。",
+      "检查和弦中的升号变化音是否向上解决、降号变化音是否向下解决。",
     rationale:
-      "不能从 accidental 字符机械推出方向；增六、导音和特定重属音由更具体规则覆盖。",
+      "调式中的变化音具有鲜明的方向动能：用升号（或还原降号）升高的音具有向上半音级进的强烈倾向；用降号（或还原升号）降低的音具有向下半音级进的强烈倾向。违背倾向反向进行会造成尖锐的声部生硬感。",
     group: "resolution",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -863,9 +863,9 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "G.2",
     label: "离调属功能未进入目标",
     description:
-      "从 interpretation 的 `FunctionalTarget` 建立目标义务，允许同一离调属 span 内转换；离开后首个结构和弦不是目标实体或合法替代时触发。",
+      "检查副属和弦（离调属和弦）是否准确进入了其所指向的副级目标和弦。",
     rationale:
-      "阻碍式解决、插入 `K46` 或延迟解决必须由目标策略显式允许；没有确认 target 时跳过。",
+      "副属和弦的作用在于通过临时的“属—主”动力关系将某个副级和弦临时主调化（如 Ⅴ/Ⅱ → Ⅱ）。副属和弦必须直接进入该副级和弦（或其转位/变体），若转而进入无关和弦，则离调的预备与紧张度落空。",
     group: "function",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],

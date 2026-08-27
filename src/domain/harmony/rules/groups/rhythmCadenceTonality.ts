@@ -509,9 +509,9 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     catalogNumber: "J.1",
     label: "和声切分",
     description:
-      "沿 `HarmonySpan` 链比较拍位：一个新和声在弱拍或弱位置进入，并延续覆盖下一强拍或相对更强位置时触发。",
+      "检查和弦是否在弱拍（或弱位置）更换并跨越进入随后的强拍（强位置）。",
     rationale:
-      "持续音、延留音、同一功能内装饰转换、序进和人工确认的切分节奏可豁免；必须按变拍号的实际重音层级计算。",
+      "和声节奏（Harmonic Rhythm）与节拍重音应当保持协调。如果在新和弦于弱拍进入并跨越保持至强拍，会导致和声变换重音与节拍重音错位，产生“和声切分”。这会削弱小节强拍的节拍重音感，在正规和声练习中应予避免。",
     group: "rhythm",
     defaultSeverity: "warning",
     requires: ["chords", "semantics", "meter"],
@@ -523,9 +523,9 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     catalogNumber: "J.2",
     label: "K46 拍位不当",
     description:
-      "根据当前拍号和小节内重音层级，`K46` 应处于强拍或相对强位置，后继 D 处于相对较弱位置。",
+      "检查终止四六和弦（K46）是否位于比后继属和弦更强的节拍位置。",
     rationale:
-      "不同拍号、复拍子和乐句尺度需要节拍 profile；没有可靠节拍信息时跳过。",
+      "终止四六作为属低音上的重拍双重挂留和弦，其本质是不协和的紧张重音。因此在节拍上，K46 必须处于比它所解决的目标属和弦（Ⅴ或Ⅴ7）更强或至少同等的节拍位置（如强拍对弱拍、次强拍对弱拍），绝不能置于比属和弦更弱的位置。",
     group: "cadence",
     defaultSeverity: "warning",
     requires: ["chords", "semantics", "meter"],
@@ -537,9 +537,9 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     catalogNumber: "J.3",
     label: "终止低音不成立",
     description:
-      "对已确认的完全、半终止、变格或阻碍终止，检查末端功能和低音级数是否符合该终止类型。",
+      "检查各类终止式（完全终止、半终止、变格终止等）的低音声部走向是否符合终止式公式。",
     rationale:
-      "只有人工标注或高置信度终止候选才检查；未标注乐句不能仅凭最后两个和弦武断报错。",
+      "终止式是乐句收束的结构支柱。完全终止低音必须是 5→1；半终止低音停留在 5 级；变格终止低音为 4→1；阻碍终止低音为 5→6。低音音级不符会导致乐段终止感瓦解或结构边界不清。",
     group: "cadence",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],
@@ -551,8 +551,9 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     catalogNumber: "J.4",
     label: "完全终止的旋律位置",
     description:
-      "`cadenceRole` 明确为完全终止时，验证 D-T 均为规定转位，最终 T 为原位且女高音为主音。",
-    rationale: "不完全终止不适用；名称和具体分类需与中文教材术语最终统一。",
+      "检查完全终止处最高声部（女高音）是否收束在调式主音（1级音）上。",
+    rationale:
+      "完满完全终止（Perfect Authentic Cadence, PAC）要求主和弦与属和弦均为原位，且最高声部（女高音）必须落在调式第一级主音上，从而在外声部形成 1 级与 1 级的纯八度闭合，提供最强烈的完满完结感。",
     group: "cadence",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],
@@ -564,9 +565,9 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     catalogNumber: "J.5",
     label: "结束和弦不稳定",
     description:
-      "在闭合终止的 phrase end 联合检查最终功能、转位和所有仍存的规则私有解决状态。",
+      "检查全曲或全乐段最终结束和弦是否使用了稳定、完满的原位主三和弦。",
     rationale:
-      "半终止、开放终止和未完成练习不适用；具体倾向音仍由其专用规则生成诊断。",
+      "整首作品或完整大段落的最终收束，必须使用原位主大/小三和弦（T），且内部所有倾向音均已完成彻底解决。使用转位和弦、副三和弦或带未解决七音的和弦作为最终结束，会留下无法平息的不稳定感。",
     group: "cadence",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],
@@ -578,8 +579,9 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     catalogNumber: "K.1",
     label: "调性变化未标注",
     description:
-      "多个连续 span 的高置信度解释共同指向新调性，且不是短暂离调属或借用和弦时提示用户确认转调。",
-    rationale: "自动分析只能产生候选，绝不写回调号或覆盖人工解释。",
+      "检查连续和声进行中是否已建立新的稳定调性中心但未进行转调标注。",
+    rationale:
+      "当和声通过特征变音、导和弦与终止式在新的音级上巩固了新的主和弦时，调性中心已经发生转移。明确标注转调有助于正确理解和弦的实际功能与倾向音走向。",
     group: "tonality",
     defaultSeverity: "suggestion",
     requires: ["chords", "semantics"],
@@ -591,9 +593,9 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     catalogNumber: "K.2",
     label: "共同和弦重解释不一致",
     description:
-      "验证共同和弦 interpretations 映射到相同 identity 和转位，并检查进入侧使用旧调解释、离开侧使用新调解释。",
+      "检查共同和弦转调中的中介和弦在前后两调中的结构音与转位是否完全一致。",
     rationale:
-      "实体一致性通常应由模型 validator 阻止；连接方向只在已确认转调时检查。",
+      "共同和弦转调（Pivot Chord Modulation）利用同一个在原调和新调中均合法的和弦作为桥梁。该和弦在物理发音上必须完全同一，前调按原调功能进入，后调立即赋予其新调功能引出新调属和弦。",
     group: "tonality",
     defaultSeverity: "error",
     requires: ["chords", "semantics"],
@@ -605,8 +607,9 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     catalogNumber: "K.3",
     label: "离调与转调语境冲突",
     description:
-      "局部调性 span、目标功能义务和人工 modulation 标记给出互斥结论时触发语义冲突。",
-    rationale: "不自动选择其中一个解释；依赖该结论的功能规则暂停。",
+      "检查和声片段是属于短暂的副属和弦离调还是属于确立新调的长期转调。",
+    rationale:
+      "离调（Tonicization）是短暂借用副属和弦强化某个副级三和弦，随后立即返回原调；转调（Modulation）则是通过新调终止式彻底确立新调性。两者在功能从属与解决要求上具有不同层级的和声逻辑。",
     group: "tonality",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],

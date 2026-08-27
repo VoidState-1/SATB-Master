@@ -442,8 +442,9 @@ export const CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "E.5",
     label: "增六音程未反向解决",
     description:
-      "跟踪增六两端的书写音高，要求低端下行半音、高端上行半音，形成目标属音的八度或进入已确认的 `K46` 过渡。",
-    rationale: "Ger+6 为避免平行五度可能经过 `K46`；具体目标以功能标注为准。",
+      "检查增六和弦中的特征增六度音程是否两端反向半音级进扩张解决到纯八度。",
+    rationale:
+      "增六和弦由降Ⅵ级低音与升Ⅳ级高音构成增六度。根据增音程向外扩张的声学与调式倾向，降Ⅵ级必须向下半音进行至属音（Ⅴ级），升Ⅳ级必须向上半音进行至属音（Ⅴ级），两者反向展开并在外声部汇聚于纯八度属音上。",
     group: "resolution",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
@@ -455,8 +456,9 @@ export const CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.9",
     label: "It+6 连接",
     description:
-      "验证增六两端的反向半音解决，并检查第三个构成音的重复和目标和弦配置。",
-    rationale: "E.5 作为通用父规则，在同一证据上由本条覆盖。",
+      "检查意大利增六和弦（降6、1、升4）的增六度两端解决与主音重复配置。",
+    rationale:
+      "意大利增六和弦仅有三个不同音级（b6, 1, #4），在四部和声中必须重复调式主音（1级音）。解决时，增六两端反向进入属音八度，一个主音保持为属和弦的五音，另一个主音下行级进进入属和弦的三音（导音）。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -469,8 +471,9 @@ export const CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.10",
     label: "Fr+6 连接",
     description:
-      "除增六两端外，检查其特有构成音在目标连接中的保持或级进，防止错误拼写造成假平行。",
-    rationale: "必须按书写音程而非 pitch-class 集合识别。",
+      "检查法国增六和弦（降6、1、2、升4）进入属和弦时的特有声部进行。",
+    rationale:
+      "法国增六和弦包含调式第二级音（2级音）。解决进入属和弦时，增六两端（b6 与 #4）反向解决至属音八度，主音（1级音）下行级进至导音，2级音则作为共同音直接保持在同一声部中成为属和弦的五音。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -483,9 +486,9 @@ export const CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.11",
     label: "Ger+6 连接",
     description:
-      "检查增六两端解决，并识别直接进入 D 可能形成的平行五度；优先验证经 `K46` 或教材允许的规避进行。",
+      "检查德国增六和弦（降6、1、降3、升4）在解决至属和弦时是否经由 K46 规避平行五度。",
     rationale:
-      "真实平行五度仍由 C.2 报错，本条只解释该和弦特有的解决路径，不重复生成同一根因。",
+      "德国增六和弦包含降3级音（小调降三音）。若直接解决到原位属和弦，低音（b6）与内声部（b3）同时下行半音至属和弦的低音（5）与五音（2），必然产生平行的“莫扎特五度”。古典传统标准做法是先解决到终止四六（K46），消除平行五度后再进入属和弦。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],
@@ -498,9 +501,9 @@ export const CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "G.5",
     label: "阻碍进行目标",
     description:
-      "仅在人工确认 `cadenceRole: deceptive` 时，验证后继功能、低音和倾向音处理是否符合阻碍进行 profile。",
+      "检查属功能和弦（D）在阻碍进行中是否正确导向了下属-主功能和弦（TSVI）。",
     rationale:
-      "普通 `D -> TSVI` 可以是非终止性连接；没有终止角色时不自动称为阻碍终止。",
+      "阻碍进行（Deceptive Progression）打破了听众对属到主（D → T）完满解决的心理期待，将属和弦导向Ⅵ级和弦（TSVI）。它推迟了终止感的到来，极大地拓展了音乐的发展空间。",
     group: "function",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],
@@ -512,9 +515,9 @@ export const CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "H.12",
     label: "阻碍进行的声部配置",
     description:
-      "在 G.5 确认阻碍语境后，验证低音进行、导音解决和目标 `TSVI` 的重复策略。",
+      "检查 Ⅴ-Ⅵ 阻碍进行中低音是否二度上行、导音是否上行解决且 Ⅵ 级和弦是否重复三音。",
     rationale:
-      "大调、小调和不同 D 形态需要独立样本；本条覆盖通用倾向音诊断的同一证据。",
+      "在 Ⅴ 到 Ⅵ 的阻碍进行中，低音由 5 级上行二度至 6 级，导音（7 级）必须严格上行半音解决至主音（1 级）。为避免平行五八度并顺应声部进行，目标 Ⅵ 级三和弦必须重复其三音（即调式主音 1 级），而非重复根音。",
     group: "connection",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords", "semantics"],

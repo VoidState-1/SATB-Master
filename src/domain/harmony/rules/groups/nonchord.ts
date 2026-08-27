@@ -392,9 +392,9 @@ export const NONCHORD_RULES = defineRuleGroup(
     catalogNumber: "F.1",
     label: "经过音角色不成立",
     description:
-      "同一声部前后结构音存在，经过音以级进进入并以同方向级进离开，连接三度范围内的两个结构音；节拍类型按角色子类判断。",
+      "检查经过音是否在两个和弦音之间以同方向级进平滑连结。",
     rationale:
-      "半音经过音允许不同 accidental；缺少任一侧上下文时返回上下文不足。",
+      "经过音（Passing Tone）是填补两个不同和弦音（通常相距三度或四度）之间音程空隙的非和弦音。其基本特征为：从前一和弦音级进进入，并沿相同方向继续级进进入后一和弦音。",
     group: "nonchord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -406,8 +406,9 @@ export const NONCHORD_RULES = defineRuleGroup(
     catalogNumber: "F.2",
     label: "辅助音角色不成立",
     description:
-      "要求级进进入、反向级进离开，并回到相同书写音级或确认的等音目标。",
-    rationale: "双辅助音和变音辅助音应作为后续子类型，不由首版规则猜测。",
+      "检查辅助音是否由和弦音级进离开并立即反向级进折回原和弦音。",
+    rationale:
+      "辅助音（Neighbor Tone）用于装饰单一和弦音。其基本规范为：从和弦音上行或下行级进离开，随后立即沿相反方向级进折回最初的同一音高，形成波浪式的装饰线条。",
     group: "nonchord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -419,9 +420,9 @@ export const NONCHORD_RULES = defineRuleGroup(
     catalogNumber: "F.3",
     label: "挂留音准备不正确",
     description:
-      "同一声部前一结构音必须与当前挂留音同高并跨越和声边界保持或合法重奏，且在准备和弦中属于协和构成。",
+      "检查挂留音在前一和弦中是否作为协和的和弦音得到了充分准备。",
     rationale:
-      "无准备的不协和音应标为倚音而非挂留音；是否允许重奏需教学 profile 审定。",
+      "古典挂留音包含“准备—挂留—解决”三步法。挂留音必须在前一和弦的弱拍或强拍上作为协和音先发声（准备），然后在和弦变换时延留到强拍形成不协和（挂留），方能产生规范的悬念感与和声张力。",
     group: "nonchord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -433,9 +434,9 @@ export const NONCHORD_RULES = defineRuleGroup(
     catalogNumber: "F.4",
     label: "挂留音未解决",
     description:
-      "挂留状态跨切片传递，要求在截止点前通常下行级进到当前和弦音；`4-3`、`7-6`、`9-8` 等由结构化角色参数给出目标。",
+      "检查挂留音是否在后继弱拍位置顺利下行级进解决到当前和弦音。",
     rationale:
-      "转位挂留、装饰性延迟解决和链式挂留由角色配置决定，不能使用固定“下一音”窗口。",
+      "挂留音在强拍形成不协和阻碍后，由于重力与调式倾向，必须在同一声部内向下一级（下行二度级进）解决到当前和弦的协和音（如 4-3、7-6、9-8 解决），释放和声紧张度。",
     group: "nonchord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -446,8 +447,10 @@ export const NONCHORD_RULES = defineRuleGroup(
     id: "nonchord.retardation",
     catalogNumber: "F.5",
     label: "延宕音角色不成立",
-    description: "与挂留音相同地检查准备和保持，但解决方向为上行级进。",
-    rationale: "术语和允许类型需与最终教材用语统一。",
+    description:
+      "检查延宕音（上行挂留音）是否在上行级进中得到了规范的准备与解决。",
+    rationale:
+      "延宕音（Retardation）是上行解决的挂留音形态，常见于导音向主音解决的延留（如 7-8 延宕）。同样需要前和弦的协和准备，并在强拍挂留后向上级进解决到主音。",
     group: "nonchord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -459,9 +462,9 @@ export const NONCHORD_RULES = defineRuleGroup(
     catalogNumber: "F.6",
     label: "倚音角色不成立",
     description:
-      "倚音通常位于相对强位，以跳进或非准备方式进入，并以级进解决到和弦音；方向由角色参数或上下文确定。",
+      "检查强拍倚音是否以跳进进入并随后以级进解决到和弦音。",
     rationale:
-      "教材对自由倚音范围有差异，首版只验证人工标注，不自动判定所有强拍外音。",
+      "倚音（Appoggiatura）是位于强拍或强位置、未经前和弦音准备直接跳进（或级进）进入的不协和音。具有极强的情感表现力，要求出现后立即反向级进解决到协和的和弦音。",
     group: "nonchord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -473,8 +476,9 @@ export const NONCHORD_RULES = defineRuleGroup(
     catalogNumber: "F.7",
     label: "先现音角色不成立",
     description:
-      "当前音在当前和弦中为外音，但在紧邻后继和弦中属于构成音，并由同一声部保持或重复。",
-    rationale: "跨休止或跨越无关和弦不能认作先现。",
+      "检查先现音是否在弱拍提前进入并在后继强拍作为和弦音保持。",
+    rationale:
+      "先现音（Anticipation）是指后一个和弦的构成音在当前和弦的弱拍末尾提前起奏。它在当前和弦中属于外音，但在紧接着的和弦中转化为正式和弦音，常见于乐句终止处的旋律主音先现。",
     group: "nonchord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
@@ -486,9 +490,9 @@ export const NONCHORD_RULES = defineRuleGroup(
     catalogNumber: "F.8",
     label: "持续音语境不成立",
     description:
-      "持续音应在 span 起点属于和弦构成，期间可成为和弦外音，并在结束处重新获得明确和声归属；上方声部独立形成可分析和声。",
+      "检查持续音（低音或内音）是否由协和音开始、贯穿和声变化并在协和音上结束。",
     rationale:
-      "主持续音、属持续音和内部持续音可使用不同 profile；持续音期间不以 D.1 重复报警。",
+      "持续音（Pedal Point）是在一个声部（通常在男低音）长时间保持同一音高，而上方其他声部不断进行和声变换的写作技法。持续音必须始于包含该音的协和和弦，结束于以该音为构成音的协和和弦，上方声部必须独立构成清晰合理的和声逻辑。",
     group: "nonchord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
