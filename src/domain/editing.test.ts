@@ -223,4 +223,29 @@ describe("结构与终止式范围编辑", () => {
     expect(updated.project.chordTrack.cadenceAnnotations[0].kind).toBe("deceptive");
     expect(deleteCadenceAnnotation(updated.project, "cadence-1").error).toBeUndefined();
   });
+
+  it("支持通过更新音符书写音高完成同音异名转换", () => {
+    const project = createEmptyProject();
+    const originalNote: NoteEvent = {
+      id: "note-eb",
+      startTick: 0,
+      durationTicks: PPQ,
+      pitch: { step: "E", alter: -1, octave: 4 },
+      velocity: 88,
+      locked: false,
+      spellingSource: "manual",
+    };
+    project.satbTracks.find((t) => t.id === "soprano")!.notes = [originalNote];
+
+    const updated = updateNote(project, "soprano", "note-eb", {
+      pitch: { step: "D", alter: 1, octave: 4 },
+      spellingSource: "manual",
+    });
+
+    expect(updated.error).toBeUndefined();
+    const updatedNote = updated.project.satbTracks
+      .find((t) => t.id === "soprano")!
+      .notes.find((n) => n.id === "note-eb")!;
+    expect(updatedNote.pitch).toEqual({ step: "D", alter: 1, octave: 4 });
+  });
 });

@@ -176,6 +176,76 @@ export function parsePitchClass(value: string): SpelledPitchClass | undefined {
   return { step: step as DiatonicStep, alter: alter as Alteration };
 }
 
+export function serializeSpelledPitch(pitch: SpelledPitch): string {
+  return `${pitch.step}:${pitch.alter}:${pitch.octave}`;
+}
+
+export function parseSpelledPitch(value: string): SpelledPitch | undefined {
+  const parts = value.split(":");
+  if (parts.length !== 3) return undefined;
+  const [step, rawAlter, rawOctave] = parts;
+  const alter = Number(rawAlter);
+  const octave = Number(rawOctave);
+  if (!STEPS.includes(step as DiatonicStep)) return undefined;
+  if (!Number.isInteger(alter) || alter < -2 || alter > 2) return undefined;
+  if (!Number.isInteger(octave)) return undefined;
+  return { step: step as DiatonicStep, alter: alter as Alteration, octave };
+}
+
+export function spelledPitchEquals(
+  left: SpelledPitch,
+  right: SpelledPitch,
+): boolean {
+  return (
+    left.step === right.step &&
+    left.alter === right.alter &&
+    left.octave === right.octave
+  );
+}
+
+export function enharmonicSpellings(
+  pitch: SpelledPitch | number,
+): SpelledPitch[] {
+  const midi = typeof pitch === "number" ? pitch : toMidi(pitch);
+  const results: SpelledPitch[] = [];
+  for (let i = 0; i < STEPS.length; i += 1) {
+    const step = STEPS[i];
+    const natural = NATURAL_PITCH_CLASSES[i];
+    const diff = modulo(midi - natural, 12);
+    let alter: Alteration | undefined;
+    if (diff === 0) alter = 0;
+    else if (diff === 1) alter = 1;
+    else if (diff === 2) alter = 2;
+    else if (diff === 10) alter = -2;
+    else if (diff === 11) alter = -1;
+
+    if (alter !== undefined) {
+      const octave = Math.floor((midi - natural - alter) / 12) - 1;
+      results.push({ step, alter, octave });
+    }
+  }
+
+  if (typeof pitch === "object" && pitch !== null) {
+    const alreadyIncluded = results.some((item) =>
+      spelledPitchEquals(item, pitch),
+    );
+    if (!alreadyIncluded && toMidi(pitch) === midi) {
+      results.push(pitch);
+    }
+  }
+
+  results.sort((a, b) => {
+    const absA = Math.abs(a.alter);
+    const absB = Math.abs(b.alter);
+    if (absA !== absB) return absA - absB;
+    return (
+      a.octave * 7 + stepIndex(a.step) - (b.octave * 7 + stepIndex(b.step))
+    );
+  });
+
+  return results;
+}
+
 export function spellPitchClassForStep(
   midiPitchClass: number,
   targetStepIndex: number,

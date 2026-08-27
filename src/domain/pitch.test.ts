@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { resolveChordIdentity } from "./chordModel";
 import {
+  enharmonicSpellings,
   formatSpelledPitch,
   keySignatureFifths,
   isWrittenStep,
   leadingTonePitchClass,
   normalizePitchClassNumber,
   parsePitchClass,
+  parseSpelledPitch,
   serializePitchClass,
+  serializeSpelledPitch,
   spellMidi,
+  spelledPitchEquals,
   toMidi,
   transposeSpelledPitch,
   writtenInterval,
@@ -23,6 +27,50 @@ describe("书写音高", () => {
     expect(toMidi(dFlat)).toBe(61);
     expect(formatSpelledPitch(cSharp)).toBe("C♯4");
     expect(formatSpelledPitch(dFlat)).toBe("D♭4");
+  });
+
+  it("计算音符的所有有效同音异名候选并保持 MIDI 音高严格一致", () => {
+    const eb4 = { step: "E" as const, alter: -1 as const, octave: 4 };
+    const spellings = enharmonicSpellings(eb4);
+    expect(spellings).toEqual([
+      { step: "D", alter: 1, octave: 4 }, // D♯4
+      { step: "E", alter: -1, octave: 4 }, // E♭4
+      { step: "F", alter: -2, octave: 4 }, // F♭♭4
+    ]);
+    for (const spelling of spellings) {
+      expect(toMidi(spelling)).toBe(63);
+    }
+
+    const c4 = { step: "C" as const, alter: 0 as const, octave: 4 };
+    const cSpellings = enharmonicSpellings(c4);
+    expect(cSpellings).toEqual([
+      { step: "C", alter: 0, octave: 4 }, // C4
+      { step: "B", alter: 1, octave: 3 }, // B♯3
+      { step: "D", alter: -2, octave: 4 }, // D♭♭4
+    ]);
+    for (const spelling of cSpellings) {
+      expect(toMidi(spelling)).toBe(60);
+    }
+
+    const gSharp4 = { step: "G" as const, alter: 1 as const, octave: 4 };
+    const gSharpSpellings = enharmonicSpellings(gSharp4);
+    expect(gSharpSpellings).toEqual([
+      { step: "G", alter: 1, octave: 4 }, // G♯4
+      { step: "A", alter: -1, octave: 4 }, // A♭4
+    ]);
+    for (const spelling of gSharpSpellings) {
+      expect(toMidi(spelling)).toBe(68);
+    }
+  });
+
+  it("支持 SpelledPitch 的序列化、反序列化与相等性比较", () => {
+    const pitch = { step: "D" as const, alter: 1 as const, octave: 4 };
+    const serialized = serializeSpelledPitch(pitch);
+    expect(serialized).toBe("D:1:4");
+    expect(parseSpelledPitch(serialized)).toEqual(pitch);
+    expect(parseSpelledPitch("invalid")).toBeUndefined();
+    expect(spelledPitchEquals(pitch, { step: "D", alter: 1, octave: 4 })).toBe(true);
+    expect(spelledPitchEquals(pitch, { step: "E", alter: -1, octave: 4 })).toBe(false);
   });
 
   it("根据当前调号推断迁移音符拼写", () => {

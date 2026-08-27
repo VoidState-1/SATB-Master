@@ -16,7 +16,14 @@ import {
   type DiatonicStep,
   type NoteEvent,
 } from "../../domain/project";
-import { spellMidi, toMidi } from "../../domain/pitch";
+import {
+  enharmonicSpellings,
+  formatSpelledPitch,
+  parseSpelledPitch,
+  serializeSpelledPitch,
+  spellMidi,
+  toMidi,
+} from "../../domain/pitch";
 import { keyAtTick } from "../../domain/time";
 import { ChordSemanticsEditor } from "./ChordSemanticsEditor";
 import { CadenceEditor } from "./CadenceEditor";
@@ -120,6 +127,30 @@ export function SelectionInspector({
               <option value="0">还原</option>
               <option value="1">升</option>
               <option value="2">重升</option>
+            </select>
+          </label>
+          <label>
+            <span>同音异名</span>
+            <select
+              value={serializeSpelledPitch(selectedNote.note.pitch)}
+              onChange={(event) => {
+                const nextPitch = parseSpelledPitch(event.target.value);
+                if (nextPitch) {
+                  onUpdateNote(selectedNote.voiceId, selectedNote.note.id, {
+                    pitch: nextPitch,
+                    spellingSource: "manual",
+                  });
+                }
+              }}
+            >
+              {enharmonicSpellings(selectedNote.note.pitch).map((option) => (
+                <option
+                  key={serializeSpelledPitch(option)}
+                  value={serializeSpelledPitch(option)}
+                >
+                  {formatSpelledPitch(option)}
+                </option>
+              ))}
             </select>
           </label>
           <label>
