@@ -115,6 +115,7 @@ function migrateV2Project(value: Record<string, unknown>) {
   migrated.satbTracks = satbTracks;
   migrated.auxiliaryTracks = [];
   migrated.structure = { phraseBoundaries: [] };
+  migrated.diagnosticPreferences = { ignoredDiagnosticIds: [] };
   delete migrated.tracks;
   migrated.ruleProfile = createDefaultRuleProfile();
   if (isRecord(migrated.chordTrack)) {
@@ -155,12 +156,14 @@ function migrateV2Project(value: Record<string, unknown>) {
 
 export function migrateProject(value: unknown): ProjectDocument | undefined {
   if (validateProject(value)) return normalizeProject(value);
-  // schema v3 工程在引入乐句结构前没有 structure 字段；补充空结构后
+  // 早期 schema v3 工程可能缺少后来新增的结构字段；补齐默认值后
   // 仍按当前模型完整校验，避免在各个读取入口重复做兼容分支。
   if (isRecord(value) && value.schemaVersion === PROJECT_SCHEMA_VERSION) {
     const upgraded = structuredClone(value);
     if (!isRecord(upgraded.structure))
       upgraded.structure = { phraseBoundaries: [] };
+    if (!isRecord(upgraded.diagnosticPreferences))
+      upgraded.diagnosticPreferences = { ignoredDiagnosticIds: [] };
     if (isRecord(upgraded.chordTrack) && !Array.isArray(upgraded.chordTrack.cadenceAnnotations))
       upgraded.chordTrack.cadenceAnnotations = [];
     if (validateProject(upgraded))

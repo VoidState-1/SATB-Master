@@ -138,6 +138,17 @@ describe("工程文件校验", () => {
     expect(validateProject(createEmptyProject())).toBe(true);
   });
 
+  it("校验诊断忽略记录并拒绝重复 ID", () => {
+    const project = createEmptyProject();
+    project.diagnosticPreferences.ignoredDiagnosticIds = ["rule|note:n1|0-960"];
+    expect(validateProject(project)).toBe(true);
+
+    project.diagnosticPreferences.ignoredDiagnosticIds.push(
+      "rule|note:n1|0-960",
+    );
+    expect(validateProject(project)).toBe(false);
+  });
+
   it("拍组之和必须与拍号分子一致", () => {
     const project = createEmptyProject();
     project.meterEvents[0] = {
@@ -378,6 +389,15 @@ describe("工程文件校验", () => {
 });
 
 describe("schema v2 -> v3 迁移", () => {
+  it("为早期 v3 工程补充空的诊断忽略偏好", () => {
+    const legacy = createEmptyProject() as unknown as Record<string, unknown>;
+    delete legacy.diagnosticPreferences;
+
+    expect(migrateProject(legacy)?.diagnosticPreferences).toEqual({
+      ignoredDiagnosticIds: [],
+    });
+  });
+
   it("保留音高、时间、力度、锁定、循环、练习和音频数据", () => {
     const legacy = createV2Fixture();
     const legacyTracks = legacy.tracks as Array<{

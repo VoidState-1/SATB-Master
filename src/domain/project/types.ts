@@ -89,6 +89,11 @@ export interface ProjectStructure {
   phraseBoundaries: PhraseBoundary[];
 }
 
+export interface DiagnosticPreferences {
+  /** 由诊断引擎生成的稳定 ID；忽略只影响编辑器高亮，不删除诊断。 */
+  ignoredDiagnosticIds: string[];
+}
+
 export type CadenceKind =
   | "full"
   | "half"
@@ -266,6 +271,7 @@ export interface ProjectDocument {
   meterEvents: MeterEvent[];
   keyEvents: KeyEvent[];
   structure: ProjectStructure;
+  diagnosticPreferences: DiagnosticPreferences;
   satbTracks: SatbTrack[];
   auxiliaryTracks: AuxiliaryTrack[];
   chordTrack: ChordTrack;

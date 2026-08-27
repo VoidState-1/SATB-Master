@@ -51,6 +51,12 @@ function normalizePhraseBoundaries(project: ProjectDocument) {
   );
 }
 
+function normalizeDiagnosticPreferences(project: ProjectDocument) {
+  project.diagnosticPreferences.ignoredDiagnosticIds = [
+    ...new Set(project.diagnosticPreferences.ignoredDiagnosticIds),
+  ].sort();
+}
+
 function reconcileCadenceAnnotationStaleness(project: ProjectDocument) {
   const regions = [...project.chordTrack.regions].sort(
     (left, right) => left.startTick - right.startTick,
@@ -101,6 +107,7 @@ export function normalizeProject(project: ProjectDocument): ProjectDocument {
   normalized.keyEvents.sort((a, b) => a.tick - b.tick);
   stripLegacyCadenceTypes(normalized);
   normalizePhraseBoundaries(normalized);
+  normalizeDiagnosticPreferences(normalized);
   // 调号编辑会改变其后功能和弦的书写实体；保存前统一收敛为同一事实来源。
   reconcileChordIdentities(normalized);
   normalized.chordTrack.regions.sort((a, b) => a.startTick - b.startTick);

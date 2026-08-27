@@ -91,6 +91,9 @@ export function createEmptyProject(title = "未命名练习"): ProjectDocument {
     structure: {
       phraseBoundaries: [],
     },
+    diagnosticPreferences: {
+      ignoredDiagnosticIds: [],
+    },
     satbTracks: [
       createTrack("soprano", 52),
       createTrack("alto", 52),

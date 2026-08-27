@@ -52,7 +52,7 @@
   width: 100%;
   min-height: 40px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-columns: minmax(0, 1fr) 30px auto;
   align-items: center;
   gap: 4px;
   padding: 0 8px 0 12px;
@@ -78,8 +78,17 @@
 }
 
 .diagnostic-select:hover,
-.diagnostic-item:has(.diagnostic-copy-button:hover) {
+.diagnostic-item:has(.diagnostic-copy-button:hover),
+.diagnostic-item:has(.diagnostic-ignore-button:hover) {
   background: #fff;
+}
+
+.diagnostic-item.ignored {
+  background: #f1f2ee;
+}
+
+.diagnostic-item.ignored .diagnostic-select {
+  opacity: 0.62;
 }
 
 .diagnostic-select.error > svg,
@@ -95,16 +104,22 @@
   color: #4d7469;
 }
 
-.diagnostic-copy-button {
+.diagnostic-copy-button,
+.diagnostic-ignore-button {
   width: 28px;
   height: 28px;
   padding: 5px;
   color: #6f726a;
 }
 
-.diagnostic-copy-button:hover {
+.diagnostic-copy-button:hover,
+.diagnostic-ignore-button:hover {
   color: #2d5f51;
   background: #e9eee9;
+}
+
+.diagnostic-ignore-button[aria-pressed="true"] {
+  color: #4d7469;
 }
 
 .diagnostic-position {
@@ -128,6 +143,14 @@
 
 .diagnostic-copy strong {
   font-size: 11px;
+}
+
+.diagnostic-copy strong em {
+  margin-left: 6px;
+  color: #59776c;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
 }
 
 .diagnostic-copy small {

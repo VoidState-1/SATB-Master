@@ -212,6 +212,16 @@ function validateProjectStructure(value: unknown, projectLength: number) {
   return ticks.every((tick, index) => index === 0 || tick > ticks[index - 1]);
 }
 
+function validateDiagnosticPreferences(value: unknown) {
+  if (!isRecord(value) || !Array.isArray(value.ignoredDiagnosticIds))
+    return false;
+  const ids = value.ignoredDiagnosticIds;
+  return (
+    ids.every((id) => typeof id === "string" && id.length > 0) &&
+    new Set(ids).size === ids.length
+  );
+}
+
 function validateCadenceAnnotation(
   value: unknown,
   projectLength: number,
@@ -624,6 +634,9 @@ export function validateProject(value: unknown): value is ProjectDocument {
     return false;
 
   if (!validateProjectStructure(project.structure, project.lengthTicks as number))
+    return false;
+
+  if (!validateDiagnosticPreferences(project.diagnosticPreferences))
     return false;
 
   if (

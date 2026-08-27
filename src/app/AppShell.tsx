@@ -315,6 +315,27 @@ function AppShell() {
     setSelectedChordIds(new Set(diagnostic.chordIds));
   };
 
+  const handleToggleIgnoredDiagnostic = (diagnostic: HarmonyDiagnostic) => {
+    history.commit(
+      replaceProject(project, (draft) => {
+        const ignored = new Set(
+          draft.diagnosticPreferences.ignoredDiagnosticIds,
+        );
+        if (ignored.has(diagnostic.id)) ignored.delete(diagnostic.id);
+        else ignored.add(diagnostic.id);
+        draft.diagnosticPreferences.ignoredDiagnosticIds = [...ignored].sort();
+      }),
+    );
+  };
+
+  const activeDiagnostics = useMemo(() => {
+    const ignored = new Set(project.diagnosticPreferences.ignoredDiagnosticIds);
+    return harmonyResult.diagnostics.filter((item) => !ignored.has(item.id));
+  }, [
+    harmonyResult.diagnostics,
+    project.diagnosticPreferences.ignoredDiagnosticIds,
+  ]);
+
   const handleScorePreviewNoteSelection = useCallback(
     ({
       sourceNoteId,
@@ -726,7 +747,7 @@ function AppShell() {
             selectedNoteIds={selectedNoteIds}
             selectedChordIds={selectedChordIds}
             chordBrush={chordBrush}
-            diagnostics={harmonyResult.diagnostics}
+            diagnostics={activeDiagnostics}
             cadenceCandidates={cadenceAnalysis.cadenceCandidates}
             playheadTick={playheadTick}
             loopEnabled={loopEnabled}
@@ -770,6 +791,7 @@ function AppShell() {
             project={project}
             result={harmonyResult}
             onSelect={handleDiagnostic}
+            onToggleIgnored={handleToggleIgnoredDiagnostic}
             onCopy={handleCopyDiagnostic}
             developerMode={developerMode.enabled}
           />

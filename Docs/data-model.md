@@ -29,6 +29,8 @@ ProjectDocument
   tempoEvents[] / meterEvents[] / keyEvents[]
   structure
     phraseBoundaries[]
+  diagnosticPreferences
+    ignoredDiagnosticIds[]
   satbTracks[4]
     notes[]
   auxiliaryTracks[]
@@ -272,6 +274,10 @@ error | warning | suggestion | off
 
 终止式检测产生的是候选（`CadenceCandidate`），只有用户确认或应用命令后才成为 `CadenceAnnotation`。和弦级的 `cadenceRole` 与乐句级的 `CadenceAnnotation.kind` 是不同层次的事实，不能互相替代。
 
+### 7.5 诊断忽略偏好
+
+`diagnosticPreferences.ignoredDiagnosticIds` 保存用户手动忽略的稳定诊断 ID。忽略项仍保留在问题列表和规则统计中，但不再传给编辑器的音符或和弦高亮层；用户可随时取消忽略。该偏好是工程数据，随保存和历史记录同步，并不改变规则配置、规则执行或诊断仲裁。
+
 ## 8. 音频引用
 
 工程的 `audio` 保存 `masterVolume` 与 `audio.soundFont` 音色选择。运行时加载状态、AudioContext、合成器实例和临时资源 token 不属于工程。
@@ -287,7 +293,7 @@ error | warning | suggestion | off
 ```text
 schema v2 --支持迁移--> schema v3
 schema v1 --明确拒绝-->
-schema v3 --直接验证-->
+schema v3 --补齐已发布的默认字段后验证-->
 ```
 
 原因是 v1 从未形成需要保留的公开工程文件，而 v3 尚处于大版本开发阶段。不要凭空添加“尽量兼容”的猜测性迁移；错误迁移比明确拒绝更容易损坏音乐语义。
