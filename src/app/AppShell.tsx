@@ -172,7 +172,7 @@ function AppShell() {
   } = usePlaybackController({
     project,
     history,
-    initialSoundFont: initialProject.audio.soundFont,
+    preloadSoundFont: !ruleTestMode,
     gridTicks,
     showNotice,
   });

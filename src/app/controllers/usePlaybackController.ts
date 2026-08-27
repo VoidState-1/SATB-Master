@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { audioEngine, type AudioEngineState } from "../../audio/audioEngine";
+import {
+  soundFontId,
+  soundFontLoadKey,
+  type SoundFontReference,
+} from "../../audio/soundFontIdentity";
 import { replaceProject } from "../../domain/editing";
 import type { ProjectDocument } from "../../domain/project";
 import { nearestGridTick } from "../../domain/time";
@@ -20,19 +25,13 @@ interface ProjectHistoryCommitter {
 interface PlaybackControllerOptions {
   project: ProjectDocument;
   history: ProjectHistoryCommitter;
-  initialSoundFont: ProjectDocument["audio"]["soundFont"];
   soundFont?: ProjectDocument["audio"]["soundFont"];
   onSoundFontChange?(soundFont: ProjectDocument["audio"]["soundFont"]): void;
+  preloadSoundFont?: boolean;
   gridTicks: number;
   showNotice(message: string): void;
   playheadTick?: number;
   onPlayheadChange?(tick: number): void;
-}
-
-function soundFontId(soundFont: ProjectDocument["audio"]["soundFont"]) {
-  return soundFont.kind === "default"
-    ? "default"
-    : `user:${soundFont.hash ?? soundFont.path ?? soundFont.name}`;
 }
 
 function soundFontProgressMessage(progress: SoundFontLoadProgress) {
@@ -45,7 +44,7 @@ function soundFontProgressMessage(progress: SoundFontLoadProgress) {
 }
 
 async function ensureSoundFontLoaded(
-  soundFontConfig: ProjectDocument["audio"]["soundFont"],
+  soundFontConfig: SoundFontReference,
   generation: number,
   onProgress?: (progress: SoundFontLoadProgress) => void,
 ) {
@@ -86,12 +85,25 @@ async function ensureSoundFontLoaded(
   return soundFont;
 }
 
+type SoundFontLoadResult = Awaited<
+  ReturnType<typeof ensureSoundFontLoaded>
+>;
+
+interface SoundFontLoadRequest {
+  id: string;
+  loadKey: string;
+  generation?: number;
+  promise: Promise<SoundFontLoadResult>;
+}
+
+let activeSoundFontLoad: SoundFontLoadRequest | undefined;
+
 export function usePlaybackController({
   project,
   history,
-  initialSoundFont,
   soundFont: controlledSoundFont,
   onSoundFontChange,
+  preloadSoundFont = true,
   gridTicks,
   showNotice,
   playheadTick: controlledPlayheadTick,
@@ -118,7 +130,6 @@ export function usePlaybackController({
   const [soundFontProgress, setSoundFontProgress] =
     useState<SoundFontLoadProgress>();
   const [soundFontSizeBytes, setSoundFontSizeBytes] = useState<number>();
-  const defaultSoundFontRequestedRef = useRef(false);
   const playSessionRef = useRef(0);
   const playbackStart = useRef(createSingleFlight<void>()).current;
 
@@ -131,6 +142,55 @@ export function usePlaybackController({
     [],
   );
 
+  const requestSoundFontLoad = useCallback(
+    (soundFont: SoundFontReference): SoundFontLoadRequest => {
+      const id = soundFontId(soundFont);
+      const loadKey = soundFontLoadKey(soundFont);
+      if (audioEngine.isSoundFontLoaded(id)) {
+        return {
+          id,
+          loadKey,
+          promise: Promise.resolve("already-loaded"),
+        };
+      }
+      const pending = activeSoundFontLoad;
+      if (
+        pending?.id === id &&
+        pending.loadKey === loadKey &&
+        pending.generation !== undefined &&
+        audioEngine.isSoundFontChangeCurrent(pending.generation)
+      ) {
+        return pending;
+      }
+
+      const generation = audioEngine.beginSoundFontChange();
+      const reportProgress = (progress: SoundFontLoadProgress) => {
+        if (audioEngine.isSoundFontChangeCurrent(generation))
+          reportSoundFontProgress(progress);
+      };
+      const request: SoundFontLoadRequest = {
+        id,
+        loadKey,
+        generation,
+        promise: ensureSoundFontLoaded(soundFont, generation, reportProgress),
+      };
+      activeSoundFontLoad = request;
+      const clearRequest = () => {
+        if (activeSoundFontLoad === request)
+          activeSoundFontLoad = undefined;
+      };
+      void request.promise.then(clearRequest, clearRequest);
+      return request;
+    },
+    [reportSoundFontProgress],
+  );
+
+  const isLoadRequestCurrent = useCallback((request: SoundFontLoadRequest) => {
+    return request.generation === undefined
+      ? audioEngine.isSoundFontLoaded(request.id)
+      : audioEngine.isSoundFontChangeCurrent(request.generation);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = audioEngine.onState((state, message) => {
       setAudioState(state);
@@ -142,30 +202,44 @@ export function usePlaybackController({
     };
   }, []);
 
+  const effectiveSoundFontLoadKey = soundFontLoadKey(effectiveSoundFont);
+
   useEffect(() => {
-    if (defaultSoundFontRequestedRef.current) return;
-    defaultSoundFontRequestedRef.current = true;
-    const generation = audioEngine.beginSoundFontChange();
-    const reportProgress = (progress: SoundFontLoadProgress) => {
-      if (audioEngine.isSoundFontChangeCurrent(generation))
-        reportSoundFontProgress(progress);
-    };
-    void ensureSoundFontLoaded(initialSoundFont, generation, reportProgress)
+    if (!preloadSoundFont) return;
+    let active = true;
+    const request = requestSoundFontLoad(effectiveSoundFont);
+    if (!audioEngine.isSoundFontLoaded(request.id))
+      setSoundFontSizeBytes(undefined);
+    void request.promise
       .then((soundFont) => {
+        if (!active || !isLoadRequestCurrent(request)) return;
         if (soundFont && soundFont !== "already-loaded")
           setSoundFontSizeBytes(soundFont.sizeBytes);
       })
-      .catch(async (error) => {
-        if (!audioEngine.isSoundFontChangeCurrent(generation)) return;
-        await audioEngine.unloadSoundFont();
-        setSoundFontProgress(undefined);
-        console.warn("启动时加载默认 SoundFont 失败，将使用回退音色。", error);
+      .catch((error) => {
+        if (!active || !isLoadRequestCurrent(request)) return;
+        console.warn("工程 SoundFont 预加载失败，将使用回退音色。", error);
+        showNotice(
+          effectiveSoundFont.kind === "default"
+            ? "默认音色不可用，已切换到回退音色"
+            : "工程引用的音色不可用，已切换到回退音色",
+        );
       })
       .finally(() => {
-        if (audioEngine.isSoundFontChangeCurrent(generation))
+        if (active && isLoadRequestCurrent(request))
           setSoundFontProgress(undefined);
       });
-  }, [initialSoundFont, reportSoundFontProgress]);
+    return () => {
+      active = false;
+    };
+    // 音源引用未变化时不应因工程对象更新而重新加载。
+  }, [
+    effectiveSoundFontLoadKey,
+    isLoadRequestCurrent,
+    preloadSoundFont,
+    requestSoundFontLoad,
+    showNotice,
+  ]);
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -315,11 +389,6 @@ export function usePlaybackController({
   }, [history, onSoundFontChange, project, reportSoundFontProgress, showNotice]);
 
   const handleUseDefaultSoundFont = useCallback(async () => {
-    const generation = audioEngine.beginSoundFontChange();
-    const reportProgress = (progress: SoundFontLoadProgress) => {
-      if (audioEngine.isSoundFontChangeCurrent(generation))
-        reportSoundFontProgress(progress);
-    };
     const defaultSoundFont = {
       kind: "default" as const,
       name: "SATB Master 默认音色",
@@ -333,25 +402,29 @@ export function usePlaybackController({
         }),
       );
     }
+    const request = requestSoundFontLoad(defaultSoundFont);
     try {
-      const soundFont = await ensureSoundFontLoaded(
-        defaultSoundFont,
-        generation,
-        reportProgress,
-      );
+      const soundFont = await request.promise;
       if (!soundFont) return;
       if (soundFont !== "already-loaded")
         setSoundFontSizeBytes(soundFont.sizeBytes);
       showNotice("默认音色已加载");
     } catch (error) {
-      if (audioEngine.isSoundFontChangeCurrent(generation)) {
+      if (isLoadRequestCurrent(request)) {
         showNotice(error instanceof Error ? error.message : "默认音色加载失败");
       }
     } finally {
-      if (audioEngine.isSoundFontChangeCurrent(generation))
+      if (isLoadRequestCurrent(request))
         setSoundFontProgress(undefined);
     }
-  }, [history, onSoundFontChange, project, reportSoundFontProgress, showNotice]);
+  }, [
+    history,
+    isLoadRequestCurrent,
+    onSoundFontChange,
+    project,
+    requestSoundFontLoad,
+    showNotice,
+  ]);
 
   const handleStop = useCallback((returnToStart = false) => {
     playSessionRef.current += 1;
@@ -365,22 +438,14 @@ export function usePlaybackController({
       await audioEngine.resume();
       const soundFontConfig = effectiveSoundFont;
       if (!audioEngine.isSoundFontLoaded(soundFontId(soundFontConfig))) {
-        const generation = audioEngine.beginSoundFontChange();
-        const reportProgress = (progress: SoundFontLoadProgress) => {
-          if (audioEngine.isSoundFontChangeCurrent(generation))
-            reportSoundFontProgress(progress);
-        };
+        const request = requestSoundFontLoad(soundFontConfig);
         try {
-          const soundFont = await ensureSoundFontLoaded(
-            soundFontConfig,
-            generation,
-            reportProgress,
-          );
+          const soundFont = await request.promise;
           if (!soundFont) return;
           if (soundFont !== "already-loaded")
             setSoundFontSizeBytes(soundFont.sizeBytes);
         } catch (error) {
-          if (!audioEngine.isSoundFontChangeCurrent(generation)) return;
+          if (!isLoadRequestCurrent(request)) return;
           // 音源缺失、摘要变化或安装路径异常时清掉旧音色，防止误用上一个工程的音色。
           await audioEngine.unloadSoundFont();
           setSoundFontProgress(undefined);
@@ -391,7 +456,7 @@ export function usePlaybackController({
               : "工程引用的音色不可用，已切换到回退音色",
           );
         } finally {
-          if (audioEngine.isSoundFontChangeCurrent(generation))
+          if (isLoadRequestCurrent(request))
             setSoundFontProgress(undefined);
         }
       }
@@ -435,7 +500,8 @@ export function usePlaybackController({
     metronomeEnabled,
     playheadTick,
     project,
-    reportSoundFontProgress,
+    isLoadRequestCurrent,
+    requestSoundFontLoad,
     setPlayheadTick,
     showNotice,
   ]);

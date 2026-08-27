@@ -138,7 +138,6 @@ export function RuleTestWorkbench({
   const playback = usePlaybackController({
     project,
     history: { commit: controller.commitProject },
-    initialSoundFont: ruleTestSoundFont,
     soundFont: ruleTestSoundFont,
     onSoundFontChange: handleRuleTestSoundFontChange,
     gridTicks,
