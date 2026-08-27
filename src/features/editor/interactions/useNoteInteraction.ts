@@ -31,6 +31,7 @@ import {
   xToTick,
   yToMidi,
 } from "../viewport";
+import { orderTracksForRendering } from "../geometry";
 import type { NoteRect } from "../layers/types";
 
 interface UseNoteInteractionProps {
@@ -104,7 +105,11 @@ export function useNoteInteraction({
   const noteRects = useMemo<NoteRect[]>(() => {
     const erasedNoteIds =
       interaction?.kind === "erase" ? interaction.noteIds : undefined;
-    return project.satbTracks.flatMap((track) => {
+    const orderedTracks = orderTracksForRendering(
+      project.satbTracks,
+      activeVoice,
+    );
+    return orderedTracks.flatMap((track) => {
       if (!track.visible) return [];
       return track.notes
         .filter((note) => !erasedNoteIds?.has(note.id))
@@ -153,7 +158,7 @@ export function useNoteInteraction({
           };
         });
     });
-  }, [interaction, pixelsPerBeat, project]);
+  }, [activeVoice, interaction, pixelsPerBeat, project]);
 
   useEffect(() => {
     setInteraction(undefined);
@@ -472,7 +477,28 @@ export function useNoteInteraction({
     if (tool !== "select") return;
     focusEditor();
     const rect = event.currentTarget.getBoundingClientRect();
-    const hit = hitTest(event.clientX - rect.left, event.clientY - rect.top);
+    const point = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+    const overlapping = noteRects.filter(
+      (r) =>
+        point.x >= r.x &&
+        point.x <= r.x + r.width &&
+        point.y >= r.y &&
+        point.y <= r.y + r.height,
+    );
+    if (overlapping.length > 1) {
+      const currentIdx = overlapping.findIndex(
+        (r) => r.track.id === activeVoice,
+      );
+      const nextIdx =
+        currentIdx >= 0 ? (currentIdx + 1) % overlapping.length : 0;
+      const target = overlapping[nextIdx];
+      onSetActiveVoice(target.track.id);
+      return;
+    }
+    const hit = hitTest(point.x, point.y);
     if (hit && hit.track.id !== activeVoice) {
       onSetActiveVoice(hit.track.id);
     }

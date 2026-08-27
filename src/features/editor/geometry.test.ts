@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HarmonyDiagnostic } from "../../domain/harmony";
-import { groupDiagnostics } from "./geometry";
+import { groupDiagnostics, orderTracksForRendering } from "./geometry";
+import type { VoiceId } from "../../domain/project";
 
 function diagnostic(): HarmonyDiagnostic {
   return {
@@ -50,5 +51,48 @@ describe("诊断对象分层", () => {
     expect(grouped.get("source-note")).toHaveLength(1);
     expect(grouped.get("failure-note")).toHaveLength(1);
     expect(grouped.has("context-note")).toBe(false);
+  });
+});
+
+describe("声部渲染分层策略", () => {
+  const tracks: Array<{ id: VoiceId; name: string }> = [
+    { id: "soprano", name: "女高" },
+    { id: "alto", name: "女低" },
+    { id: "tenor", name: "男高" },
+    { id: "bass", name: "男低" },
+  ];
+
+  it("当前选中的声部动态置于最上层（数组末尾）以支持覆盖渲染与优先拾取", () => {
+    const tenorOnTop = orderTracksForRendering(tracks, "tenor");
+    expect(tenorOnTop.map((t) => t.id)).toEqual([
+      "soprano",
+      "alto",
+      "bass",
+      "tenor",
+    ]);
+
+    const sopranoOnTop = orderTracksForRendering(tracks, "soprano");
+    expect(sopranoOnTop.map((t) => t.id)).toEqual([
+      "alto",
+      "tenor",
+      "bass",
+      "soprano",
+    ]);
+
+    const altoOnTop = orderTracksForRendering(tracks, "alto");
+    expect(altoOnTop.map((t) => t.id)).toEqual([
+      "soprano",
+      "tenor",
+      "bass",
+      "alto",
+    ]);
+
+    const bassOnTop = orderTracksForRendering(tracks, "bass");
+    expect(bassOnTop.map((t) => t.id)).toEqual([
+      "soprano",
+      "alto",
+      "tenor",
+      "bass",
+    ]);
   });
 });

@@ -1,4 +1,14 @@
 import type { HarmonyDiagnostic } from "../../domain/harmony";
+import type { VoiceId } from "../../domain/project";
+
+export function orderTracksForRendering<T extends { id: VoiceId }>(
+  tracks: readonly T[],
+  activeVoice: VoiceId,
+): T[] {
+  const nonActive = tracks.filter((track) => track.id !== activeVoice);
+  const active = tracks.filter((track) => track.id === activeVoice);
+  return [...nonActive, ...active];
+}
 
 const DIAGNOSTIC_PRIORITY: Record<HarmonyDiagnostic["severity"], number> = {
   error: 0,
