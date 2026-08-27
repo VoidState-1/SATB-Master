@@ -1,0 +1,183 @@
+.confirmation-dialog.midi-export-dialog {
+  width: min(520px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  padding: 18px 22px;
+  background: #fbfbf9;
+  border-radius: 8px;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.28);
+}
+
+.midi-export-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e7e9e3;
+}
+
+.midi-export-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #242721;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.midi-export-header h2 svg {
+  width: 18px;
+  height: 18px;
+  color: #2f7764;
+}
+
+.midi-export-form {
+  display: grid;
+  gap: 14px;
+}
+
+.midi-export-section {
+  display: grid;
+  gap: 7px;
+}
+
+.midi-export-section-title {
+  color: #555950;
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+/* 卡片组 */
+.midi-card-group-vertical {
+  display: grid;
+  gap: 8px;
+}
+
+.midi-card-group-grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.midi-select-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 10px 12px;
+  border: 1px solid #dcdfd7;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.16s ease;
+}
+
+.midi-select-card input[type="radio"],
+.midi-select-card input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.midi-select-card:hover {
+  border-color: #a8c5bc;
+  background: #fafcfb;
+}
+
+.midi-select-card.active {
+  border-color: #2f7764;
+  background: #eff7f4;
+  box-shadow: 0 0 0 1px #2f7764;
+}
+
+.midi-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #2b2e27;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.midi-select-card.active .midi-card-title {
+  color: #1a4d40;
+}
+
+.midi-card-desc {
+  margin-top: 3px;
+  color: #6d7168;
+  font-size: 11px;
+  line-height: 1.42;
+}
+
+.midi-select-card.active .midi-card-desc {
+  color: #385d53;
+}
+
+/* 音色选择卡片 */
+.midi-timbre-card {
+  align-items: center;
+  text-align: center;
+  padding: 9px 8px;
+}
+
+.midi-timbre-card .midi-card-title {
+  font-size: 12px;
+  font-weight: 550;
+  justify-content: center;
+}
+
+/* 和弦标记复选卡片 */
+.midi-checkbox-card {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+}
+
+.midi-checkbox-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid #a8aca2;
+  border-radius: 3px;
+  background: #fff;
+  color: transparent;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.midi-checkbox-card.active .midi-checkbox-indicator {
+  border-color: #2f7764;
+  background: #2f7764;
+  color: #fff;
+}
+
+.midi-checkbox-indicator svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 3;
+}
+
+.midi-export-dialog .confirmation-actions {
+  margin-top: 6px;
+  padding-top: 8px;
+}
+
+.midi-export-dialog .command-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.midi-export-dialog .command-button svg {
+  width: 15px;
+  height: 15px;
+}

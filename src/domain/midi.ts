@@ -3,9 +3,57 @@ import { formatChordRegion } from "./chords";
 import {
   getAllPlayableTracks,
   type MusicalTrack,
+  type NoteEvent,
   type ProjectDocument,
+  type VoiceId,
 } from "./project";
 import { formatPitchClass, keySignatureFifths, toMidi } from "./pitch";
+
+export type MidiExportLayout = "satb-separate" | "piano-grand-staff";
+export type MidiExportTimbre = "piano" | "choir" | "project";
+
+export interface MidiExportOptions {
+  layout?: MidiExportLayout;
+  timbre?: MidiExportTimbre;
+  includeChords?: boolean;
+}
+
+export const DEFAULT_MIDI_EXPORT_OPTIONS: Required<MidiExportOptions> = {
+  layout: "satb-separate",
+  timbre: "piano",
+  includeChords: true,
+};
+
+const VOICE_INSTRUMENT_NAMES: Record<VoiceId, string> = {
+  soprano: "Soprano",
+  alto: "Alto",
+  tenor: "Tenor",
+  bass: "Bass",
+};
+
+const VOICE_DISPLAY_NAMES: Record<VoiceId, string> = {
+  soprano: "女高音",
+  alto: "女低音",
+  tenor: "男高音",
+  bass: "男低音",
+};
+
+export function toMidiString(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return binary;
+}
+
+export function fromMidiString(binary: string): string {
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
 
 type WithoutDelta<T> = T extends unknown ? Omit<T, "deltaTime"> : never;
 type MidiEventPayload = WithoutDelta<MidiEvent>;
@@ -42,7 +90,11 @@ function globalTrack(project: ProjectDocument) {
     {
       tick: 0,
       priority: 0,
-      event: { type: "trackName", text: "SATB Master", meta: true },
+      event: {
+        type: "trackName",
+        text: toMidiString(project.title || "SATB Master"),
+        meta: true,
+      },
     },
   ];
   project.tempoEvents.forEach((tempo) =>
@@ -85,48 +137,205 @@ function globalTrack(project: ProjectDocument) {
   return toDeltaEvents(events, project.lengthTicks);
 }
 
-function playableTrack(
-  track: MusicalTrack,
-  trackIndex: number,
-  endTick: number,
+function resolveProgram(
+  defaultProgram: number,
+  timbre: MidiExportTimbre,
+): number {
+  if (timbre === "piano") return 0;
+  if (timbre === "choir") return 52;
+  return defaultProgram;
+}
+
+function appendNoteEvents(
+  events: AbsoluteEvent[],
+  note: NoteEvent,
+  channel: number,
 ) {
-  // MIDI 通道 10（索引 9）保留给打击乐；辅助轨超过可用通道时允许复用通道，但仍保持独立轨道。
-  const channel = trackIndex < 9 ? trackIndex : (trackIndex + 1) % 16;
-  const events: AbsoluteEvent[] = [
+  events.push({
+    tick: note.startTick,
+    priority: 3,
+    event: {
+      type: "noteOn",
+      channel,
+      noteNumber: toMidi(note.pitch),
+      velocity: note.velocity,
+    },
+  });
+  events.push({
+    tick: note.startTick + note.durationTicks,
+    priority: 2,
+    event: {
+      type: "noteOff",
+      channel,
+      noteNumber: toMidi(note.pitch),
+      velocity: 0,
+    },
+  });
+}
+
+function buildSatbSeparateTracks(
+  project: ProjectDocument,
+  timbre: MidiExportTimbre,
+): MidiEvent[][] {
+  const playable = getAllPlayableTracks(project);
+  return playable.map((track, trackIndex) => {
+    const channel = trackIndex < 9 ? trackIndex : (trackIndex + 1) % 16;
+    const isSatb = track.kind === "satb";
+    const voiceId = isSatb ? (track.id as VoiceId) : undefined;
+    const instrumentName = voiceId
+      ? VOICE_INSTRUMENT_NAMES[voiceId]
+      : track.name;
+    const displayName = voiceId ? VOICE_DISPLAY_NAMES[voiceId] : track.name;
+    const programNumber = resolveProgram(track.program, timbre);
+
+    const events: AbsoluteEvent[] = [
+      {
+        tick: 0,
+        priority: 0,
+        event: {
+          type: "trackName",
+          text: toMidiString(displayName),
+          meta: true,
+        },
+      },
+      {
+        tick: 0,
+        priority: 0,
+        event: {
+          type: "instrumentName",
+          text: toMidiString(instrumentName),
+          meta: true,
+        },
+      },
+      {
+        tick: 0,
+        priority: 1,
+        event: { type: "programChange", channel, programNumber },
+      },
+    ];
+
+    track.notes.forEach((note) => {
+      appendNoteEvents(events, note, channel);
+    });
+
+    return toDeltaEvents(events, project.lengthTicks);
+  });
+}
+
+function buildPianoGrandStaffTracks(
+  project: ProjectDocument,
+  timbre: MidiExportTimbre,
+): MidiEvent[][] {
+  const programNumber = resolveProgram(0, timbre);
+
+  // 钢琴大谱表：上下两轨共享 Channel 0 与相同的乐器名（Piano），
+  // MuseScore / Sibelius 等打谱软件会自动将同一通道/乐器的双轨合并为单一「钢琴大谱表」（Grand Staff）。
+  const sopranoTrack = project.satbTracks.find((t) => t.id === "soprano");
+  const altoTrack = project.satbTracks.find((t) => t.id === "alto");
+
+  const upperEvents: AbsoluteEvent[] = [
     {
       tick: 0,
       priority: 0,
-      event: { type: "trackName", text: track.name, meta: true },
+      event: {
+        type: "trackName",
+        text: toMidiString("钢琴"),
+        meta: true,
+      },
+    },
+    {
+      tick: 0,
+      priority: 0,
+      event: {
+        type: "instrumentName",
+        text: toMidiString("Piano"),
+        meta: true,
+      },
     },
     {
       tick: 0,
       priority: 1,
-      event: { type: "programChange", channel, programNumber: track.program },
+      event: { type: "programChange", channel: 0, programNumber },
     },
   ];
-  track.notes.forEach((note) => {
-    events.push({
-      tick: note.startTick,
-      priority: 3,
-      event: {
-        type: "noteOn",
-        channel,
-        noteNumber: toMidi(note.pitch),
-        velocity: note.velocity,
-      },
-    });
-    events.push({
-      tick: note.startTick + note.durationTicks,
-      priority: 2,
-      event: {
-        type: "noteOff",
-        channel,
-        noteNumber: toMidi(note.pitch),
-        velocity: 0,
-      },
-    });
+
+  sopranoTrack?.notes.forEach((note) => {
+    appendNoteEvents(upperEvents, note, 0);
   });
-  return toDeltaEvents(events, endTick);
+  altoTrack?.notes.forEach((note) => {
+    appendNoteEvents(upperEvents, note, 0);
+  });
+
+  // 下谱表（低音谱表）：男高音 + 男低音（均在 Channel 0）
+  const tenorTrack = project.satbTracks.find((t) => t.id === "tenor");
+  const bassTrack = project.satbTracks.find((t) => t.id === "bass");
+
+  const lowerEvents: AbsoluteEvent[] = [
+    {
+      tick: 0,
+      priority: 0,
+      event: {
+        type: "trackName",
+        text: toMidiString("钢琴"),
+        meta: true,
+      },
+    },
+    {
+      tick: 0,
+      priority: 0,
+      event: {
+        type: "instrumentName",
+        text: toMidiString("Piano"),
+        meta: true,
+      },
+    },
+    {
+      tick: 0,
+      priority: 1,
+      event: { type: "programChange", channel: 0, programNumber },
+    },
+  ];
+
+  tenorTrack?.notes.forEach((note) => {
+    appendNoteEvents(lowerEvents, note, 0);
+  });
+  bassTrack?.notes.forEach((note) => {
+    appendNoteEvents(lowerEvents, note, 0);
+  });
+
+  const auxTracks = project.auxiliaryTracks.map((track, index) => {
+    const channel = 1 + (index % 15);
+    const events: AbsoluteEvent[] = [
+      {
+        tick: 0,
+        priority: 0,
+        event: {
+          type: "trackName",
+          text: toMidiString(track.name),
+          meta: true,
+        },
+      },
+      {
+        tick: 0,
+        priority: 1,
+        event: {
+          type: "programChange",
+          channel,
+          programNumber: track.program,
+        },
+      },
+    ];
+    track.notes.forEach((note) => {
+      appendNoteEvents(events, note, channel);
+    });
+    return toDeltaEvents(events, project.lengthTicks);
+  });
+
+  return [
+    toDeltaEvents(upperEvents, project.lengthTicks),
+    toDeltaEvents(lowerEvents, project.lengthTicks),
+    ...auxTracks,
+  ];
 }
 
 function chordTrack(project: ProjectDocument) {
@@ -134,7 +343,7 @@ function chordTrack(project: ProjectDocument) {
     {
       tick: 0,
       priority: 0,
-      event: { type: "trackName", text: "Chords", meta: true },
+      event: { type: "trackName", text: toMidiString("和弦标记"), meta: true },
     },
   ];
   project.chordTrack.regions.forEach((chord, index) => {
@@ -143,7 +352,7 @@ function chordTrack(project: ProjectDocument) {
       priority: 1,
       event: {
         type: "marker",
-        text: formatChordRegion(project, chord).roman,
+        text: toMidiString(formatChordRegion(project, chord).roman),
         meta: true,
       },
     });
@@ -156,21 +365,30 @@ function chordTrack(project: ProjectDocument) {
       events.push({
         tick: endTick,
         priority: 1,
-        event: { type: "marker", text: "N.C.", meta: true },
+        event: { type: "marker", text: toMidiString("N.C."), meta: true },
       });
     }
   });
   return toDeltaEvents(events, project.lengthTicks);
 }
 
-export function buildMidi(project: ProjectDocument, includeChords = true) {
-  const tracks = [
-    globalTrack(project),
-    ...getAllPlayableTracks(project).map((track, index) =>
-      playableTrack(track, index, project.lengthTicks),
-    ),
-  ];
-  if (includeChords && project.chordTrack.regions.length > 0)
+export function buildMidi(
+  project: ProjectDocument,
+  options?: boolean | MidiExportOptions,
+) {
+  const resolvedOptions: Required<MidiExportOptions> =
+    typeof options === "boolean"
+      ? { ...DEFAULT_MIDI_EXPORT_OPTIONS, includeChords: options }
+      : { ...DEFAULT_MIDI_EXPORT_OPTIONS, ...options };
+
+  const contentTracks =
+    resolvedOptions.layout === "piano-grand-staff"
+      ? buildPianoGrandStaffTracks(project, resolvedOptions.timbre)
+      : buildSatbSeparateTracks(project, resolvedOptions.timbre);
+
+  const tracks = [globalTrack(project), ...contentTracks];
+
+  if (resolvedOptions.includeChords && project.chordTrack.regions.length > 0)
     tracks.push(chordTrack(project));
 
   const data: MidiData = {
@@ -182,13 +400,17 @@ export function buildMidi(project: ProjectDocument, includeChords = true) {
   );
 }
 
-export function midiFileName(project: ProjectDocument) {
+export function midiFileName(
+  project: ProjectDocument,
+  layout: MidiExportLayout = "satb-separate",
+) {
   const safe = project.title
     .trim()
     .replace(/[\\/:*?"<>|]/g, "-")
     .replace(/\s+/g, " ");
-  return (
+  const baseName =
     safe ||
-    `${formatPitchClass(project.keyEvents[0]?.tonic ?? { step: "C", alter: 0 })}调四部和声`
-  );
+    `${formatPitchClass(project.keyEvents[0]?.tonic ?? { step: "C", alter: 0 })}调四部和声`;
+  const suffix = layout === "piano-grand-staff" ? "（大谱表）" : "（分轨总谱）";
+  return `${baseName}${suffix}`;
 }

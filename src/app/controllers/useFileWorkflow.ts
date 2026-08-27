@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { audioEngine } from "../../audio/audioEngine";
-import { buildMidi, midiFileName } from "../../domain/midi";
+import {
+  buildMidi,
+  midiFileName,
+  type MidiExportOptions,
+} from "../../domain/midi";
 import { normalizeProject, type ProjectDocument } from "../../domain/project";
 import {
   autosaveProject,
@@ -156,15 +160,19 @@ export function useFileWorkflow({
     [filePath, history, migrationBackupSourcePath, project, showNotice],
   );
 
-  const handleExportMidi = useCallback(async () => {
-    try {
-      const bytes = buildMidi(project, true);
-      const result = await exportMidi(bytes, midiFileName(project));
-      if (!result.canceled) showNotice("MIDI 已导出");
-    } catch (error) {
-      showNotice(error instanceof Error ? error.message : "MIDI 导出失败");
-    }
-  }, [project, showNotice]);
+  const handleExportMidi = useCallback(
+    async (options?: MidiExportOptions) => {
+      try {
+        const bytes = buildMidi(project, options);
+        const layout = options?.layout ?? "satb-separate";
+        const result = await exportMidi(bytes, midiFileName(project, layout));
+        if (!result.canceled) showNotice("MIDI 已导出");
+      } catch (error) {
+        showNotice(error instanceof Error ? error.message : "MIDI 导出失败");
+      }
+    },
+    [project, showNotice],
+  );
 
   return {
     filePath,

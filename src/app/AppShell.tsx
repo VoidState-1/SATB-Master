@@ -47,6 +47,7 @@ import { TrackSidebar } from "../features/tracks";
 import { RuleTestWorkbench } from "../features/ruleTesting";
 import { ChordInferenceDialog } from "../features/chordInference";
 import { ScorePreviewDialog, loadVexFlow } from "../features/scorePreview";
+import { MidiExportDialog } from "../features/export";
 import { replaceProject } from "../domain/editing";
 import {
   applyHarmonyInference,
@@ -130,6 +131,7 @@ function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chordInferenceOpen, setChordInferenceOpen] = useState(false);
   const [scorePreviewOpen, setScorePreviewOpen] = useState(false);
+  const [midiExportOpen, setMidiExportOpen] = useState(false);
   const [ruleTestMode, setRuleTestMode] = useState(false);
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
@@ -530,7 +532,7 @@ function AppShell() {
           <IconButton
             label="导出 MIDI"
             icon={<Download />}
-            onClick={() => void handleExportMidi()}
+            onClick={() => setMidiExportOpen(true)}
           />
           <IconButton
             label="打开五线谱预览"
@@ -952,6 +954,16 @@ function AppShell() {
           playheadTick={playheadTick}
           onClose={() => setScorePreviewOpen(false)}
           onSelectNote={handleScorePreviewNoteSelection}
+        />
+      ) : null}
+      {midiExportOpen ? (
+        <MidiExportDialog
+          project={project}
+          onClose={() => setMidiExportOpen(false)}
+          onExport={(options) => {
+            setMidiExportOpen(false);
+            void handleExportMidi(options);
+          }}
         />
       ) : null}
       {notice ? (
