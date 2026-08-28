@@ -14,6 +14,7 @@ import {
   tickToSeconds,
 } from "../domain/time";
 import { installExclusiveSoundFont } from "./soundFontLifecycle";
+import { midiOutputManager } from "./midiOutput";
 
 export type AudioEngineState =
   "idle" | "loading" | "ready-sf2" | "ready-fallback" | "playing" | "error";
@@ -220,6 +221,20 @@ export class SatbAudioEngine {
   }
 
   async previewNote(midiNote: number, voiceId: VoiceId, duration = 0.35) {
+    if (midiOutputManager.shouldSendPreview()) {
+      const channel = VOICE_ORDER.indexOf(voiceId);
+      midiOutputManager.sendNoteOn(channel, midiNote, 92);
+      const midiTimer = window.setTimeout(() => {
+        this.previewTimers.delete(midiTimer);
+        midiOutputManager.sendNoteOff(channel, midiNote);
+      }, duration * 1000);
+      this.previewTimers.add(midiTimer);
+    }
+
+    if (midiOutputManager.shouldMuteInternalSynth()) {
+      return;
+    }
+
     await this.resume();
     if (!this.context) return;
     const channel = VOICE_ORDER.indexOf(voiceId);
@@ -261,6 +276,21 @@ export class SatbAudioEngine {
     playableTracks.forEach((track, trackIndex) => {
       if (track.muted || (soloed && !track.solo)) return;
       const channel = channelForTrack(trackIndex);
+
+      if (midiOutputManager.isEnabled()) {
+        midiOutputManager.sendProgramChange(channel, track.program);
+        midiOutputManager.sendControlChange(
+          channel,
+          7,
+          Math.round(project.audio.masterVolume * track.volume * 127),
+        );
+        midiOutputManager.sendControlChange(
+          channel,
+          10,
+          Math.round((track.pan + 1) * 63.5),
+        );
+      }
+
       if (this.synth && this.soundBankId) {
         this.synth.programChange(channel, track.program);
         this.synth.sendMessage([
@@ -289,22 +319,34 @@ export class SatbAudioEngine {
         const eventStart = contextStart + Math.max(0, startSeconds);
         const eventEnd = contextStart + Math.max(0.02, endSeconds);
 
-        if (this.synth && this.soundBankId) {
-          // Worklet 的未来事件队列没有取消 API；改用可清理定时任务，暂停时不会遗留后续音符。
+        if (midiOutputManager.isEnabled()) {
           this.scheduleSynthEvent(eventStart, () =>
-            this.synth?.noteOn(channel, midiNote, note.velocity),
+            midiOutputManager.sendNoteOn(channel, midiNote, note.velocity),
           );
           this.scheduleSynthEvent(eventEnd, () =>
-            this.synth?.noteOff(channel, midiNote),
+            midiOutputManager.sendNoteOff(channel, midiNote),
           );
-        } else {
-          this.scheduleFallback(
-            midiNote,
-            eventStart,
-            Math.max(0.02, eventEnd - eventStart),
-            project.audio.masterVolume * track.volume * 0.085,
-            track.pan,
-          );
+        }
+
+        const muteInternal = midiOutputManager.shouldMuteInternalSynth();
+        if (!muteInternal) {
+          if (this.synth && this.soundBankId) {
+            // Worklet 的未来事件队列没有取消 API；改用可清理定时任务，暂停时不会遗留后续音符。
+            this.scheduleSynthEvent(eventStart, () =>
+              this.synth?.noteOn(channel, midiNote, note.velocity),
+            );
+            this.scheduleSynthEvent(eventEnd, () =>
+              this.synth?.noteOff(channel, midiNote),
+            );
+          } else {
+            this.scheduleFallback(
+              midiNote,
+              eventStart,
+              Math.max(0.02, eventEnd - eventStart),
+              project.audio.masterVolume * track.volume * 0.085,
+              track.pan,
+            );
+          }
         }
       });
     });
@@ -371,6 +413,7 @@ export class SatbAudioEngine {
     this.animationFrame = undefined;
     this.stopTimer = undefined;
     this.synth?.stopAll(true);
+    midiOutputManager.allNotesOff();
     this.fallbackVoices.forEach(({ oscillator, gain }) => {
       try {
         gain.gain.cancelScheduledValues(0);

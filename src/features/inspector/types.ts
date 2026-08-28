@@ -65,6 +65,7 @@ export interface InspectorProps {
   onUpdateTrack(voiceId: VoiceId, patch: Partial<SatbTrack>): void;
   onChooseSoundFont(): void;
   onUseDefaultSoundFont(): void;
+  onOpenMidiOut?(): void;
 }
 
 export type SelectionInspectorProps = Pick<
@@ -114,4 +115,5 @@ export type SoundInspectorProps = Pick<
   | "onUpdateTrack"
   | "onChooseSoundFont"
   | "onUseDefaultSoundFont"
+  | "onOpenMidiOut"
 >;

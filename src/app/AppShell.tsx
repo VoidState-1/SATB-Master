@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BellRing,
+  Cable,
   Clipboard,
   Copy,
   Download,
@@ -48,6 +49,8 @@ import { RuleTestWorkbench } from "../features/ruleTesting";
 import { ChordInferenceDialog } from "../features/chordInference";
 import { ScorePreviewDialog, loadVexFlow } from "../features/scorePreview";
 import { MidiExportDialog } from "../features/export";
+import { MidiOutDialog } from "../features/midiOut";
+import { midiOutputManager } from "../audio/midiOutput";
 import { replaceProject } from "../domain/editing";
 import {
   applyHarmonyInference,
@@ -132,10 +135,21 @@ function AppShell() {
   const [chordInferenceOpen, setChordInferenceOpen] = useState(false);
   const [scorePreviewOpen, setScorePreviewOpen] = useState(false);
   const [midiExportOpen, setMidiExportOpen] = useState(false);
+  const [midiOutOpen, setMidiOutOpen] = useState(false);
+  const [midiOutEnabled, setMidiOutEnabled] = useState<boolean>(() =>
+    midiOutputManager.isEnabled(),
+  );
   const [ruleTestMode, setRuleTestMode] = useState(false);
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
   const developerMode = useDeveloperMode();
+
+  useEffect(() => {
+    const unsub = midiOutputManager.onConfigChange((cfg) =>
+      setMidiOutEnabled(cfg.enabled && midiOutputManager.isSupported()),
+    );
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -535,6 +549,12 @@ function AppShell() {
             onClick={() => setMidiExportOpen(true)}
           />
           <IconButton
+            label="实时 MIDI 输出"
+            icon={<Cable />}
+            active={midiOutEnabled}
+            onClick={() => setMidiOutOpen(true)}
+          />
+          <IconButton
             label="打开五线谱预览"
             icon={<Music2 />}
             active={scorePreviewOpen}
@@ -876,6 +896,7 @@ function AppShell() {
           onUpdateTrack={handleUpdateTrack}
           onChooseSoundFont={() => void handleChooseSoundFont()}
           onUseDefaultSoundFont={() => void handleUseDefaultSoundFont()}
+          onOpenMidiOut={() => setMidiOutOpen(true)}
         />
       </div>
 
@@ -964,6 +985,12 @@ function AppShell() {
             setMidiExportOpen(false);
             void handleExportMidi(options);
           }}
+        />
+      ) : null}
+      {midiOutOpen ? (
+        <MidiOutDialog
+          isOpen={midiOutOpen}
+          onClose={() => setMidiOutOpen(false)}
         />
       ) : null}
       {notice ? (
