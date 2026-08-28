@@ -699,8 +699,10 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
             toMidi(lastSlice.notes.bass.pitch) ===
               toMidi(nextSlice.notes.bass.pitch) &&
             previousSpan.identityKey === nextSpan.identityKey
-          : toMidi(lastSlice.notes.bass.pitch) ===
-              toMidi(nextSlice.notes.bass.pitch) &&
+          : pitchClassEquals(
+              lastSlice.notes.bass.pitch,
+              nextSlice.notes.bass.pitch,
+            ) &&
             nextDesignation?.primaryFunction === "dominant";
     if (valid) continue;
     const currentBassNotes = [

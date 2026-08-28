@@ -853,6 +853,59 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     ).toBeUndefined();
   });
 
+  it("终止四六允许属音低音跨八度进入属和弦", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    project.chordTrack.regions = [
+      functionalChord(project, "subdominant-sixth", 0, {
+        degree: 4,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 1,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "subdominant",
+        },
+        ...manualCertain,
+      }),
+      functionalChord(project, "cadential64-octave", 1, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 2,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "cadential64",
+          primaryFunction: "dominant",
+        },
+        cadenceRole: "cadential64",
+        ...manualCertain,
+      }),
+      functionalChord(project, "dominant-octave", 2, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "dominant",
+        },
+        ...manualCertain,
+      }),
+    ];
+    setLine(project, "bass", [
+      pitch("A", 0, 2),
+      pitch("G", 0, 2),
+      pitch("G", 0, 3),
+    ]);
+
+    expect(
+      diagnosticFor(project, "connection.second-inversion-context"),
+    ).toBeUndefined();
+  });
+
   it("四六语境错误只标记四六和弦自身的低音", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 3;
