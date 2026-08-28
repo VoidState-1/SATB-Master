@@ -130,12 +130,17 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
     if (targetChord) fullCadenceTargets.add(targetChord.id);
   }
   standardChordSliceFacts(context).forEach(
-    ({ slice, chord, active, tones, stableComplete }) => {
+    ({ slice, chord, active, stableComplete }) => {
       if (!stableComplete) return;
-      const missing = tones.filter(
-        (tone) =>
-          !active.some(({ note }) => pitchClassEquals(note.pitch, tone)),
-      );
+      const requiredDegrees = chordVoicingPolicy(chord.identity).requiredDegrees;
+      const missing = requiredDegrees
+        .map((degree) => chordIdentityToneSpellingForDegree(chord.identity, degree))
+        .filter(
+          (tone): tone is SpelledPitchClass => {
+            if (!tone) return false;
+            return !active.some(({ note }) => pitchClassEquals(note.pitch, tone));
+          },
+        );
       if (missing.length === 0) return;
       const interpretation = context.harmony.primaryInterpretation(chord);
       const functionalDesignation =

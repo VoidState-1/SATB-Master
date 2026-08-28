@@ -97,6 +97,87 @@ describe("自动和弦推导", () => {
     ]);
   });
 
+  it("局部推导时直接识别根音三次加三音的主和弦", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    addLine(project, "soprano", [77, 76]);
+    addLine(project, "alto", [71, 60]);
+    addLine(project, "tenor", [67, 60]);
+    addLine(project, "bass", [55, 48]);
+
+    const result = inferChords(project, {
+      fromTick: PPQ,
+      toTick: PPQ * 2,
+    });
+
+    expect(result.regions).toHaveLength(1);
+    expect(result.regions[0].selected?.functionalBaseId).toBe("T");
+    expect(result.regions[0].status).toBe("resolved");
+    expect(result.regions[0].selected?.fit.omittedChordDegrees).toEqual([5]);
+  });
+
+  it("可推断省略五音的根根三七属和弦并进入终止主和弦", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    addLine(project, "soprano", [77, 76]);
+    addLine(project, "alto", [71, 72]);
+    addLine(project, "tenor", [67, 60]);
+    addLine(project, "bass", [55, 48]);
+
+    const result = inferChords(project);
+
+    expect(result.regions.map((region) => region.selected?.functionalBaseId)).toEqual([
+      "D",
+      "T",
+    ]);
+    expect(result.regions[0].selected?.fit.omittedChordDegrees).toEqual([]);
+    expect(result.regions[1].selected?.functionalBaseId).toBe("T");
+  });
+
+  it("在自动乐句边界处识别省略五音的终止主和弦", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 8;
+    for (const voiceId of ["soprano", "alto", "tenor", "bass"] as const) {
+      const pitches =
+        voiceId === "soprano"
+          ? [72, 77, 76, 72]
+          : voiceId === "alto"
+            ? [67, 71, 72, 67]
+            : voiceId === "tenor"
+              ? [64, 67, 60, 64]
+              : [48, 55, 48, 48];
+      const starts = [0, PPQ * 2, PPQ * 3, PPQ * 5];
+      const durations = [PPQ * 2, PPQ, PPQ, PPQ * 3];
+      project.satbTracks.find((track) => track.id === voiceId)!.notes =
+        pitches.map((midiNote, index) =>
+          note(
+            `${voiceId}-${index}`,
+            starts[index],
+            durations[index],
+            midiNote,
+          ),
+        );
+    }
+
+    const result = inferChords(project);
+    const terminal = result.regions.find(
+      (region) => region.fromTick === PPQ * 3 && region.toTick === PPQ * 4,
+    );
+    expect(terminal?.selected?.functionalBaseId).toBe("T");
+    expect(terminal?.selected?.fit.omittedChordDegrees).toEqual([5]);
+
+    const applied = applyHarmonyInference(project, inferHarmony(project), {
+      mode: "fill-gaps",
+    });
+    const analysis = buildHarmonyAnalysis(applied.project);
+    expect(analysis.cadenceCandidates.some(
+      (candidate) =>
+        candidate.kind === "full" &&
+        candidate.fromTick === PPQ * 2 &&
+        candidate.toTick === PPQ * 4,
+    )).toBe(true);
+  });
+
   it("默认只应用已解析区段，并保护已有和弦", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ;

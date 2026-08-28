@@ -181,6 +181,18 @@ describe("斯波索宾功能标记目录", () => {
     });
   });
 
+  it("D7 配器策略允许省略五音", () => {
+    const identity = resolveChordIdentity(
+      functionalDraft("D", "seventh"),
+      C_MAJOR,
+    );
+    expect(chordVoicingPolicy(identity)).toMatchObject({
+      requiredDegrees: [1, 3, 7],
+      permittedDegrees: [1, 3, 5, 7],
+      forbiddenDegrees: [],
+    });
+  });
+
   it("共同和弦同时格式化两个确认解释并可完整持久化", () => {
     const draft: ChordDraft = {
       ...functionalDraft("T"),

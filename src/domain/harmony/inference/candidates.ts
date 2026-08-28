@@ -10,7 +10,11 @@ import {
   functionalTier,
   identityForFunctionalTemplate,
 } from "./functionalTemplates";
-import { fitChordObservation, fitRatio } from "./fit";
+import {
+  fitChordObservation,
+  fitRatio,
+  isCanonicalTonicFifthOmission,
+} from "./fit";
 import type {
   ChordInferenceCandidate,
   ChordInferenceEvidence,
@@ -161,13 +165,17 @@ function createFunctionalCandidate(
     template,
     observation.key,
   );
+  const canonicalTonicOmission =
+    (template.baseId === "T" || template.baseId === "t") &&
+    isCanonicalTonicFifthOmission(observation, identity);
   const fit = fitChordObservation(
     observation,
     identity,
     template.baseId === "T" || template.baseId === "t"
       ? {
           ...options,
-          allowedOmittedChordDegrees: options.allowCadentialTonicOmission
+          allowedOmittedChordDegrees:
+            options.allowCadentialTonicOmission || canonicalTonicOmission
             ? [5]
             : undefined,
         }
@@ -230,9 +238,22 @@ export function buildChordInferenceCandidates(
   observation: ChordInferenceObservation,
   options: ChordInferenceOptions = {},
 ) {
-  const candidates: ChordInferenceCandidate[] = buildFunctionalTemplates(observation.key)
+  const functionalCandidates: ChordInferenceCandidate[] = buildFunctionalTemplates(observation.key)
     .map((template) => createFunctionalCandidate(observation, template, options))
     .filter((candidate): candidate is ChordInferenceCandidate => !!candidate);
+
+  // This exact four-part texture is a canonical tonic reading. Keep it
+  // deterministic even when incomplete-voicing or absolute fallback options
+  // would otherwise introduce equally-scored alternatives.
+  const canonicalTonicCandidates = functionalCandidates.filter(
+    (candidate) =>
+      (candidate.functionalBaseId === "T" || candidate.functionalBaseId === "t") &&
+      isCanonicalTonicFifthOmission(observation, candidate.identity),
+  );
+  if (canonicalTonicCandidates.length > 0)
+    return Object.freeze(canonicalTonicCandidates.sort(candidateComparator));
+
+  const candidates: ChordInferenceCandidate[] = [...functionalCandidates];
 
   if (options.allowAbsoluteFallback) {
     for (const root of observation.soundingPitchClasses) {

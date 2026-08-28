@@ -4,6 +4,7 @@ import {
 import { buildChordInferenceObservations } from "./observations";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
 import { selectChordInferencePath } from "./sequence";
+import { inferPhrases } from "../phrase";
 import type {
   ChordInferenceOptions,
   ChordInferenceResult,
@@ -51,10 +52,17 @@ export function inferChords(
   }
   const observations = buildChordInferenceObservations(project, range);
   const minimumConfidence = options.minConfidence ?? "low";
-  const terminalTicks = new Set([
-    project.lengthTicks,
-    ...project.structure.phraseBoundaries.map((boundary) => boundary.tick),
-  ]);
+  // Phrase boundaries are normally written after chord inference. Precompute
+  // the note/rhythm-only structure here so an inferred middle-phrase cadence
+  // can still unlock the terminal tonic's permitted fifth omission.
+  const phraseAnalysis = inferPhrases({
+    ...project,
+    // Existing chord annotations must not bias a fresh chord inference run.
+    chordRegions: [],
+  });
+  const terminalTicks = new Set(
+    phraseAnalysis.boundaries.map((boundary) => boundary.tick),
+  );
   const candidateSets: Array<ReturnType<typeof buildChordInferenceCandidates>> = [];
   observations.forEach((observation, index) => {
     const previousCandidates = candidateSets[index - 1] ?? [];

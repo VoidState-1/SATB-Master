@@ -44,6 +44,17 @@ describe("当前调性的功能和弦候选", () => {
     expect(candidates[0].fit.nonChordToneNoteIds).toHaveLength(0);
   });
 
+  it("直接识别根音三次加三音的省五音主和弦", () => {
+    const project = createEmptyProject();
+    addChord(project, { soprano: 76, alto: 60, tenor: 60, bass: 48 });
+
+    const candidates = candidatesFor(project);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].functionalBaseId).toBe("T");
+    expect(candidates[0].fit.omittedChordDegrees).toEqual([5]);
+  });
+
   it("识别 D7，并按低音选择根位", () => {
     const project = createEmptyProject();
     addChord(project, { soprano: 65, alto: 62, tenor: 59, bass: 55 });

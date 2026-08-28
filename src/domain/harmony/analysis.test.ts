@@ -982,6 +982,36 @@ describe("斯波索宾基础规则检查", () => {
     expect(ruleIds(project)).not.toContain("chord.incomplete-members");
   });
 
+  it("属七和弦可省略五音并使用根根三七配置", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions.push(
+      chordRegion(project, "dominant-seventh", 0, PPQ, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "dominant7",
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "dominant",
+        },
+      }),
+      chordRegion(project, "tonic", PPQ, PPQ, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+      }),
+    );
+    addLine(project, "soprano", [77, 76]);
+    addLine(project, "alto", [71, 72]);
+    addLine(project, "tenor", [67, 60]);
+    addLine(project, "bass", [55, 48]);
+
+    expect(ruleIds(project)).not.toContain("chord.incomplete-members");
+  });
+
   it("副属和弦重复转换后再检查目标解决", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 3;

@@ -443,6 +443,18 @@ export function chordVoicingPolicy(
       doublingHints: [],
     };
   }
+  if (
+    identity.structure.kind === "tertian" &&
+    identity.structure.quality === "dominant7" &&
+    chordIdentityInversion(identity) === 0
+  ) {
+    return {
+      requiredDegrees: [1, 3, 7],
+      permittedDegrees: [1, 3, 5, 7],
+      forbiddenDegrees: [],
+      doublingHints: [],
+    };
+  }
   if (identity.structure.kind === "augmented-sixth") {
     return {
       requiredDegrees: [],

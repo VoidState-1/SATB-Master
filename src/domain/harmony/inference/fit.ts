@@ -1,7 +1,7 @@
 import {
+  chordVoicingPolicy,
   chordIdentityToneSpellingForDegree,
   chordIdentityToneSpellings,
-  isSeventhStructure,
   type ChordIdentity,
   type ChordToneDegree,
 } from "../../chordModel";
@@ -29,13 +29,7 @@ const MAX_INFERRED_OMISSIONS = 1;
 
 function chordDegrees(identity: ChordIdentity): readonly ChordToneDegree[] {
   if (identity.structure.kind !== "tertian") return [];
-  const degrees: ChordToneDegree[] = [1, 3, 5];
-  if (isSeventhStructure(identity.structure)) degrees.push(7);
-  for (const extension of identity.structure.extensions) {
-    if (extension !== 6 && !degrees.includes(extension as ChordToneDegree))
-      degrees.push(extension as ChordToneDegree);
-  }
-  return degrees;
+  return chordVoicingPolicy(identity).requiredDegrees;
 }
 
 function sameSoundingPitch(left: SpelledPitchClass, right: SpelledPitchClass) {
@@ -92,6 +86,48 @@ function assignmentsFor(
       }),
     ) as Record<string, NonChordToneRole>,
   );
+}
+
+/**
+ * 四声部中“根音三次 + 三音一次”的根位主和弦省五音写法。
+ * 这是一个明确的教学型配置，不要求前一个观察区间已经被识别为 D。
+ */
+export function isCanonicalTonicFifthOmission(
+  observation: ChordInferenceObservation,
+  identity: ChordIdentity,
+) {
+  if (
+    !observation.completeSatb ||
+    identity.structure.kind !== "tertian" ||
+    (identity.structure.quality !== "major" &&
+      identity.structure.quality !== "minor") ||
+    identity.structure.extensions.length > 0 ||
+    identity.structure.alterations.length > 0
+  )
+    return false;
+
+  const root = chordIdentityToneSpellingForDegree(identity, 1);
+  const third = chordIdentityToneSpellingForDegree(identity, 3);
+  const fifth = chordIdentityToneSpellingForDegree(identity, 5);
+  const notes = observationNotes(observation);
+  if (!root || !third || !fifth || notes.length !== 4) return false;
+  if (!observation.bass || !sameSoundingPitch(observation.bass.pitch, root))
+    return false;
+
+  const rootCount = notes.filter(({ note }) =>
+    sameSoundingPitch(note.pitch, root),
+  ).length;
+  const thirdCount = notes.filter(({ note }) =>
+    sameSoundingPitch(note.pitch, third),
+  ).length;
+  const fifthCount = notes.filter(({ note }) =>
+    sameSoundingPitch(note.pitch, fifth),
+  ).length;
+  const onlyRootAndThird = notes.every(({ note }) =>
+    sameSoundingPitch(note.pitch, root) || sameSoundingPitch(note.pitch, third),
+  );
+
+  return rootCount === 3 && thirdCount === 1 && fifthCount === 0 && onlyRootAndThird;
 }
 
 export function fitChordObservation(
