@@ -148,6 +148,17 @@ export function toMidi(pitch: SpelledPitch) {
   );
 }
 
+export function keyDiatonicPitchClasses(key: KeyLike): Set<number> {
+  const tonicPc = pitchClassValue(key.tonic);
+  const intervals = SCALE_INTERVALS[key.mode];
+  return new Set(intervals.map((interval) => (tonicPc + interval) % 12));
+}
+
+export function isDiatonicPitch(midiNote: number, key: KeyLike): boolean {
+  const pc = modulo(midiNote, 12);
+  return keyDiatonicPitchClasses(key).has(pc);
+}
+
 export function accidentalSymbol(alter: number) {
   if (alter === -2) return "♭♭";
   if (alter === -1) return "♭";

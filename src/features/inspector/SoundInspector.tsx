@@ -27,9 +27,9 @@ export function SoundInspector({
   const [midiConfig, setMidiConfig] = useState<MidiOutputConfig>(() =>
     midiOutputManager.getConfig(),
   );
-  const [midiDevices, setMidiDevices] = useState<readonly MidiOutputDeviceInfo[]>(
-    () => midiOutputManager.getDevices(),
-  );
+  const [midiDevices, setMidiDevices] = useState<
+    readonly MidiOutputDeviceInfo[]
+  >(() => midiOutputManager.getDevices());
 
   useEffect(() => {
     const unsubConfig = midiOutputManager.onConfigChange((next) =>
@@ -51,10 +51,46 @@ export function SoundInspector({
   return (
     <>
       <section className="property-section soundfont-section">
-        <header>SoundFont</header>
+        <header
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span>SoundFont 音源</span>
+          <label
+            className="inspector-switch"
+            title={
+              !midiConfig.muteInternalSynth
+                ? "点击静音内置音源"
+                : "点击开启内置音源"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={!midiConfig.muteInternalSynth}
+              onChange={(e) =>
+                midiOutputManager.updateConfig({
+                  muteInternalSynth: !e.target.checked,
+                })
+              }
+            />
+            <span className="inspector-switch-track">
+              <span className="inspector-switch-thumb" />
+            </span>
+            <span className="inspector-switch-label">
+              {!midiConfig.muteInternalSynth ? "已开启" : "已静音"}
+            </span>
+          </label>
+        </header>
         <strong>{project.audio.soundFont.name}</strong>
         <div className="soundfont-status">
-          <small>{audioStatus}</small>
+          {midiConfig.muteInternalSynth ? (
+            <small style={{ color: "#9e5c3b" }}>内置音源已静音</small>
+          ) : (
+            <small>{audioStatus}</small>
+          )}
           {soundFontSize && !soundFontLoad ? (
             <small>文件大小 {soundFontSize}</small>
           ) : null}
@@ -69,23 +105,25 @@ export function SoundInspector({
             </>
           ) : null}
         </div>
-        <button
-          type="button"
-          className="command-button primary"
-          onClick={onChooseSoundFont}
-        >
-          <FolderOpen />
-          选择本地 SF2
-        </button>
-        {project.audio.soundFont.kind === "user" ? (
+        <div className="soundfont-actions">
           <button
             type="button"
-            className="command-button"
-            onClick={onUseDefaultSoundFont}
+            className="command-button primary"
+            onClick={onChooseSoundFont}
           >
-            恢复默认音色
+            <FolderOpen size={14} />
+            选择本地 SF2
           </button>
-        ) : null}
+          {project.audio.soundFont.kind === "user" ? (
+            <button
+              type="button"
+              className="command-button"
+              onClick={onUseDefaultSoundFont}
+            >
+              恢复默认音色
+            </button>
+          ) : null}
+        </div>
       </section>
 
       <section className="property-section">
@@ -101,14 +139,10 @@ export function SoundInspector({
             MIDI 信号输出
           </span>
           <label
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              cursor: "pointer",
-              fontSize: 11,
-              fontWeight: 500,
-            }}
+            className="inspector-switch"
+            title={
+              midiConfig.enabled ? "点击关闭 MIDI 输出" : "点击开启 MIDI 输出"
+            }
           >
             <input
               type="checkbox"
@@ -117,7 +151,12 @@ export function SoundInspector({
                 midiOutputManager.updateConfig({ enabled: e.target.checked })
               }
             />
-            {midiConfig.enabled ? "已开启" : "未开启"}
+            <span className="inspector-switch-track">
+              <span className="inspector-switch-thumb" />
+            </span>
+            <span className="inspector-switch-label">
+              {midiConfig.enabled ? "已开启" : "未开启"}
+            </span>
           </label>
         </header>
         {midiConfig.enabled ? (
@@ -141,13 +180,16 @@ export function SoundInspector({
               {midiConfig.channelMode === "track-channel"
                 ? "多通道分轨 (S1/A2/T3/B4)"
                 : "单通道合并 (Ch1)"}
-              {midiConfig.muteInternalSynth ? " · 已静音内置音色" : ""}
             </div>
             {onOpenMidiOut ? (
               <button
                 type="button"
                 className="command-button"
-                style={{ marginTop: 4, width: "100%", justifyContent: "center" }}
+                style={{
+                  marginTop: 4,
+                  width: "100%",
+                  justifyContent: "center",
+                }}
                 onClick={onOpenMidiOut}
               >
                 配置 MIDI 输出...
@@ -156,7 +198,7 @@ export function SoundInspector({
           </div>
         ) : (
           <small style={{ color: "#8c9085", fontSize: 11 }}>
-            关闭。可在工具栏中开启与配置 MIDI 输出端口。
+            MIDI信号输出已关闭
           </small>
         )}
       </section>

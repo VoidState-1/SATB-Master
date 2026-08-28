@@ -5,23 +5,24 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { Bug, Keyboard, Settings2, ShieldCheck, X } from "lucide-react";
+import { Bug, Keyboard, LayoutGrid, Settings2, ShieldCheck, X } from "lucide-react";
 import { IconButton } from "../../components/IconButton";
 import { DeveloperSettingsPane } from "./DeveloperSettingsPane";
+import { EditorSettingsPane } from "./EditorSettingsPane";
 import { RuleSettingsPane } from "./RuleSettingsPane";
 import { ShortcutSettingsPane } from "./ShortcutSettingsPane";
 import type { SettingsDialogProps } from "./types";
 
 export type { SettingsDialogProps } from "./types";
 
-type SettingsTab = "shortcuts" | "rules" | "developer";
+type SettingsTab = "editor" | "shortcuts" | "rules" | "developer";
 
 export function SettingsDialog(props: SettingsDialogProps) {
   const { onClose } = props;
   const dialogRef = useRef<HTMLElement>(null);
   const shortcutSearchRef = useRef<HTMLInputElement>(null);
   const ruleSearchRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<SettingsTab>("shortcuts");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("editor");
 
   useEffect(() => {
     if (activeTab === "shortcuts") shortcutSearchRef.current?.focus();
@@ -78,6 +79,16 @@ export function SettingsDialog(props: SettingsDialogProps) {
           <nav className="settings-tabs" aria-label="设置分类">
             <button
               type="button"
+              className={activeTab === "editor" ? "is-active" : ""}
+              aria-current={activeTab === "editor" ? "page" : undefined}
+              aria-label="编辑器"
+              onClick={() => setActiveTab("editor")}
+            >
+              <LayoutGrid aria-hidden="true" />
+              <span>编辑器</span>
+            </button>
+            <button
+              type="button"
               className={activeTab === "shortcuts" ? "is-active" : ""}
               aria-current={activeTab === "shortcuts" ? "page" : undefined}
               aria-label="快捷键"
@@ -108,7 +119,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
             </button>
           </nav>
 
-          {activeTab === "shortcuts" ? (
+          {activeTab === "editor" ? (
+            <EditorSettingsPane
+              scaleGuideEnabled={props.scaleGuideEnabled}
+              onSetScaleGuideEnabled={props.onSetScaleGuideEnabled}
+            />
+          ) : activeTab === "shortcuts" ? (
             <ShortcutSettingsPane
               bindings={props.bindings}
               onSetBinding={props.onSetBinding}

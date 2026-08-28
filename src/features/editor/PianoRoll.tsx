@@ -72,6 +72,7 @@ export function PianoRoll({
   loopStartTick,
   loopEndTick,
   cancelRequest,
+  scaleGuideEnabled,
   onSetPlayhead,
   onSetPixelsPerBeat,
   onSetActiveVoice,
@@ -486,6 +487,7 @@ export function PianoRoll({
           interaction={interaction}
           noteRects={noteRects}
           tool={tool}
+          scaleGuideEnabled={scaleGuideEnabled}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={finishInteraction}

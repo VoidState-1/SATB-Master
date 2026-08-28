@@ -4,10 +4,11 @@ import type { HarmonyDiagnostic } from "../../../domain/harmony";
 import { keyAtTick, type MeasureInfo } from "../../../domain/time";
 import {
   VOICE_CONFIG,
+  type KeyEvent,
   type ProjectDocument,
   type VoiceId,
 } from "../../../domain/project";
-import { formatSpelledPitch, spellMidi } from "../../../domain/pitch";
+import { formatSpelledPitch, isDiatonicPitch, spellMidi } from "../../../domain/pitch";
 import { isBlackKey, primaryDiagnostic } from "../geometry";
 import type { PointerInteraction } from "../interactions/types";
 import type { EditorTool } from "../types";
@@ -39,6 +40,7 @@ interface NoteLayerProps {
   interaction?: PointerInteraction;
   noteRects: NoteRect[];
   tool: EditorTool;
+  scaleGuideEnabled?: boolean;
   onPointerDown(event: React.PointerEvent<HTMLCanvasElement>): void;
   onPointerMove(event: React.PointerEvent<HTMLCanvasElement>): void;
   onPointerUp(event: React.PointerEvent<HTMLCanvasElement>): void;
@@ -63,6 +65,7 @@ export function NoteLayer({
   interaction,
   noteRects,
   tool,
+  scaleGuideEnabled,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -76,6 +79,8 @@ export function NoteLayer({
     const canvas = viewportCanvasRef.current;
     const scroll = scrollRef.current;
     if (!canvas || !scroll) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
     const ratio = window.devicePixelRatio || 1;
     const renderWidth = viewportSize.width;
     const renderHeight = viewportSize.height;
@@ -85,10 +90,7 @@ export function NoteLayer({
     if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
     canvas.style.width = `${renderWidth}px`;
     canvas.style.height = `${renderHeight}px`;
-    const context = canvas.getContext("2d");
-    if (!context) return;
 
-    // 工程可以很长，但位图只覆盖当前视口，避免缩放后分配数万像素宽的 Canvas。
     const drawViewport = () => {
       const visibleLeft = scroll.scrollLeft;
       const visibleTop = scroll.scrollTop;
@@ -112,20 +114,72 @@ export function NoteLayer({
 
       context.fillStyle = "#f7f7f3";
       context.fillRect(visibleLeft, visibleTop, renderWidth, renderHeight);
-      for (let midi = MAX_MIDI; midi >= MIN_MIDI; midi -= 1) {
-        const y = midiToY(midi);
-        if (y > visibleBottom || y + ROW_HEIGHT < visibleTop) continue;
-        const rowLeft = Math.max(PIANO_WIDTH, visibleLeft);
-        if (isBlackKey(midi)) {
-          context.fillStyle = "#eeeee9";
-          context.fillRect(rowLeft, y, visibleRight - rowLeft, ROW_HEIGHT);
+
+      if (scaleGuideEnabled) {
+        const sortedKeys = [...project.keyEvents].sort((a, b) => a.tick - b.tick);
+        const keySegments: { startX: number; endX: number; key: KeyEvent }[] = [];
+        for (let i = 0; i < sortedKeys.length; i++) {
+          const currentKey = sortedKeys[i];
+          const nextTick = sortedKeys[i + 1]?.tick ?? project.lengthTicks;
+          const kLeft =
+            i === 0
+              ? PIANO_WIDTH
+              : tickToX(currentKey.tick, project.ppq, pixelsPerBeat);
+          const kRight =
+            i === sortedKeys.length - 1
+              ? Math.max(totalWidth, visibleRight)
+              : tickToX(nextTick, project.ppq, pixelsPerBeat);
+          if (kRight > visibleLeft && kLeft < visibleRight) {
+            keySegments.push({
+              startX: Math.max(PIANO_WIDTH, Math.max(kLeft, visibleLeft)),
+              endX: Math.min(visibleRight, kRight),
+              key: currentKey,
+            });
+          }
         }
-        context.strokeStyle = midi % 12 === 0 ? "#c4c5be" : "#dedfd9";
-        context.lineWidth = midi % 12 === 0 ? 1.2 : 1;
-        context.beginPath();
-        context.moveTo(rowLeft, y + ROW_HEIGHT);
-        context.lineTo(visibleRight, y + ROW_HEIGHT);
-        context.stroke();
+
+        for (let midi = MAX_MIDI; midi >= MIN_MIDI; midi -= 1) {
+          const y = midiToY(midi);
+          if (y > visibleBottom || y + ROW_HEIGHT < visibleTop) continue;
+          const rowLeft = Math.max(PIANO_WIDTH, visibleLeft);
+
+          keySegments.forEach((segment) => {
+            if (segment.endX > segment.startX) {
+              if (!isDiatonicPitch(midi, segment.key)) {
+                context.fillStyle = "#eeeee9";
+                context.fillRect(
+                  segment.startX,
+                  y,
+                  segment.endX - segment.startX,
+                  ROW_HEIGHT,
+                );
+              }
+            }
+          });
+
+          context.strokeStyle = midi % 12 === 0 ? "#c4c5be" : "#dedfd9";
+          context.lineWidth = midi % 12 === 0 ? 1.2 : 1;
+          context.beginPath();
+          context.moveTo(rowLeft, y + ROW_HEIGHT);
+          context.lineTo(visibleRight, y + ROW_HEIGHT);
+          context.stroke();
+        }
+      } else {
+        for (let midi = MAX_MIDI; midi >= MIN_MIDI; midi -= 1) {
+          const y = midiToY(midi);
+          if (y > visibleBottom || y + ROW_HEIGHT < visibleTop) continue;
+          const rowLeft = Math.max(PIANO_WIDTH, visibleLeft);
+          if (isBlackKey(midi)) {
+            context.fillStyle = "#eeeee9";
+            context.fillRect(rowLeft, y, visibleRight - rowLeft, ROW_HEIGHT);
+          }
+          context.strokeStyle = midi % 12 === 0 ? "#c4c5be" : "#dedfd9";
+          context.lineWidth = midi % 12 === 0 ? 1.2 : 1;
+          context.beginPath();
+          context.moveTo(rowLeft, y + ROW_HEIGHT);
+          context.lineTo(visibleRight, y + ROW_HEIGHT);
+          context.stroke();
+        }
       }
 
       measures.forEach((measure) => {
@@ -329,6 +383,7 @@ export function NoteLayer({
     scrollRef,
     selectedNoteIds,
     viewportSize,
+    scaleGuideEnabled,
   ]);
 
   return (

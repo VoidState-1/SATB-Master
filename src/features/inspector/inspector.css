@@ -482,3 +482,81 @@
   font-size: 11px;
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18);
 }
+
+.inspector-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.inspector-switch input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.inspector-switch-track {
+  position: relative;
+  display: inline-block;
+  width: 28px;
+  height: 16px;
+  border-radius: 9px;
+  background: #cbcdc5;
+  transition: background-color 0.18s ease;
+  flex-shrink: 0;
+}
+
+.inspector-switch input[type="checkbox"]:checked + .inspector-switch-track {
+  background: #2f7764;
+}
+
+.inspector-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.18s ease;
+}
+
+.inspector-switch input[type="checkbox"]:checked + .inspector-switch-track .inspector-switch-thumb {
+  transform: translateX(12px);
+}
+
+.inspector-switch-label {
+  color: #63665e;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.inspector-switch input[type="checkbox"]:checked ~ .inspector-switch-label {
+  color: #245b4c;
+}
+
+.soundfont-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.soundfont-actions .command-button {
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 11px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}

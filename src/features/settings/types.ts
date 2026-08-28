@@ -70,6 +70,8 @@ export interface SettingsDialogProps {
   onSetDeveloperMode(enabled: boolean): void;
   showRuleTestEntry: boolean;
   onSetShowRuleTestEntry(visible: boolean): void;
+  scaleGuideEnabled: boolean;
+  onSetScaleGuideEnabled(enabled: boolean): void;
   onClose(): void;
 }
 

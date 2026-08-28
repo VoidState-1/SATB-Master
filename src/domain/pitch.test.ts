@@ -3,8 +3,10 @@ import { resolveChordIdentity } from "./chordModel";
 import {
   enharmonicSpellings,
   formatSpelledPitch,
-  keySignatureFifths,
+  isDiatonicPitch,
   isWrittenStep,
+  keyDiatonicPitchClasses,
+  keySignatureFifths,
   leadingTonePitchClass,
   normalizePitchClassNumber,
   parsePitchClass,
@@ -199,5 +201,35 @@ describe("和弦实体拼写", () => {
       cMajor,
     );
     expect(localSecondary.root).toEqual({ step: "E", alter: 0 });
+  });
+
+  it("正确根据调号计算调内音并判定音高归属（音阶音符指南）", () => {
+    const cMajor = { tonic: { step: "C" as const, alter: 0 as const }, mode: "major" as const };
+    const gMajor = { tonic: { step: "G" as const, alter: 0 as const }, mode: "major" as const };
+    const fMajor = { tonic: { step: "F" as const, alter: 0 as const }, mode: "major" as const };
+    const dMinor = { tonic: { step: "D" as const, alter: 0 as const }, mode: "minor" as const };
+
+    // C Major: C D E F G A B (0, 2, 4, 5, 7, 9, 11)
+    expect(keyDiatonicPitchClasses(cMajor)).toEqual(new Set([0, 2, 4, 5, 7, 9, 11]));
+    expect(isDiatonicPitch(60, cMajor)).toBe(true); // C4
+    expect(isDiatonicPitch(61, cMajor)).toBe(false); // C#4
+    expect(isDiatonicPitch(65, cMajor)).toBe(true); // F4
+    expect(isDiatonicPitch(66, cMajor)).toBe(false); // F#4
+
+    // G Major: G A B C D E F# (7, 9, 11, 0, 2, 4, 6)
+    expect(keyDiatonicPitchClasses(gMajor)).toEqual(new Set([0, 2, 4, 6, 7, 9, 11]));
+    expect(isDiatonicPitch(66, gMajor)).toBe(true); // F#4 is diatonic!
+    expect(isDiatonicPitch(65, gMajor)).toBe(false); // F4 is chromatic!
+
+    // F Major: F G A Bb C D E (5, 7, 9, 10, 0, 2, 4)
+    expect(keyDiatonicPitchClasses(fMajor)).toEqual(new Set([0, 2, 4, 5, 7, 9, 10]));
+    expect(isDiatonicPitch(70, fMajor)).toBe(true); // Bb4 is diatonic!
+    expect(isDiatonicPitch(71, fMajor)).toBe(false); // B4 is chromatic!
+
+    // D Minor: D E F G A Bb C (2, 4, 5, 7, 9, 10, 0)
+    expect(keyDiatonicPitchClasses(dMinor)).toEqual(new Set([0, 2, 4, 5, 7, 9, 10]));
+    expect(isDiatonicPitch(62, dMinor)).toBe(true); // D4
+    expect(isDiatonicPitch(70, dMinor)).toBe(true); // Bb4
+    expect(isDiatonicPitch(71, dMinor)).toBe(false); // B4
   });
 });

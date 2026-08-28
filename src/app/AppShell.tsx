@@ -69,6 +69,7 @@ import {
 } from "../hooks/usePanelLayout";
 import { useDeveloperMode } from "../hooks/useDeveloperMode";
 import { useExternalRuleLibrary } from "../hooks/useExternalRuleLibrary";
+import { useScaleGuide } from "../hooks/useScaleGuide";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
 import { useConfirmationController } from "./controllers/useConfirmationController";
 import { useHarmonyController } from "./controllers/useHarmonyController";
@@ -143,6 +144,7 @@ function AppShell() {
   const panelLayout = usePanelLayout();
   const shortcutSettings = useShortcutBindings();
   const developerMode = useDeveloperMode();
+  const { scaleGuideEnabled, setScaleGuideEnabled } = useScaleGuide();
 
   useEffect(() => {
     const unsub = midiOutputManager.onConfigChange((cfg) =>
@@ -776,6 +778,7 @@ function AppShell() {
             loopStartTick={loopStartTick}
             loopEndTick={loopEndTick}
             cancelRequest={cancelEditorRequest}
+            scaleGuideEnabled={scaleGuideEnabled}
             onSetPlayhead={setPlayheadTick}
             onSetPixelsPerBeat={setPixelsPerBeat}
             onSetActiveVoice={setActiveVoice}
@@ -955,6 +958,8 @@ function AppShell() {
           onSetDeveloperMode={developerMode.setEnabled}
           showRuleTestEntry={developerMode.showRuleTestEntry}
           onSetShowRuleTestEntry={developerMode.setShowRuleTestEntry}
+          scaleGuideEnabled={scaleGuideEnabled}
+          onSetScaleGuideEnabled={setScaleGuideEnabled}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}

@@ -29,6 +29,7 @@ export interface PianoRollProps {
   loopStartTick: number;
   loopEndTick: number;
   cancelRequest: number;
+  scaleGuideEnabled?: boolean;
   onSetPlayhead(tick: number): void;
   onSetPixelsPerBeat(value: number): void;
   onSetActiveVoice(voiceId: VoiceId): void;
