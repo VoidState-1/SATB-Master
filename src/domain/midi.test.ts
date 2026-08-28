@@ -242,7 +242,36 @@ describe("MIDI Type 1 导出", () => {
 
   it("正确生成不同排版模式的文件名后缀", () => {
     const project = createEmptyProject("我的和声练习");
+    expect(midiFileName(project, "single-track")).toBe("我的和声练习（单轨）");
     expect(midiFileName(project, "satb-separate")).toBe("我的和声练习（分轨总谱）");
     expect(midiFileName(project, "piano-grand-staff")).toBe("我的和声练习（大谱表）");
+  });
+
+  it("支持单轨合并模式导出", () => {
+    const project = createEmptyProject();
+    project.satbTracks[0].notes.push({
+      id: "s1",
+      startTick: 0,
+      durationTicks: 480,
+      pitch: { step: "C", alter: 0, octave: 5 },
+      velocity: 80,
+      locked: false,
+      spellingSource: "manual",
+    });
+    project.satbTracks[3].notes.push({
+      id: "b1",
+      startTick: 0,
+      durationTicks: 480,
+      pitch: { step: "C", alter: 0, octave: 3 },
+      velocity: 80,
+      locked: false,
+      spellingSource: "manual",
+    });
+
+    const parsed = parseMidi(
+      Array.from(buildMidi(project, { layout: "single-track" })),
+    );
+    // Global track + 1 content track
+    expect(parsed.tracks).toHaveLength(2);
   });
 });

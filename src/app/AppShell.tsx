@@ -48,7 +48,7 @@ import { TrackSidebar } from "../features/tracks";
 import { RuleTestWorkbench } from "../features/ruleTesting";
 import { ChordInferenceDialog } from "../features/chordInference";
 import { ScorePreviewDialog, loadVexFlow } from "../features/scorePreview";
-import { MidiExportDialog } from "../features/export";
+import { ExportDialog } from "../features/export";
 import { MidiOutDialog } from "../features/midiOut";
 import { midiOutputManager } from "../audio/midiOutput";
 import { replaceProject } from "../domain/editing";
@@ -135,7 +135,7 @@ function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chordInferenceOpen, setChordInferenceOpen] = useState(false);
   const [scorePreviewOpen, setScorePreviewOpen] = useState(false);
-  const [midiExportOpen, setMidiExportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [midiOutOpen, setMidiOutOpen] = useState(false);
   const [midiOutEnabled, setMidiOutEnabled] = useState<boolean>(() =>
     midiOutputManager.isEnabled(),
@@ -256,15 +256,21 @@ function AppShell() {
     setPlayheadTick,
     showNotice,
   });
-  const { filePath, handleNew, handleOpen, handleSave, handleExportMidi } =
-    useFileWorkflow({
-      project,
-      history,
-      createProject: createProjectWithRuleProfileTemplate,
-      onWorkspaceReset: resetWorkspaceForProject,
-      showNotice,
-      requestConfirmation,
-    });
+  const {
+    filePath,
+    handleNew,
+    handleOpen,
+    handleSave,
+    handleExportMidi,
+    handleExportMusicXml,
+  } = useFileWorkflow({
+    project,
+    history,
+    createProject: createProjectWithRuleProfileTemplate,
+    onWorkspaceReset: resetWorkspaceForProject,
+    showNotice,
+    requestConfirmation,
+  });
   const {
     externalRuleLibrary,
     externalRuleFailures,
@@ -547,8 +553,9 @@ function AppShell() {
           />
           <IconButton
             label="导出 MIDI"
+            title="导出 (MusicXML / MIDI)"
             icon={<Download />}
-            onClick={() => setMidiExportOpen(true)}
+            onClick={() => setExportOpen(true)}
           />
           <IconButton
             label="实时 MIDI 输出"
@@ -982,13 +989,17 @@ function AppShell() {
           onSelectNote={handleScorePreviewNoteSelection}
         />
       ) : null}
-      {midiExportOpen ? (
-        <MidiExportDialog
+      {exportOpen ? (
+        <ExportDialog
           project={project}
-          onClose={() => setMidiExportOpen(false)}
-          onExport={(options) => {
-            setMidiExportOpen(false);
+          onClose={() => setExportOpen(false)}
+          onExportMidi={(options) => {
+            setExportOpen(false);
             void handleExportMidi(options);
+          }}
+          onExportMusicXml={(options) => {
+            setExportOpen(false);
+            void handleExportMusicXml(options);
           }}
         />
       ) : null}

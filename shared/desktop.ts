@@ -102,6 +102,10 @@ export interface DesktopInvokeMap {
     request: { bytes: Uint8Array; defaultName: string };
     response: { canceled: boolean; filePath?: string };
   };
+  "musicxml:export": {
+    request: { xml: string; defaultName: string };
+    response: { canceled: boolean; filePath?: string };
+  };
   "rule-profile:open": {
     request: void;
     response: { canceled: boolean; filePath?: string; profile?: unknown };
@@ -183,6 +187,7 @@ export const DESKTOP_CHANNELS = Object.freeze({
   ruleTestCaseOpenDirectory: "rule-test-case:open-directory",
   ruleTestCaseDelete: "rule-test-case:delete",
   midiExport: "midi:export",
+  musicXmlExport: "musicxml:export",
   ruleProfileOpen: "rule-profile:open",
   ruleProfileSave: "rule-profile:save",
   soundFontOpen: "soundfont:open",
@@ -223,6 +228,9 @@ export interface DesktopApi {
   };
   midi: {
     export(bytes: Uint8Array, defaultName: string): Promise<DesktopInvokeMap["midi:export"]["response"]>;
+  };
+  musicXml: {
+    export(xml: string, defaultName: string): Promise<DesktopInvokeMap["musicxml:export"]["response"]>;
   };
   ruleProfile: {
     open(): Promise<DesktopInvokeMap["rule-profile:open"]["response"]>;

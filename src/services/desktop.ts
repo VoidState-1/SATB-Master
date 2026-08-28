@@ -176,6 +176,18 @@ export async function exportMidi(bytes: Uint8Array, defaultName: string) {
   return { canceled: false };
 }
 
+export async function exportMusicXml(xml: string, defaultName: string) {
+  if (window.desktop) return window.desktop.musicXml.export(xml, defaultName);
+  const blob = new Blob([xml], { type: "application/vnd.recordare.musicxml+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${defaultName}.musicxml`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+  return { canceled: false };
+}
+
 function chooseBrowserJsonFile() {
   return new Promise<File | undefined>((resolve) => {
     const input = document.createElement("input");

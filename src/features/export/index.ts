@@ -1,2 +1,7 @@
-export { MidiExportDialog } from "./MidiExportDialog";
-export type { MidiExportDialogProps } from "./MidiExportDialog";
+export {
+  ExportDialog,
+  MidiExportDialog,
+  type ExportDialogProps,
+  type ExportFormat,
+  type MidiExportDialogProps,
+} from "./ExportDialog";

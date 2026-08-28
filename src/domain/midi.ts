@@ -9,7 +9,10 @@ import {
 } from "./project";
 import { formatPitchClass, keySignatureFifths, toMidi } from "./pitch";
 
-export type MidiExportLayout = "satb-separate" | "piano-grand-staff";
+export type MidiExportLayout =
+  | "single-track"
+  | "piano-grand-staff"
+  | "satb-separate";
 export type MidiExportTimbre = "piano" | "choir" | "project";
 
 export interface MidiExportOptions {
@@ -338,6 +341,66 @@ function buildPianoGrandStaffTracks(
   ];
 }
 
+function buildSingleTrack(
+  project: ProjectDocument,
+  timbre: MidiExportTimbre,
+): MidiEvent[][] {
+  const programNumber = resolveProgram(0, timbre);
+  const events: AbsoluteEvent[] = [
+    {
+      tick: 0,
+      priority: 0,
+      event: {
+        type: "trackName",
+        text: toMidiString(project.title || "SATB Master"),
+        meta: true,
+      },
+    },
+    {
+      tick: 0,
+      priority: 1,
+      event: { type: "programChange", channel: 0, programNumber },
+    },
+  ];
+
+  const satbTracks = getAllPlayableTracks(project);
+  satbTracks.forEach((track) => {
+    track.notes.forEach((note) => {
+      appendNoteEvents(events, note, 0);
+    });
+  });
+
+  const auxTracks = project.auxiliaryTracks.map((track, index) => {
+    const channel = 1 + (index % 15);
+    const auxEvents: AbsoluteEvent[] = [
+      {
+        tick: 0,
+        priority: 0,
+        event: {
+          type: "trackName",
+          text: toMidiString(track.name),
+          meta: true,
+        },
+      },
+      {
+        tick: 0,
+        priority: 1,
+        event: {
+          type: "programChange",
+          channel,
+          programNumber: track.program,
+        },
+      },
+    ];
+    track.notes.forEach((note) => {
+      appendNoteEvents(auxEvents, note, channel);
+    });
+    return toDeltaEvents(auxEvents, project.lengthTicks);
+  });
+
+  return [toDeltaEvents(events, project.lengthTicks), ...auxTracks];
+}
+
 function chordTrack(project: ProjectDocument) {
   const events: AbsoluteEvent[] = [
     {
@@ -382,9 +445,11 @@ export function buildMidi(
       : { ...DEFAULT_MIDI_EXPORT_OPTIONS, ...options };
 
   const contentTracks =
-    resolvedOptions.layout === "piano-grand-staff"
-      ? buildPianoGrandStaffTracks(project, resolvedOptions.timbre)
-      : buildSatbSeparateTracks(project, resolvedOptions.timbre);
+    resolvedOptions.layout === "single-track"
+      ? buildSingleTrack(project, resolvedOptions.timbre)
+      : resolvedOptions.layout === "piano-grand-staff"
+        ? buildPianoGrandStaffTracks(project, resolvedOptions.timbre)
+        : buildSatbSeparateTracks(project, resolvedOptions.timbre);
 
   const tracks = [globalTrack(project), ...contentTracks];
 
@@ -411,6 +476,11 @@ export function midiFileName(
   const baseName =
     safe ||
     `${formatPitchClass(project.keyEvents[0]?.tonic ?? { step: "C", alter: 0 })}调四部和声`;
-  const suffix = layout === "piano-grand-staff" ? "（大谱表）" : "（分轨总谱）";
+  const suffix =
+    layout === "single-track"
+      ? "（单轨）"
+      : layout === "piano-grand-staff"
+        ? "（大谱表）"
+        : "（分轨总谱）";
   return `${baseName}${suffix}`;
 }

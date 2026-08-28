@@ -59,6 +59,10 @@ const desktop: DesktopApi = {
     export: (bytes: Uint8Array, defaultName: string) =>
       invokeDesktop(DESKTOP_CHANNELS.midiExport, { bytes, defaultName }),
   },
+  musicXml: {
+    export: (xml: string, defaultName: string) =>
+      invokeDesktop(DESKTOP_CHANNELS.musicXmlExport, { xml, defaultName }),
+  },
   ruleProfile: {
     open: () => invokeDesktop(DESKTOP_CHANNELS.ruleProfileOpen),
     save: (request) => invokeDesktop(DESKTOP_CHANNELS.ruleProfileSave, request),

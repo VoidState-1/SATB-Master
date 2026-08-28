@@ -13,7 +13,14 @@ import { handleDesktop } from './typed-ipc.js'
 const MAX_PROJECT_BYTES = 20 * 1024 * 1024
 const MAX_RULE_PROFILE_BYTES = 2 * 1024 * 1024
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
-export type DialogDirectoryKind = 'project' | 'midi' | 'soundfont' | 'rule' | 'profile' | 'rule-test-case'
+export type DialogDirectoryKind =
+  | 'project'
+  | 'midi'
+  | 'musicxml'
+  | 'soundfont'
+  | 'rule'
+  | 'profile'
+  | 'rule-test-case'
 type DialogDirectories = Partial<Record<DialogDirectoryKind, string>>
 
 let dialogDirectories: DialogDirectories | undefined
@@ -60,7 +67,17 @@ async function loadDialogDirectories() {
   try {
     const stored = JSON.parse(await readFile(dialogDirectoriesPath(), 'utf8')) as Record<string, unknown>
     dialogDirectories = Object.fromEntries(
-      (['project', 'midi', 'soundfont', 'rule', 'profile', 'rule-test-case'] as DialogDirectoryKind[])
+      (
+        [
+          'project',
+          'midi',
+          'musicxml',
+          'soundfont',
+          'rule',
+          'profile',
+          'rule-test-case',
+        ] as DialogDirectoryKind[]
+      )
         .filter((kind) => typeof stored[kind] === 'string' && path.isAbsolute(stored[kind] as string))
         .map((kind) => [kind, stored[kind] as string]),
     )
@@ -268,6 +285,29 @@ export function registerProjectIpc() {
     if (selection.canceled || !selection.filePath) return { canceled: true }
     await rememberDialogDirectory('midi', selection.filePath)
     await writeFile(selection.filePath, request.bytes)
+    return { canceled: false, filePath: selection.filePath }
+  })
+
+  handleDesktop(DESKTOP_CHANNELS.musicXmlExport, async (_event, request) => {
+    if (e2eDirectory) {
+      const filePath = path.join(e2eDirectory, 'export.musicxml')
+      await writeFile(filePath, request.xml, 'utf8')
+      return { canceled: false, filePath }
+    }
+
+    const selection = await dialog.showSaveDialog({
+      title: '导出 MusicXML 乐谱',
+      defaultPath: await rememberedDefaultPath(
+        'musicxml',
+        `${request.defaultName || 'SATB_Score'}.musicxml`,
+      ),
+      filters: [
+        { name: 'MusicXML 乐谱文件', extensions: ['musicxml', 'xml'] },
+      ],
+    })
+    if (selection.canceled || !selection.filePath) return { canceled: true }
+    await rememberDialogDirectory('musicxml', selection.filePath)
+    await writeFile(selection.filePath, request.xml, 'utf8')
     return { canceled: false, filePath: selection.filePath }
   })
 

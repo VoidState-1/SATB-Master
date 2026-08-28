@@ -5,11 +5,17 @@ import {
   midiFileName,
   type MidiExportOptions,
 } from "../../domain/midi";
+import {
+  buildMusicXml,
+  musicXmlFileName,
+  type MusicXmlExportOptions,
+} from "../../domain/musicxml";
 import { normalizeProject, type ProjectDocument } from "../../domain/project";
 import {
   autosaveProject,
   discardRecovery,
   exportMidi,
+  exportMusicXml,
   findRecovery,
   openProject,
   saveProject,
@@ -174,11 +180,31 @@ export function useFileWorkflow({
     [project, showNotice],
   );
 
+  const handleExportMusicXml = useCallback(
+    async (options?: MusicXmlExportOptions) => {
+      try {
+        const xml = buildMusicXml(project, options);
+        const layout = options?.layout ?? "grand-staff";
+        const result = await exportMusicXml(
+          xml,
+          musicXmlFileName(project, layout),
+        );
+        if (!result.canceled) showNotice("MusicXML 乐谱已导出");
+      } catch (error) {
+        showNotice(
+          error instanceof Error ? error.message : "MusicXML 导出失败",
+        );
+      }
+    },
+    [project, showNotice],
+  );
+
   return {
     filePath,
     handleNew,
     handleOpen,
     handleSave,
     handleExportMidi,
+    handleExportMusicXml,
   } as const;
 }
