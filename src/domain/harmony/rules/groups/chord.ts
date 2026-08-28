@@ -6,6 +6,7 @@ import {
 } from "../../../chordModel";
 import type { HarmonyAnalysis } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
+import { effectiveFunctionalDesignation } from "../../../functionalHarmonyCatalog";
 import {
   formatPitchClass,
   leadingTonePitchClass,
@@ -122,6 +123,12 @@ export function inversionBassRule(context: HarmonyRuleContext) {
 
 export function incompleteChordMembersRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
+  const fullCadenceTargets = new Set<string>();
+  for (const cadence of context.cadences({ kind: "full" })) {
+    if (cadence.annotation?.stale) continue;
+    const targetChord = cadence.spans.at(-1)?.lastSlice.chord;
+    if (targetChord) fullCadenceTargets.add(targetChord.id);
+  }
   standardChordSliceFacts(context).forEach(
     ({ slice, chord, active, tones, stableComplete }) => {
       if (!stableComplete) return;
@@ -130,6 +137,33 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
           !active.some(({ note }) => pitchClassEquals(note.pitch, tone)),
       );
       if (missing.length === 0) return;
+      const interpretation = context.harmony.primaryInterpretation(chord);
+      const functionalDesignation =
+        interpretation.status === "resolved"
+          ? effectiveFunctionalDesignation(
+              chord.semantics!,
+              chord.identity.structure.kind === "tertian"
+                ? chord.identity.structure.quality
+                : undefined,
+            )
+          : undefined;
+      const isCadentialTonicFifthOmission =
+        missing.length === 1 &&
+        chord.identity.structure.kind === "tertian" &&
+        (chord.identity.structure.quality === "major" ||
+          chord.identity.structure.quality === "minor") &&
+        chord.identity.structure.extensions.length === 0 &&
+        chord.identity.structure.alterations.length === 0 &&
+        pitchClassEquals(chord.identity.bass, chord.identity.root) &&
+        fullCadenceTargets.has(chord.id) &&
+        interpretation.status === "resolved" &&
+        interpretation.value.degree === 1 &&
+        functionalDesignation?.primaryFunction === "tonic" &&
+        pitchClassEquals(
+          missing[0],
+          chordIdentityToneSpellingForDegree(chord.identity, 5)!,
+        );
+      if (isCadentialTonicFifthOmission) return;
       diagnostics.push(
         diagnostic(
           "chord.incomplete-members",

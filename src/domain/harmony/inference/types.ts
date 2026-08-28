@@ -144,6 +144,8 @@ export interface ChordInferenceOptions {
   readonly toTick?: number;
   readonly allowAbsoluteFallback?: boolean;
   readonly allowIncompleteVoicing?: boolean;
+  /** 仅供终止末端的主和弦候选开放省略五音。 */
+  readonly allowCadentialTonicOmission?: boolean;
   readonly allowNonChordToneCandidates?: boolean;
   readonly minConfidence?: ChordInferenceConfidence;
 }

@@ -914,6 +914,74 @@ describe("斯波索宾基础规则检查", () => {
     expect(diagnostic?.severity).toBe("warning");
   });
 
+  it("跨乐句的半终止后进入下属不提示逆功能进行", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.structure.phraseBoundaries = [
+      {
+        id: "phrase-boundary",
+        tick: PPQ,
+        source: "manual",
+        confidence: "certain",
+      },
+    ];
+    project.chordTrack.regions.push(
+      chordRegion(project, "dominant", 0, PPQ, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "dominant",
+        },
+      }),
+      chordRegion(project, "subdominant", PPQ, PPQ, {
+        degree: 4,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "subdominant",
+        },
+      }),
+    );
+    addLine(project, "soprano", [74, 72]);
+    addLine(project, "alto", [71, 67]);
+    addLine(project, "tenor", [67, 64]);
+    addLine(project, "bass", [43, 48]);
+
+    expect(ruleIds(project)).not.toContain("function.retrogression");
+  });
+
+  it("全终止末端主和弦可省略五音", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions.push(
+      chordRegion(project, "dominant", 0, PPQ, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+      }),
+      chordRegion(project, "tonic", PPQ, PPQ, {
+        degree: 1,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+      }),
+    );
+    addLine(project, "soprano", [74, 76]);
+    addLine(project, "alto", [71, 72]);
+    addLine(project, "tenor", [67, 60]);
+    addLine(project, "bass", [43, 48]);
+
+    expect(ruleIds(project)).not.toContain("chord.incomplete-members");
+  });
+
   it("副属和弦重复转换后再检查目标解决", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 3;

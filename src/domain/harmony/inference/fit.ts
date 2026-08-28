@@ -19,6 +19,8 @@ import type {
 
 export interface ChordFitOptions {
   readonly allowIncompleteVoicing?: boolean;
+  /** 在不放宽其他构成音的前提下，允许指定音级省略。 */
+  readonly allowedOmittedChordDegrees?: readonly ChordToneDegree[];
   readonly allowNonChordToneCandidates?: boolean;
 }
 
@@ -138,7 +140,10 @@ export function fitChordObservation(
     hardRejected = "too-many-omitted-chord-tones";
   else if (
     omittedChordDegrees.length > 0 &&
-    !options.allowIncompleteVoicing
+    !options.allowIncompleteVoicing &&
+    !omittedChordDegrees.every((degree) =>
+      options.allowedOmittedChordDegrees?.includes(degree),
+    )
   )
     hardRejected = "omitted-chord-tone";
 

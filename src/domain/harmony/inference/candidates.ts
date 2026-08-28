@@ -161,7 +161,18 @@ function createFunctionalCandidate(
     template,
     observation.key,
   );
-  const fit = fitChordObservation(observation, identity, options);
+  const fit = fitChordObservation(
+    observation,
+    identity,
+    template.baseId === "T" || template.baseId === "t"
+      ? {
+          ...options,
+          allowedOmittedChordDegrees: options.allowCadentialTonicOmission
+            ? [5]
+            : undefined,
+        }
+      : options,
+  );
   if (fit.hardRejected) return undefined;
   const score = scoreFor(observation, identity, fit, functionalTier(template.baseId));
   return {

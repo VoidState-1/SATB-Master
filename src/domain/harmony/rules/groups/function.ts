@@ -76,6 +76,12 @@ export function mixtureSourceRule(context: HarmonyRuleContext) {
 
 export function functionalRetrogressionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
+  const halfCadenceEndpoints = new Set<string>();
+  for (const cadence of context.cadences({ kind: "half" })) {
+    if (cadence.annotation?.stale) continue;
+    const endpoint = cadence.spans.at(-1)?.lastSlice.chord;
+    if (endpoint) halfCadenceEndpoints.add(endpoint.id);
+  }
   for (const candidate of context.connections()) {
     const { connection } = candidate;
     if (
@@ -89,6 +95,15 @@ export function functionalRetrogressionRule(context: HarmonyRuleContext) {
     const previous = candidate.sourceBoundary.chord;
     const current = candidate.targetBoundary.chord;
     if (!previous || !current) continue;
+    const sourcePhrase = context.phraseAt(candidate.source.span.fromTick);
+    const targetPhrase = context.phraseAt(candidate.target.span.fromTick);
+    if (
+      !sourcePhrase ||
+      !targetPhrase ||
+      sourcePhrase.id !== targetPhrase.id ||
+      halfCadenceEndpoints.has(previous.id)
+    )
+      continue;
     diagnostics.push(
       diagnostic(
         "function.retrogression",

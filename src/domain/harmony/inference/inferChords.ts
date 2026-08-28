@@ -51,12 +51,29 @@ export function inferChords(
   }
   const observations = buildChordInferenceObservations(project, range);
   const minimumConfidence = options.minConfidence ?? "low";
-  const candidateSets = observations.map((observation) =>
-    buildChordInferenceCandidates(observation, options).filter(
+  const terminalTicks = new Set([
+    project.lengthTicks,
+    ...project.structure.phraseBoundaries.map((boundary) => boundary.tick),
+  ]);
+  const candidateSets: Array<ReturnType<typeof buildChordInferenceCandidates>> = [];
+  observations.forEach((observation, index) => {
+    const previousCandidates = candidateSets[index - 1] ?? [];
+    const followsDominant = previousCandidates.some(
+      (candidate) =>
+        candidate.functionalBaseId === "D" &&
+        candidate.fit.omittedChordDegrees.length === 0 &&
+        candidate.fit.nonChordToneNoteIds.length === 0,
+    );
+    const candidates = buildChordInferenceCandidates(observation, {
+      ...options,
+      allowCadentialTonicOmission:
+        terminalTicks.has(observation.toTick) && followsDominant,
+    }).filter(
       (candidate) =>
         confidenceRank(candidate.confidence) >= confidenceRank(minimumConfidence),
-    ),
-  );
+    );
+    candidateSets.push(candidates);
+  });
   const selectedPath = selectChordInferencePath(observations, candidateSets);
   const regions = buildChordInferenceRegions(
     observations,

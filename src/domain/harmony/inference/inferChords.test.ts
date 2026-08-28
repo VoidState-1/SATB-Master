@@ -80,6 +80,23 @@ describe("自动和弦推导", () => {
     expect(result.regions[1].selected?.functionalBaseId).toBe("D");
   });
 
+  it("全终止末端可推断省略五音的主和弦", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    addLine(project, "soprano", [74, 76]);
+    addLine(project, "alto", [71, 72]);
+    addLine(project, "tenor", [67, 60]);
+    addLine(project, "bass", [43, 48]);
+
+    const result = inferChords(project);
+
+    expect(result.regions.at(-1)?.selected?.functionalBaseId).toBe("T");
+    expect(result.regions.at(-1)?.status).toBe("resolved");
+    expect(result.regions.at(-1)?.selected?.fit.omittedChordDegrees).toEqual([
+      5,
+    ]);
+  });
+
   it("默认只应用已解析区段，并保护已有和弦", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ;
