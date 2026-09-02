@@ -12,15 +12,28 @@ import {
   type ScoreRenderedNoteRef,
 } from "./vexflowRenderer";
 
+export type ScoreHighlightMode = "none" | "monochrome" | "color";
+
 export interface ScorePreviewDialogProps {
   project: ProjectDocument;
   revision: number;
   playheadTick: number;
+  isPlaying?: boolean;
   onClose(): void;
   onSelectNote?(selection: ScoreNoteSelection): void;
 }
 
 const SCALE_STEPS = [0.75, 0.9, 1, 1.15, 1.3, 1.5] as const;
+const HIGHLIGHT_MODE_STORAGE_KEY = "satb-score-preview-highlight-mode";
+
+function getInitialHighlightMode(): ScoreHighlightMode {
+  if (typeof window === "undefined") return "color";
+  const stored = window.localStorage.getItem(HIGHLIGHT_MODE_STORAGE_KEY);
+  if (stored === "none" || stored === "monochrome" || stored === "color") {
+    return stored;
+  }
+  return "color";
+}
 
 function nextScale(value: number, direction: -1 | 1) {
   const index = SCALE_STEPS.findIndex((candidate) => Math.abs(candidate - value) < 0.001);
@@ -32,11 +45,23 @@ export function ScorePreviewDialog({
   project,
   revision,
   playheadTick,
+  isPlaying = false,
   onClose,
   onSelectNote,
 }: ScorePreviewDialogProps) {
   const [scale, setScale] = useState(1);
   const [followPlayhead, setFollowPlayhead] = useState(false);
+  const [highlightMode, setHighlightModeState] = useState<ScoreHighlightMode>(
+    getInitialHighlightMode,
+  );
+  const setHighlightMode = useCallback((mode: ScoreHighlightMode) => {
+    setHighlightModeState(mode);
+    try {
+      window.localStorage.setItem(HIGHLIGHT_MODE_STORAGE_KEY, mode);
+    } catch {
+      // ignore
+    }
+  }, []);
   const [renderWarnings, setRenderWarnings] = useState<readonly ScorePreviewWarning[]>(
     [],
   );
@@ -87,9 +112,14 @@ export function ScorePreviewDialog({
         noteRefsRef.current = noteRefs;
         for (let i = 0; i < noteRefs.length; i++) {
           const item = noteRefs[i];
-          const isSounding = playheadTick >= item.fromTick && playheadTick < item.toTick;
+          const isSounding =
+            isPlaying &&
+            highlightMode !== "none" &&
+            playheadTick >= item.fromTick &&
+            playheadTick < item.toTick;
           item.isActive = isSounding;
           item.element.dataset.active = isSounding ? "true" : "false";
+          item.element.classList.toggle("is-active", isSounding);
         }
         setRenderWarnings(rendered.warnings);
         setRenderState("ready");
@@ -123,6 +153,7 @@ export function ScorePreviewDialog({
       const fromTick = Number(system.dataset.fromTick);
       const toTick = Number(system.dataset.toTick);
       const isActive =
+        isPlaying &&
         Number.isFinite(fromTick) &&
         Number.isFinite(toTick) &&
         playheadTick >= fromTick &&
@@ -134,12 +165,16 @@ export function ScorePreviewDialog({
       active.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
 
-    // 更新当前正在发音的符头高亮态
+    // 更新当前正在发音的符头高亮态（未处于播放状态或设为不高亮时全部置灰关闭）
     const noteRefs = noteRefsRef.current;
     if (noteRefs.length > 0) {
       for (let i = 0; i < noteRefs.length; i++) {
         const item = noteRefs[i];
-        const isSounding = playheadTick >= item.fromTick && playheadTick < item.toTick;
+        const isSounding =
+          isPlaying &&
+          highlightMode !== "none" &&
+          playheadTick >= item.fromTick &&
+          playheadTick < item.toTick;
         if (item.isActive !== isSounding) {
           item.isActive = isSounding;
           item.element.dataset.active = isSounding ? "true" : "false";
@@ -152,6 +187,8 @@ export function ScorePreviewDialog({
         const fromTick = Number(el.dataset.fromTick);
         const toTick = Number(el.dataset.toTick);
         const isSounding =
+          isPlaying &&
+          highlightMode !== "none" &&
           Number.isFinite(fromTick) &&
           Number.isFinite(toTick) &&
           playheadTick >= fromTick &&
@@ -160,7 +197,7 @@ export function ScorePreviewDialog({
         el.classList.toggle("is-active", isSounding);
       });
     }
-  }, [followPlayhead, playheadTick, model, scale, renderState]);
+  }, [followPlayhead, playheadTick, isPlaying, highlightMode, model, scale, renderState]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -224,6 +261,19 @@ export function ScorePreviewDialog({
               />
               <span>跟随播放头</span>
             </label>
+            <label className="score-preview-highlight-select">
+              <span>音符高亮</span>
+              <select
+                value={highlightMode}
+                onChange={(event) =>
+                  setHighlightMode(event.target.value as ScoreHighlightMode)
+                }
+              >
+                <option value="color">彩色高亮</option>
+                <option value="monochrome">纯色高亮</option>
+                <option value="none">不高亮</option>
+              </select>
+            </label>
           </div>
         </div>
 
@@ -246,7 +296,11 @@ export function ScorePreviewDialog({
               正在加载乐谱引擎…
             </div>
           ) : null}
-          <div ref={surfaceRef} className="score-preview-surface" />
+          <div
+            ref={surfaceRef}
+            className="score-preview-surface"
+            data-highlight-mode={highlightMode}
+          />
         </div>
       </section>
     </div>,

@@ -985,6 +985,7 @@ function AppShell() {
           project={project}
           revision={history.revision}
           playheadTick={playheadTick}
+          isPlaying={isPlaying}
           onClose={() => setScorePreviewOpen(false)}
           onSelectNote={handleScorePreviewNoteSelection}
         />
