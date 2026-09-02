@@ -175,45 +175,65 @@
   overflow: visible;
 }
 
-/* 正在发音的符头高亮（按声部专属色彩呈现） */
-.score-preview-system .score-note[data-active="true"] .vf-notehead path,
-.score-preview-system .score-note[data-active="true"] [class*="notehead"] path,
-.score-preview-system .score-note[data-active="true"] path.vf-notehead,
-.score-preview-system .score-note[data-active="true"] path[class*="notehead"] {
+/* 正在发音的符头高亮（全面兼容 VexFlow 5 的 <text> 字体字形与 <path> 矢量元素） */
+.score-preview-system .score-note[data-active="true"] .vf-notehead,
+.score-preview-system .score-note[data-active="true"] .vf-notehead *,
+.score-preview-system .score-note[data-active="true"] [class*="notehead"],
+.score-preview-system .score-note[data-active="true"] [class*="notehead"] *,
+.score-preview-system .score-note.is-active .vf-notehead,
+.score-preview-system .score-note.is-active .vf-notehead *,
+.score-preview-system .score-note.is-active [class*="notehead"],
+.score-preview-system .score-note.is-active [class*="notehead"] * {
   fill: #2f7764 !important;
-  stroke: #2f7764 !important;
+  color: #2f7764 !important;
 }
 
-.score-preview-system .score-note[data-active="true"][data-voice-id="soprano"] .vf-notehead path,
-.score-preview-system .score-note[data-active="true"][data-voice-id="soprano"] [class*="notehead"] path,
-.score-preview-system .score-note[data-active="true"][data-voice-id="soprano"] path.vf-notehead,
-.score-preview-system .score-note[data-active="true"][data-voice-id="soprano"] path[class*="notehead"] {
-  fill: #7552a3 !important;
-  stroke: #7552a3 !important;
+.score-preview-system .score-note[data-active="true"][data-voice-id="soprano"] .vf-notehead,
+.score-preview-system .score-note[data-active="true"][data-voice-id="soprano"] .vf-notehead *,
+.score-preview-system .score-note[data-active="true"][data-voice-id="soprano"] [class*="notehead"],
+.score-preview-system .score-note[data-active="true"][data-voice-id="soprano"] [class*="notehead"] *,
+.score-preview-system .score-note.is-active[data-voice-id="soprano"] .vf-notehead,
+.score-preview-system .score-note.is-active[data-voice-id="soprano"] .vf-notehead *,
+.score-preview-system .score-note.is-active[data-voice-id="soprano"] [class*="notehead"],
+.score-preview-system .score-note.is-active[data-voice-id="soprano"] [class*="notehead"] * {
+  fill: #8a4fd1 !important;
+  color: #8a4fd1 !important;
 }
 
-.score-preview-system .score-note[data-active="true"][data-voice-id="alto"] .vf-notehead path,
-.score-preview-system .score-note[data-active="true"][data-voice-id="alto"] [class*="notehead"] path,
-.score-preview-system .score-note[data-active="true"][data-voice-id="alto"] path.vf-notehead,
-.score-preview-system .score-note[data-active="true"][data-voice-id="alto"] path[class*="notehead"] {
-  fill: #2d7a68 !important;
-  stroke: #2d7a68 !important;
+.score-preview-system .score-note[data-active="true"][data-voice-id="alto"] .vf-notehead,
+.score-preview-system .score-note[data-active="true"][data-voice-id="alto"] .vf-notehead *,
+.score-preview-system .score-note[data-active="true"][data-voice-id="alto"] [class*="notehead"],
+.score-preview-system .score-note[data-active="true"][data-voice-id="alto"] [class*="notehead"] *,
+.score-preview-system .score-note.is-active[data-voice-id="alto"] .vf-notehead,
+.score-preview-system .score-note.is-active[data-voice-id="alto"] .vf-notehead *,
+.score-preview-system .score-note.is-active[data-voice-id="alto"] [class*="notehead"],
+.score-preview-system .score-note.is-active[data-voice-id="alto"] [class*="notehead"] * {
+  fill: #1b9a76 !important;
+  color: #1b9a76 !important;
 }
 
-.score-preview-system .score-note[data-active="true"][data-voice-id="tenor"] .vf-notehead path,
-.score-preview-system .score-note[data-active="true"][data-voice-id="tenor"] [class*="notehead"] path,
-.score-preview-system .score-note[data-active="true"][data-voice-id="tenor"] path.vf-notehead,
-.score-preview-system .score-note[data-active="true"][data-voice-id="tenor"] path[class*="notehead"] {
-  fill: #3f6fa8 !important;
-  stroke: #3f6fa8 !important;
+.score-preview-system .score-note[data-active="true"][data-voice-id="tenor"] .vf-notehead,
+.score-preview-system .score-note[data-active="true"][data-voice-id="tenor"] .vf-notehead *,
+.score-preview-system .score-note[data-active="true"][data-voice-id="tenor"] [class*="notehead"],
+.score-preview-system .score-note[data-active="true"][data-voice-id="tenor"] [class*="notehead"] *,
+.score-preview-system .score-note.is-active[data-voice-id="tenor"] .vf-notehead,
+.score-preview-system .score-note.is-active[data-voice-id="tenor"] .vf-notehead *,
+.score-preview-system .score-note.is-active[data-voice-id="tenor"] [class*="notehead"],
+.score-preview-system .score-note.is-active[data-voice-id="tenor"] [class*="notehead"] * {
+  fill: #2575dc !important;
+  color: #2575dc !important;
 }
 
-.score-preview-system .score-note[data-active="true"][data-voice-id="bass"] .vf-notehead path,
-.score-preview-system .score-note[data-active="true"][data-voice-id="bass"] [class*="notehead"] path,
-.score-preview-system .score-note[data-active="true"][data-voice-id="bass"] path.vf-notehead,
-.score-preview-system .score-note[data-active="true"][data-voice-id="bass"] path[class*="notehead"] {
-  fill: #87643d !important;
-  stroke: #87643d !important;
+.score-preview-system .score-note[data-active="true"][data-voice-id="bass"] .vf-notehead,
+.score-preview-system .score-note[data-active="true"][data-voice-id="bass"] .vf-notehead *,
+.score-preview-system .score-note[data-active="true"][data-voice-id="bass"] [class*="notehead"],
+.score-preview-system .score-note[data-active="true"][data-voice-id="bass"] [class*="notehead"] *,
+.score-preview-system .score-note.is-active[data-voice-id="bass"] .vf-notehead,
+.score-preview-system .score-note.is-active[data-voice-id="bass"] .vf-notehead *,
+.score-preview-system .score-note.is-active[data-voice-id="bass"] [class*="notehead"],
+.score-preview-system .score-note.is-active[data-voice-id="bass"] [class*="notehead"] * {
+  fill: #c86518 !important;
+  color: #c86518 !important;
 }
 
 @media (max-width: 760px) {

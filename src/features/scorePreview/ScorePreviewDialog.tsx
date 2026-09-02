@@ -136,15 +136,31 @@ export function ScorePreviewDialog({
 
     // 更新当前正在发音的符头高亮态
     const noteRefs = noteRefsRef.current;
-    for (let i = 0; i < noteRefs.length; i++) {
-      const item = noteRefs[i];
-      const isSounding = playheadTick >= item.fromTick && playheadTick < item.toTick;
-      if (item.isActive !== isSounding) {
-        item.isActive = isSounding;
-        item.element.dataset.active = isSounding ? "true" : "false";
+    if (noteRefs.length > 0) {
+      for (let i = 0; i < noteRefs.length; i++) {
+        const item = noteRefs[i];
+        const isSounding = playheadTick >= item.fromTick && playheadTick < item.toTick;
+        if (item.isActive !== isSounding) {
+          item.isActive = isSounding;
+          item.element.dataset.active = isSounding ? "true" : "false";
+          item.element.classList.toggle("is-active", isSounding);
+        }
       }
+    } else {
+      const noteEls = surface.querySelectorAll<SVGElement>(".score-note");
+      noteEls.forEach((el) => {
+        const fromTick = Number(el.dataset.fromTick);
+        const toTick = Number(el.dataset.toTick);
+        const isSounding =
+          Number.isFinite(fromTick) &&
+          Number.isFinite(toTick) &&
+          playheadTick >= fromTick &&
+          playheadTick < toTick;
+        el.dataset.active = isSounding ? "true" : "false";
+        el.classList.toggle("is-active", isSounding);
+      });
     }
-  }, [followPlayhead, playheadTick, model, scale]);
+  }, [followPlayhead, playheadTick, model, scale, renderState]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

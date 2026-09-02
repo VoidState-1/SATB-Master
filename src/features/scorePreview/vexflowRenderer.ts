@@ -580,7 +580,9 @@ function drawMeasure(
   const listeners: (() => void)[] = [];
   const noteElementRefs: ScoreRenderedNoteRef[] = [];
   renderedNotes.forEach(({ event, note }) => {
-    const element = note.getSVGElement();
+    const element =
+      note.getSVGElement() ??
+      host.querySelector<SVGElement>(`#vf-${note.getAttribute("id")}`);
     if (!element) return;
     element.dataset.sourceNoteId = event.sourceNoteId;
     element.dataset.voiceId = event.voiceId;
