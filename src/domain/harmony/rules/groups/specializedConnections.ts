@@ -1,10 +1,12 @@
 import {
   chordStructureQuality,
   chordIdentityToneSpellings,
+  type HarmonyInterpretation,
 } from "../../../chordModel";
 import { effectiveFunctionalDesignation } from "../../../functionalHarmonyCatalog";
 import type {
   AnalysisChord,
+  AnalysisKey,
   AnalysisNote,
   AnalysisSlice,
   HarmonySpan,
@@ -15,8 +17,7 @@ import { VOICE_ORDER } from "../../../project/voice";
 import {
   isWrittenStep,
   pitchClassEquals,
-  toMidi,
-  writtenInterval,
+  scaleDegreePitchClass,
 } from "../../../pitch";
 import {
   activeNotes,
@@ -24,7 +25,6 @@ import {
   chordInversion,
   chordLabel,
   diagnostic,
-  noteEvidence,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { ConnectionView } from "../context/views";
@@ -40,9 +40,58 @@ type SpecializedRuleId =
   | "connection.double-dominant-leading-tone"
   | "connection.neapolitan-sixth";
 
+export interface SpecializedConnectionFact {
+  readonly connection: ConnectionView["connection"];
+  readonly sourceSpan: HarmonySpan;
+  readonly targetSpan: HarmonySpan;
+  readonly sourceSlice: AnalysisSlice;
+  readonly targetSlice: AnalysisSlice;
+  readonly sourceChord: AnalysisChord;
+  readonly targetChord: AnalysisChord;
+  readonly sourceInterpretation?: HarmonyInterpretation;
+  readonly targetInterpretation?: HarmonyInterpretation;
+  readonly key: AnalysisKey;
+}
+
 function interpretationOf(context: HarmonyRuleContext, span: HarmonySpan) {
   const resolution = context.harmony.primaryInterpretation(span);
   return resolution.status === "resolved" ? resolution.value : undefined;
+}
+
+/**
+ * 依据 QueryAPI 从连接上下文构建结构化、经过前置过滤的连接事实集合。
+ * 核心拦截：过滤同和声跨切片连接（connection.relation === "same-harmony"），
+ * 避免同一和弦在换位或时值切分时被误当异功能解决进行判定。
+ */
+export function specializedConnectionFacts(
+  context: HarmonyRuleContext,
+): readonly SpecializedConnectionFact[] {
+  return context
+    .connections()
+    .where(({ connection, sourceBoundary, targetBoundary }) =>
+      connection.contiguous &&
+      connection.sameKey &&
+      connection.relation !== "same-harmony" &&
+      connection.confidence !== "ambiguous" &&
+      connection.confidence !== "unknown" &&
+      sourceBoundary.completeSatb &&
+      targetBoundary.completeSatb &&
+      Boolean(sourceBoundary.chord) &&
+      Boolean(targetBoundary.chord),
+    )
+    .select((candidate): SpecializedConnectionFact => ({
+      connection: candidate.connection,
+      sourceSpan: candidate.source.span,
+      targetSpan: candidate.target.span,
+      sourceSlice: candidate.sourceBoundary,
+      targetSlice: candidate.targetBoundary,
+      sourceChord: candidate.sourceBoundary.chord!,
+      targetChord: candidate.targetBoundary.chord!,
+      sourceInterpretation: interpretationOf(context, candidate.source.span),
+      targetInterpretation: interpretationOf(context, candidate.target.span),
+      key: candidate.sourceBoundary.key,
+    }))
+    .toArray();
 }
 
 function toneMembers(
@@ -55,53 +104,6 @@ function toneMembers(
   return activeNotes(slice).filter(({ note }) =>
     pitchClassEquals(note.pitch, tone),
   );
-}
-
-function targetContains(target: AnalysisSlice, note: AnalysisNote) {
-  return Boolean(
-    target.chord &&
-    chordIdentityToneSpellings(target.chord.identity).some((tone) =>
-      pitchClassEquals(note.pitch, tone),
-    ),
-  );
-}
-
-function motionProblems(
-  source: AnalysisSlice,
-  target: AnalysisSlice,
-  sourceChord: AnalysisChord,
-  checks: readonly {
-    toneIndex: number;
-    label: string;
-    direction: "up" | "down" | "step";
-  }[],
-) {
-  const problems: string[] = [];
-  const voices: VoiceId[] = [];
-  const notes: AnalysisNote[] = [];
-  checks.forEach((check) => {
-    toneMembers(source, sourceChord, check.toneIndex).forEach((member) => {
-      const next = target.notes[member.voiceId];
-      const interval = next
-        ? writtenInterval(member.note.pitch, next.pitch)
-        : undefined;
-      const valid = Boolean(
-        next &&
-        targetContains(target, next) &&
-        isWrittenStep(interval!) &&
-        (check.direction === "step" ||
-          Math.sign(interval!.semitones) ===
-            (check.direction === "up" ? 1 : -1)),
-      );
-      if (valid) return;
-      problems.push(
-        `${check.label}未${check.direction === "up" ? "上行" : check.direction === "down" ? "下行" : "级进"}解决`,
-      );
-      voices.push(member.voiceId);
-      notes.push(member.note, ...(next ? [next] : []));
-    });
-  });
-  return { problems, voices, notes };
 }
 
 function targetConfigurationProblems(target: AnalysisSlice) {
@@ -119,49 +121,62 @@ function targetConfigurationProblems(target: AnalysisSlice) {
   return problems;
 }
 
-function dominantBassProblem(source: AnalysisSlice, target: AnalysisSlice) {
-  const sourceChord = source.chord!;
-  const targetChord = target.chord!;
-  const sourceBass = source.notes.bass;
-  const targetBass = target.notes.bass;
+function dominantBassProblem(
+  context: HarmonyRuleContext,
+  fact: SpecializedConnectionFact,
+) {
+  const sourceBass = fact.sourceSlice.notes.bass;
+  const targetBass = fact.targetSlice.notes.bass;
   if (!sourceBass || !targetBass) return "低音上下文不完整";
-  const inversion = chordInversion(sourceChord);
-  const targetTones = chordIdentityToneSpellings(targetChord.identity);
-  const expectedTargetIndex = inversion === 3 ? 1 : 0;
-  const expectedTarget = targetTones[expectedTargetIndex];
-  const interval = writtenInterval(sourceBass.pitch, targetBass.pitch);
-  const targetMatches = Boolean(
-    expectedTarget && pitchClassEquals(targetBass.pitch, expectedTarget),
+  const inversion = chordInversion(fact.sourceChord);
+  const targetTones = chordIdentityToneSpellings(fact.targetChord.identity);
+  const interval = context.pitch.writtenIntervalBetween(
+    sourceBass.pitch,
+    targetBass.pitch,
   );
-  const motionMatches =
-    inversion === 0
-      ? [5, 7].includes(Math.abs(interval.semitones) % 12)
-      : isWrittenStep(interval) &&
-        Math.sign(interval.semitones) === (inversion === 1 ? 1 : -1);
-  return targetMatches && motionMatches
+  const targetRoot = targetTones[0];
+  const targetThird = targetTones[1];
+
+  let matches = false;
+  if (inversion === 0) {
+    // 原位 D7: 跳进四五度至主和弦根音
+    const targetMatches = Boolean(
+      targetRoot && pitchClassEquals(targetBass.pitch, targetRoot),
+    );
+    const motionMatches = [5, 7].includes(Math.abs(interval.semitones) % 12);
+    matches = targetMatches && motionMatches;
+  } else if (inversion === 1) {
+    // 五六和弦 D56: 低音导音上行二度级进至主和弦根音
+    const targetMatches = Boolean(
+      targetRoot && pitchClassEquals(targetBass.pitch, targetRoot),
+    );
+    const motionMatches = isWrittenStep(interval) && interval.semitones > 0;
+    matches = targetMatches && motionMatches;
+  } else if (inversion === 2) {
+    // 三四和弦 D34 包含两组经典解决路径：
+    // a) 下行二度进入原位主和弦根音 (2 -> 1)
+    const resolvesToRoot =
+      Boolean(targetRoot && pitchClassEquals(targetBass.pitch, targetRoot)) &&
+      isWrittenStep(interval) &&
+      interval.semitones < 0;
+    // b) 上行二度进入第一转位主和弦三音 (2 -> 3，经过句 I - D34 - I6)
+    const resolvesToThird =
+      Boolean(targetThird && pitchClassEquals(targetBass.pitch, targetThird)) &&
+      isWrittenStep(interval) &&
+      interval.semitones > 0;
+    matches = resolvesToRoot || resolvesToThird;
+  } else if (inversion === 3) {
+    // 二和弦 D2: 七音在低音，下行二度级进至主和弦第一转位三音 (4 -> 3, 即 I6)
+    const targetMatches = Boolean(
+      targetThird && pitchClassEquals(targetBass.pitch, targetThird),
+    );
+    const motionMatches = isWrittenStep(interval) && interval.semitones < 0;
+    matches = targetMatches && motionMatches;
+  }
+
+  return matches
     ? undefined
     : `低音不符合 ${["D7", "D56", "D34", "D2"][inversion]} 的常用解决公式`;
-}
-
-type SpecializedBoundary = Pick<
-  ConnectionView,
-  "sourceBoundary" | "targetBoundary"
-> extends infer Boundary
-  ? Boundary extends {
-      sourceBoundary: infer Source;
-      targetBoundary: infer Target;
-    }
-    ? { source: Source; target: Target }
-    : never
-  : never;
-
-interface SpecializedConnectionContext {
-  connection: ConnectionView["connection"];
-  sourceSpan: HarmonySpan;
-  targetSpan: HarmonySpan;
-  boundary: SpecializedBoundary;
-  sourceChord: AnalysisChord;
-  targetChord: AnalysisChord;
 }
 
 interface SpecializedProblems {
@@ -176,17 +191,21 @@ interface SpecializedConnectionPolicy {
     context: HarmonyRuleContext,
     span: HarmonySpan,
     chord: AnalysisChord,
+    interpretation?: HarmonyInterpretation,
   ): boolean;
-  targetAllowed(context: HarmonyRuleContext, span: HarmonySpan): boolean;
-  collectProblems(context: SpecializedConnectionContext): SpecializedProblems;
+  targetAllowed(
+    context: HarmonyRuleContext,
+    span: HarmonySpan,
+    interpretation?: HarmonyInterpretation,
+  ): boolean;
+  collectProblems(
+    context: HarmonyRuleContext,
+    fact: SpecializedConnectionFact,
+  ): SpecializedProblems;
   coverageKinds?: readonly {
     kind: "leading-tone" | "chord-seventh" | "dominant-ninth";
     toneIndex: number;
   }[];
-}
-
-function emptyProblems(): SpecializedProblems {
-  return { problems: [], voices: [], notes: [] };
 }
 
 function hasSeventh(chord: AnalysisChord) {
@@ -225,144 +244,486 @@ function dominantOrCadential64Target(
   const interpretation = interpretationOf(context, span);
   return (
     interpretation?.designation?.primaryFunction === "dominant" ||
-    interpretation?.designation?.kind === "cadential64"
+    interpretation?.designation?.kind === "cadential64" ||
+    span.semantics?.cadenceRole === "cadential64"
   );
 }
 
-function commonToneProblems(context: SpecializedConnectionContext) {
-  const sourceTones = chordIdentityToneSpellings(context.sourceChord.identity);
-  const targetTones = chordIdentityToneSpellings(context.targetChord.identity);
-  const common = sourceTones.filter((tone) =>
-    targetTones.some((candidate) => pitchClassEquals(tone, candidate)),
-  );
-  const held = VOICE_ORDER.some((voiceId) => {
-    const before = context.boundary.source.notes[voiceId];
-    const after = context.boundary.target.notes[voiceId];
-    return Boolean(
-      before &&
-      after &&
-      toMidi(before.pitch) === toMidi(after.pitch) &&
-      common.some((tone) => pitchClassEquals(before.pitch, tone)),
+function dominantSeventhProblems(
+  context: HarmonyRuleContext,
+  fact: SpecializedConnectionFact,
+): SpecializedProblems {
+  const problems: string[] = [];
+  const voices: VoiceId[] = [];
+  const notes: AnalysisNote[] = [];
+  const targetTones = chordIdentityToneSpellings(fact.targetChord.identity);
+  const tonicPitch = targetTones[0];
+  const dominantPitch = scaleDegreePitchClass(fact.key, 5, 0);
+
+  // 1. 导音走向检查 (toneIndex: 1)
+  toneMembers(fact.sourceSlice, fact.sourceChord, 1).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) {
+      problems.push("导音未解决");
+      voices.push(member.voiceId);
+      notes.push(member.note);
+      return;
+    }
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
     );
+    const isStepUp =
+      isWrittenStep(interval) &&
+      interval.semitones > 0 &&
+      pitchClassEquals(next.pitch, tonicPitch);
+    // 内声部导音自由解决：Alto 或 Tenor 允许下行小三度跳进到主和弦五音 (7 -> 5)
+    const isInnerVoiceFreeFalling =
+      (member.voiceId === "alto" || member.voiceId === "tenor") &&
+      Math.abs(interval.diatonicSteps) === 2 &&
+      interval.semitones < 0 &&
+      pitchClassEquals(next.pitch, dominantPitch);
+
+    if (!isStepUp && !isInnerVoiceFreeFalling) {
+      problems.push("导音未规范解决");
+      voices.push(member.voiceId);
+      notes.push(member.note, next);
+    }
   });
-  return common.length > 0 && !held ? ["共同音没有保持"] : [];
+
+  // 2. 七音走向检查 (toneIndex: 3)
+  toneMembers(fact.sourceSlice, fact.sourceChord, 3).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) {
+      problems.push("七音未解决");
+      voices.push(member.voiceId);
+      notes.push(member.note);
+      return;
+    }
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    const isValid =
+      isWrittenStep(interval) &&
+      interval.semitones < 0 &&
+      context.harmony.isWrittenChordTone(next, fact.targetChord);
+
+    if (!isValid) {
+      problems.push("七音未下行解决");
+      voices.push(member.voiceId);
+      notes.push(member.note, next);
+    }
+  });
+
+  // 3. 低音走向检查
+  const bassProblem = dominantBassProblem(context, fact);
+  if (bassProblem) problems.push(bassProblem);
+
+  // 4. 目标和弦构成音完整度（根音、三音必须存在，五音可省略）
+  problems.push(...targetConfigurationProblems(fact.targetSlice));
+
+  // 注意：不再调用 commonToneProblems！完全属七 -> 不完全主和弦（省略五音）属音无保留，完全合规。
+  return { problems, voices, notes };
 }
 
-function motionProblemSet(
-  context: SpecializedConnectionContext,
-  checks: Parameters<typeof motionProblems>[3],
-) {
-  return motionProblems(
-    context.boundary.source,
-    context.boundary.target,
-    context.sourceChord,
-    checks,
-  );
+function dominantNinthProblems(
+  context: HarmonyRuleContext,
+  fact: SpecializedConnectionFact,
+): SpecializedProblems {
+  const problems: string[] = [];
+  const voices: VoiceId[] = [];
+  const notes: AnalysisNote[] = [];
+  const targetTones = chordIdentityToneSpellings(fact.targetChord.identity);
+  const tonicPitch = targetTones[0];
+
+  if (chordInversion(fact.sourceChord) !== 0) {
+    problems.push("当前仅支持原位 D9");
+  }
+
+  // 1. 导音走向检查 (toneIndex: 1, 必须上行至主音)
+  toneMembers(fact.sourceSlice, fact.sourceChord, 1).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) return;
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    const valid =
+      isWrittenStep(interval) &&
+      interval.semitones > 0 &&
+      pitchClassEquals(next.pitch, tonicPitch);
+    if (!valid) {
+      problems.push("导音未上行解决");
+      voices.push(member.voiceId);
+      notes.push(member.note, next);
+    }
+  });
+
+  // 2. 七音走向检查 (toneIndex: 3, 必须下行至三音)
+  toneMembers(fact.sourceSlice, fact.sourceChord, 3).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) return;
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    const valid =
+      isWrittenStep(interval) &&
+      interval.semitones < 0 &&
+      context.harmony.isWrittenChordTone(next, fact.targetChord);
+    if (!valid) {
+      problems.push("七音未下行解决");
+      voices.push(member.voiceId);
+      notes.push(member.note, next);
+    }
+  });
+
+  // 3. 九音走向检查 (toneIndex: 4, 必须下行至五音)
+  toneMembers(fact.sourceSlice, fact.sourceChord, 4).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) return;
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    const valid =
+      isWrittenStep(interval) &&
+      interval.semitones < 0 &&
+      context.harmony.isWrittenChordTone(next, fact.targetChord);
+    if (!valid) {
+      problems.push("九音未下行解决");
+      voices.push(member.voiceId);
+      notes.push(member.note, next);
+    }
+  });
+
+  // 4. 低音跳进至主音
+  const sourceBass = fact.sourceSlice.notes.bass;
+  const targetBass = fact.targetSlice.notes.bass;
+  if (sourceBass && targetBass) {
+    const bassInterval = context.pitch.writtenIntervalBetween(
+      sourceBass.pitch,
+      targetBass.pitch,
+    );
+    const bassMatches =
+      pitchClassEquals(targetBass.pitch, tonicPitch) &&
+      [5, 7].includes(Math.abs(bassInterval.semitones) % 12);
+    if (!bassMatches) problems.push("低音未跳进至主音");
+  }
+
+  // 5. 目标和弦构成
+  problems.push(...targetConfigurationProblems(fact.targetSlice));
+  // 彻底移除 commonToneProblems！四部和声中属九省略五音，根音在低音跳进，无法保留共同音。
+  return { problems, voices, notes };
 }
 
-function dominantSeventhProblems(context: SpecializedConnectionContext) {
-  const result = motionProblemSet(context, [
-    { toneIndex: 1, label: "导音", direction: "up" },
-    { toneIndex: 3, label: "七音", direction: "down" },
-  ]);
-  const bass = dominantBassProblem(
-    context.boundary.source,
-    context.boundary.target,
-  );
-  if (bass) result.problems.push(bass);
-  result.problems.push(
-    ...commonToneProblems(context),
-    ...targetConfigurationProblems(context.boundary.target),
-  );
-  return result;
+function leadingToneSeventhProblems(
+  context: HarmonyRuleContext,
+  fact: SpecializedConnectionFact,
+): SpecializedProblems {
+  const problems: string[] = [];
+  const voices: VoiceId[] = [];
+  const notes: AnalysisNote[] = [];
+  const isDominant =
+    fact.targetInterpretation?.degree === 5 ||
+    fact.targetInterpretation?.designation?.primaryFunction === "dominant";
+
+  if (isDominant) {
+    // 解决至属和弦/属七和弦 (D / D7):
+    // 导音 (tones[0]) 保持为属和弦三音
+    toneMembers(fact.sourceSlice, fact.sourceChord, 0).forEach((member) => {
+      const next = fact.targetSlice.notes[member.voiceId];
+      if (!next) return;
+      const interval = context.pitch.writtenIntervalBetween(
+        member.note.pitch,
+        next.pitch,
+      );
+      if (interval.semitones !== 0) {
+        problems.push("导音未作为共同音保持在同一声部");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    });
+    // 七音 (tones[3]) 下行解决
+    toneMembers(fact.sourceSlice, fact.sourceChord, 3).forEach((member) => {
+      const next = fact.targetSlice.notes[member.voiceId];
+      if (!next) return;
+      const interval = context.pitch.writtenIntervalBetween(
+        member.note.pitch,
+        next.pitch,
+      );
+      if (!(isWrittenStep(interval) && interval.semitones < 0)) {
+        problems.push("七音未下行解决");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    });
+  } else {
+    // 解决至主和弦 (T):
+    // 导音 (tones[0]) 上行至主音
+    toneMembers(fact.sourceSlice, fact.sourceChord, 0).forEach((member) => {
+      const next = fact.targetSlice.notes[member.voiceId];
+      if (!next) return;
+      const interval = context.pitch.writtenIntervalBetween(
+        member.note.pitch,
+        next.pitch,
+      );
+      if (!(isWrittenStep(interval) && interval.semitones > 0)) {
+        problems.push("导音未上行解决");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    });
+    // 七音 (tones[3]) 下行至五音
+    toneMembers(fact.sourceSlice, fact.sourceChord, 3).forEach((member) => {
+      const next = fact.targetSlice.notes[member.voiceId];
+      if (!next) return;
+      const interval = context.pitch.writtenIntervalBetween(
+        member.note.pitch,
+        next.pitch,
+      );
+      if (!(isWrittenStep(interval) && interval.semitones < 0)) {
+        problems.push("七音未下行解决");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    });
+    problems.push(...targetConfigurationProblems(fact.targetSlice));
+  }
+  return { problems, voices, notes };
 }
 
-function dominantNinthProblems(context: SpecializedConnectionContext) {
-  const motion = motionProblemSet(context, [
-    { toneIndex: 1, label: "导音", direction: "up" },
-    { toneIndex: 3, label: "七音", direction: "down" },
-    { toneIndex: 4, label: "九音", direction: "down" },
-  ]);
-  const result = emptyProblems();
-  if (chordInversion(context.sourceChord) !== 0)
-    result.problems.push("当前仅支持原位 D9");
-  result.problems.push(
-    ...motion.problems,
-    ...commonToneProblems(context),
-    ...targetConfigurationProblems(context.boundary.target),
-  );
-  result.voices.push(...motion.voices);
-  result.notes.push(...motion.notes);
-  return result;
+function supertonicAndSubdominantSeventhProblems(
+  context: HarmonyRuleContext,
+  fact: SpecializedConnectionFact,
+): SpecializedProblems {
+  const problems: string[] = [];
+  const voices: VoiceId[] = [];
+  const notes: AnalysisNote[] = [];
+  const isCadential64 =
+    fact.targetInterpretation?.designation?.kind === "cadential64" ||
+    fact.targetSpan.semantics?.cadenceRole === "cadential64";
+
+  // 七音走向检查 (tones[3])
+  toneMembers(fact.sourceSlice, fact.sourceChord, 3).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) return;
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    if (isCadential64) {
+      // 解决至 K46: 七音作为六度挂留音在同一声部保持！
+      const isHeld =
+        interval.semitones === 0 &&
+        context.harmony.isWrittenChordTone(next, fact.targetChord);
+      if (!isHeld) {
+        problems.push("七音未在 K46 中作为共同音保持");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    } else {
+      // 解决至属和弦 (V/V7): 七音必须下行级进！
+      const isStepDown =
+        isWrittenStep(interval) &&
+        interval.semitones < 0 &&
+        context.harmony.isWrittenChordTone(next, fact.targetChord);
+      if (!isStepDown) {
+        problems.push("七音未下行解决");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    }
+  });
+
+  return { problems, voices, notes };
 }
 
-function leadingToneSeventhProblems(context: SpecializedConnectionContext) {
-  const result = motionProblemSet(
-    context,
-    chordIdentityToneSpellings(context.sourceChord.identity).map(
-      (_, toneIndex) => ({
-        toneIndex,
-        label: toneIndex === 0 ? "导音" : `构成音 ${toneIndex + 1}`,
-        direction: toneIndex === 0 ? ("up" as const) : ("step" as const),
-      }),
-    ),
-  );
-  result.problems.push(...targetConfigurationProblems(context.boundary.target));
-  return result;
+function doubleDominantSeventhProblems(
+  context: HarmonyRuleContext,
+  fact: SpecializedConnectionFact,
+): SpecializedProblems {
+  const problems: string[] = [];
+  const voices: VoiceId[] = [];
+  const notes: AnalysisNote[] = [];
+  const isCadential64 =
+    fact.targetInterpretation?.designation?.kind === "cadential64" ||
+    fact.targetSpan.semantics?.cadenceRole === "cadential64";
+  const dominantPitch = scaleDegreePitchClass(fact.key, 5, 0);
+
+  // 1. 三音（升4级，属调导音，tones[1]）：必须严格上行半音级进至属音 5 级！
+  toneMembers(fact.sourceSlice, fact.sourceChord, 1).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) return;
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    const valid =
+      interval.semitones === 1 && pitchClassEquals(next.pitch, dominantPitch);
+    if (!valid) {
+      problems.push("属调导音（升 IV 级）未上半音解决至属音");
+      voices.push(member.voiceId);
+      notes.push(member.note, next);
+    }
+  });
+
+  // 2. 七音（1级音，tones[3]）：
+  toneMembers(fact.sourceSlice, fact.sourceChord, 3).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) return;
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    if (isCadential64) {
+      // 进 K46 时保持同音！
+      const valid = interval.semitones === 0;
+      if (!valid) {
+        problems.push("七音未在 K46 中作为共同音保持");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    } else {
+      // 进 V 时下行级进至导音
+      const valid = isWrittenStep(interval) && interval.semitones < 0;
+      if (!valid) {
+        problems.push("七音未下行解决");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    }
+  });
+
+  return { problems, voices, notes };
 }
 
-function seventhDownAndCommonToneProblems(
-  context: SpecializedConnectionContext,
-) {
-  const result = motionProblemSet(context, [
-    { toneIndex: 3, label: "七音", direction: "down" },
-  ]);
-  result.problems.push(...commonToneProblems(context));
-  return result;
+function doubleDominantLeadingToneProblems(
+  context: HarmonyRuleContext,
+  fact: SpecializedConnectionFact,
+): SpecializedProblems {
+  const problems: string[] = [];
+  const voices: VoiceId[] = [];
+  const notes: AnalysisNote[] = [];
+  const isCadential64 =
+    fact.targetInterpretation?.designation?.kind === "cadential64" ||
+    fact.targetSpan.semantics?.cadenceRole === "cadential64";
+  const dominantPitch = scaleDegreePitchClass(fact.key, 5, 0);
+
+  // 1. 导音（升4级，tones[0]）：必须上行半音至属音 5 级
+  toneMembers(fact.sourceSlice, fact.sourceChord, 0).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) return;
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    const valid =
+      interval.semitones === 1 && pitchClassEquals(next.pitch, dominantPitch);
+    if (!valid) {
+      problems.push("属调导音（升 IV 级）未上半音解决至属音");
+      voices.push(member.voiceId);
+      notes.push(member.note, next);
+    }
+  });
+
+  // 2. 七音（降6级，tones[3]）：必须下行半音至属音 5 级
+  toneMembers(fact.sourceSlice, fact.sourceChord, 3).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) return;
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    const valid =
+      interval.semitones === -1 && pitchClassEquals(next.pitch, dominantPitch);
+    if (!valid) {
+      problems.push("重属七音（降 VI 级）未下半音解决至属音");
+      voices.push(member.voiceId);
+      notes.push(member.note, next);
+    }
+  });
+
+  // 3. 构成音 3（1 级音，tones[2]）：
+  toneMembers(fact.sourceSlice, fact.sourceChord, 2).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    if (!next) return;
+    const interval = context.pitch.writtenIntervalBetween(
+      member.note.pitch,
+      next.pitch,
+    );
+    if (isCadential64) {
+      // 进 K46 时保持同音！
+      if (interval.semitones !== 0) {
+        problems.push("构成音 3未在 K46 中作为共同音保持");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    } else {
+      // 进 V 时下行级进至导音
+      if (!(isWrittenStep(interval) && interval.semitones < 0)) {
+        problems.push("构成音 3未下行级进解决");
+        voices.push(member.voiceId);
+        notes.push(member.note, next);
+      }
+    }
+  });
+
+  return { problems, voices, notes };
 }
 
-function neapolitanProblems(context: SpecializedConnectionContext) {
-  const result = emptyProblems();
-  const tones = chordIdentityToneSpellings(context.sourceChord.identity);
+function neapolitanProblems(
+  context: HarmonyRuleContext,
+  fact: SpecializedConnectionFact,
+): SpecializedProblems {
+  const problems: string[] = [];
+  const voices: VoiceId[] = [];
+  const notes: AnalysisNote[] = [];
+  const tones = chordIdentityToneSpellings(fact.sourceChord.identity);
   const counts = tones.map(
     (tone) =>
-      activeNotes(context.boundary.source).filter(({ note }) =>
+      activeNotes(fact.sourceSlice).filter(({ note }) =>
         pitchClassEquals(note.pitch, tone),
       ).length,
   );
-  if (chordInversion(context.sourceChord) !== 1)
-    result.problems.push("N6 应使用第一转位");
-  if (counts[1] !== 2) result.problems.push("N6 通常重复低音所代表的 IV 级音");
-  toneMembers(context.boundary.source, context.sourceChord, 0).forEach(
-    (member) => {
-      const next = context.boundary.target.notes[member.voiceId];
-      const interval = next
-        ? writtenInterval(member.note.pitch, next.pitch)
-        : undefined;
-      if (
-        !next ||
-        !targetContains(context.boundary.target, next) ||
-        !interval ||
-        interval.semitones >= 0 ||
-        Math.abs(interval.semitones) > 3
-      ) {
-        result.problems.push("降 II 级音未按书写方向下行进入目标");
-        result.voices.push(member.voiceId);
-        result.notes.push(member.note, ...(next ? [next] : []));
-      }
-    },
-  );
-  return result;
+  if (chordInversion(fact.sourceChord) !== 1) {
+    problems.push("N6 应使用第一转位");
+  }
+  if (counts[1] !== 2) {
+    problems.push("N6 通常重复低音所代表的 IV 级音");
+  }
+
+  // 降 II 级音 (tones[0]) 下行进入导音或主音
+  toneMembers(fact.sourceSlice, fact.sourceChord, 0).forEach((member) => {
+    const next = fact.targetSlice.notes[member.voiceId];
+    const interval = next
+      ? context.pitch.writtenIntervalBetween(member.note.pitch, next.pitch)
+      : undefined;
+    if (
+      !next ||
+      !context.harmony.isWrittenChordTone(next, fact.targetChord) ||
+      !interval ||
+      interval.semitones >= 0 ||
+      Math.abs(interval.semitones) > 3
+    ) {
+      problems.push("降 II 级音未按书写方向下行进入目标");
+      voices.push(member.voiceId);
+      notes.push(member.note, ...(next ? [next] : []));
+    }
+  });
+
+  return { problems, voices, notes };
 }
 
 function resolutionCoverageReferences(
-  context: SpecializedConnectionContext,
+  fact: SpecializedConnectionFact,
   kinds: NonNullable<SpecializedConnectionPolicy["coverageKinds"]>,
 ) {
   return kinds.flatMap(({ kind, toneIndex }) =>
-    toneMembers(context.boundary.source, context.sourceChord, toneIndex).map(
+    toneMembers(fact.sourceSlice, fact.sourceChord, toneIndex).map(
       ({ voiceId }) =>
-        `resolution.${kind}|${context.connection.connectionKey}|voice:${voiceId}`,
+        `resolution.${kind}|${fact.connection.connectionKey}|voice:${voiceId}`,
     ),
   );
 }
@@ -372,63 +733,52 @@ function evaluateSpecializedConnection(
   policy: SpecializedConnectionPolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  for (const candidate of ruleContext.connections()) {
-    const { connection, source, target, sourceBoundary, targetBoundary } =
-      candidate;
+  for (const fact of specializedConnectionFacts(ruleContext)) {
     if (
-      !connection.contiguous ||
-      !connection.sameKey ||
-      connection.confidence === "ambiguous" ||
-      connection.confidence === "unknown"
+      !policy.sourceMatches(
+        ruleContext,
+        fact.sourceSpan,
+        fact.sourceChord,
+        fact.sourceInterpretation,
+      )
     )
       continue;
-    const sourceSpan = source.span;
-    const targetSpan = target.span;
+    const result = policy.collectProblems(ruleContext, fact);
     if (
-      !sourceBoundary.completeSatb ||
-      !targetBoundary.completeSatb ||
-      !sourceBoundary.chord ||
-      !targetBoundary.chord ||
-      !policy.sourceMatches(ruleContext, sourceSpan, sourceBoundary.chord)
+      !policy.targetAllowed(
+        ruleContext,
+        fact.targetSpan,
+        fact.targetInterpretation,
+      )
     )
-      continue;
-    const context: SpecializedConnectionContext = {
-      connection,
-      sourceSpan,
-      targetSpan,
-      boundary: { source: sourceBoundary, target: targetBoundary },
-      sourceChord: sourceBoundary.chord,
-      targetChord: targetBoundary.chord,
-    };
-    const result = policy.collectProblems(context);
-    if (!policy.targetAllowed(ruleContext, targetSpan))
       result.problems.unshift("后继功能不符合该和弦的目标集合");
     if (result.problems.length === 0) continue;
+
     const allNotes = [
-      ...activeNotes(sourceBoundary).map(({ note }) => note),
-      ...activeNotes(targetBoundary).map(({ note }) => note),
+      ...activeNotes(fact.sourceSlice).map(({ note }) => note),
+      ...activeNotes(fact.targetSlice).map(({ note }) => note),
       ...result.notes,
     ];
     diagnostics.push(
       diagnostic(
         policy.id,
-        targetBoundary.tick,
-        targetBoundary.endTick,
+        fact.targetSlice.tick,
+        fact.targetSlice.endTick,
         [...new Set(result.voices)],
         [...new Map(allNotes.map((note) => [note.id, note])).values()],
-        `${chordLabel(context.sourceChord)} 连接配置不规范`,
-        `${chordLabel(context.sourceChord)} -> ${chordLabel(context.targetChord)}：${[
+        `${chordLabel(fact.sourceChord)} 连接配置不规范`,
+        `${chordLabel(fact.sourceChord)} -> ${chordLabel(fact.targetChord)}：${[
           ...new Set(result.problems),
         ].join("；")}。`,
         {
-          chordIds: [context.sourceChord.id, context.targetChord.id],
-          causeRefs: [`${policy.id}|${connection.connectionKey}`],
+          chordIds: [fact.sourceChord.id, fact.targetChord.id],
+          causeRefs: [`${policy.id}|${fact.connection.connectionKey}`],
           coverageRefs: policy.coverageKinds
-            ? resolutionCoverageReferences(context, policy.coverageKinds)
+            ? resolutionCoverageReferences(fact, policy.coverageKinds)
             : [],
           evidence: [
-            chordEvidence(context.sourceChord),
-            chordEvidence(context.targetChord),
+            chordEvidence(fact.sourceChord),
+            chordEvidence(fact.targetChord),
           ],
         },
       ),
@@ -439,8 +789,7 @@ function evaluateSpecializedConnection(
 
 const DOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.dominant-seventh",
-  sourceMatches: (context, span, chord) => {
-    const interpretation = interpretationOf(context, span);
+  sourceMatches: (_context, _span, chord, interpretation) => {
     const kind = interpretation?.designation?.kind;
     return (
       hasSeventh(chord) &&
@@ -451,7 +800,14 @@ const DOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
       kind !== "double-dominant"
     );
   },
-  targetAllowed: tonicTarget,
+  targetAllowed: (context, span, interp) => {
+    // 允许解决至主和弦；若标记或呈现为阻碍进行 (D -> TSVI)，也予以豁免交由 H.12
+    const isDeceptive =
+      span.semantics?.cadenceRole === "deceptive" ||
+      (interp?.degree === 6 &&
+        interp?.designation?.primaryFunction === "tonic");
+    return tonicTarget(context, span) || isDeceptive;
+  },
   collectProblems: dominantSeventhProblems,
   coverageKinds: [
     { kind: "leading-tone", toneIndex: 1 },
@@ -461,8 +817,7 @@ const DOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
 
 const DOMINANT_NINTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.dominant-ninth",
-  sourceMatches: (context, span, chord) => {
-    const interpretation = interpretationOf(context, span);
+  sourceMatches: (_context, _span, chord, interpretation) => {
     const kind = interpretation?.designation?.kind;
     return (
       hasNinth(chord) &&
@@ -483,8 +838,7 @@ const DOMINANT_NINTH_POLICY: SpecializedConnectionPolicy = {
 
 const LEADING_TONE_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.leading-tone-seventh",
-  sourceMatches: (context, span, chord) => {
-    const interpretation = interpretationOf(context, span);
+  sourceMatches: (_context, _span, chord, interpretation) => {
     const kind = interpretation?.designation?.kind;
     return (
       hasSeventh(chord) &&
@@ -494,61 +848,53 @@ const LEADING_TONE_SEVENTH_POLICY: SpecializedConnectionPolicy = {
       kind !== "double-dominant-leading-tone"
     );
   },
-  targetAllowed: tonicTarget,
+  targetAllowed: (context, span) =>
+    tonicTarget(context, span) || dominantTarget(context, span),
   collectProblems: leadingToneSeventhProblems,
 };
 
 const SUPERTONIC_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.supertonic-seventh",
-  sourceMatches: (context, span, chord) => {
-    const interpretation = interpretationOf(context, span);
-    return (
-      hasSeventh(chord) &&
-      interpretation?.degree === 2 &&
-      interpretation.designation?.primaryFunction === "subdominant"
-    );
-  },
-  targetAllowed: dominantTarget,
-  collectProblems: seventhDownAndCommonToneProblems,
+  sourceMatches: (_context, _span, chord, interpretation) =>
+    hasSeventh(chord) &&
+    interpretation?.degree === 2 &&
+    interpretation.designation?.primaryFunction === "subdominant",
+  targetAllowed: dominantOrCadential64Target,
+  collectProblems: supertonicAndSubdominantSeventhProblems,
 };
 
 const SUBDOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.subdominant-seventh",
-  sourceMatches: (context, span, chord) => {
-    const interpretation = interpretationOf(context, span);
-    return (
-      hasSeventh(chord) &&
-      interpretation?.degree === 4 &&
-      interpretation.designation?.primaryFunction === "subdominant"
-    );
-  },
-  targetAllowed: dominantTarget,
-  collectProblems: seventhDownAndCommonToneProblems,
+  sourceMatches: (_context, _span, chord, interpretation) =>
+    hasSeventh(chord) &&
+    interpretation?.degree === 4 &&
+    interpretation.designation?.primaryFunction === "subdominant",
+  targetAllowed: dominantOrCadential64Target,
+  collectProblems: supertonicAndSubdominantSeventhProblems,
 };
 
 const DOUBLE_DOMINANT_SEVENTH_POLICY: SpecializedConnectionPolicy = {
   id: "connection.double-dominant-seventh",
-  sourceMatches: (context, span, chord) =>
-    hasSeventh(chord) &&
-    interpretationOf(context, span)?.designation?.kind === "double-dominant",
+  sourceMatches: (_context, _span, chord, interpretation) =>
+    hasSeventh(chord) && interpretation?.designation?.kind === "double-dominant",
   targetAllowed: dominantOrCadential64Target,
-  collectProblems: seventhDownAndCommonToneProblems,
+  collectProblems: doubleDominantSeventhProblems,
 };
 
 const DOUBLE_DOMINANT_LEADING_TONE_POLICY: SpecializedConnectionPolicy = {
   id: "connection.double-dominant-leading-tone",
-  sourceMatches: (context, span, chord) =>
+  sourceMatches: (_context, _span, chord, interpretation) =>
     hasSeventh(chord) &&
-    interpretationOf(context, span)?.designation?.kind ===
-      "double-dominant-leading-tone",
+    interpretation?.designation?.kind === "double-dominant-leading-tone",
   targetAllowed: dominantOrCadential64Target,
-  collectProblems: leadingToneSeventhProblems,
+  collectProblems: doubleDominantLeadingToneProblems,
 };
 
 const NEAPOLITAN_POLICY: SpecializedConnectionPolicy = {
   id: "connection.neapolitan-sixth",
-  sourceMatches: (context, span) =>
-    interpretationOf(context, span)?.designation?.kind === "neapolitan",
+  sourceMatches: (_context, span, _chord, interpretation) =>
+    (interpretation ?? interpretationOf(_context, span))?.designation?.kind ===
+    "neapolitan",
   targetAllowed: dominantOrCadential64Target,
   collectProblems: neapolitanProblems,
 };
@@ -597,13 +943,15 @@ export function neapolitanSixthConnectionRule(context: HarmonyRuleContext) {
 
 export function ambiguousConnectionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  for (const candidate of context.connections()) {
-    const { connection, source, target } = candidate;
-    if (
-      connection.confidence !== "ambiguous" &&
-      connection.confidence !== "unknown"
-    )
-      continue;
+  const ambiguousCandidates = context
+    .connections()
+    .where(
+      ({ connection }) =>
+        connection.confidence === "ambiguous" ||
+        connection.confidence === "unknown",
+    );
+
+  for (const { connection, source, target } of ambiguousCandidates) {
     const sourceSpan = source.span;
     const targetSpan = target.span;
     const candidates = [sourceSpan, targetSpan].filter(
@@ -672,11 +1020,11 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
       chordInversion(firstSlice.chord) !== 2
     )
       continue;
-    const into = writtenInterval(
+    const into = context.pitch.writtenIntervalBetween(
       previousSlice.notes.bass.pitch,
       firstSlice.notes.bass.pitch,
     );
-    const out = writtenInterval(
+    const out = context.pitch.writtenIntervalBetween(
       lastSlice.notes.bass.pitch,
       nextSlice.notes.bass.pitch,
     );
@@ -690,14 +1038,20 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
         : undefined;
     const valid =
       role === "passing64"
-        ? Math.abs(into.diatonicSteps) === 1 &&
-          Math.abs(out.diatonicSteps) === 1 &&
+        ? (Math.abs(into.diatonicSteps) === 1 ||
+            Math.abs(into.semitones) <= 2) &&
+          (Math.abs(out.diatonicSteps) === 1 ||
+            Math.abs(out.semitones) <= 2) &&
           Math.sign(into.semitones) === Math.sign(out.semitones)
         : role === "pedal64"
-          ? toMidi(previousSlice.notes.bass.pitch) ===
-              toMidi(firstSlice.notes.bass.pitch) &&
-            toMidi(lastSlice.notes.bass.pitch) ===
-              toMidi(nextSlice.notes.bass.pitch) &&
+          ? pitchClassEquals(
+              previousSlice.notes.bass.pitch,
+              firstSlice.notes.bass.pitch,
+            ) &&
+            pitchClassEquals(
+              lastSlice.notes.bass.pitch,
+              nextSlice.notes.bass.pitch,
+            ) &&
             previousSpan.identityKey === nextSpan.identityKey
           : pitchClassEquals(
               lastSlice.notes.bass.pitch,

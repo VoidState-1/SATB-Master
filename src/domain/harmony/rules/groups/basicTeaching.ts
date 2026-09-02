@@ -403,12 +403,20 @@ export function commonToneFourthFifthRule(context: HarmonyRuleContext) {
       fact.heldVoices.length > 0
     )
       return;
+    const bassDirection = Math.sign(fact.bassMotion);
+    const isMelodicConnection =
+      bassDirection !== 0 &&
+      fact.upperMotion.every(
+        ({ semitones }) =>
+          Math.sign(semitones) === -bassDirection && Math.abs(semitones) <= 4,
+      );
+    if (isMelodicConnection) return;
     diagnostics.push(
       basicConnectionDiagnostic(
         fact,
         "connection.common-tone-fourth-fifth",
         "四五度关系连接未保持共同音",
-        "两个原位三和弦相距四、五度时，通常由同一上方声部保持共同音。",
+        "两个原位三和弦相距四、五度时，通常由同一上方声部保持共同音或使用规范旋律连接法。",
       ),
     );
   });
