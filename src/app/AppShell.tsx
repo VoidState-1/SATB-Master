@@ -75,7 +75,10 @@ import { useDeveloperMode } from "../hooks/useDeveloperMode";
 import { useExternalRuleLibrary } from "../hooks/useExternalRuleLibrary";
 import { useScaleGuide } from "../hooks/useScaleGuide";
 import { usePausePlayheadBehavior } from "../hooks/usePausePlayheadBehavior";
-import { useFollowPlayhead } from "../hooks/useFollowPlayhead";
+import {
+  readStoredFollowPlayhead,
+  useFollowPlayhead,
+} from "../hooks/useFollowPlayhead";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
 import { useConfirmationController } from "./controllers/useConfirmationController";
 import { useHarmonyController } from "./controllers/useHarmonyController";
@@ -224,6 +227,13 @@ function AppShell() {
     pausePlayheadBehavior,
     showNotice,
   });
+
+  const onPlayWithFollowRestore = useCallback(() => {
+    if (!isPlaying && readStoredFollowPlayhead()) {
+      setFollowPlayhead(true);
+    }
+    return handlePlay();
+  }, [handlePlay, isPlaying, setFollowPlayhead]);
   const { confirmation, requestConfirmation, answerConfirmation } =
     useConfirmationController();
   const ruleTestWorkspace = useRuleTestWorkspace({
@@ -349,7 +359,7 @@ function AppShell() {
     handleNew,
     handleOpen,
     handleSave,
-    handlePlay,
+    handlePlay: onPlayWithFollowRestore,
     handleDeleteChords,
     handleDeleteNotes,
     selectAllInEditorDomain,
@@ -683,7 +693,7 @@ function AppShell() {
             label={isPlaying ? "暂停" : "播放"}
             icon={isPlaying ? <Pause /> : <Play />}
             active={isPlaying}
-            onClick={() => void handlePlay()}
+            onClick={() => void onPlayWithFollowRestore()}
           />
           <IconButton
             label="停止"
@@ -862,6 +872,7 @@ function AppShell() {
             playheadTick={playheadTick}
             isPlaying={isPlaying}
             followPlayhead={followPlayhead}
+            onDisengageFollow={() => setFollowPlayhead(false)}
             loopEnabled={loopEnabled}
             loopStartTick={loopStartTick}
             loopEndTick={loopEndTick}

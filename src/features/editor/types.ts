@@ -27,6 +27,7 @@ export interface PianoRollProps {
   playheadTick: number;
   isPlaying?: boolean;
   followPlayhead?: boolean;
+  onDisengageFollow?(): void;
   loopEnabled: boolean;
   loopStartTick: number;
   loopEndTick: number;

@@ -79,18 +79,18 @@ describe("editor viewport geometry", () => {
       const scrollLeft = calculateFollowPlayheadScrollLeft({
         currentScrollLeft: 0,
         viewportWidth: 1000,
-        playheadX: 500, // 50% < 75%
+        playheadX: 500, // 50% < 60%
       });
       expect(scrollLeft).toBe(0);
     });
 
-    it("pushes scrollLeft forward when playhead crosses the 75% right threshold", () => {
+    it("pushes scrollLeft forward when playhead crosses the 60% right threshold", () => {
       const scrollLeft = calculateFollowPlayheadScrollLeft({
         currentScrollLeft: 0,
         viewportWidth: 1000,
-        playheadX: 850, // 85% > 75% (threshold is 750)
+        playheadX: 750, // 75% > 60% (threshold is 600)
       });
-      expect(scrollLeft).toBe(100); // 850 - 750 = 100
+      expect(scrollLeft).toBe(150); // 750 - 600 = 150
     });
 
     it("pulls scrollLeft back when playhead loops or jumps behind the left edge", () => {

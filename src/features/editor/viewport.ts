@@ -97,7 +97,7 @@ export function initialScrollTopForMidi(midiNote: number): number {
 
 /**
  * 播放时画布跟随光标（方案一：边缘推拉模式）
- * 允许光标在视口左侧和中央自由推进；一旦光标触及右侧安全阈值（默认 75% 视口宽），
+ * 允许光标在视口左侧和中央自由推进；一旦光标触及右侧安全阈值（默认 60% 视口宽，中间偏右），
  * 拖动可视区域平滑前进；当发生循环跳转或光标回退时，将其重新拉回视口可见位置。
  */
 export function calculateFollowPlayheadScrollLeft(options: {
@@ -112,7 +112,7 @@ export function calculateFollowPlayheadScrollLeft(options: {
     viewportWidth,
     playheadX,
     pianoWidth = PIANO_WIDTH,
-    thresholdRatio = 0.75,
+    thresholdRatio = 0.6,
   } = options;
 
   if (viewportWidth <= 0) return currentScrollLeft;

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   chordDraftFromRegion,
   defaultChordDraftAtTick,
@@ -71,6 +71,7 @@ export function PianoRoll({
   playheadTick,
   isPlaying = false,
   followPlayhead = true,
+  onDisengageFollow,
   loopEnabled,
   loopStartTick,
   loopEndTick,
@@ -100,9 +101,16 @@ export function PianoRoll({
   onSetLoopBoundary,
 }: PianoRollProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isProgrammaticScrollRef = useRef(false);
   const previousPixelsPerBeatRef = useRef(pixelsPerBeat);
   const pendingZoomViewportXRef = useRef<number | undefined>(undefined);
   const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 });
+
+  const disengageFollow = useCallback(() => {
+    if (isPlaying && followPlayhead) {
+      onDisengageFollow?.();
+    }
+  }, [followPlayhead, isPlaying, onDisengageFollow]);
   const [chordPalette, setChordPalette] = useState<ChordPaletteState>();
   const [timingMarkerEditor, setTimingMarkerEditor] =
     useState<TimingMarkerEditorState>();
@@ -188,7 +196,11 @@ export function PianoRoll({
       playheadX,
     });
     if (nextScrollLeft !== scroll.scrollLeft) {
+      isProgrammaticScrollRef.current = true;
       scroll.scrollLeft = nextScrollLeft;
+      window.requestAnimationFrame(() => {
+        isProgrammaticScrollRef.current = false;
+      });
     }
   }, [followPlayhead, isPlaying, playheadX]);
 
@@ -313,6 +325,7 @@ export function PianoRoll({
   }, [chordInteraction, interaction, onInteractionActiveChange]);
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    disengageFollow();
     const scroll = scrollRef.current;
     if (!scroll) return;
     if (event.ctrlKey) {
@@ -375,8 +388,18 @@ export function PianoRoll({
       data-max-midi={MAX_MIDI}
       data-row-height={ROW_HEIGHT}
       data-header-height={HEADER_HEIGHT}
+      onPointerDownCapture={(event) => {
+        if (event.button === 1) {
+          disengageFollow();
+        }
+      }}
       onWheel={handleWheel}
       onScroll={() => {
+        if (isProgrammaticScrollRef.current) {
+          isProgrammaticScrollRef.current = false;
+          return;
+        }
+        disengageFollow();
         if (diagnosticTooltip) setDiagnosticTooltip(undefined);
         if (timingMarkerEditor) setTimingMarkerEditor(undefined);
         if (rulerContextMenu) setRulerContextMenu(undefined);
