@@ -1,7 +1,8 @@
-import { app, dialog } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { rememberDialogDirectory, rememberedDefaultPath } from './project-ipc.js'
+import { showExclusiveOpenDialog } from './dialog-coordinator.js'
 import {
   MAX_RULE_BYTES,
   assertRuleHash,
@@ -63,12 +64,12 @@ async function listInstalledRulePackages() {
   )
 }
 
-async function readRuleImportCandidate() {
+async function readRuleImportCandidate(parentWindow?: BrowserWindow) {
   let filePath: string
   if (e2eDirectory) {
     filePath = path.join(e2eDirectory, 'example.satb-rule.js')
   } else {
-    const selection = await dialog.showOpenDialog({
+    const selection = await showExclusiveOpenDialog(parentWindow, {
       title: '导入外置检查规则',
       defaultPath: await rememberedDefaultPath('rule'),
       properties: ['openFile'],
@@ -137,7 +138,9 @@ async function removeRulePackage(contentHash: unknown) {
 
 export function registerRuleLibraryIpc() {
   handleDesktop(DESKTOP_CHANNELS.ruleLibraryList, () => listInstalledRulePackages())
-  handleDesktop(DESKTOP_CHANNELS.ruleLibraryImport, () => readRuleImportCandidate())
+  handleDesktop(DESKTOP_CHANNELS.ruleLibraryImport, (event) =>
+    readRuleImportCandidate(BrowserWindow.fromWebContents(event.sender) ?? undefined),
+  )
   handleDesktop(DESKTOP_CHANNELS.ruleLibraryInstall, (_event, request) => installRulePackage(request))
   handleDesktop(DESKTOP_CHANNELS.ruleLibraryLoadSource, (_event, request) =>
     loadRulePackageSource(request.contentHash),

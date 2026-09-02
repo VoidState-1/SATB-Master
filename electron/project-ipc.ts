@@ -1,4 +1,4 @@
-import { app, dialog } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { constants } from 'node:fs'
 import { copyFile, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -7,6 +7,10 @@ import {
   prepareSoundFontResource,
   releaseSoundFontResource,
 } from './soundfont-resource.js'
+import {
+  showExclusiveOpenDialog,
+  showExclusiveSaveDialog,
+} from './dialog-coordinator.js'
 import { DESKTOP_CHANNELS } from '../shared/desktop.js'
 import { handleDesktop } from './typed-ipc.js'
 
@@ -178,13 +182,14 @@ function assertRuleProfileEnvelope(value: unknown) {
 }
 
 export function registerProjectIpc() {
-  handleDesktop(DESKTOP_CHANNELS.projectOpen, async () => {
+  handleDesktop(DESKTOP_CHANNELS.projectOpen, async (event) => {
     let filePath: string
     if (e2eDirectory) {
       // 端到端测试仍走完整 IPC 与磁盘读写，只用固定临时路径替代不可自动化的系统文件对话框。
       filePath = path.join(e2eDirectory, 'project.satb')
     } else {
-      const selection = await dialog.showOpenDialog({
+      const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
+      const selection = await showExclusiveOpenDialog(parentWindow, {
         title: '打开 SATB 工程',
         defaultPath: await rememberedDefaultPath('project'),
         properties: ['openFile'],
@@ -202,10 +207,11 @@ export function registerProjectIpc() {
     return { canceled: false, filePath, project }
   })
 
-  handleDesktop(DESKTOP_CHANNELS.projectSave, async (_event, request) => {
+  handleDesktop(DESKTOP_CHANNELS.projectSave, async (event, request) => {
     let filePath = e2eDirectory ? path.join(e2eDirectory, 'project.satb') : request.currentPath
     if (!e2eDirectory && (!filePath || request.forceDialog)) {
-      const selection = await dialog.showSaveDialog({
+      const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
+      const selection = await showExclusiveSaveDialog(parentWindow, {
         title: '保存 SATB 工程',
         defaultPath: filePath ?? await rememberedDefaultPath('project', '未命名练习.satb'),
         filters: [{ name: 'SATB Master 工程', extensions: ['satb'] }],
@@ -270,14 +276,15 @@ export function registerProjectIpc() {
     return { discarded: true }
   })
 
-  handleDesktop(DESKTOP_CHANNELS.midiExport, async (_event, request) => {
+  handleDesktop(DESKTOP_CHANNELS.midiExport, async (event, request) => {
     if (e2eDirectory) {
       const filePath = path.join(e2eDirectory, 'export.mid')
       await writeFile(filePath, request.bytes)
       return { canceled: false, filePath }
     }
 
-    const selection = await dialog.showSaveDialog({
+    const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const selection = await showExclusiveSaveDialog(parentWindow, {
       title: '导出 MIDI',
       defaultPath: await rememberedDefaultPath('midi', `${request.defaultName || 'SATB Master'}.mid`),
       filters: [{ name: 'Standard MIDI File', extensions: ['mid', 'midi'] }],
@@ -288,14 +295,15 @@ export function registerProjectIpc() {
     return { canceled: false, filePath: selection.filePath }
   })
 
-  handleDesktop(DESKTOP_CHANNELS.musicXmlExport, async (_event, request) => {
+  handleDesktop(DESKTOP_CHANNELS.musicXmlExport, async (event, request) => {
     if (e2eDirectory) {
       const filePath = path.join(e2eDirectory, 'export.musicxml')
       await writeFile(filePath, request.xml, 'utf8')
       return { canceled: false, filePath }
     }
 
-    const selection = await dialog.showSaveDialog({
+    const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const selection = await showExclusiveSaveDialog(parentWindow, {
       title: '导出 MusicXML 乐谱',
       defaultPath: await rememberedDefaultPath(
         'musicxml',
@@ -311,8 +319,9 @@ export function registerProjectIpc() {
     return { canceled: false, filePath: selection.filePath }
   })
 
-  handleDesktop(DESKTOP_CHANNELS.ruleProfileOpen, async () => {
-    const selection = await dialog.showOpenDialog({
+  handleDesktop(DESKTOP_CHANNELS.ruleProfileOpen, async (event) => {
+    const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const selection = await showExclusiveOpenDialog(parentWindow, {
       title: '导入规则配置档案',
       defaultPath: await rememberedDefaultPath('profile'),
       properties: ['openFile'],
@@ -329,13 +338,14 @@ export function registerProjectIpc() {
     return { canceled: false, filePath, profile }
   })
 
-  handleDesktop(DESKTOP_CHANNELS.ruleProfileSave, async (_event, request) => {
+  handleDesktop(DESKTOP_CHANNELS.ruleProfileSave, async (event, request) => {
     assertRuleProfileEnvelope(request?.profile)
     const requestedName =
       typeof request.defaultName === 'string' && request.defaultName.trim()
         ? request.defaultName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 80)
         : 'SATB Master 规则配置'
-    const selection = await dialog.showSaveDialog({
+    const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const selection = await showExclusiveSaveDialog(parentWindow, {
       title: '导出规则配置档案',
       defaultPath: await rememberedDefaultPath(
         'profile',
@@ -355,8 +365,9 @@ export function registerProjectIpc() {
     return { canceled: false, filePath }
   })
 
-  handleDesktop(DESKTOP_CHANNELS.soundFontOpen, async () => {
-    const selection = await dialog.showOpenDialog({
+  handleDesktop(DESKTOP_CHANNELS.soundFontOpen, async (event) => {
+    const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const selection = await showExclusiveOpenDialog(parentWindow, {
       title: '选择 SoundFont',
       defaultPath: await rememberedDefaultPath('soundfont'),
       properties: ['openFile'],

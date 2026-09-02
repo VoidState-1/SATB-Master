@@ -51,6 +51,7 @@ export function useFileWorkflow({
   const [migrationBackupSourcePath, setMigrationBackupSourcePath] =
     useState<string>();
   const recoveryCheckedRef = useRef(false);
+  const isBusyRef = useRef(false);
 
   useEffect(() => {
     if (recoveryCheckedRef.current) return;
@@ -115,17 +116,19 @@ export function useFileWorkflow({
   }, [history, requestConfirmation]);
 
   const handleOpen = useCallback(async () => {
-    if (
-      history.isDirty &&
-      !(await requestConfirmation({
-        title: "打开工程",
-        message: "当前工程尚未保存，仍要打开其他工程吗？",
-        confirmLabel: "继续打开",
-        cancelLabel: "取消",
-      }))
-    )
-      return;
+    if (isBusyRef.current) return;
+    isBusyRef.current = true;
     try {
+      if (
+        history.isDirty &&
+        !(await requestConfirmation({
+          title: "打开工程",
+          message: "当前工程尚未保存，仍要打开其他工程吗？",
+          confirmLabel: "继续打开",
+          cancelLabel: "取消",
+        }))
+      )
+        return;
       const result = await openProject();
       if (!result) return;
       audioEngine.stop();
@@ -138,11 +141,15 @@ export function useFileWorkflow({
       showNotice("工程已打开");
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "打开工程失败");
+    } finally {
+      isBusyRef.current = false;
     }
-  }, [history, requestConfirmation, showNotice]);
+  }, [history, onWorkspaceReset, requestConfirmation, showNotice]);
 
   const handleSave = useCallback(
     async (forceDialog = false) => {
+      if (isBusyRef.current) return;
+      isBusyRef.current = true;
       try {
         const result = await saveProject(
           normalizeProject(project),
@@ -161,6 +168,8 @@ export function useFileWorkflow({
         );
       } catch (error) {
         showNotice(error instanceof Error ? error.message : "保存工程失败");
+      } finally {
+        isBusyRef.current = false;
       }
     },
     [filePath, history, migrationBackupSourcePath, project, showNotice],
@@ -168,6 +177,8 @@ export function useFileWorkflow({
 
   const handleExportMidi = useCallback(
     async (options?: MidiExportOptions) => {
+      if (isBusyRef.current) return;
+      isBusyRef.current = true;
       try {
         const bytes = buildMidi(project, options);
         const layout = options?.layout ?? "satb-separate";
@@ -175,6 +186,8 @@ export function useFileWorkflow({
         if (!result.canceled) showNotice("MIDI 已导出");
       } catch (error) {
         showNotice(error instanceof Error ? error.message : "MIDI 导出失败");
+      } finally {
+        isBusyRef.current = false;
       }
     },
     [project, showNotice],
@@ -182,6 +195,8 @@ export function useFileWorkflow({
 
   const handleExportMusicXml = useCallback(
     async (options?: MusicXmlExportOptions) => {
+      if (isBusyRef.current) return;
+      isBusyRef.current = true;
       try {
         const xml = buildMusicXml(project, options);
         const layout = options?.layout ?? "grand-staff";
@@ -189,11 +204,13 @@ export function useFileWorkflow({
           xml,
           musicXmlFileName(project, layout),
         );
-        if (!result.canceled) showNotice("MusicXML 乐谱已导出");
+        if (!result.canceled) showNotice("MusicXML 已导出");
       } catch (error) {
         showNotice(
           error instanceof Error ? error.message : "MusicXML 导出失败",
         );
+      } finally {
+        isBusyRef.current = false;
       }
     },
     [project, showNotice],

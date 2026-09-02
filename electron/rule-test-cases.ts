@@ -1,6 +1,10 @@
-import { dialog } from "electron";
+import { BrowserWindow } from "electron";
 import { readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import {
+  showExclusiveOpenDialog,
+  showExclusiveSaveDialog,
+} from "./dialog-coordinator.js";
 import { DESKTOP_CHANNELS } from "../shared/desktop.js";
 import {
   rememberDialogDirectory,
@@ -61,7 +65,7 @@ async function scanRuleTestCaseDirectory(directoryPath: string) {
 }
 
 export function registerRuleTestCaseIpc() {
-  handleDesktop(DESKTOP_CHANNELS.ruleTestCaseOpen, async () => {
+  handleDesktop(DESKTOP_CHANNELS.ruleTestCaseOpen, async (event) => {
     let filePath: string;
     if (e2eDirectory) {
       filePath = path.join(
@@ -69,7 +73,9 @@ export function registerRuleTestCaseIpc() {
         `rule-case${RULE_TEST_CASE_EXTENSION}`,
       );
     } else {
-      const selection = await dialog.showOpenDialog({
+      const parentWindow =
+        BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const selection = await showExclusiveOpenDialog(parentWindow, {
         title: "打开规则测试用例",
         defaultPath: await rememberedDefaultPath("rule-test-case"),
         properties: ["openFile"],
@@ -91,7 +97,7 @@ export function registerRuleTestCaseIpc() {
     };
   });
 
-  handleDesktop(DESKTOP_CHANNELS.ruleTestCaseSave, async (_event, request) => {
+  handleDesktop(DESKTOP_CHANNELS.ruleTestCaseSave, async (event, request) => {
     let filePath = e2eDirectory
       ? path.join(e2eDirectory, `rule-case${RULE_TEST_CASE_EXTENSION}`)
       : request.currentPath;
@@ -102,7 +108,9 @@ export function registerRuleTestCaseIpc() {
               .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
               .slice(0, 120)
           : "未命名规则用例";
-      const selection = await dialog.showSaveDialog({
+      const parentWindow =
+        BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const selection = await showExclusiveSaveDialog(parentWindow, {
         title: "保存规则测试用例",
         defaultPath:
           filePath ??
@@ -127,14 +135,16 @@ export function registerRuleTestCaseIpc() {
 
   handleDesktop(
     DESKTOP_CHANNELS.ruleTestCaseOpenDirectory,
-    async (_event, request) => {
+    async (event, request) => {
       let directoryPath =
         typeof request === "object" && request && typeof request.directoryPath === "string"
           ? request.directoryPath
           : undefined;
 
       if (!directoryPath) {
-        const selection = await dialog.showOpenDialog({
+        const parentWindow =
+          BrowserWindow.fromWebContents(event.sender) ?? undefined;
+        const selection = await showExclusiveOpenDialog(parentWindow, {
           title: "打开规则测试用例目录",
           defaultPath: await rememberedDefaultPath("rule-test-case"),
           properties: ["openDirectory"],

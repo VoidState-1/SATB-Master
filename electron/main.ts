@@ -8,6 +8,12 @@ import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-
 import { installReactDevToolsIfAvailable } from './dev-extensions.js'
 import { DESKTOP_CHANNELS } from '../shared/desktop.js'
 import { handleDesktop } from './typed-ipc.js'
+import {
+  loadSavedWindowState,
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  trackWindowState,
+} from './window-state.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 const developmentServerUrl = process.argv.includes('--dev')
@@ -20,11 +26,14 @@ if (e2eDirectory) app.setPath('userData', path.join(e2eDirectory, 'user-data'))
 registerSoundFontScheme()
 
 function createWindow() {
+  const windowState = loadSavedWindowState()
   const window = new BrowserWindow({
-    width: 1180,
-    height: 760,
-    minWidth: 760,
-    minHeight: 520,
+    width: windowState.width,
+    height: windowState.height,
+    x: windowState.x,
+    y: windowState.y,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     backgroundColor: '#f4f3ef',
     show: false,
     frame: false,
@@ -36,6 +45,12 @@ function createWindow() {
       sandbox: true,
     },
   })
+
+  trackWindowState(window)
+
+  if (windowState.isMaximized) {
+    window.maximize()
+  }
 
   window.once('ready-to-show', () => {
     // Windows 必须先完成无边框窗口的原生激活，再把输入焦点交给网页。
