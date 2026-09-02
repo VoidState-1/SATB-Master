@@ -355,29 +355,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
-  transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease,
-    box-shadow 0.12s ease;
 }
 
 .chord-block:hover,
 .chord-block.is-selected {
-  z-index: 2;
   border-color: #776b43;
   background: #e3d5aa;
 }
 
-.chord-block:hover {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
-}
-
 .chord-block.is-selected {
   box-shadow: inset 0 0 0 1px #776b43;
-}
-
-.chord-block.is-selected:hover {
-  box-shadow: inset 0 0 0 1px #776b43, 0 1px 3px rgba(0, 0, 0, 0.14);
 }
 
 .chord-block.cadence-full {
@@ -391,16 +378,8 @@
   border-color: #5b795f;
 }
 
-.chord-block.cadence-full:hover {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
-}
-
 .chord-block.cadence-full.is-selected {
   box-shadow: inset 0 0 0 1px #5b795f;
-}
-
-.chord-block.cadence-full.is-selected:hover {
-  box-shadow: inset 0 0 0 1px #5b795f, 0 1px 3px rgba(0, 0, 0, 0.14);
 }
 
 .chord-block.cadence-half {
@@ -414,16 +393,8 @@
   border-color: #695e8c;
 }
 
-.chord-block.cadence-half:hover {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
-}
-
 .chord-block.cadence-half.is-selected {
   box-shadow: inset 0 0 0 1px #695e8c;
-}
-
-.chord-block.cadence-half.is-selected:hover {
-  box-shadow: inset 0 0 0 1px #695e8c, 0 1px 3px rgba(0, 0, 0, 0.14);
 }
 
 .chord-block.cadence-supplementary {
@@ -437,16 +408,8 @@
   border-color: #8a6e47;
 }
 
-.chord-block.cadence-supplementary:hover {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
-}
-
 .chord-block.cadence-supplementary.is-selected {
   box-shadow: inset 0 0 0 1px #8a6e47;
-}
-
-.chord-block.cadence-supplementary.is-selected:hover {
-  box-shadow: inset 0 0 0 1px #8a6e47, 0 1px 3px rgba(0, 0, 0, 0.14);
 }
 
 .chord-block.cadence-deceptive {
@@ -460,16 +423,8 @@
   border-color: #9f614f;
 }
 
-.chord-block.cadence-deceptive:hover {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
-}
-
 .chord-block.cadence-deceptive.is-selected {
   box-shadow: inset 0 0 0 1px #9f614f;
-}
-
-.chord-block.cadence-deceptive.is-selected:hover {
-  box-shadow: inset 0 0 0 1px #9f614f, 0 1px 3px rgba(0, 0, 0, 0.14);
 }
 
 .chord-block.cadence-is-candidate {
