@@ -5,6 +5,7 @@ import type { AnalysisNote } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
+  isWrittenStep,
   leadingTonePitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
@@ -37,7 +38,10 @@ function evaluateAugmentedSixthResolution(
   policy: AugmentedSixthResolutionPolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  for (const source of context.spans()) {
+  for (const candidate of context.connections()) {
+    const { connection, source, target, sourceBoundary: sourceSlice, targetBoundary: targetSlice } =
+      candidate;
+    if (!connection.contiguous || !connection.sameKey) continue;
     const sourceSpan = source.span;
     const sourceSpanChord = source.firstSlice.chord;
     if (sourceSpanChord?.identity.structure.kind !== "augmented-sixth")
@@ -47,13 +51,7 @@ function evaluateAugmentedSixthResolution(
       sourceSpanChord.identity.structure.variant !== policy.expectedVariant
     )
       continue;
-    const candidate = context.connections({ sourceSpanId: sourceSpan.id }).first();
-    if (!candidate) continue;
-    const { connection } = candidate;
-    if (!connection.contiguous || !connection.sameKey) continue;
-    const targetSpan = candidate.target.span;
-    const sourceSlice = candidate.sourceBoundary;
-    const targetSlice = candidate.targetBoundary;
+    const targetSpan = target.span;
     const sourceChord = sourceSlice.chord;
     const targetChord = targetSlice.chord;
     if (
@@ -252,7 +250,14 @@ export function germanAugmentedSixthConnectionRule(
 export function deceptiveCadenceTargetRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   const { analysis } = context;
-  for (const source of context.spans()) {
+  for (const candidate of context.connections()) {
+    const {
+      connection,
+      source,
+      target,
+      sourceBoundary: sourceSlice,
+      targetBoundary: targetSlice,
+    } = candidate;
     const sourceSpan = source.span;
     if (sourceSpan.semantics?.cadenceRole !== "deceptive") continue;
     const sourceResolution = context.harmony.primaryInterpretation(sourceSpan);
@@ -264,13 +269,10 @@ export function deceptiveCadenceTargetRule(context: HarmonyRuleContext) {
       sourceInterpretation?.designation?.primaryFunction === "dominant" ||
       sourceInterpretation?.degree === 5 ||
       sourceInterpretation?.degree === 7;
-    const candidate = context.connections({ sourceSpanId: sourceSpan.id }).first();
-    const connection = candidate?.connection;
     const sourceChord = source.lastSlice.chord;
-    const targetChord = candidate?.target.firstSlice.chord;
+    const targetChord = target.firstSlice.chord;
     if (
       !sourceChord ||
-      !connection ||
       !connection.contiguous ||
       !connection.sameKey ||
       connection.confidence === "ambiguous" ||
@@ -328,20 +330,22 @@ export function deceptiveCadenceTargetRule(context: HarmonyRuleContext) {
 
 export function deceptiveVoiceLeadingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  for (const source of context.spans()) {
+  for (const candidate of context.connections()) {
+    const {
+      connection,
+      source,
+      target,
+      sourceBoundary: sourceSlice,
+      targetBoundary: targetSlice,
+    } = candidate;
     const sourceSpan = source.span;
     if (sourceSpan.semantics?.cadenceRole !== "deceptive") continue;
-    const candidate = context.connections({ sourceSpanId: sourceSpan.id }).first();
-    const connection = candidate?.connection;
     if (
-      connection?.relation !== "deceptive" ||
+      connection.relation !== "deceptive" ||
       !connection.contiguous ||
       !connection.sameKey
     )
       continue;
-    if (!candidate) continue;
-    const sourceSlice = candidate.sourceBoundary;
-    const targetSlice = candidate.targetBoundary;
     const sourceChord = sourceSlice.chord;
     const targetChord = targetSlice.chord;
     if (
@@ -372,10 +376,15 @@ export function deceptiveVoiceLeadingRule(context: HarmonyRuleContext) {
       (() => {
         const source = leadingSources[0];
         const target = targetSlice.notes[source.voiceId];
-        return Boolean(
-          target &&
+        if (!target) return false;
+        const interval = context.pitch.writtenIntervalBetween(
+          source.note.pitch,
+          target.pitch,
+        );
+        return (
           pitchClassEquals(target.pitch, tonic) &&
-          toMidi(target.pitch) - toMidi(source.note.pitch) === 1,
+          isWrittenStep(interval) &&
+          interval.semitones === 1
         );
       })();
     const targetTones = chordIdentityToneSpellings(targetChord.identity);

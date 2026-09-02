@@ -246,12 +246,7 @@ describe("H 组和弦连接规则体系（斯波索宾金样本与 QueryAPI 升�
         degreeAlteration: 0,
         quality: "dominant7",
         inversion: 0,
-        structure: {
-          kind: "tertian",
-          quality: "dominant7",
-          extensions: [9],
-          alterations: [],
-        },
+        extensions: [9],
         designation: {
           notationSystem: "spasobin",
           kind: "primary",
