@@ -15,6 +15,9 @@ import {
   Minimize2,
   Minus,
   MousePointer2,
+  PanelBottom,
+  PanelLeft,
+  PanelRight,
   Pause,
   Pencil,
   Play,
@@ -142,6 +145,28 @@ function AppShell() {
   );
   const [ruleTestMode, setRuleTestMode] = useState(false);
   const panelLayout = usePanelLayout();
+  const workspaceColumns = useMemo(() => {
+    const cols: string[] = [];
+    if (panelLayout.visibility.left) {
+      cols.push(`${panelLayout.sizes.left}px`, `${PANEL_RESIZER_SIZE}px`);
+    }
+    cols.push("minmax(0, 1fr)");
+    if (panelLayout.visibility.right) {
+      cols.push(`${PANEL_RESIZER_SIZE}px`, `${panelLayout.sizes.right}px`);
+    }
+    return cols.join(" ");
+  }, [
+    panelLayout.visibility.left,
+    panelLayout.visibility.right,
+    panelLayout.sizes.left,
+    panelLayout.sizes.right,
+  ]);
+  const editorAreaRows = useMemo(() => {
+    if (panelLayout.visibility.bottom) {
+      return `minmax(0, 1fr) ${PANEL_RESIZER_SIZE}px ${panelLayout.sizes.bottom}px`;
+    }
+    return "minmax(0, 1fr)";
+  }, [panelLayout.visibility.bottom, panelLayout.sizes.bottom]);
   const shortcutSettings = useShortcutBindings();
   const developerMode = useDeveloperMode();
   const { scaleGuideEnabled, setScaleGuideEnabled } = useScaleGuide();
@@ -737,6 +762,42 @@ function AppShell() {
               setPixelsPerBeat((value) => stepTimelineZoom(value, 1))
             }
           />
+          <div className="toolbar-divider" />
+          <div className="layout-group" role="group" aria-label="面板布局">
+            <IconButton
+              label={
+                panelLayout.visibility.left
+                  ? "隐藏左侧声部面板"
+                  : "显示左侧声部面板"
+              }
+              title={`左侧声部面板 (${panelLayout.visibility.left ? "显示中" : "已隐藏"})`}
+              icon={<PanelLeft />}
+              active={panelLayout.visibility.left}
+              onClick={panelLayout.toggleLeft}
+            />
+            <IconButton
+              label={
+                panelLayout.visibility.bottom
+                  ? "隐藏底部问题面板"
+                  : "显示底部问题面板"
+              }
+              title={`底部问题诊断 (${panelLayout.visibility.bottom ? "显示中" : "已隐藏"})`}
+              icon={<PanelBottom />}
+              active={panelLayout.visibility.bottom}
+              onClick={panelLayout.toggleBottom}
+            />
+            <IconButton
+              label={
+                panelLayout.visibility.right
+                  ? "隐藏右侧属性面板"
+                  : "显示右侧属性面板"
+              }
+              title={`右侧属性面板 (${panelLayout.visibility.right ? "显示中" : "已隐藏"})`}
+              icon={<PanelRight />}
+              active={panelLayout.visibility.right}
+              onClick={panelLayout.toggleRight}
+            />
+          </div>
         </div>
       </div>
 
@@ -744,29 +805,33 @@ function AppShell() {
         className="workspace"
         ref={panelLayout.workspaceRef}
         style={{
-          gridTemplateColumns: `${panelLayout.sizes.left}px ${PANEL_RESIZER_SIZE}px minmax(0, 1fr) ${PANEL_RESIZER_SIZE}px ${panelLayout.sizes.right}px`,
+          gridTemplateColumns: workspaceColumns,
         }}
       >
-        <TrackSidebar
-          project={project}
-          activeVoice={activeVoice}
-          onSetActive={setActiveVoice}
-          onUpdateTrack={handleUpdateTrack}
-        />
-        <PanelResizeHandle
-          orientation="vertical"
-          label="调整声部面板宽度"
-          value={panelLayout.sizes.left}
-          min={panelLayout.limits.left.min}
-          max={panelLayout.limits.left.max}
-          defaultValue={DEFAULT_PANEL_SIZES.left}
-          direction={1}
-          onResize={panelLayout.setLeft}
-        />
+        {panelLayout.visibility.left ? (
+          <>
+            <TrackSidebar
+              project={project}
+              activeVoice={activeVoice}
+              onSetActive={setActiveVoice}
+              onUpdateTrack={handleUpdateTrack}
+            />
+            <PanelResizeHandle
+              orientation="vertical"
+              label="调整声部面板宽度"
+              value={panelLayout.sizes.left}
+              min={panelLayout.limits.left.min}
+              max={panelLayout.limits.left.max}
+              defaultValue={DEFAULT_PANEL_SIZES.left}
+              direction={1}
+              onResize={panelLayout.setLeft}
+            />
+          </>
+        ) : null}
         <section
           className="editor-area"
           style={{
-            gridTemplateRows: `minmax(0, 1fr) ${PANEL_RESIZER_SIZE}px ${panelLayout.sizes.bottom}px`,
+            gridTemplateRows: editorAreaRows,
           }}
         >
           <PianoRoll
@@ -809,105 +874,113 @@ function AppShell() {
             onDeleteTimingEvent={handleDeleteTimingEvent}
             onSetLoopBoundary={setLoopBoundary}
           />
-          <PanelResizeHandle
-            orientation="horizontal"
-            label="调整问题面板高度"
-            value={panelLayout.sizes.bottom}
-            min={panelLayout.limits.bottom.min}
-            max={panelLayout.limits.bottom.max}
-            defaultValue={DEFAULT_PANEL_SIZES.bottom}
-            direction={-1}
-            onResize={panelLayout.setBottom}
-          />
-          <DiagnosticsPanel
-            project={project}
-            result={harmonyResult}
-            onSelect={handleDiagnostic}
-            onToggleIgnored={handleToggleIgnoredDiagnostic}
-            onCopy={handleCopyDiagnostic}
-            developerMode={developerMode.enabled}
-          />
+          {panelLayout.visibility.bottom ? (
+            <>
+              <PanelResizeHandle
+                orientation="horizontal"
+                label="调整问题面板高度"
+                value={panelLayout.sizes.bottom}
+                min={panelLayout.limits.bottom.min}
+                max={panelLayout.limits.bottom.max}
+                defaultValue={DEFAULT_PANEL_SIZES.bottom}
+                direction={-1}
+                onResize={panelLayout.setBottom}
+              />
+              <DiagnosticsPanel
+                project={project}
+                result={harmonyResult}
+                onSelect={handleDiagnostic}
+                onToggleIgnored={handleToggleIgnoredDiagnostic}
+                onCopy={handleCopyDiagnostic}
+                developerMode={developerMode.enabled}
+              />
+            </>
+          ) : null}
         </section>
-        <PanelResizeHandle
-          orientation="vertical"
-          label="调整属性面板宽度"
-          value={panelLayout.sizes.right}
-          min={panelLayout.limits.right.min}
-          max={panelLayout.limits.right.max}
-          defaultValue={DEFAULT_PANEL_SIZES.right}
-          direction={-1}
-          onResize={panelLayout.setRight}
-        />
-        <Inspector
-          project={project}
-          activeVoice={activeVoice}
-          selectedNote={selectedNote}
-          selectedChord={selectedChord}
-          selectedChordIds={selectedChordIds}
-          selectedChordCount={selectedChordIds.size}
-          developerMode={developerMode.enabled}
-          chordBrush={chordBrush}
-          cadenceCandidates={cadenceAnalysis.cadenceCandidates}
-          playheadTick={playheadTick}
-          audioStatus={audioMessage}
-          soundFontSize={
-            soundFontSizeBytes ? formatByteSize(soundFontSizeBytes) : undefined
-          }
-          soundFontLoad={
-            soundFontProgress
-              ? {
-                  percent:
-                    soundFontProgress.totalBytes > 0
-                      ? Math.round(
-                          (soundFontProgress.completedBytes /
-                            soundFontProgress.totalBytes) *
-                            100,
-                        )
-                      : 0,
-                  detail: [
-                    `文件 ${formatByteSize(soundFontProgress.fileSizeBytes)}`,
-                    soundFontProgress.requiredMemoryBytes
-                      ? `建议可用 ${formatByteSize(soundFontProgress.requiredMemoryBytes)}`
-                      : undefined,
-                    soundFontProgress.availableMemoryBytes
-                      ? `当前可用 ${formatByteSize(soundFontProgress.availableMemoryBytes)}`
-                      : undefined,
-                  ]
-                    .filter(Boolean)
-                    .join(" · "),
-                }
-              : undefined
-          }
-          onUpdateProject={handleUpdateProject}
-          onUpdateInstructions={handleUpdateInstructions}
-          onAddEditableRange={handleAddEditableRange}
-          onUpdateEditableRange={handleUpdateEditableRange}
-          onDeleteEditableRange={handleDeleteEditableRange}
-          onAddPhraseBoundary={handleAddPhraseBoundary}
-          onDeletePhraseBoundary={handleDeletePhraseBoundary}
-          onUpdateNote={handleUpdateNote}
-          onUpdateChord={handleUpdateChord}
-          onDeleteChords={handleDeleteChords}
-          onAddCadenceAnnotation={handleAddCadenceAnnotation}
-          onUpdateCadenceAnnotation={handleUpdateCadenceAnnotation}
-          onDeleteCadenceAnnotation={handleDeleteCadenceAnnotation}
-          onUpdateChordBrush={handleUpdateChordBrush}
-          onUpdateChordTrack={handleUpdateChordTrack}
-          onAddTimingEvent={handleAddTimingEvent}
-          onUpdateTimingEvent={handleUpdateTimingEvent}
-          onDeleteTimingEvent={handleDeleteTimingEvent}
-          onUpdateAudio={(masterVolume) =>
-            history.commit(
-              replaceProject(project, (draft) => {
-                draft.audio.masterVolume = masterVolume;
-              }),
-            )
-          }
-          onUpdateTrack={handleUpdateTrack}
-          onChooseSoundFont={() => void handleChooseSoundFont()}
-          onUseDefaultSoundFont={() => void handleUseDefaultSoundFont()}
-          onOpenMidiOut={() => setMidiOutOpen(true)}
-        />
+        {panelLayout.visibility.right ? (
+          <>
+            <PanelResizeHandle
+              orientation="vertical"
+              label="调整属性面板宽度"
+              value={panelLayout.sizes.right}
+              min={panelLayout.limits.right.min}
+              max={panelLayout.limits.right.max}
+              defaultValue={DEFAULT_PANEL_SIZES.right}
+              direction={-1}
+              onResize={panelLayout.setRight}
+            />
+            <Inspector
+              project={project}
+              activeVoice={activeVoice}
+              selectedNote={selectedNote}
+              selectedChord={selectedChord}
+              selectedChordIds={selectedChordIds}
+              selectedChordCount={selectedChordIds.size}
+              developerMode={developerMode.enabled}
+              chordBrush={chordBrush}
+              cadenceCandidates={cadenceAnalysis.cadenceCandidates}
+              playheadTick={playheadTick}
+              audioStatus={audioMessage}
+              soundFontSize={
+                soundFontSizeBytes ? formatByteSize(soundFontSizeBytes) : undefined
+              }
+              soundFontLoad={
+                soundFontProgress
+                  ? {
+                      percent:
+                        soundFontProgress.totalBytes > 0
+                          ? Math.round(
+                              (soundFontProgress.completedBytes /
+                                soundFontProgress.totalBytes) *
+                                100,
+                            )
+                          : 0,
+                      detail: [
+                        `文件 ${formatByteSize(soundFontProgress.fileSizeBytes)}`,
+                        soundFontProgress.requiredMemoryBytes
+                          ? `建议可用 ${formatByteSize(soundFontProgress.requiredMemoryBytes)}`
+                          : undefined,
+                        soundFontProgress.availableMemoryBytes
+                          ? `当前可用 ${formatByteSize(soundFontProgress.availableMemoryBytes)}`
+                          : undefined,
+                      ]
+                        .filter(Boolean)
+                        .join(" · "),
+                    }
+                  : undefined
+              }
+              onUpdateProject={handleUpdateProject}
+              onUpdateInstructions={handleUpdateInstructions}
+              onAddEditableRange={handleAddEditableRange}
+              onUpdateEditableRange={handleUpdateEditableRange}
+              onDeleteEditableRange={handleDeleteEditableRange}
+              onAddPhraseBoundary={handleAddPhraseBoundary}
+              onDeletePhraseBoundary={handleDeletePhraseBoundary}
+              onUpdateNote={handleUpdateNote}
+              onUpdateChord={handleUpdateChord}
+              onDeleteChords={handleDeleteChords}
+              onAddCadenceAnnotation={handleAddCadenceAnnotation}
+              onUpdateCadenceAnnotation={handleUpdateCadenceAnnotation}
+              onDeleteCadenceAnnotation={handleDeleteCadenceAnnotation}
+              onUpdateChordBrush={handleUpdateChordBrush}
+              onUpdateChordTrack={handleUpdateChordTrack}
+              onAddTimingEvent={handleAddTimingEvent}
+              onUpdateTimingEvent={handleUpdateTimingEvent}
+              onDeleteTimingEvent={handleDeleteTimingEvent}
+              onUpdateAudio={(masterVolume) =>
+                history.commit(
+                  replaceProject(project, (draft) => {
+                    draft.audio.masterVolume = masterVolume;
+                  }),
+                )
+              }
+              onUpdateTrack={handleUpdateTrack}
+              onChooseSoundFont={() => void handleChooseSoundFont()}
+              onUseDefaultSoundFont={() => void handleUseDefaultSoundFont()}
+              onOpenMidiOut={() => setMidiOutOpen(true)}
+            />
+          </>
+        ) : null}
       </div>
 
       {confirmation ? (

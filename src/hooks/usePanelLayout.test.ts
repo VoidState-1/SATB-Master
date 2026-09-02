@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PANEL_SIZES,
+  DEFAULT_PANEL_VISIBILITY,
   PANEL_LIMITS,
   PANEL_RESIZER_SIZE,
   fitPanelSizes,
   measureWorkspaceBounds,
   panelLayoutStorageKey,
+  panelVisibilityStorageKey,
+  readStoredPanelVisibility,
 } from "./usePanelLayout";
 
 describe("panel layout constraints", () => {
@@ -15,6 +18,18 @@ describe("panel layout constraints", () => {
     );
     expect(panelLayoutStorageKey("rule-test")).toBe(
       "satb-master-panel-layout-v2:rule-test",
+    );
+    expect(panelVisibilityStorageKey("project")).toBe(
+      "satb-master-panel-visibility-v1:project",
+    );
+    expect(panelVisibilityStorageKey("rule-test")).toBe(
+      "satb-master-panel-visibility-v1:rule-test",
+    );
+  });
+
+  it("reads default visibility when storage is empty", () => {
+    expect(readStoredPanelVisibility("project")).toEqual(
+      DEFAULT_PANEL_VISIBILITY,
     );
   });
 

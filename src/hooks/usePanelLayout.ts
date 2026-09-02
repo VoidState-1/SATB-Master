@@ -6,6 +6,12 @@ export interface PanelSizes {
   bottom: number;
 }
 
+export interface PanelVisibility {
+  left: boolean;
+  right: boolean;
+  bottom: boolean;
+}
+
 interface WorkspaceBounds {
   width: number;
   height: number;
@@ -17,10 +23,15 @@ interface MeasurableWorkspace {
 }
 
 const STORAGE_KEY = "satb-master-panel-layout-v2";
+const VISIBILITY_STORAGE_KEY = "satb-master-panel-visibility-v1";
 export type PanelLayoutScope = "project" | "rule-test";
 
 export function panelLayoutStorageKey(scope: PanelLayoutScope) {
   return `${STORAGE_KEY}:${scope}`;
+}
+
+export function panelVisibilityStorageKey(scope: PanelLayoutScope) {
+  return `${VISIBILITY_STORAGE_KEY}:${scope}`;
 }
 
 export const PANEL_RESIZER_SIZE = 6;
@@ -28,6 +39,11 @@ export const DEFAULT_PANEL_SIZES: PanelSizes = {
   left: 184,
   right: 268,
   bottom: 182,
+};
+export const DEFAULT_PANEL_VISIBILITY: PanelVisibility = {
+  left: true,
+  right: true,
+  bottom: true,
 };
 export const PANEL_LIMITS = {
   left: { min: 156, max: 360 },
@@ -74,6 +90,27 @@ function readStoredPanelSizes(scope: PanelLayoutScope): PanelSizes {
     // 损坏或来自旧版本的界面偏好不应阻止编辑器启动。
   }
   return DEFAULT_PANEL_SIZES;
+}
+
+export function readStoredPanelVisibility(
+  scope: PanelLayoutScope,
+): PanelVisibility {
+  if (typeof window === "undefined") return DEFAULT_PANEL_VISIBILITY;
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(panelVisibilityStorageKey(scope)) ?? "",
+    ) as Partial<PanelVisibility>;
+    if (
+      typeof stored.left === "boolean" &&
+      typeof stored.right === "boolean" &&
+      typeof stored.bottom === "boolean"
+    ) {
+      return stored as PanelVisibility;
+    }
+  } catch {
+    // 忽略异常
+  }
+  return DEFAULT_PANEL_VISIBILITY;
 }
 
 export function fitPanelSizes(
@@ -208,6 +245,45 @@ export function usePanelLayout(scope: PanelLayoutScope = "project") {
     },
   };
 
+  const [visibility, setVisibility] = useState<PanelVisibility>(() =>
+    readStoredPanelVisibility(scope),
+  );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        panelVisibilityStorageKey(scope),
+        JSON.stringify(visibility),
+      );
+    } catch {
+      // 忽略存储异常
+    }
+  }, [visibility, scope]);
+
+  const toggleLeft = useCallback(() => {
+    setVisibility((current) => ({ ...current, left: !current.left }));
+  }, []);
+
+  const toggleRight = useCallback(() => {
+    setVisibility((current) => ({ ...current, right: !current.right }));
+  }, []);
+
+  const toggleBottom = useCallback(() => {
+    setVisibility((current) => ({ ...current, bottom: !current.bottom }));
+  }, []);
+
+  const setLeftVisible = useCallback((visible: boolean) => {
+    setVisibility((current) => ({ ...current, left: visible }));
+  }, []);
+
+  const setRightVisible = useCallback((visible: boolean) => {
+    setVisibility((current) => ({ ...current, right: visible }));
+  }, []);
+
+  const setBottomVisible = useCallback((visible: boolean) => {
+    setVisibility((current) => ({ ...current, bottom: visible }));
+  }, []);
+
   const setLeft = useCallback(
     (left: number) =>
       setPreferredSizes((current) => ({
@@ -228,5 +304,19 @@ export function usePanelLayout(scope: PanelLayoutScope = "project") {
     [],
   );
 
-  return { workspaceRef, sizes, limits, setLeft, setRight, setBottom };
+  return {
+    workspaceRef,
+    sizes,
+    limits,
+    visibility,
+    toggleLeft,
+    toggleRight,
+    toggleBottom,
+    setLeftVisible,
+    setRightVisible,
+    setBottomVisible,
+    setLeft,
+    setRight,
+    setBottom,
+  };
 }
