@@ -25,6 +25,8 @@ export interface PianoRollProps {
   missingExpectedChordIds?: ReadonlySet<string>;
   cadenceCandidates?: readonly CadenceCandidate[];
   playheadTick: number;
+  isPlaying?: boolean;
+  followPlayhead?: boolean;
   loopEnabled: boolean;
   loopStartTick: number;
   loopEndTick: number;

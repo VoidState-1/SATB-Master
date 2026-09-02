@@ -1,9 +1,11 @@
-import { LayoutGrid, LocateFixed } from "lucide-react";
+import { LayoutGrid, LocateFixed, SlidersHorizontal } from "lucide-react";
 import type { PausePlayheadBehavior } from "../../hooks/usePausePlayheadBehavior";
 
 interface EditorSettingsPaneProps {
   scaleGuideEnabled: boolean;
   onSetScaleGuideEnabled(enabled: boolean): void;
+  followPlayhead: boolean;
+  onSetFollowPlayhead(enabled: boolean): void;
   pausePlayheadBehavior: PausePlayheadBehavior;
   onSetPausePlayheadBehavior(behavior: PausePlayheadBehavior): void;
 }
@@ -11,6 +13,8 @@ interface EditorSettingsPaneProps {
 export function EditorSettingsPane({
   scaleGuideEnabled,
   onSetScaleGuideEnabled,
+  followPlayhead,
+  onSetFollowPlayhead,
   pausePlayheadBehavior,
   onSetPausePlayheadBehavior,
 }: EditorSettingsPaneProps) {
@@ -42,6 +46,29 @@ export function EditorSettingsPane({
       <section className="developer-settings-section">
         <header>
           <LocateFixed aria-hidden="true" />
+          <div>
+            <h3>播放时画布跟随光标</h3>
+            <p>
+              播放过程中画布水平跟随光标滚动（边缘推拉模式），使播放头始终保持在视野范围内。
+            </p>
+          </div>
+          <label className="developer-mode-toggle">
+            <input
+              type="checkbox"
+              checked={followPlayhead}
+              aria-label="启用播放时画布跟随光标"
+              onChange={(event) =>
+                onSetFollowPlayhead(event.target.checked)
+              }
+            />
+            <span>{followPlayhead ? "已开启" : "未开启"}</span>
+          </label>
+        </header>
+      </section>
+
+      <section className="developer-settings-section">
+        <header>
+          <SlidersHorizontal aria-hidden="true" />
           <div>
             <h3>暂停后光标位置</h3>
             <p>

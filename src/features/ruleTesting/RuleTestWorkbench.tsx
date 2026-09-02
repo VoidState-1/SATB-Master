@@ -396,6 +396,7 @@ export function RuleTestWorkbench({
             missingExpectedNoteIds={missing.notes}
             missingExpectedChordIds={missing.chords}
             playheadTick={playback.playheadTick}
+            isPlaying={playback.isPlaying}
             loopEnabled={project.loop.enabled}
             loopStartTick={project.loop.startTick}
             loopEndTick={project.loop.endTick}

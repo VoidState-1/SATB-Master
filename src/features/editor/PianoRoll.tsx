@@ -27,6 +27,7 @@ import {
   MAX_MIDI,
   MIN_MIDI,
   ROW_HEIGHT,
+  calculateFollowPlayheadScrollLeft,
   createViewportMetrics,
   initialScrollTopForMidi,
   scrollLeftForZoom,
@@ -68,6 +69,8 @@ export function PianoRoll({
   missingExpectedChordIds,
   cadenceCandidates,
   playheadTick,
+  isPlaying = false,
+  followPlayhead = true,
   loopEnabled,
   loopStartTick,
   loopEndTick,
@@ -174,6 +177,20 @@ export function PianoRoll({
     previousPixelsPerBeatRef.current = pixelsPerBeat;
     pendingZoomViewportXRef.current = undefined;
   }, [pixelsPerBeat, project.ppq]);
+
+  useLayoutEffect(() => {
+    if (!isPlaying || !followPlayhead) return;
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const nextScrollLeft = calculateFollowPlayheadScrollLeft({
+      currentScrollLeft: scroll.scrollLeft,
+      viewportWidth: scroll.clientWidth,
+      playheadX,
+    });
+    if (nextScrollLeft !== scroll.scrollLeft) {
+      scroll.scrollLeft = nextScrollLeft;
+    }
+  }, [followPlayhead, isPlaying, playheadX]);
 
   useEffect(() => {
     setTimingMarkerEditor(undefined);

@@ -6,6 +6,7 @@ import {
   PIANO_WIDTH,
   ROW_HEIGHT,
   createViewportMetrics,
+  calculateFollowPlayheadScrollLeft,
   durationToWidth,
   midiToY,
   scrollLeftForZoom,
@@ -71,5 +72,44 @@ describe("editor viewport geometry", () => {
     expect(metrics.timelineWidth).toBe(920);
     expect(metrics.totalWidth).toBe(920 + PIANO_WIDTH);
     expect(metrics.totalHeight).toBe(metrics.rollHeight + HEADER_HEIGHT);
+  });
+
+  describe("calculateFollowPlayheadScrollLeft", () => {
+    it("keeps scrollLeft unchanged when playhead is within safe viewport range", () => {
+      const scrollLeft = calculateFollowPlayheadScrollLeft({
+        currentScrollLeft: 0,
+        viewportWidth: 1000,
+        playheadX: 500, // 50% < 75%
+      });
+      expect(scrollLeft).toBe(0);
+    });
+
+    it("pushes scrollLeft forward when playhead crosses the 75% right threshold", () => {
+      const scrollLeft = calculateFollowPlayheadScrollLeft({
+        currentScrollLeft: 0,
+        viewportWidth: 1000,
+        playheadX: 850, // 85% > 75% (threshold is 750)
+      });
+      expect(scrollLeft).toBe(100); // 850 - 750 = 100
+    });
+
+    it("pulls scrollLeft back when playhead loops or jumps behind the left edge", () => {
+      const scrollLeft = calculateFollowPlayheadScrollLeft({
+        currentScrollLeft: 800,
+        viewportWidth: 1000,
+        playheadX: 58, // looped back to start (58 - 800 < pianoWidth)
+      });
+      expect(scrollLeft).toBe(0);
+    });
+
+    it("handles zero or negative viewport width gracefully", () => {
+      expect(
+        calculateFollowPlayheadScrollLeft({
+          currentScrollLeft: 120,
+          viewportWidth: 0,
+          playheadX: 500,
+        }),
+      ).toBe(120);
+    });
   });
 });

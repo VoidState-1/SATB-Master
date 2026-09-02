@@ -94,3 +94,40 @@ export function scrollLeftForZoom(options: {
 export function initialScrollTopForMidi(midiNote: number): number {
   return Math.max(0, midiToY(midiNote) - HEADER_HEIGHT);
 }
+
+/**
+ * 播放时画布跟随光标（方案一：边缘推拉模式）
+ * 允许光标在视口左侧和中央自由推进；一旦光标触及右侧安全阈值（默认 75% 视口宽），
+ * 拖动可视区域平滑前进；当发生循环跳转或光标回退时，将其重新拉回视口可见位置。
+ */
+export function calculateFollowPlayheadScrollLeft(options: {
+  currentScrollLeft: number;
+  viewportWidth: number;
+  playheadX: number;
+  pianoWidth?: number;
+  thresholdRatio?: number;
+}): number {
+  const {
+    currentScrollLeft,
+    viewportWidth,
+    playheadX,
+    pianoWidth = PIANO_WIDTH,
+    thresholdRatio = 0.75,
+  } = options;
+
+  if (viewportWidth <= 0) return currentScrollLeft;
+
+  const targetThresholdX = Math.round(viewportWidth * thresholdRatio);
+  const cursorViewportX = playheadX - currentScrollLeft;
+
+  if (cursorViewportX > targetThresholdX) {
+    return Math.max(0, playheadX - targetThresholdX);
+  }
+
+  if (cursorViewportX < pianoWidth + 10) {
+    return Math.max(0, playheadX - (pianoWidth + 24));
+  }
+
+  return currentScrollLeft;
+}
+

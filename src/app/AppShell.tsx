@@ -9,6 +9,7 @@ import {
   FlaskConical,
   FilePlus2,
   FolderOpen,
+  LocateFixed,
   Magnet,
   Maximize2,
   Music2,
@@ -74,6 +75,7 @@ import { useDeveloperMode } from "../hooks/useDeveloperMode";
 import { useExternalRuleLibrary } from "../hooks/useExternalRuleLibrary";
 import { useScaleGuide } from "../hooks/useScaleGuide";
 import { usePausePlayheadBehavior } from "../hooks/usePausePlayheadBehavior";
+import { useFollowPlayhead } from "../hooks/useFollowPlayhead";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
 import { useConfirmationController } from "./controllers/useConfirmationController";
 import { useHarmonyController } from "./controllers/useHarmonyController";
@@ -173,6 +175,7 @@ function AppShell() {
   const { scaleGuideEnabled, setScaleGuideEnabled } = useScaleGuide();
   const { pausePlayheadBehavior, setPausePlayheadBehavior } =
     usePausePlayheadBehavior();
+  const { followPlayhead, setFollowPlayhead } = useFollowPlayhead();
 
   useEffect(() => {
     const unsub = midiOutputManager.onConfigChange((cfg) =>
@@ -693,6 +696,13 @@ function AppShell() {
             active={loopEnabled}
             onClick={toggleLoop}
           />
+          <IconButton
+            label="跟随播放头"
+            title={`跟随播放头（${followPlayhead ? "已开启" : "已关闭"}）`}
+            icon={<LocateFixed />}
+            active={followPlayhead}
+            onClick={() => setFollowPlayhead((value) => !value)}
+          />
           <button
             type="button"
             className="loop-boundary"
@@ -850,6 +860,8 @@ function AppShell() {
             diagnostics={activeDiagnostics}
             cadenceCandidates={cadenceAnalysis.cadenceCandidates}
             playheadTick={playheadTick}
+            isPlaying={isPlaying}
+            followPlayhead={followPlayhead}
             loopEnabled={loopEnabled}
             loopStartTick={loopStartTick}
             loopEndTick={loopEndTick}
@@ -1044,6 +1056,8 @@ function AppShell() {
           onSetShowRuleTestEntry={developerMode.setShowRuleTestEntry}
           scaleGuideEnabled={scaleGuideEnabled}
           onSetScaleGuideEnabled={setScaleGuideEnabled}
+          followPlayhead={followPlayhead}
+          onSetFollowPlayhead={setFollowPlayhead}
           pausePlayheadBehavior={pausePlayheadBehavior}
           onSetPausePlayheadBehavior={setPausePlayheadBehavior}
           onClose={() => setSettingsOpen(false)}
