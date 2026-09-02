@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { WandSparkles, X } from "lucide-react";
 import { buildMeasures, measureAtTick } from "../../domain/time";
 import type { ProjectDocument } from "../../domain/project";
+import "./chordInference.css";
 
 export type ChordInferenceRangeMode =
   | "selection"
@@ -73,20 +74,20 @@ export function ChordInferenceDialog({
   );
   const [writeNonChordToneRoles, setWriteNonChordToneRoles] = useState(false);
   const firstControlRef = useRef<HTMLSelectElement>(null);
+
   const selection = useMemo(
     () => selectedRange(project, selectedNoteIds, selectedChordIds),
     [project, selectedChordIds, selectedNoteIds],
   );
-  const measure = useMemo(
-    () => {
-      const lastTick = Math.max(0, project.lengthTicks - 1);
-      const safePlayhead = Number.isFinite(playheadTick)
-        ? Math.max(0, Math.min(lastTick, playheadTick))
-        : 0;
-      return measureAtTick(buildMeasures(project), safePlayhead);
-    },
-    [playheadTick, project],
-  );
+
+  const measure = useMemo(() => {
+    const lastTick = Math.max(0, project.lengthTicks - 1);
+    const safePlayhead = Number.isFinite(playheadTick)
+      ? Math.max(0, Math.min(lastTick, playheadTick))
+      : 0;
+    return measureAtTick(buildMeasures(project), safePlayhead);
+  }, [playheadTick, project]);
+
   const range =
     rangeMode === "selection" && selection
       ? selection
@@ -113,145 +114,167 @@ export function ChordInferenceDialog({
 
   return (
     <div className="confirmation-backdrop" onClick={onClose}>
-      <section
-        className="confirmation-dialog chord-inference-dialog"
+      <div
+        className="chord-inference-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="chord-inference-title"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="chord-inference-header">
-          <div>
-            <h2 id="chord-inference-title">
-              <WandSparkles aria-hidden="true" />
-              从音符推导和弦
-            </h2>
-            <p>优先使用当前调性的功能和声解释，完成后直接写入和弦轨。</p>
+          <div className="chord-inference-header-title" id="chord-inference-title">
+            <WandSparkles size={17} aria-hidden="true" />
+            <span>从音符推导和弦</span>
           </div>
           <button
             type="button"
-            className="dialog-close-button"
+            className="chord-inference-close-btn"
             aria-label="关闭"
             onClick={onClose}
           >
-            <X aria-hidden="true" />
+            <X size={16} aria-hidden="true" />
           </button>
         </header>
 
-        <form className="chord-inference-form" onSubmit={submit}>
-          <label className="chord-inference-field">
-            <span>推导范围</span>
-            <select
-              ref={firstControlRef}
-              value={rangeMode}
-              onChange={(event) =>
-                setRangeMode(event.target.value as ChordInferenceRangeMode)
-              }
-            >
-              <option value="selection" disabled={!selection}>
-                当前选择{selection ? "" : "（尚未选择音符或和弦）"}
-              </option>
-              <option value="current-measure">当前小节</option>
-              <option value="project">整个工程</option>
-            </select>
-            <small>
-              {range.fromTick} - {range.toTick} Tick
-            </small>
-          </label>
-
-          <fieldset>
-            <legend>已有和弦</legend>
-            <label className="chord-inference-option">
-              <input
-                type="radio"
-                name="chord-inference-mode"
-                checked={mode === "fill-gaps"}
-                onChange={() => setMode("fill-gaps")}
-              />
-              <span>
-                <strong>仅填补空白</strong>
-                <small>保留已有和弦，不覆盖手动结果。</small>
-              </span>
-            </label>
-            <label className="chord-inference-option">
-              <input
-                type="radio"
-                name="chord-inference-mode"
-                checked={mode === "replace-unlocked"}
-                onChange={() => setMode("replace-unlocked")}
-              />
-              <span>
-                <strong>替换未锁定和弦</strong>
-                <small>锁定和弦始终保留，重叠区域会被报告。</small>
-              </span>
-            </label>
-          </fieldset>
-
-          <fieldset>
-            <legend>推导策略</legend>
-            <label className="chord-inference-check">
-              <input
-                type="checkbox"
-                checked={allowAbsoluteFallback}
-                onChange={(event) => setAllowAbsoluteFallback(event.target.checked)}
-              />
-              <span>
-                <strong>允许绝对和弦回退</strong>
-                <small>功能目录无法解释时，允许生成明确标记的普通结构。</small>
-              </span>
-            </label>
-            <label className="chord-inference-check">
-              <input
-                type="checkbox"
-                checked={allowIncompleteVoicing}
-                onChange={(event) => setAllowIncompleteVoicing(event.target.checked)}
-              />
-              <span>
-                <strong>允许有限缺音</strong>
-                <small>允许缺少一个和弦音，但不会忽略无法解释的额外音。</small>
-              </span>
-            </label>
-            <label className="chord-inference-field compact">
-              <span>最低置信度</span>
+        <form className="chord-inference-body" onSubmit={submit}>
+          {/* 推导范围 */}
+          <div className="chord-inference-field">
+            <span className="chord-inference-field-label">推导范围</span>
+            <div className="chord-inference-range-row">
               <select
-                value={minConfidence}
+                ref={firstControlRef}
+                className="chord-inference-select"
+                value={rangeMode}
                 onChange={(event) =>
-                  setMinConfidence(event.target.value as typeof minConfidence)
+                  setRangeMode(event.target.value as ChordInferenceRangeMode)
                 }
               >
-                <option value="high">高</option>
-                <option value="medium">中</option>
-                <option value="low">低</option>
+                <option value="selection" disabled={!selection}>
+                  当前选择{selection ? "" : "（尚未选择音符或和弦）"}
+                </option>
+                <option value="current-measure">当前小节</option>
+                <option value="project">整个工程</option>
               </select>
-            </label>
-          </fieldset>
-
-          <fieldset>
-            <legend>音符标记</legend>
-            <label className="chord-inference-check">
-              <input
-                type="checkbox"
-                checked={writeNonChordToneRoles}
-                onChange={(event) => setWriteNonChordToneRoles(event.target.checked)}
-              />
-              <span>
-                <strong>同时写入音符的非和弦音角色</strong>
-                <small>推导阶段只读；应用时仅写入有足够证据的角色，锁定音符不会修改。</small>
+              <span className="chord-inference-tick-badge">
+                {range.fromTick} - {range.toTick} Tick
               </span>
-            </label>
-          </fieldset>
+            </div>
+          </div>
 
-          <div className="confirmation-actions">
-            <button type="button" className="command-button secondary" onClick={onClose}>
+          {/* 已有和弦模式：分段卡片 */}
+          <div className="chord-inference-field">
+            <span className="chord-inference-field-label">已有和弦</span>
+            <div className="chord-inference-tabs">
+              <button
+                type="button"
+                className={`chord-inference-tab ${
+                  mode === "fill-gaps" ? "active" : ""
+                }`}
+                onClick={() => setMode("fill-gaps")}
+              >
+                <span className="chord-inference-tab-title">仅填补空白</span>
+              </button>
+              <button
+                type="button"
+                className={`chord-inference-tab ${
+                  mode === "replace-unlocked" ? "active" : ""
+                }`}
+                onClick={() => setMode("replace-unlocked")}
+              >
+                <span className="chord-inference-tab-title">替换未锁定和弦</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 选项卡片列表 */}
+          <div className="chord-inference-field">
+            <span className="chord-inference-field-label">选项</span>
+            <div className="chord-inference-options">
+              <label className="chord-inference-option-row">
+                <input
+                  type="checkbox"
+                  checked={allowAbsoluteFallback}
+                  onChange={(event) =>
+                    setAllowAbsoluteFallback(event.target.checked)
+                  }
+                />
+                <span>允许绝对和弦回退</span>
+              </label>
+
+              <label className="chord-inference-option-row">
+                <input
+                  type="checkbox"
+                  checked={allowIncompleteVoicing}
+                  onChange={(event) =>
+                    setAllowIncompleteVoicing(event.target.checked)
+                  }
+                />
+                <span>允许有限缺音</span>
+              </label>
+
+              <label className="chord-inference-option-row">
+                <input
+                  type="checkbox"
+                  checked={writeNonChordToneRoles}
+                  onChange={(event) =>
+                    setWriteNonChordToneRoles(event.target.checked)
+                  }
+                />
+                <span>同时写入音符的非和弦音角色</span>
+              </label>
+            </div>
+          </div>
+
+          {/* 最低置信度 */}
+          <div className="chord-inference-field">
+            <span className="chord-inference-field-label">最低置信度</span>
+            <div className="chord-inference-tabs three-cols">
+              <button
+                type="button"
+                className={`chord-inference-tab ${
+                  minConfidence === "high" ? "active" : ""
+                }`}
+                onClick={() => setMinConfidence("high")}
+              >
+                <span className="chord-inference-tab-title">高</span>
+              </button>
+              <button
+                type="button"
+                className={`chord-inference-tab ${
+                  minConfidence === "medium" ? "active" : ""
+                }`}
+                onClick={() => setMinConfidence("medium")}
+              >
+                <span className="chord-inference-tab-title">中</span>
+              </button>
+              <button
+                type="button"
+                className={`chord-inference-tab ${
+                  minConfidence === "low" ? "active" : ""
+                }`}
+                onClick={() => setMinConfidence("low")}
+              >
+                <span className="chord-inference-tab-title">低</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 底部按钮 */}
+          <footer className="chord-inference-footer">
+            <button
+              type="button"
+              className="chord-inference-btn-secondary"
+              onClick={onClose}
+            >
               取消
             </button>
-            <button type="submit" className="command-button primary">
-              <WandSparkles aria-hidden="true" />
-              应用推导结果
+            <button type="submit" className="chord-inference-btn-primary">
+              <WandSparkles size={15} aria-hidden="true" />
+              <span>应用推导结果</span>
             </button>
-          </div>
+          </footer>
         </form>
-      </section>
+      </div>
     </div>
   );
 }

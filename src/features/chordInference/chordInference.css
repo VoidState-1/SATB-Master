@@ -1,162 +1,256 @@
+/* ==========================================================================
+   Chord Inference Dialog Styles (Flat, Card-based, Minimalist, Borderless)
+   ========================================================================== */
+
 .chord-inference-dialog {
-  width: min(560px, calc(100vw - 40px));
-  max-height: min(720px, calc(100vh - 40px));
-  overflow: auto;
-  padding: 22px;
+  width: min(480px, calc(100vw - 32px));
+  background: #fbfbf9;
+  border-radius: 12px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.22), 0 4px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid #d5d8d0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: chordInferenceFadeIn 0.15s ease-out;
+}
+
+@keyframes chordInferenceFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .chord-inference-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 18px;
+  padding: 14px 18px;
+  background: #f2f4ee;
+  border-bottom: 1px solid #e1e4dc;
 }
 
-.chord-inference-header h2 {
+.chord-inference-header-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0;
-  color: #292b26;
-  font-size: 17px;
-  font-weight: 650;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1b2018;
 }
 
-.chord-inference-header h2 svg {
-  width: 18px;
-  height: 18px;
-  color: #2f7764;
+.chord-inference-header-title svg {
+  color: #27715c;
 }
 
-.chord-inference-header p {
-  margin: 8px 0 0;
-  color: #6d7168;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.chord-inference-form {
-  display: grid;
-  gap: 14px;
-}
-
-.chord-inference-field,
-.chord-inference-check,
-.chord-inference-option {
-  display: flex;
-  gap: 9px;
-}
-
-.chord-inference-field {
-  align-items: center;
-}
-
-.chord-inference-field > span,
-.chord-inference-field > small {
-  flex: 0 0 auto;
-}
-
-.chord-inference-field > span {
-  min-width: 72px;
-  color: #4e5249;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.chord-inference-field > select {
-  min-width: 0;
-  flex: 1;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid #c8cac2;
-  border-radius: 4px;
-  outline: 0;
-  background: #fff;
-  color: #2f332c;
-  font-size: 12px;
-}
-
-.chord-inference-field > select:focus {
-  border-color: #3b7b68;
-  box-shadow: 0 0 0 2px rgba(47, 119, 100, 0.14);
-}
-
-.chord-inference-field > small {
-  color: #7a7e75;
-  font: 10px Consolas, monospace;
-  white-space: nowrap;
-}
-
-.chord-inference-field.compact {
-  margin-top: 10px;
-}
-
-.chord-inference-field.compact > span {
-  min-width: 96px;
-}
-
-.chord-inference-form fieldset {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 12px 13px 13px;
-  border: 1px solid #d5d7d0;
-  border-radius: 5px;
-  background: #f9f9f6;
-}
-
-.chord-inference-form legend {
-  padding: 0 5px;
-  color: #5b5f56;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.chord-inference-check,
-.chord-inference-option {
-  align-items: flex-start;
-  color: #454940;
+.chord-inference-close-btn {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #666a60;
   cursor: pointer;
-}
-
-.chord-inference-check input,
-.chord-inference-option input {
-  margin: 3px 0 0;
-  accent-color: #2f7764;
-}
-
-.chord-inference-check span,
-.chord-inference-option span {
-  display: grid;
-  gap: 3px;
-}
-
-.chord-inference-check strong,
-.chord-inference-option strong {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.chord-inference-check small,
-.chord-inference-option small {
-  color: #777b72;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.chord-inference-dialog .confirmation-actions {
-  margin-top: 2px;
-}
-
-.chord-inference-dialog .command-button {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.15s;
+}
+
+.chord-inference-close-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #20241d;
+}
+
+.chord-inference-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* --- Field Sections --- */
+.chord-inference-field {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
-.chord-inference-dialog .command-button svg {
-  width: 15px;
-  height: 15px;
+.chord-inference-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #61665b;
+}
+
+.chord-inference-range-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.chord-inference-select {
+  flex: 1;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid #c8cbbf;
+  background: #ffffff;
+  color: #262923;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.chord-inference-select:focus {
+  border-color: #27715c;
+}
+
+.chord-inference-tick-badge {
+  padding: 0 10px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  background: #f1f3ed;
+  color: #72766c;
+  border-radius: 6px;
+  font: 11.5px Consolas, monospace;
+  white-space: nowrap;
+}
+
+/* --- Flat Segmented Route Tabs --- */
+.chord-inference-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: #edece6;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.chord-inference-tabs.three-cols {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.chord-inference-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #55594f;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.chord-inference-tab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.55);
+  color: #242720;
+}
+
+.chord-inference-tab.active {
+  background: #ffffff;
+  color: #175243;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.chord-inference-tab-title {
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+/* --- Flat Card Option Rows --- */
+.chord-inference-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chord-inference-option-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f5f6f0;
+  color: #2c3027;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.chord-inference-option-row:hover {
+  background: #eaeee5;
+}
+
+.chord-inference-option-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #27715c;
+  cursor: pointer;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.chord-inference-option-row span {
+  font-size: 12.5px;
+  color: #262a22;
+}
+
+/* --- Footer Actions --- */
+.chord-inference-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid #edece6;
+}
+
+.chord-inference-btn-secondary {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 6px;
+  border: 1px solid #c8cbbf;
+  background: #fbfbf9;
+  color: #43473e;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chord-inference-btn-secondary:hover {
+  background: #f1f3ed;
+  color: #20241d;
+}
+
+.chord-inference-btn-primary {
+  height: 34px;
+  padding: 0 18px;
+  border-radius: 6px;
+  border: 0;
+  background: #27715c;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chord-inference-btn-primary:hover {
+  background: #1f5f4d;
 }
