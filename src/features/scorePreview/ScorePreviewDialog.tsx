@@ -9,6 +9,7 @@ import {
   loadVexFlow,
   renderScorePreview,
   type ScoreNoteSelection,
+  type ScoreRenderedNoteRef,
 } from "./vexflowRenderer";
 
 export interface ScorePreviewDialogProps {
@@ -45,6 +46,7 @@ export function ScorePreviewDialog({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const noteClickRef = useRef(onSelectNote);
   noteClickRef.current = onSelectNote;
+  const noteRefsRef = useRef<Array<ScoreRenderedNoteRef & { isActive?: boolean }>>([]);
   const model = useMemo(
     () => buildScorePreviewModel(project, { revision }),
     [project, revision],
@@ -80,6 +82,15 @@ export function ScorePreviewDialog({
           return;
         }
         cleanup = rendered.cleanup;
+        const noteRefs: Array<ScoreRenderedNoteRef & { isActive?: boolean }> =
+          rendered.noteElementRefs.map((item) => ({ ...item, isActive: undefined }));
+        noteRefsRef.current = noteRefs;
+        for (let i = 0; i < noteRefs.length; i++) {
+          const item = noteRefs[i];
+          const isSounding = playheadTick >= item.fromTick && playheadTick < item.toTick;
+          item.isActive = isSounding;
+          item.element.dataset.active = isSounding ? "true" : "false";
+        }
         setRenderWarnings(rendered.warnings);
         setRenderState("ready");
       })
@@ -98,6 +109,7 @@ export function ScorePreviewDialog({
       });
     return () => {
       active = false;
+      noteRefsRef.current = [];
       cleanup?.();
     };
   }, [handleNoteClick, hasNoteClick, model, scale]);
@@ -120,6 +132,17 @@ export function ScorePreviewDialog({
     });
     if (followPlayhead && active) {
       active.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+
+    // 更新当前正在发音的符头高亮态
+    const noteRefs = noteRefsRef.current;
+    for (let i = 0; i < noteRefs.length; i++) {
+      const item = noteRefs[i];
+      const isSounding = playheadTick >= item.fromTick && playheadTick < item.toTick;
+      if (item.isActive !== isSounding) {
+        item.isActive = isSounding;
+        item.element.dataset.active = isSounding ? "true" : "false";
+      }
     }
   }, [followPlayhead, playheadTick, model, scale]);
 

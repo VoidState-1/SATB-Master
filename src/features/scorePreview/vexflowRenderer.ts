@@ -18,6 +18,14 @@ export interface ScoreNoteSelection {
   tick: number;
 }
 
+export interface ScoreRenderedNoteRef {
+  element: SVGElement;
+  fromTick: number;
+  toTick: number;
+  voiceId: ScoreNoteEvent["voiceId"];
+  sourceNoteId: string;
+}
+
 export type VexFlowModule = typeof import("vexflow");
 
 let loadedVexFlow: VexFlowModule | undefined;
@@ -56,6 +64,7 @@ export interface RenderScorePreviewResult {
   width: number;
   height: number;
   warnings: readonly ScorePreviewWarning[];
+  noteElementRefs: readonly ScoreRenderedNoteRef[];
   cleanup(): void;
 }
 
@@ -569,12 +578,23 @@ function drawMeasure(
   });
 
   const listeners: (() => void)[] = [];
+  const noteElementRefs: ScoreRenderedNoteRef[] = [];
   renderedNotes.forEach(({ event, note }) => {
     const element = note.getSVGElement();
     if (!element) return;
     element.dataset.sourceNoteId = event.sourceNoteId;
     element.dataset.voiceId = event.voiceId;
     element.dataset.tick = String(event.fromTick);
+    element.dataset.fromTick = String(event.fromTick);
+    element.dataset.toTick = String(event.toTick);
+    element.classList.add("score-note");
+    noteElementRefs.push({
+      element,
+      fromTick: event.fromTick,
+      toTick: event.toTick,
+      voiceId: event.voiceId,
+      sourceNoteId: event.sourceNoteId,
+    });
     element.style.cursor = options.onNoteClick ? "pointer" : "default";
     if (!options.onNoteClick) return;
     const handler = () =>
@@ -589,6 +609,7 @@ function drawMeasure(
 
   return {
     listeners,
+    noteElementRefs,
     noteRefsByVoice: {
       soprano: sopranoResult.noteRefs,
       alto: altoResult.noteRefs,
@@ -631,6 +652,7 @@ export function renderScorePreview(
   container.replaceChildren();
   const cleanups: (() => void)[] = [];
   const warnings: ScorePreviewWarning[] = [];
+  const allNoteElementRefs: ScoreRenderedNoteRef[] = [];
   const activeVexFlow = vexflow ?? loadedVexFlow;
   if (!activeVexFlow) {
     const host = document.createElement("div");
@@ -648,6 +670,7 @@ export function renderScorePreview(
       width,
       height,
       warnings: Object.freeze(warnings),
+      noteElementRefs: Object.freeze([]),
       cleanup: () => container.replaceChildren(),
     };
   }
@@ -711,6 +734,7 @@ export function renderScorePreview(
             options,
           );
           cleanups.push(...result.listeners);
+          allNoteElementRefs.push(...result.noteElementRefs);
           (["soprano", "alto", "tenor", "bass"] as const).forEach((voiceId) => {
             systemNotesByVoice[voiceId].push(
               ...result.noteRefsByVoice[voiceId],
@@ -770,6 +794,7 @@ export function renderScorePreview(
     width,
     height,
     warnings: Object.freeze(warnings),
+    noteElementRefs: Object.freeze(allNoteElementRefs),
     cleanup: () => {
       cleanups.forEach((cleanup) => cleanup());
       container.replaceChildren();
