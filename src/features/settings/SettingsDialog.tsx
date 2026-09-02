@@ -123,6 +123,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
             <EditorSettingsPane
               scaleGuideEnabled={props.scaleGuideEnabled}
               onSetScaleGuideEnabled={props.onSetScaleGuideEnabled}
+              pausePlayheadBehavior={props.pausePlayheadBehavior}
+              onSetPausePlayheadBehavior={props.onSetPausePlayheadBehavior}
             />
           ) : activeTab === "shortcuts" ? (
             <ShortcutSettingsPane

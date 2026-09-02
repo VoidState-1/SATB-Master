@@ -1,13 +1,18 @@
-import { LayoutGrid } from "lucide-react";
+import { LayoutGrid, LocateFixed } from "lucide-react";
+import type { PausePlayheadBehavior } from "../../hooks/usePausePlayheadBehavior";
 
 interface EditorSettingsPaneProps {
   scaleGuideEnabled: boolean;
   onSetScaleGuideEnabled(enabled: boolean): void;
+  pausePlayheadBehavior: PausePlayheadBehavior;
+  onSetPausePlayheadBehavior(behavior: PausePlayheadBehavior): void;
 }
 
 export function EditorSettingsPane({
   scaleGuideEnabled,
   onSetScaleGuideEnabled,
+  pausePlayheadBehavior,
+  onSetPausePlayheadBehavior,
 }: EditorSettingsPaneProps) {
   return (
     <div className="developer-settings-content">
@@ -31,6 +36,32 @@ export function EditorSettingsPane({
             />
             <span>{scaleGuideEnabled ? "已开启" : "未开启"}</span>
           </label>
+        </header>
+      </section>
+
+      <section className="developer-settings-section">
+        <header>
+          <LocateFixed aria-hidden="true" />
+          <div>
+            <h3>暂停后光标位置</h3>
+            <p>
+              控制在播放过程中暂停时，时间轴播放头光标停驻或跳转的目标位置。
+            </p>
+          </div>
+          <select
+            className="editor-settings-select"
+            value={pausePlayheadBehavior}
+            aria-label="暂停后光标位置"
+            onChange={(event) =>
+              onSetPausePlayheadBehavior(
+                event.target.value as PausePlayheadBehavior,
+              )
+            }
+          >
+            <option value="current">留在原地</option>
+            <option value="playback-start">回到播放开始处</option>
+            <option value="loop-start">回到循环开始处</option>
+          </select>
         </header>
       </section>
     </div>

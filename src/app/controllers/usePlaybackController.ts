@@ -18,6 +18,8 @@ import {
 } from "../../services/desktop";
 import { createSingleFlight } from "./singleFlight";
 
+import type { PausePlayheadBehavior } from "../../hooks/usePausePlayheadBehavior";
+
 interface ProjectHistoryCommitter {
   commit(project: ProjectDocument): void;
 }
@@ -29,6 +31,7 @@ interface PlaybackControllerOptions {
   onSoundFontChange?(soundFont: ProjectDocument["audio"]["soundFont"]): void;
   preloadSoundFont?: boolean;
   gridTicks: number;
+  pausePlayheadBehavior?: PausePlayheadBehavior;
   showNotice(message: string): void;
   playheadTick?: number;
   onPlayheadChange?(tick: number): void;
@@ -105,6 +108,7 @@ export function usePlaybackController({
   onSoundFontChange,
   preloadSoundFont = true,
   gridTicks,
+  pausePlayheadBehavior = "current",
   showNotice,
   playheadTick: controlledPlayheadTick,
   onPlayheadChange,
@@ -123,6 +127,8 @@ export function usePlaybackController({
     [controlledPlayheadTick, onPlayheadChange],
   );
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false);
+  const playbackStartTickRef = useRef(0);
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [audioState, setAudioState] = useState<AudioEngineState>("idle");
   const [audioMessage, setAudioMessage] = useState("尚未启动音频");
@@ -426,12 +432,25 @@ export function usePlaybackController({
     showNotice,
   ]);
 
-  const handleStop = useCallback((returnToStart = false) => {
-    playSessionRef.current += 1;
-    audioEngine.stop();
-    setIsPlaying(false);
-    if (returnToStart) setPlayheadTick(0);
-  }, []);
+  const handleStop = useCallback(
+    (returnToStart = false) => {
+      const wasPlaying = isPlayingRef.current || isPlaying;
+      playSessionRef.current += 1;
+      audioEngine.stop();
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      if (returnToStart) {
+        setPlayheadTick(0);
+      } else if (wasPlaying) {
+        if (pausePlayheadBehavior === "playback-start") {
+          setPlayheadTick(playbackStartTickRef.current);
+        } else if (pausePlayheadBehavior === "loop-start") {
+          setPlayheadTick(loopStartTick);
+        }
+      }
+    },
+    [isPlaying, loopStartTick, pausePlayheadBehavior, setPlayheadTick],
+  );
 
   const startPlayback = useCallback(async () => {
     try {
@@ -463,6 +482,7 @@ export function usePlaybackController({
       const session = playSessionRef.current + 1;
       playSessionRef.current = session;
       setIsPlaying(true);
+      isPlayingRef.current = true;
       const playSegment = async (segmentStart: number): Promise<void> => {
         await audioEngine.playProject(project, {
           startTick: segmentStart,
@@ -476,6 +496,7 @@ export function usePlaybackController({
               void playSegment(loopStartTick);
             } else {
               setIsPlaying(false);
+              isPlayingRef.current = false;
             }
           },
         });
@@ -487,9 +508,11 @@ export function usePlaybackController({
         (requestedStart < loopStartTick || requestedStart >= loopEndTick)
           ? loopStartTick
           : requestedStart;
+      playbackStartTickRef.current = startTick;
       await playSegment(startTick);
     } catch (error) {
       setIsPlaying(false);
+      isPlayingRef.current = false;
       showNotice(error instanceof Error ? error.message : "播放失败");
     }
   }, [

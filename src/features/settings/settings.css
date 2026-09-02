@@ -1053,6 +1053,26 @@
   cursor: pointer;
 }
 
+.editor-settings-select {
+  height: 36px;
+  min-width: 140px;
+  padding: 0 12px;
+  border: 1px solid #c8ccc3;
+  border-radius: 6px;
+  background-color: #ffffff;
+  color: #272b23;
+  font-size: 13px;
+  font-weight: 500;
+  outline: 0;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.editor-settings-select:focus {
+  border-color: #28775f;
+  box-shadow: 0 0 0 3px rgba(40, 119, 95, 0.14);
+}
+
 .developer-settings-note {
   padding: 12px 18px;
   border-top: 1px solid #e3e6df;

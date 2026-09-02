@@ -73,6 +73,7 @@ import {
 import { useDeveloperMode } from "../hooks/useDeveloperMode";
 import { useExternalRuleLibrary } from "../hooks/useExternalRuleLibrary";
 import { useScaleGuide } from "../hooks/useScaleGuide";
+import { usePausePlayheadBehavior } from "../hooks/usePausePlayheadBehavior";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
 import { useConfirmationController } from "./controllers/useConfirmationController";
 import { useHarmonyController } from "./controllers/useHarmonyController";
@@ -170,6 +171,8 @@ function AppShell() {
   const shortcutSettings = useShortcutBindings();
   const developerMode = useDeveloperMode();
   const { scaleGuideEnabled, setScaleGuideEnabled } = useScaleGuide();
+  const { pausePlayheadBehavior, setPausePlayheadBehavior } =
+    usePausePlayheadBehavior();
 
   useEffect(() => {
     const unsub = midiOutputManager.onConfigChange((cfg) =>
@@ -215,6 +218,7 @@ function AppShell() {
     history,
     preloadSoundFont: !ruleTestMode,
     gridTicks,
+    pausePlayheadBehavior,
     showNotice,
   });
   const { confirmation, requestConfirmation, answerConfirmation } =
@@ -1040,6 +1044,8 @@ function AppShell() {
           onSetShowRuleTestEntry={developerMode.setShowRuleTestEntry}
           scaleGuideEnabled={scaleGuideEnabled}
           onSetScaleGuideEnabled={setScaleGuideEnabled}
+          pausePlayheadBehavior={pausePlayheadBehavior}
+          onSetPausePlayheadBehavior={setPausePlayheadBehavior}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}

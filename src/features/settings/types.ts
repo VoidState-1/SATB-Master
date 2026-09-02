@@ -72,6 +72,10 @@ export interface SettingsDialogProps {
   onSetShowRuleTestEntry(visible: boolean): void;
   scaleGuideEnabled: boolean;
   onSetScaleGuideEnabled(enabled: boolean): void;
+  pausePlayheadBehavior: import("../../hooks/usePausePlayheadBehavior").PausePlayheadBehavior;
+  onSetPausePlayheadBehavior(
+    behavior: import("../../hooks/usePausePlayheadBehavior").PausePlayheadBehavior,
+  ): void;
   onClose(): void;
 }
 
