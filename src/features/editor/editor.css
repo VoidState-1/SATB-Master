@@ -779,11 +779,11 @@
   cursor: pointer;
 }
 
-.chord-palette-column button:first-of-type {
+.chord-palette-column:not(.functional-base) button:first-of-type {
   border-radius: 3px 3px 0 0;
 }
 
-.chord-palette-column button:last-child {
+.chord-palette-column:not(.functional-base) button:last-child {
   border-bottom: 1px solid #c7c9c2;
   border-radius: 0 0 3px 3px;
 }
@@ -798,7 +798,7 @@
   color: #fff;
 }
 
-.chord-palette-column button.is-selected + button {
+.chord-palette-column:not(.functional-base) button.is-selected + button {
   border-top-color: #286b59;
 }
 
