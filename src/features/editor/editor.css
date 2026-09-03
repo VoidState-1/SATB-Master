@@ -986,7 +986,6 @@
     monospace;
   cursor: pointer;
   user-select: none;
-  transition: background-color 0.08s ease, color 0.08s ease;
   box-sizing: border-box;
 }
 
@@ -995,9 +994,8 @@
 }
 
 .piano-key.active {
-  background: #c8ddd4 !important;
-  color: #175243 !important;
-  box-shadow: inset 0 0 0 1px #27715c, inset 3px 0 0 #27715c;
+  background: #c8ddd4;
+  color: #175243;
 }
 
 .piano-key.black {
@@ -1010,7 +1008,6 @@
 }
 
 .piano-key.black.active {
-  background: #739d91 !important;
-  color: #ffffff !important;
-  box-shadow: inset 0 0 0 1px #1f5f4d, inset 3px 0 0 #164d3f;
+  background: #739d91;
+  color: #ffffff;
 }
