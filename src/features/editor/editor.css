@@ -968,7 +968,10 @@
   width: 58px;
   border-right: 1px solid #aaaca5;
   background: #f1f1ed;
-  pointer-events: none;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 .piano-key {
@@ -981,9 +984,33 @@
   font:
     9px Consolas,
     monospace;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.08s ease, color 0.08s ease;
+  box-sizing: border-box;
+}
+
+.piano-key:hover {
+  background: #e6e8e2;
+}
+
+.piano-key.active {
+  background: #c8ddd4 !important;
+  color: #175243 !important;
+  box-shadow: inset 0 0 0 1px #27715c, inset 3px 0 0 #27715c;
 }
 
 .piano-key.black {
   background: #d9dad4;
   color: #4c4e47;
+}
+
+.piano-key.black:hover {
+  background: #cbccc4;
+}
+
+.piano-key.black.active {
+  background: #739d91 !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px #1f5f4d, inset 3px 0 0 #164d3f;
 }

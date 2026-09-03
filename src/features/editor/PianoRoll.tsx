@@ -537,7 +537,11 @@ export function PianoRoll({
         />
 
         <PlayheadLayer x={playheadX} height={rollHeight} />
-        <PianoKeys height={rollHeight} />
+        <PianoKeys
+          height={rollHeight}
+          onPreviewNote={(midi) => onPreviewNote(activeVoice, midi)}
+          onFocus={() => focusEditor("notes")}
+        />
       </div>
       <DiagnosticTooltip state={diagnosticTooltip} />
     </div>
