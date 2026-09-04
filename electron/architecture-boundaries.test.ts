@@ -75,6 +75,7 @@ describe("architecture boundaries", () => {
     // remain visible in the architecture test.
     const allowedDependencies: Record<string, ReadonlySet<string>> = {
       ruleTesting: new Set(["editor", "inspector", "settings", "tracks"]),
+      bottomPanel: new Set(["diagnostics", "scorePreview"]),
     };
     const violations = sourceFiles(featuresRoot).flatMap((path) => {
       const owner = relative(featuresRoot, path).split(sep)[0];

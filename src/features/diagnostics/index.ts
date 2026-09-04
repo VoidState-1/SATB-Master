@@ -1,1 +1,5 @@
-export { DiagnosticsPanel } from "./DiagnosticsPanel";
+export {
+  DiagnosticsPanel,
+  DiagnosticsSummary,
+} from "./DiagnosticsPanel";
+export type { DiagnosticsPanelProps } from "./DiagnosticsPanel";

@@ -48,7 +48,7 @@ export const DEFAULT_PANEL_VISIBILITY: PanelVisibility = {
 export const PANEL_LIMITS = {
   left: { min: 156, max: 360 },
   right: { min: 220, max: 480 },
-  bottom: { min: 96, max: 420 },
+  bottom: { min: 96, max: 800 },
   editor: { minWidth: 360, minHeight: 220 },
 } as const;
 

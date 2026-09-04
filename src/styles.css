@@ -3,6 +3,7 @@
 @import "./styles/layout.css";
 @import "./features/editor/editor.css";
 @import "./features/diagnostics/diagnostics.css";
+@import "./features/bottomPanel/bottomPanel.css";
 @import "./features/inspector/inspector.css";
 @import "./features/settings/settings.css";
 @import "./features/ruleTesting/ruleTesting.css";

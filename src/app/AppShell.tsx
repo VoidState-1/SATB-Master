@@ -38,7 +38,7 @@ import {
   Scissors,
 } from "lucide-react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { DiagnosticsPanel } from "../features/diagnostics";
+import { BottomPanel, type BottomPanelTab } from "../features/bottomPanel";
 import { IconButton } from "../components/IconButton";
 import { Inspector } from "../features/inspector";
 import { PanelResizeHandle } from "../components/PanelResizeHandle";
@@ -55,6 +55,7 @@ import { ScorePreviewDialog, loadVexFlow } from "../features/scorePreview";
 import { ExportDialog } from "../features/export";
 import { MidiOutDialog } from "../features/midiOut";
 import { midiOutputManager } from "../audio/midiOutput";
+import { toMidi } from "../domain/pitch";
 import { replaceProject } from "../domain/editing";
 import {
   applyHarmonyInference,
@@ -91,6 +92,19 @@ import { useWindowController } from "./controllers/useWindowController";
 import { useRuleTestWorkspace } from "./controllers/useRuleTestWorkspace";
 import { formatShortcutBinding } from "../shortcuts/shortcutRegistry";
 import { copyText } from "../services/clipboard";
+
+const BOTTOM_PANEL_TAB_STORAGE_KEY = "satb-master-bottom-panel-tab";
+
+function getInitialBottomPanelTab(): BottomPanelTab {
+  if (typeof window === "undefined") return "diagnostics";
+  try {
+    const stored = window.localStorage.getItem(BOTTOM_PANEL_TAB_STORAGE_KEY);
+    if (stored === "diagnostics" || stored === "score") return stored;
+  } catch {
+    // ignore
+  }
+  return "diagnostics";
+}
 
 function createProjectWithRuleProfileTemplate() {
   const project = createEmptyProject();
@@ -144,6 +158,9 @@ function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chordInferenceOpen, setChordInferenceOpen] = useState(false);
   const [scorePreviewOpen, setScorePreviewOpen] = useState(false);
+  const [bottomPanelTab, setBottomPanelTabState] = useState<BottomPanelTab>(
+    getInitialBottomPanelTab,
+  );
   const [exportOpen, setExportOpen] = useState(false);
   const [midiOutOpen, setMidiOutOpen] = useState(false);
   const [midiOutEnabled, setMidiOutEnabled] = useState<boolean>(() =>
@@ -179,6 +196,15 @@ function AppShell() {
   const { pausePlayheadBehavior, setPausePlayheadBehavior } =
     usePausePlayheadBehavior();
   const { followPlayhead, setFollowPlayhead } = useFollowPlayhead();
+
+  const setBottomPanelTab = useCallback((tab: BottomPanelTab) => {
+    setBottomPanelTabState(tab);
+    try {
+      window.localStorage.setItem(BOTTOM_PANEL_TAB_STORAGE_KEY, tab);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     const unsub = midiOutputManager.onConfigChange((cfg) =>
@@ -418,8 +444,16 @@ function AppShell() {
       setSelectedNoteIds(new Set([sourceNoteId]));
       setSelectedChordIds(new Set());
       setPlayheadTick(tick);
+
+      const track = project.satbTracks.find((t) => t.id === voiceId);
+      const note = track?.notes.find((n) => n.id === sourceNoteId);
+      if (note) {
+        handlePreviewNote(voiceId, toMidi(note.pitch));
+      }
     },
     [
+      handlePreviewNote,
+      project.satbTracks,
       setActiveVoice,
       setEditorDomain,
       setPlayheadTick,
@@ -607,6 +641,7 @@ function AppShell() {
           />
           <IconButton
             label="打开五线谱预览"
+            title="打开五线谱预览 (独立弹窗)"
             icon={<Music2 />}
             active={scorePreviewOpen}
             onClick={() => setScorePreviewOpen(true)}
@@ -802,10 +837,10 @@ function AppShell() {
             <IconButton
               label={
                 panelLayout.visibility.bottom
-                  ? "隐藏底部问题面板"
-                  : "显示底部问题面板"
+                  ? "隐藏底部面板"
+                  : "显示底部面板"
               }
-              title={`底部问题诊断 (${panelLayout.visibility.bottom ? "显示中" : "已隐藏"})`}
+              title={`底部工作台 (${panelLayout.visibility.bottom ? "显示中" : "已隐藏"})`}
               icon={<PanelBottom />}
               active={panelLayout.visibility.bottom}
               onClick={panelLayout.toggleBottom}
@@ -905,7 +940,7 @@ function AppShell() {
             <>
               <PanelResizeHandle
                 orientation="horizontal"
-                label="调整问题面板高度"
+                label="调整底部面板高度"
                 value={panelLayout.sizes.bottom}
                 min={panelLayout.limits.bottom.min}
                 max={panelLayout.limits.bottom.max}
@@ -913,13 +948,21 @@ function AppShell() {
                 direction={-1}
                 onResize={panelLayout.setBottom}
               />
-              <DiagnosticsPanel
+              <BottomPanel
+                activeTab={bottomPanelTab}
+                onTabChange={setBottomPanelTab}
                 project={project}
-                result={harmonyResult}
-                onSelect={handleDiagnostic}
-                onToggleIgnored={handleToggleIgnoredDiagnostic}
-                onCopy={handleCopyDiagnostic}
+                harmonyResult={harmonyResult}
+                onSelectDiagnostic={handleDiagnostic}
+                onToggleIgnoredDiagnostic={handleToggleIgnoredDiagnostic}
+                onCopyDiagnostic={handleCopyDiagnostic}
                 developerMode={developerMode.enabled}
+                revision={history.revision}
+                playheadTick={playheadTick}
+                isPlaying={isPlaying}
+                selectedNoteIds={selectedNoteIds}
+                onSelectScoreNote={handleScorePreviewNoteSelection}
+                onOpenScoreDialog={() => setScorePreviewOpen(true)}
               />
             </>
           ) : null}
@@ -1090,6 +1133,7 @@ function AppShell() {
           revision={history.revision}
           playheadTick={playheadTick}
           isPlaying={isPlaying}
+          selectedNoteIds={selectedNoteIds}
           onClose={() => setScorePreviewOpen(false)}
           onSelectNote={handleScorePreviewNoteSelection}
         />

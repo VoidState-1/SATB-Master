@@ -201,7 +201,7 @@
   overflow: visible;
 }
 
-/* 正在发音的符头高亮（全面兼容 VexFlow 5 的 <text> 字体字形与 <path> 矢量元素） */
+/* 符头高亮（发音或选中）：彩色模式按 SATB 声部色彩呈现，纯色模式使用经典翠绿 */
 
 /* 不高亮模式：隐藏所有高亮效果，保持五线谱默认纯黑原色 */
 .score-preview-surface[data-highlight-mode="none"] .score-note[data-active="true"] .vf-notehead,
@@ -211,7 +211,15 @@
 .score-preview-surface[data-highlight-mode="none"] .score-note.is-active .vf-notehead,
 .score-preview-surface[data-highlight-mode="none"] .score-note.is-active .vf-notehead *,
 .score-preview-surface[data-highlight-mode="none"] .score-note.is-active [class*="notehead"],
-.score-preview-surface[data-highlight-mode="none"] .score-note.is-active [class*="notehead"] * {
+.score-preview-surface[data-highlight-mode="none"] .score-note.is-active [class*="notehead"] *,
+.score-preview-surface[data-highlight-mode="none"] .score-note[data-selected="true"] .vf-notehead,
+.score-preview-surface[data-highlight-mode="none"] .score-note[data-selected="true"] .vf-notehead *,
+.score-preview-surface[data-highlight-mode="none"] .score-note[data-selected="true"] [class*="notehead"],
+.score-preview-surface[data-highlight-mode="none"] .score-note[data-selected="true"] [class*="notehead"] *,
+.score-preview-surface[data-highlight-mode="none"] .score-note.is-selected .vf-notehead,
+.score-preview-surface[data-highlight-mode="none"] .score-note.is-selected .vf-notehead *,
+.score-preview-surface[data-highlight-mode="none"] .score-note.is-selected [class*="notehead"],
+.score-preview-surface[data-highlight-mode="none"] .score-note.is-selected [class*="notehead"] * {
   fill: #000000 !important;
   color: #000000 !important;
 }
@@ -224,12 +232,20 @@
 .score-preview-surface[data-highlight-mode="monochrome"] .score-note.is-active .vf-notehead,
 .score-preview-surface[data-highlight-mode="monochrome"] .score-note.is-active .vf-notehead *,
 .score-preview-surface[data-highlight-mode="monochrome"] .score-note.is-active [class*="notehead"],
-.score-preview-surface[data-highlight-mode="monochrome"] .score-note.is-active [class*="notehead"] * {
+.score-preview-surface[data-highlight-mode="monochrome"] .score-note.is-active [class*="notehead"] *,
+.score-preview-surface[data-highlight-mode="monochrome"] .score-note[data-selected="true"] .vf-notehead,
+.score-preview-surface[data-highlight-mode="monochrome"] .score-note[data-selected="true"] .vf-notehead *,
+.score-preview-surface[data-highlight-mode="monochrome"] .score-note[data-selected="true"] [class*="notehead"],
+.score-preview-surface[data-highlight-mode="monochrome"] .score-note[data-selected="true"] [class*="notehead"] *,
+.score-preview-surface[data-highlight-mode="monochrome"] .score-note.is-selected .vf-notehead,
+.score-preview-surface[data-highlight-mode="monochrome"] .score-note.is-selected .vf-notehead *,
+.score-preview-surface[data-highlight-mode="monochrome"] .score-note.is-selected [class*="notehead"],
+.score-preview-surface[data-highlight-mode="monochrome"] .score-note.is-selected [class*="notehead"] * {
   fill: #2f7764 !important;
   color: #2f7764 !important;
 }
 
-/* 彩色高亮模式：按 SATB 声部专属色彩呈现 */
+/* 彩色高亮模式：默认回退 */
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"] .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"] .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"] [class*="notehead"],
@@ -237,11 +253,20 @@
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active [class*="notehead"],
-.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active [class*="notehead"] * {
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"] .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"] .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"] [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"] [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected [class*="notehead"] * {
   fill: #2f7764 !important;
   color: #2f7764 !important;
 }
 
+/* Soprano: #8a4fd1 (紫色) */
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="soprano"] .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="soprano"] .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="soprano"] [class*="notehead"],
@@ -249,11 +274,20 @@
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="soprano"] .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="soprano"] .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="soprano"] [class*="notehead"],
-.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="soprano"] [class*="notehead"] * {
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="soprano"] [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="soprano"] .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="soprano"] .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="soprano"] [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="soprano"] [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="soprano"] .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="soprano"] .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="soprano"] [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="soprano"] [class*="notehead"] * {
   fill: #8a4fd1 !important;
   color: #8a4fd1 !important;
 }
 
+/* Alto: #1b9a76 (绿色) */
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="alto"] .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="alto"] .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="alto"] [class*="notehead"],
@@ -261,11 +295,20 @@
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="alto"] .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="alto"] .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="alto"] [class*="notehead"],
-.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="alto"] [class*="notehead"] * {
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="alto"] [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="alto"] .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="alto"] .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="alto"] [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="alto"] [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="alto"] .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="alto"] .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="alto"] [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="alto"] [class*="notehead"] * {
   fill: #1b9a76 !important;
   color: #1b9a76 !important;
 }
 
+/* Tenor: #2575dc (蓝色) */
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="tenor"] .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="tenor"] .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="tenor"] [class*="notehead"],
@@ -273,11 +316,20 @@
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="tenor"] .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="tenor"] .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="tenor"] [class*="notehead"],
-.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="tenor"] [class*="notehead"] * {
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="tenor"] [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="tenor"] .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="tenor"] .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="tenor"] [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="tenor"] [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="tenor"] .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="tenor"] .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="tenor"] [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="tenor"] [class*="notehead"] * {
   fill: #2575dc !important;
   color: #2575dc !important;
 }
 
+/* Bass: #c86518 (棕赭色) */
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="bass"] .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="bass"] .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-active="true"][data-voice-id="bass"] [class*="notehead"],
@@ -285,9 +337,65 @@
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="bass"] .vf-notehead,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="bass"] .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="bass"] [class*="notehead"],
-.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="bass"] [class*="notehead"] * {
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-active[data-voice-id="bass"] [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="bass"] .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="bass"] .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="bass"] [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note[data-selected="true"][data-voice-id="bass"] [class*="notehead"] *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="bass"] .vf-notehead,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="bass"] .vf-notehead *,
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="bass"] [class*="notehead"],
+.score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected[data-voice-id="bass"] [class*="notehead"] * {
   fill: #c86518 !important;
   color: #c86518 !important;
+}
+
+.score-preview-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.score-preview-pane .score-preview-scroll {
+  flex: 1;
+  height: 100%;
+}
+
+.score-preview-toolbar.compact {
+  height: 38px;
+  border-bottom: 0;
+  background: transparent;
+  padding: 0 4px;
+}
+
+/* 底部面板模式下的五线谱：完全铺满无缝纸白背景，彻底消除灰色外边框与多余内边距 */
+.bottom-panel .score-preview-pane {
+  background: #fffef9;
+  width: 100%;
+  height: 100%;
+}
+
+.bottom-panel .score-preview-scroll {
+  padding: 0;
+  background: #fffef9;
+  flex: 1;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.bottom-panel .score-preview-surface {
+  padding: 8px 16px 20px;
+  background: #fffef9;
+  min-height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  box-shadow: none;
+  border-radius: 0;
 }
 
 @media (max-width: 760px) {
@@ -307,3 +415,4 @@
     gap: 4px;
   }
 }
+

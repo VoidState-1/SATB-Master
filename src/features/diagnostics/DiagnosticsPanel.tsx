@@ -16,29 +16,23 @@ import type {
 import { formatPosition } from "../../domain/time";
 import type { ProjectDocument } from "../../domain/project";
 
-interface DiagnosticsPanelProps {
+export interface DiagnosticsPanelProps {
   project: ProjectDocument;
   result: HarmonyCheckResult;
   onSelect(diagnostic: HarmonyDiagnostic): void;
   onToggleIgnored(diagnostic: HarmonyDiagnostic): void;
   onCopy?(diagnostic: HarmonyDiagnostic): void;
   developerMode?: boolean;
+  hideHeader?: boolean;
 }
 
-export function DiagnosticsPanel({
-  project,
+export function DiagnosticsSummary({
   result,
-  onSelect,
-  onToggleIgnored,
-  onCopy,
-  developerMode = false,
-}: DiagnosticsPanelProps) {
-  const ignoredDiagnosticIds = new Set(
-    project.diagnosticPreferences.ignoredDiagnosticIds,
-  );
-  const ignoredCount = result.diagnostics.filter((item) =>
-    ignoredDiagnosticIds.has(item.id),
-  ).length;
+  ignoredCount = 0,
+}: {
+  result: HarmonyCheckResult;
+  ignoredCount?: number;
+}) {
   const errors = result.diagnostics.filter(
     (item) => item.severity === "error",
   ).length;
@@ -55,35 +49,63 @@ export function DiagnosticsPanel({
   ].join("\n");
 
   return (
-    <section className="diagnostics-panel" aria-label="和声检查结果">
-      <header className="diagnostics-header">
-        <div>
-          <strong>问题</strong>
-          <span>
-            {errors} 个错误 · {warnings} 个警告 · {suggestions} 个建议
-            {ignoredCount > 0 ? ` · ${ignoredCount} 条已忽略` : ""}
-          </span>
-        </div>
-        {result.diagnostics.length === 0 ? (
-          <span className="diagnostic-clear">
-            <CheckCircle2 /> 当前范围未发现问题
-          </span>
-        ) : null}
-        {result.skippedRules.length > 0 ? (
-          <span className="skipped-rules" title={skippedSummary}>
-            <Info />
-            {fullySkipped.length > 0
-              ? ` 已跳过 ${fullySkipped.length} 条规则`
-              : ""}
-            {fullySkipped.length > 0 && partiallySkipped.length > 0
-              ? " · "
-              : ""}
-            {partiallySkipped.length > 0
-              ? `${partiallySkipped.length} 条规则仅检查了上下文完整的部分`
-              : ""}
-          </span>
-        ) : null}
-      </header>
+    <div className="diagnostics-summary-group">
+      <span className="diagnostics-counts">
+        {errors} 个错误 · {warnings} 个警告 · {suggestions} 个建议
+        {ignoredCount > 0 ? ` · ${ignoredCount} 条已忽略` : ""}
+      </span>
+      {result.diagnostics.length === 0 ? (
+        <span className="diagnostic-clear">
+          <CheckCircle2 /> 当前范围未发现问题
+        </span>
+      ) : null}
+      {result.skippedRules.length > 0 ? (
+        <span className="skipped-rules" title={skippedSummary}>
+          <Info />
+          {fullySkipped.length > 0
+            ? ` 已跳过 ${fullySkipped.length} 条规则`
+            : ""}
+          {fullySkipped.length > 0 && partiallySkipped.length > 0
+            ? " · "
+            : ""}
+          {partiallySkipped.length > 0
+            ? `${partiallySkipped.length} 条规则仅检查了上下文完整的部分`
+            : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+export function DiagnosticsPanel({
+  project,
+  result,
+  onSelect,
+  onToggleIgnored,
+  onCopy,
+  developerMode = false,
+  hideHeader = false,
+}: DiagnosticsPanelProps) {
+  const ignoredDiagnosticIds = new Set(
+    project.diagnosticPreferences.ignoredDiagnosticIds,
+  );
+  const ignoredCount = result.diagnostics.filter((item) =>
+    ignoredDiagnosticIds.has(item.id),
+  ).length;
+
+  return (
+    <section
+      className={`diagnostics-panel ${hideHeader ? "no-header" : ""}`}
+      aria-label="和声检查结果"
+    >
+      {!hideHeader ? (
+        <header className="diagnostics-header">
+          <div>
+            <strong>问题</strong>
+          </div>
+          <DiagnosticsSummary result={result} ignoredCount={ignoredCount} />
+        </header>
+      ) : null}
       <div className="diagnostic-list">
         {result.diagnostics.map((item) => {
           const ignored = ignoredDiagnosticIds.has(item.id);

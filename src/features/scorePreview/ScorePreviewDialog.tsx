@@ -1,44 +1,29 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Music2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Music2, X } from "lucide-react";
 import { IconButton } from "../../components/IconButton";
-import { buildScorePreviewModel } from "../../domain/notation";
-import type { ScorePreviewWarning } from "../../domain/notation";
 import type { ProjectDocument } from "../../domain/project";
+import type { ScoreNoteSelection } from "./vexflowRenderer";
 import {
-  loadVexFlow,
-  renderScorePreview,
-  type ScoreNoteSelection,
-  type ScoreRenderedNoteRef,
-} from "./vexflowRenderer";
+  getInitialHighlightMode,
+  HIGHLIGHT_MODE_STORAGE_KEY,
+  nextScale,
+  SCALE_STEPS,
+  ScorePreviewPane,
+  type ScoreHighlightMode,
+} from "./ScorePreviewPane";
+import { ScorePreviewToolbar } from "./ScorePreviewToolbar";
 
-export type ScoreHighlightMode = "none" | "monochrome" | "color";
+export type { ScoreHighlightMode } from "./ScorePreviewPane";
 
 export interface ScorePreviewDialogProps {
   project: ProjectDocument;
   revision: number;
   playheadTick: number;
   isPlaying?: boolean;
+  selectedNoteIds?: ReadonlySet<string>;
   onClose(): void;
   onSelectNote?(selection: ScoreNoteSelection): void;
-}
-
-const SCALE_STEPS = [0.75, 0.9, 1, 1.15, 1.3, 1.5] as const;
-const HIGHLIGHT_MODE_STORAGE_KEY = "satb-score-preview-highlight-mode";
-
-function getInitialHighlightMode(): ScoreHighlightMode {
-  if (typeof window === "undefined") return "color";
-  const stored = window.localStorage.getItem(HIGHLIGHT_MODE_STORAGE_KEY);
-  if (stored === "none" || stored === "monochrome" || stored === "color") {
-    return stored;
-  }
-  return "color";
-}
-
-function nextScale(value: number, direction: -1 | 1) {
-  const index = SCALE_STEPS.findIndex((candidate) => Math.abs(candidate - value) < 0.001);
-  const safeIndex = index < 0 ? 2 : index;
-  return SCALE_STEPS[Math.max(0, Math.min(SCALE_STEPS.length - 1, safeIndex + direction))];
 }
 
 export function ScorePreviewDialog({
@@ -46,6 +31,7 @@ export function ScorePreviewDialog({
   revision,
   playheadTick,
   isPlaying = false,
+  selectedNoteIds,
   onClose,
   onSelectNote,
 }: ScorePreviewDialogProps) {
@@ -54,6 +40,14 @@ export function ScorePreviewDialog({
   const [highlightMode, setHighlightModeState] = useState<ScoreHighlightMode>(
     getInitialHighlightMode,
   );
+  const [modelInfo, setModelInfo] = useState<{
+    measureCount: number;
+    revision: number;
+  }>({
+    measureCount: 0,
+    revision,
+  });
+
   const setHighlightMode = useCallback((mode: ScoreHighlightMode) => {
     setHighlightModeState(mode);
     try {
@@ -62,142 +56,9 @@ export function ScorePreviewDialog({
       // ignore
     }
   }, []);
-  const [renderWarnings, setRenderWarnings] = useState<readonly ScorePreviewWarning[]>(
-    [],
-  );
-  const [renderState, setRenderState] = useState<"loading" | "ready" | "error">(
-    "loading",
-  );
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  const noteClickRef = useRef(onSelectNote);
-  noteClickRef.current = onSelectNote;
-  const noteRefsRef = useRef<Array<ScoreRenderedNoteRef & { isActive?: boolean }>>([]);
-  const model = useMemo(
-    () => buildScorePreviewModel(project, { revision }),
-    [project, revision],
-  );
-  const handleNoteClick = useCallback(
-    (selection: ScoreNoteSelection) => noteClickRef.current?.(selection),
-    [],
-  );
-  const hasNoteClick = onSelectNote !== undefined;
 
-  useEffect(() => {
-    const surface = surfaceRef.current;
-    if (!surface) return;
-    let active = true;
-    let cleanup: (() => void) | undefined;
-    setRenderState("loading");
-    setRenderWarnings([]);
-    surface.replaceChildren();
-    void loadVexFlow()
-      .then((vexflow) => {
-        if (!active) return;
-        const rendered = renderScorePreview(
-          surface,
-          model,
-          {
-            scale,
-            onNoteClick: hasNoteClick ? handleNoteClick : undefined,
-          },
-          vexflow,
-        );
-        if (!active) {
-          rendered.cleanup();
-          return;
-        }
-        cleanup = rendered.cleanup;
-        const noteRefs: Array<ScoreRenderedNoteRef & { isActive?: boolean }> =
-          rendered.noteElementRefs.map((item) => ({ ...item, isActive: undefined }));
-        noteRefsRef.current = noteRefs;
-        for (let i = 0; i < noteRefs.length; i++) {
-          const item = noteRefs[i];
-          const isSounding =
-            isPlaying &&
-            highlightMode !== "none" &&
-            playheadTick >= item.fromTick &&
-            playheadTick < item.toTick;
-          item.isActive = isSounding;
-          item.element.dataset.active = isSounding ? "true" : "false";
-          item.element.classList.toggle("is-active", isSounding);
-        }
-        setRenderWarnings(rendered.warnings);
-        setRenderState("ready");
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        surface.replaceChildren();
-        setRenderWarnings([
-          {
-            code: "render-error",
-            message:
-              "乐谱预览不可用：" +
-              (error instanceof Error ? error.message : "VexFlow 加载失败"),
-          },
-        ]);
-        setRenderState("error");
-      });
-    return () => {
-      active = false;
-      noteRefsRef.current = [];
-      cleanup?.();
-    };
-  }, [handleNoteClick, hasNoteClick, model, scale]);
-
-  useEffect(() => {
-    const surface = surfaceRef.current;
-    if (!surface) return;
-    const systems = [...surface.querySelectorAll<HTMLElement>(".score-preview-system")];
-    let active: HTMLElement | undefined;
-    systems.forEach((system) => {
-      const fromTick = Number(system.dataset.fromTick);
-      const toTick = Number(system.dataset.toTick);
-      const isActive =
-        isPlaying &&
-        Number.isFinite(fromTick) &&
-        Number.isFinite(toTick) &&
-        playheadTick >= fromTick &&
-        playheadTick < toTick;
-      system.dataset.active = isActive ? "true" : "false";
-      if (isActive) active = system;
-    });
-    if (followPlayhead && active) {
-      active.scrollIntoView({ block: "nearest", inline: "nearest" });
-    }
-
-    // 更新当前正在发音的符头高亮态（未处于播放状态或设为不高亮时全部置灰关闭）
-    const noteRefs = noteRefsRef.current;
-    if (noteRefs.length > 0) {
-      for (let i = 0; i < noteRefs.length; i++) {
-        const item = noteRefs[i];
-        const isSounding =
-          isPlaying &&
-          highlightMode !== "none" &&
-          playheadTick >= item.fromTick &&
-          playheadTick < item.toTick;
-        if (item.isActive !== isSounding) {
-          item.isActive = isSounding;
-          item.element.dataset.active = isSounding ? "true" : "false";
-          item.element.classList.toggle("is-active", isSounding);
-        }
-      }
-    } else {
-      const noteEls = surface.querySelectorAll<SVGElement>(".score-note");
-      noteEls.forEach((el) => {
-        const fromTick = Number(el.dataset.fromTick);
-        const toTick = Number(el.dataset.toTick);
-        const isSounding =
-          isPlaying &&
-          highlightMode !== "none" &&
-          Number.isFinite(fromTick) &&
-          Number.isFinite(toTick) &&
-          playheadTick >= fromTick &&
-          playheadTick < toTick;
-        el.dataset.active = isSounding ? "true" : "false";
-        el.classList.toggle("is-active", isSounding);
-      });
-    }
-  }, [followPlayhead, playheadTick, isPlaying, highlightMode, model, scale, renderState]);
+  const canZoomIn = scale < SCALE_STEPS[SCALE_STEPS.length - 1];
+  const canZoomOut = scale > SCALE_STEPS[0];
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -208,8 +69,6 @@ export function ScorePreviewDialog({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
-
-  const warnings = [...model.warnings, ...renderWarnings];
 
   return createPortal(
     <div
@@ -235,73 +94,32 @@ export function ScorePreviewDialog({
           <IconButton label="关闭五线谱预览" icon={<X />} onClick={onClose} />
         </header>
 
-        <div className="score-preview-toolbar">
-          <span className="score-preview-meta">
-            {model.measures.length} 小节 · revision {model.revision}
-          </span>
-          <div className="score-preview-actions">
-            <IconButton
-              label="缩小谱面"
-              icon={<ZoomOut />}
-              disabled={scale <= SCALE_STEPS[0]}
-              onClick={() => setScale((value) => nextScale(value, -1))}
-            />
-            <span className="score-preview-scale">{Math.round(scale * 100)}%</span>
-            <IconButton
-              label="放大谱面"
-              icon={<ZoomIn />}
-              disabled={scale >= SCALE_STEPS.at(-1)!}
-              onClick={() => setScale((value) => nextScale(value, 1))}
-            />
-            <label className="score-preview-follow">
-              <input
-                type="checkbox"
-                checked={followPlayhead}
-                onChange={(event) => setFollowPlayhead(event.target.checked)}
-              />
-              <span>跟随播放头</span>
-            </label>
-            <label className="score-preview-highlight-select">
-              <span>音符高亮</span>
-              <select
-                value={highlightMode}
-                onChange={(event) =>
-                  setHighlightMode(event.target.value as ScoreHighlightMode)
-                }
-              >
-                <option value="color">彩色高亮</option>
-                <option value="monochrome">纯色高亮</option>
-                <option value="none">不高亮</option>
-              </select>
-            </label>
-          </div>
-        </div>
+        <ScorePreviewToolbar
+          scale={scale}
+          canZoomIn={canZoomIn}
+          canZoomOut={canZoomOut}
+          onZoomIn={() => setScale((v) => nextScale(v, 1))}
+          onZoomOut={() => setScale((v) => nextScale(v, -1))}
+          followPlayhead={followPlayhead}
+          onFollowPlayheadChange={setFollowPlayhead}
+          highlightMode={highlightMode}
+          onHighlightModeChange={setHighlightMode}
+          measureCount={modelInfo.measureCount}
+          revision={modelInfo.revision}
+        />
 
-        {warnings.length > 0 ? (
-          <div className="score-preview-warning" role="status">
-            <strong>预览提示 {warnings.length}</strong>
-            <span>{warnings.slice(0, 3).map((item) => item.message).join("；")}</span>
-            {warnings.length > 3 ? <span>其余提示已省略</span> : null}
-          </div>
-        ) : null}
-
-        <div
-          className="score-preview-scroll"
-          aria-label="五线谱只读预览"
-          onContextMenu={(event) => event.preventDefault()}
-          onDragStart={(event) => event.preventDefault()}
-        >
-          {renderState === "loading" ? (
-            <div className="score-preview-loading" role="status">
-              正在加载乐谱引擎…
-            </div>
-          ) : null}
-          <div
-            ref={surfaceRef}
-            className="score-preview-surface"
-            data-highlight-mode={highlightMode}
-          />
-        </div>
+        <ScorePreviewPane
+          project={project}
+          revision={revision}
+          playheadTick={playheadTick}
+          isPlaying={isPlaying}
+          selectedNoteIds={selectedNoteIds}
+          scale={scale}
+          followPlayhead={followPlayhead}
+          highlightMode={highlightMode}
+          onSelectNote={onSelectNote}
+          onModelInfoChange={setModelInfo}
+        />
       </section>
     </div>,
     document.body,
