@@ -104,7 +104,7 @@ export function createEmptyProject(title = "未命名练习"): ProjectDocument {
     chordTrack: {
       visible: true,
       locked: false,
-      displayMode: "roman",
+      displayMode: "functional",
       regions: [],
       cadenceAnnotations: [],
     },

@@ -308,7 +308,7 @@ export const MELODY_RULES = defineRuleGroup(
     rationale:
       "在和弦连接中，声部进行应尽可能平稳（级进、三度或四五度小跳）。除低音声部或同和弦转换的旋律跳进外，大于纯五度的大跳（如六度、八度跳进）破坏平稳进行原则，需谨慎使用并在随后进行反向级进补偿。",
     group: "melody",
-    defaultSeverity: "warning",
+    defaultSeverity: "suggestion",
     requires: ["written-pitches"],
     dependencyScope: "note",
     supportedExceptionContexts: ["same-harmony", "arpeggiation"],
