@@ -11,7 +11,7 @@ import type {
 } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass } from "../../analysis";
-import { formatPitchClass, toMidi } from "../../../pitch";
+import { formatPitchClass, pitchClassEquals, toMidi } from "../../../pitch";
 import {
   chordEvidence,
   chordLabel,
@@ -608,11 +608,31 @@ function seventhTransition(
   if (sameOpenedSpan(environment))
     return decision(environment, "continue", "chord-seventh-same-harmony");
 
-  if (subjectHasActiveNote(environment) && chordSeventhResolves(environment))
-    return decision(environment, "resolve", "chord-seventh-resolved");
+  if (subjectHasActiveNote(environment)) {
+    if (chordSeventhResolves(environment))
+      return decision(environment, "resolve", "chord-seventh-resolved");
 
-  if (subjectHasActiveNote(environment))
+    if (sameWrittenPitchAsSource(environment)) {
+      const current =
+        environment.context.slice.notes[environment.obligation.payload.voiceId];
+      const targetChord = environment.context.slice.chord;
+      if (current && targetChord) {
+        const targetTones = chordIdentityToneSpellings(targetChord.identity);
+        const toneIndex = targetTones.findIndex((tone) =>
+          pitchClassEquals(current.pitch, tone),
+        );
+        // 1. 若在目标和弦中转化为协和音（根音、三音或五音，如 SII7 -> I6 / I 中的主音），
+        //    则该七音的不协和倾向已被新和弦的协和骨干音吸收消解，直接视为解决。
+        if (toneIndex >= 0 && toneIndex <= 2) {
+          return decision(environment, "resolve", "chord-seventh-resolved");
+        }
+        // 2. 若在目标和弦中仍作为七音，或作为延留/悬挂音保持，则允许继续延期解决。
+        return decision(environment, "continue", "chord-seventh-repeated");
+      }
+    }
+
     return decision(environment, "violate", "chord-seventh-moved-elsewhere");
+  }
 
   return undefined;
 }
@@ -633,11 +653,28 @@ function dominantNinthTransition(
   if (sameOpenedSpan(environment))
     return decision(environment, "continue", "dominant-ninth-same-harmony");
 
-  if (subjectHasActiveNote(environment) && dominantNinthResolves(environment))
-    return decision(environment, "resolve", "dominant-ninth-resolved");
+  if (subjectHasActiveNote(environment)) {
+    if (dominantNinthResolves(environment))
+      return decision(environment, "resolve", "dominant-ninth-resolved");
 
-  if (subjectHasActiveNote(environment))
+    if (sameWrittenPitchAsSource(environment)) {
+      const current =
+        environment.context.slice.notes[environment.obligation.payload.voiceId];
+      const targetChord = environment.context.slice.chord;
+      if (current && targetChord) {
+        const targetTones = chordIdentityToneSpellings(targetChord.identity);
+        const toneIndex = targetTones.findIndex((tone) =>
+          pitchClassEquals(current.pitch, tone),
+        );
+        if (toneIndex >= 0 && toneIndex <= 2) {
+          return decision(environment, "resolve", "dominant-ninth-resolved");
+        }
+        return decision(environment, "continue", "dominant-ninth-repeated");
+      }
+    }
+
     return decision(environment, "violate", "dominant-ninth-moved-elsewhere");
+  }
 
   return undefined;
 }

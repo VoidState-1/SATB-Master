@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChordRegion, NoteEvent, VoiceId } from "../../../project";
 import { createEmptyProject, PPQ } from "../../../project";
 import type { SpelledPitch } from "../../../pitch";
+import type { ChordQuality } from "../../../chordModel";
 import { buildHarmonyAnalysis, type HarmonyAnalysis } from "../../analysis";
 import { createHarmonyRuleContext } from "../context/createRuleContext";
 import type {
@@ -37,7 +38,7 @@ function tertianRegion(
   id: string,
   index: number,
   root: ChordRegion["identity"]["root"],
-  quality: "major" | "minor" | "dominant7",
+  quality: ChordQuality,
   extensions: readonly 9[] = [],
 ): ChordRegion {
   return {
@@ -432,6 +433,93 @@ describe("倾向音义务决策原因", () => {
     ).toHaveLength(2);
     expect(reasons).toContain("leading-tone-resolved");
     expect(reasons).not.toContain("leading-tone-moved-elsewhere");
+  });
+
+  it("七音保持到下一个和弦作为协和音（如 ii7 -> I）直接消除倾向并解决", () => {
+    const ii7 = tertianRegion(
+      "supertonic-seventh",
+      0,
+      { step: "D", alter: 0 },
+      "minor7",
+    );
+    const project = projectFor([ii7, I()], "alto", [
+      pitch("C", 0, 4),
+      pitch("C", 0, 4),
+    ]);
+
+    const result = runObligation("resolution.chord-seventh", project);
+    const reasons = result.trace.map((entry) => entry.reason);
+
+    expect(reasons).toContain("chord-seventh-resolved");
+    expect(reasons).not.toContain("chord-seventh-moved-elsewhere");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("下属七和弦保持到主六和弦（SII7 -> i6）时，七音作为主音保持直接解决", () => {
+    const fSharpHalfDim7 = tertianRegion(
+      "sii7",
+      0,
+      { step: "F", alter: 1 },
+      "halfDiminished7",
+    );
+    const eMinor6 = invertedTertianRegion(
+      "t6",
+      1,
+      { step: "E", alter: 0 },
+      { step: "G", alter: 0 },
+    );
+    eMinor6.identity.structure = {
+      kind: "tertian",
+      quality: "minor",
+      extensions: [],
+      alterations: [],
+    };
+    const project = projectFor([fSharpHalfDim7, eMinor6], "alto", [
+      pitch("E", 0, 4),
+      pitch("E", 0, 4),
+    ]);
+
+    const result = runObligation("resolution.chord-seventh", project);
+    const reasons = result.trace.map((entry) => entry.reason);
+
+    expect(reasons).toContain("chord-seventh-resolved");
+    expect(reasons).not.toContain("chord-seventh-moved-elsewhere");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("七音可同音延留后在后续切片中下行级进解决", () => {
+    const tonicRegion: ChordRegion = {
+      id: "tonic-double",
+      startTick: PPQ,
+      durationTicks: PPQ * 2,
+      identity: {
+        root: { step: "C", alter: 0 },
+        bass: { step: "C", alter: 0 },
+        structure: {
+          kind: "tertian",
+          quality: "major",
+          extensions: [],
+          alterations: [],
+        },
+      },
+      locked: false,
+    };
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 3;
+    project.chordTrack.regions = [V7(), tonicRegion];
+    project.satbTracks.find((track) => track.id === "alto")!.notes = [
+      note("alto-0", 0, pitch("F", 0, 4)),
+      note("alto-1", 1, pitch("F", 0, 4)),
+      note("alto-2", 2, pitch("E", 0, 4)),
+    ];
+
+    const result = runObligation("resolution.chord-seventh", project);
+    const reasons = result.trace.map((entry) => entry.reason);
+
+    expect(reasons).toContain("chord-seventh-repeated");
+    expect(reasons).toContain("chord-seventh-resolved");
+    expect(reasons).not.toContain("chord-seventh-moved-elsewhere");
+    expect(result.diagnostics).toEqual([]);
   });
 
   it("导音可在同功能和声的转位变化中跨声部交接", () => {
