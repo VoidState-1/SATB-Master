@@ -768,17 +768,14 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     setLine(project, "tenor", [pitch("C", 0, 3), pitch("B", 0, 2)]);
     setLine(project, "bass", [pitch("A", -1, 2), pitch("A", 0, 2)]);
 
-    const result = diagnosticFor(project, "connection.italian-augmented-sixth");
-    expect(result?.severity).toBe("warning");
+    const result = diagnosticFor(project, "resolution.augmented-sixth");
+    expect(result?.severity).toBe("error");
     expect(result?.chordIds).toEqual([
       "augmented-sixth-italian",
       "dominant-target-invalid",
     ]);
     expect(result?.noteIds).toContain("bass-0");
     expect(result?.noteIds).toContain("bass-1");
-    expect(
-      diagnosticFor(project, "resolution.augmented-sixth"),
-    ).toBeUndefined();
   });
 
   it("旧式 T46 终止角色连接无显式标记的 D7 时通过", () => {
@@ -962,11 +959,11 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     });
   });
 
-  it("Fr+6 特有音必须保持或级进到目标和弦音", () => {
+  it("Fr+6 增六两端反向解决时由通用规则判断合规", () => {
     const makeProject = (targetTenor: SpelledPitch) => {
       const project = createEmptyProject();
       project.lengthTicks = PPQ * 2;
-      const target = functionalChord(project, "french-dominant-target", 1, {
+      const target = functionalChord(project, "french-dominant", 1, {
         degree: 5,
         degreeAlteration: 0,
         quality: "major",
@@ -981,24 +978,19 @@ describe("下一代规则配置与斯波索宾金样本", () => {
       project.chordTrack.regions = [augmentedSixthRegion("french"), target];
       setLine(project, "soprano", [pitch("F", 1, 4), pitch("G", 0, 4)]);
       setLine(project, "alto", [pitch("C", 0, 4), pitch("B", 0, 3)]);
-      setLine(project, "tenor", [pitch("D", 0, 3), targetTenor]);
+      setLine(project, "tenor", [pitch("D", 0, 4), targetTenor]);
       setLine(project, "bass", [pitch("A", -1, 2), pitch("G", 0, 2)]);
       return project;
     };
     expect(
       diagnosticFor(
         makeProject(pitch("D", 0, 3)),
-        "connection.french-augmented-sixth",
+        "resolution.augmented-sixth",
       ),
     ).toBeUndefined();
-    const invalid = diagnosticFor(
-      makeProject(pitch("F", 0, 3)),
-      "connection.french-augmented-sixth",
-    );
-    expect(invalid?.severity).toBe("warning");
   });
 
-  it("Ger+6 经 K46 时仍按同声部检查增六两端", () => {
+  it("Ger+6 经 K46 时仍按同声部由通用增六规则检查两端", () => {
     const makeProject = (targetSoprano: SpelledPitch) => {
       const project = createEmptyProject();
       project.lengthTicks = PPQ * 2;
@@ -1025,15 +1017,15 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     expect(
       diagnosticFor(
         makeProject(pitch("G", 0, 4)),
-        "connection.german-augmented-sixth",
+        "resolution.augmented-sixth",
       ),
     ).toBeUndefined();
     expect(
       diagnosticFor(
         makeProject(pitch("F", 0, 4)),
-        "connection.german-augmented-sixth",
+        "resolution.augmented-sixth",
       )?.severity,
-    ).toBe("warning");
+    ).toBe("error");
   });
 
   it("Ger+6 直入 D 的真实平行五度只由基础规则报错", () => {
@@ -1102,18 +1094,15 @@ describe("下一代规则配置与斯波索宾金样本", () => {
     expect(result?.chordIds).toEqual(["deceptive-dominant", "plain-tonic"]);
   });
 
-  it("阻碍进行的 TSVI 未重复三音时报告连接配置错误", () => {
+  it("阻碍进行的 TSVI 未重复三音时不强制阻断，避免死板误报", () => {
     const project = deceptiveProject({
       marked: true,
       target: "submediant",
       doubleThird: false,
     });
-    const result = diagnosticFor(project, "connection.deceptive-voice-leading");
-    expect(result?.severity).toBe("warning");
-    expect(result?.chordIds).toEqual([
-      "deceptive-dominant",
-      "deceptive-submediant",
-    ]);
+    expect(
+      diagnosticFor(project, "connection.deceptive-voice-leading"),
+    ).toBeUndefined();
   });
 
   it("同主大小调借用按声明来源重建根音与三和弦性质", () => {

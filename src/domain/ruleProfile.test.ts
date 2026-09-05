@@ -3,7 +3,10 @@ import {
   EXTERNAL_RULE_API_VERSION,
   type InstalledExternalRulePackage,
 } from "./harmony/external/api";
-import { HARMONY_RULE_DEFINITIONS } from "./harmony/rules/catalog";
+import {
+  HARMONY_RULE_CATALOG_REVISION,
+  HARMONY_RULE_DEFINITIONS,
+} from "./harmony/rules/catalog";
 import { createDefaultRuleProfile } from "./project";
 import {
   createPortableRuleProfile,
@@ -62,8 +65,10 @@ describe("规则配置档案", () => {
   it("新工程保存完整目录快照和每条规则的默认严重程度", () => {
     const profile = createDefaultRuleProfile();
     expect(profile.profileVersion).toBe(2);
-    expect(profile.catalogRevision).toBe(2);
-    expect(Object.keys(profile.builtin)).toHaveLength(81);
+    expect(profile.catalogRevision).toBe(HARMONY_RULE_CATALOG_REVISION);
+    expect(Object.keys(profile.builtin)).toHaveLength(
+      HARMONY_RULE_DEFINITIONS.length,
+    );
     for (const definition of HARMONY_RULE_DEFINITIONS) {
       expect(profile.builtin[definition.id]).toBeDefined();
       expect(profile.builtin[definition.id].severity).toBe(
@@ -104,7 +109,9 @@ describe("规则配置档案", () => {
 
     delete projectDocument.ruleProfile.builtin["melody.large-leap"];
     resetAllBuiltinRules(projectDocument);
-    expect(Object.keys(projectDocument.ruleProfile.builtin)).toHaveLength(81);
+    expect(Object.keys(projectDocument.ruleProfile.builtin)).toHaveLength(
+      HARMONY_RULE_DEFINITIONS.length,
+    );
   });
 
   it("导出时展开全部内置规则并保留共享音域", () => {

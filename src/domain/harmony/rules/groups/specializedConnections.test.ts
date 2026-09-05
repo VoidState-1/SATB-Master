@@ -416,13 +416,63 @@ describe("H 组和弦连接规则体系（斯波索宾金样本与 QueryAPI 升�
       diagnosticFor(makeProject(pitch("G", 0, 4)), "connection.double-dominant-seventh"),
     ).toBeUndefined();
 
-    // 错误下行至 E4: 报警属调导音未上半音解决
+    // 错误下行至非和弦音 E4: 由通用和弦音规则报警
     const errorDiag = diagnosticFor(
       makeProject(pitch("E", 0, 4)),
-      "connection.double-dominant-seventh",
+      "chord.unclassified-nonchord-tone",
     );
     expect(errorDiag).toBeDefined();
-    expect(errorDiag?.message).toContain("属调导音（升 IV 级）未上半音解决至属音");
+  });
+
+  it("Case H-Incomplete: e小调 SII34 -> D 原位不完全属和弦（BBDB 三根一三配置）不触发任何专用误报", () => {
+    const project = createEmptyProject();
+    project.keyEvents = [{
+      id: "key-e-minor",
+      tick: 0,
+      tonic: { step: "E", alter: 0 },
+      mode: "minor",
+    }];
+    project.lengthTicks = PPQ * 2;
+    project.chordTrack.regions = [
+      functionalChord(project, "sii34", 0, {
+        degree: 2,
+        degreeAlteration: 0,
+        quality: "halfDiminished7",
+        inversion: 2,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "side-degree",
+          primaryFunction: "subdominant",
+        },
+        ...manualCertain,
+      }),
+      functionalChord(project, "dominant", 1, {
+        degree: 5,
+        degreeAlteration: 0,
+        quality: "major",
+        inversion: 0,
+        designation: {
+          notationSystem: "spasobin",
+          kind: "primary",
+          primaryFunction: "dominant",
+        },
+        ...manualCertain,
+      }),
+    ];
+
+    // SII34 (C3, A3, E4, F#4) -> D (B2, B3, D#4, B4)
+    // S: F#4 -> B4
+    // A: E4 -> D#4 (七音下行解决至导音)
+    // T: A3 -> B3
+    // B: C3 -> B2
+    setLine(project, "soprano", [pitch("F", 1, 4), pitch("B", 0, 4)]);
+    setLine(project, "alto", [pitch("E", 0, 4), pitch("D", 1, 4)]);
+    setLine(project, "tenor", [pitch("A", 0, 3), pitch("B", 0, 3)]);
+    setLine(project, "bass", [pitch("C", 0, 3), pitch("B", 0, 2)]);
+
+    const diags = checkHarmony(project).diagnostics;
+    expect(diags.some((d) => d.ruleId.startsWith("connection.dominant"))).toBe(false);
+    expect(diags.some((d) => d.ruleId.startsWith("connection.supertonic"))).toBe(false);
   });
 
   it("Case I1-A: 四五度原位三和弦采用古典旋律连接法（上三声部全体与低音反向平稳进行）判定合规", () => {

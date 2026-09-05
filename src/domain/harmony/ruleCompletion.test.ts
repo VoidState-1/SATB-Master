@@ -106,8 +106,8 @@ function hasRule(project: ProjectDocument, ruleId: string) {
 }
 
 describe("完整规则目录首版实现", () => {
-  it("81 条目录规则均有可执行实现", () => {
-    expect(HARMONY_RULE_DEFINITIONS).toHaveLength(81);
+  it("69 条目录规则均有可执行实现", () => {
+    expect(HARMONY_RULE_DEFINITIONS).toHaveLength(69);
     expect(
       HARMONY_RULE_DEFINITIONS.every(
         (item) => "evaluate" in item || "process" in item,
@@ -177,7 +177,7 @@ describe("完整规则目录首版实现", () => {
     expect(hasRule(project, "nonchord.passing-tone")).toBe(false);
   });
 
-  it("D7 专用连接联合报告并覆盖通用导音诊断", () => {
+  it("导音未规范解决时由通用导音规则 resolution.leading-tone 准确报告", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;
     project.chordTrack.regions = [
@@ -186,7 +186,7 @@ describe("完整规则目录首版实现", () => {
     ];
     setVoice(project, "soprano", [
       note("ds1", 0, pitch("B", 0, 4)),
-      note("ds2", PPQ, pitch("B", 0, 4)),
+      note("ds2", PPQ, pitch("G", 0, 4)),
     ]);
     setVoice(project, "alto", [
       note("da1", 0, pitch("F", 0, 4)),
@@ -203,11 +203,8 @@ describe("完整规则目录首版实现", () => {
 
     const result = checkHarmony(project).diagnostics;
     expect(
-      result.some((item) => item.ruleId === "connection.dominant-seventh"),
-    ).toBe(true);
-    expect(
       result.some((item) => item.ruleId === "resolution.leading-tone"),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("显式完全终止标记驱动终止规则，不猜测未标注乐句", () => {

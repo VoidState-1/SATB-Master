@@ -332,25 +332,29 @@ describe("共享事实与诊断仲裁", () => {
       noteIds: ["seventh-note"],
       causeRefs: [seventhCause],
     };
+    const mockCompoundDefinition = {
+      id: "mock.compound-rule",
+      coveredRuleIds: ["resolution.leading-tone", "resolution.chord-seventh"],
+    } as unknown as RuleDefinition;
     const specific: HarmonyDiagnostic = {
       ...base,
       id: "specific",
-      ruleId: "connection.dominant-seventh",
+      ruleId: "mock.compound-rule",
       voiceIds: [],
       noteIds: [],
-      title: "属七和弦解决",
+      title: "复合规则解决",
       message: "联合诊断",
-      messageKey: "dominant-seventh-resolution",
-      causeRefs: ["connection.dominant-seventh|connection:span-a->span-b"],
+      messageKey: "compound-rule-resolution",
+      causeRefs: ["mock.compound-rule|connection:span-a->span-b"],
       coverageRefs: [leadingCause, seventhCause],
     };
 
     expect(
       arbitrateDiagnostics(
         [base, seventh, specific],
-        HARMONY_RULE_DEFINITIONS as readonly RuleDefinition[],
+        [mockCompoundDefinition, ...(HARMONY_RULE_DEFINITIONS as readonly RuleDefinition[])],
       ).map((item) => item.ruleId),
-    ).toEqual(["connection.dominant-seventh"]);
+    ).toEqual(["mock.compound-rule"]);
   });
 });
 

@@ -5,7 +5,7 @@ export type HarmonyRuleId = (typeof BUILTIN_HARMONY_RULES)[number]["id"];
 export type HarmonyRuleSeverities = Record<HarmonyRuleId, HarmonyRuleSeverity>;
 
 // 目录修订号只描述规则配置快照，不等同于工程 schema 版本。
-export const HARMONY_RULE_CATALOG_REVISION = 2;
+export const HARMONY_RULE_CATALOG_REVISION = 3;
 
 export const HARMONY_RULE_GROUPS: readonly {
   id: HarmonyRuleGroupId;

@@ -9,6 +9,10 @@ import {
   type ProjectDocument,
 } from "./index";
 import { keySignatureFifths, pitchClassValue, toMidi } from "../pitch";
+import {
+  HARMONY_RULE_CATALOG_REVISION,
+  HARMONY_RULE_DEFINITIONS,
+} from "../harmony/rules/catalog";
 
 function createV2Fixture() {
   const project = createEmptyProject("v2 迁移金样本");
@@ -419,11 +423,13 @@ describe("schema v2 -> v3 迁移", () => {
     expect(migrated?.auxiliaryTracks).toEqual([]);
     expect(migrated?.ruleProfile).toMatchObject({
       profileVersion: 2,
-      catalogRevision: 2,
+      catalogRevision: HARMONY_RULE_CATALOG_REVISION,
       title: "斯波索宾基础规则",
       external: [],
     });
-    expect(Object.keys(migrated!.ruleProfile.builtin)).toHaveLength(81);
+    expect(Object.keys(migrated!.ruleProfile.builtin)).toHaveLength(
+      HARMONY_RULE_DEFINITIONS.length,
+    );
     expect(migrated?.chordTrack.displayMode).toBe("roman-absolute");
     expect(migrated?.loop).toEqual(legacy.loop);
     expect(migrated?.exercise).toEqual(legacy.exercise);
