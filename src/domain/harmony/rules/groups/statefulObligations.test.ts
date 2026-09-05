@@ -559,6 +559,111 @@ describe("倾向音义务决策原因", () => {
     );
   });
 
+  it("导音可在属三和弦与属七和弦（如 D6 -> D2）转换中跨声部交接并解决", () => {
+    const d6 = invertedTertianRegion(
+      "d6",
+      0,
+      { step: "B", alter: 0 },
+      { step: "D", alter: 1 },
+    );
+    const d2: ChordRegion = {
+      id: "d2",
+      startTick: PPQ,
+      durationTicks: PPQ,
+      identity: {
+        root: { step: "B", alter: 0 },
+        bass: { step: "A", alter: 0 },
+        structure: {
+          kind: "tertian",
+          quality: "dominant7",
+          extensions: [],
+          alterations: [],
+        },
+      },
+      locked: false,
+    };
+    const t6 = invertedTertianRegion(
+      "t6",
+      2,
+      { step: "E", alter: 0 },
+      { step: "G", alter: 0 },
+    );
+    t6.identity.structure = {
+      kind: "tertian",
+      quality: "minor",
+      extensions: [],
+      alterations: [],
+    };
+
+    const project = projectForVoices([d6, d2, t6], {
+      alto: [
+        pitch("F", 1, 4),
+        pitch("D", 1, 4),
+        pitch("E", 0, 4),
+      ],
+      bass: [
+        pitch("D", 1, 3),
+        pitch("A", 0, 3),
+        pitch("G", 0, 3),
+      ],
+    });
+    project.keyEvents[0].tonic = { step: "E", alter: 0 };
+    project.keyEvents[0].mode = "minor";
+
+    const result = runObligation("resolution.leading-tone", project);
+    const reasons = result.trace.map((entry) => entry.reason);
+
+    expect(reasons).toContain("leading-tone-transferred");
+    expect(reasons).toContain("leading-tone-resolved");
+    expect(reasons).not.toContain("leading-tone-moved-elsewhere");
+    expect(result.diagnostics).not.toContainEqual(
+      expect.objectContaining({ ruleId: "resolution.leading-tone" }),
+    );
+  });
+
+  it("七音可在同和弦转位变化中跨声部交接并解决", () => {
+    const v7 = tertianRegion("v7", 0, { step: "G", alter: 0 }, "dominant7");
+    const v2: ChordRegion = {
+      id: "v2",
+      startTick: PPQ,
+      durationTicks: PPQ,
+      identity: {
+        root: { step: "G", alter: 0 },
+        bass: { step: "F", alter: 0 },
+        structure: {
+          kind: "tertian",
+          quality: "dominant7",
+          extensions: [],
+          alterations: [],
+        },
+      },
+      locked: false,
+    };
+    const i = I();
+    i.startTick = PPQ * 2;
+
+    const project = projectForVoices([v7, v2, i], {
+      alto: [
+        pitch("F", 0, 4),
+        pitch("D", 0, 4),
+        pitch("C", 0, 4),
+      ],
+      bass: [
+        pitch("G", 0, 2),
+        pitch("F", 0, 2),
+        pitch("E", 0, 2),
+      ],
+    });
+
+    const result = runObligation("resolution.chord-seventh", project);
+    const reasons = result.trace.map((entry) => entry.reason);
+    expect(reasons).toContain("chord-seventh-resolved");
+    expect(reasons).not.toContain("chord-seventh-moved-elsewhere");
+    expect(result.diagnostics).not.toContainEqual(
+      expect.objectContaining({ ruleId: "resolution.chord-seventh" }),
+    );
+  });
+
   it("导音违规诊断附带来源、义务步骤和相关事件调试快照", () => {
     const project = projectFor([V(), I()], "alto", [
       pitch("B", 0, 4),

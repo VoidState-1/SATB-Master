@@ -1,5 +1,6 @@
 import {
   chordIdentityToneSpellings,
+  identityContainsWrittenPitchClass,
   type FunctionalFamily,
 } from "../../../chordModel";
 import type { RuleDiagnostic } from "../../runtime";
@@ -380,12 +381,21 @@ function sameLeadingToneContext(
 
   const sourceChord = openedSourceChord(environment);
   const currentChord = environment.context.slice.chord;
-  if (
-    !sourceChord ||
-    !currentChord ||
-    !sameChordIdentityWithoutBass(sourceChord.identity, currentChord.identity)
-  )
-    return false;
+  if (!sourceChord || !currentChord) return false;
+
+  const exactSame = sameChordIdentityWithoutBass(
+    sourceChord.identity,
+    currentChord.identity,
+  );
+  const payload = environment.obligation.payload;
+  const sameFamily =
+    pitchClassEquals(sourceChord.identity.root, currentChord.identity.root) &&
+    identityContainsWrittenPitchClass(currentChord.identity, {
+      step: payload.leadingStep,
+      alter: payload.leadingAlter,
+    });
+
+  if (!exactSame && !sameFamily) return false;
 
   const interpretationContext = (chord: typeof sourceChord) => {
     if (!chord.semantics) return undefined;
@@ -592,6 +602,80 @@ function leadingToneTransition(
   return undefined;
 }
 
+function sameSeventhContext(
+  environment: ObligationEnvironment<SeventhPayload>,
+) {
+  if (!environment.context.transitionFromPrevious?.contiguous) return false;
+
+  const sourceChord = openedSourceChord(environment);
+  const currentChord = environment.context.slice.chord;
+  if (!sourceChord || !currentChord) return false;
+
+  if (!pitchClassEquals(sourceChord.identity.root, currentChord.identity.root))
+    return false;
+
+  const sourceTones = chordIdentityToneSpellings(sourceChord.identity);
+  const currentTones = chordIdentityToneSpellings(currentChord.identity);
+  if (sourceTones.length < 4 || currentTones.length < 4) return false;
+  if (!pitchClassEquals(sourceTones[3], currentTones[3])) return false;
+
+  const interpretationContext = (chord: typeof sourceChord) => {
+    if (!chord.semantics) return undefined;
+    const resolution = environment.context.rules.harmony.primaryInterpretation(
+      chord,
+    );
+    if (resolution.status !== "resolved") return undefined;
+    const interpretation = resolution.value;
+    return JSON.stringify({
+      localKey: interpretation.localKey ?? null,
+      degree: interpretation.degree,
+      degreeAlteration: interpretation.degreeAlteration,
+      appliedTarget: interpretation.appliedTarget ?? null,
+      designation: interpretation.designation ?? null,
+      mixture: chord.semantics.mixture ?? null,
+      cadenceRole: chord.semantics.cadenceRole ?? null,
+      pedalContext: chord.semantics.pedalContext ?? null,
+    });
+  };
+
+  const sourceContext = interpretationContext(sourceChord);
+  const currentContext = interpretationContext(currentChord);
+  if (sourceChord.semantics || currentChord.semantics)
+    return Boolean(
+      sourceContext && currentContext && sourceContext === currentContext,
+    );
+  return true;
+}
+
+function seventhTransferVoiceIds(
+  environment: ObligationEnvironment<SeventhPayload>,
+) {
+  const payload = environment.obligation.payload;
+  const sourceChord = openedSourceChord(environment);
+  if (!sourceChord) return [];
+  const sourceTones = chordIdentityToneSpellings(sourceChord.identity);
+  if (sourceTones.length < 4) return [];
+  const seventhTone = sourceTones[3];
+
+  const currentSource = environment.context.slice.notes[payload.voiceId];
+  const sourceStillSeventh = Boolean(
+    currentSource && pitchClassEquals(currentSource.pitch, seventhTone),
+  );
+  if (sourceStillSeventh) return [];
+
+  return environment.moment.attackedVoiceIds.filter((voiceId) => {
+    if (voiceId === payload.voiceId) return false;
+    const note = environment.context.slice.notes[voiceId];
+    return Boolean(note && pitchClassEquals(note.pitch, seventhTone));
+  });
+}
+
+function seventhTransferred(
+  environment: ObligationEnvironment<SeventhPayload>,
+) {
+  return seventhTransferVoiceIds(environment).length > 0;
+}
+
 function seventhTransition(
   environment: ObligationEnvironment<SeventhPayload>,
 ): ObligationDecision | undefined {
@@ -604,6 +688,9 @@ function seventhTransition(
     !targetChordAvailable(environment)
   )
     return decision(environment, "cancel", "chord-seventh-context-ended");
+
+  if (sameSeventhContext(environment) && seventhTransferred(environment))
+    return decision(environment, "cancel", "chord-seventh-transferred");
 
   if (sameOpenedSpan(environment))
     return decision(environment, "continue", "chord-seventh-same-harmony");
