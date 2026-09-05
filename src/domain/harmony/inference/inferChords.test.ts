@@ -80,6 +80,68 @@ describe("自动和弦推导", () => {
     expect(result.regions[1].selected?.functionalBaseId).toBe("D");
   });
 
+  it.each([1, 2, 4])("重复起奏 %i 次不会消除主四六与终止四六的歧义", (count) => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 4;
+    const pitches: Record<VoiceId, number> = {
+      soprano: 76, alto: 72, tenor: 67, bass: 55,
+    };
+    for (const track of project.satbTracks) {
+      track.notes = Array.from({ length: count }, (_, index) =>
+        note(`${track.id}-${index}`, index * PPQ * 4 / count, PPQ * 4 / count, pitches[track.voice]),
+      );
+    }
+
+    const result = inferChords(project);
+
+    expect(result.regions).toHaveLength(1);
+    expect(result.regions[0].status).toBe("ambiguous");
+    expect(result.regions[0].selected?.functionalBaseId).toBe("T");
+    expect(result.regions[0].alternatives.find((candidate) =>
+      candidate.functionalBaseId === "K46",
+    )?.score.total).toBeCloseTo(result.regions[0].selected!.score.total);
+    expect(applyChordInference(project, result, { mode: "fill-gaps" }).appliedRegionCount).toBe(0);
+  });
+
+  it("合并区段保留后续切片的非和弦音证据和较低置信度", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    addLine(project, "soprano", [72, 74]);
+    addLine(project, "alto", [67, 67]);
+    addLine(project, "tenor", [64, 64]);
+    addLine(project, "bass", [48, 48]);
+    project.satbTracks.find((track) => track.voice === "soprano")!.notes[1]
+      .nonChordToneRole = "passing";
+
+    const result = inferChords(project);
+
+    expect(result.regions).toHaveLength(1);
+    const selected = result.regions[0].selected!;
+    expect(selected.functionalBaseId).toBe("T");
+    expect(selected.confidence).toBe("medium");
+    expect(selected.fit.matchedNoteIds).toHaveLength(8);
+    expect(selected.fit.nonChordToneAssignments).toEqual({ "soprano-1": "passing" });
+    expect(selected.evidence).toContainEqual(expect.objectContaining({
+      kind: "declared-nonchord-tone", noteIds: ["soprano-1"],
+    }));
+  });
+
+  it.each([false, true])("单独重复的降六级音不能写成增六和弦（有限缺音 %s）", (allowIncompleteVoicing) => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    addLine(project, "bass", [56, 56]);
+    for (const bassNote of project.satbTracks.find((track) => track.voice === "bass")!.notes) {
+      bassNote.pitch = { step: "A", alter: -1, octave: 2 };
+    }
+
+    const result = inferChords(project, { allowIncompleteVoicing });
+
+    expect(result.regions).toHaveLength(1);
+    expect(result.regions[0].status).toBe("unclassified");
+    expect(result.regions[0].selected).toBeUndefined();
+    expect(applyChordInference(project, result, { mode: "fill-gaps" }).appliedRegionCount).toBe(0);
+  });
+
   it("全终止末端可推断省略五音的主和弦", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;

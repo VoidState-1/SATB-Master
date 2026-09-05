@@ -69,7 +69,7 @@
 ```text
 buildChordInferenceObservations  -> 观测切片（活跃音、低音、调性、节拍位置、完整 SATB 状态）
 buildChordInferenceCandidates    -> 每个观测的功能候选（identity + semantics + 适配评分）
-selectChordInferencePath         -> 跨观测的序列路径选择
+analyzeChordInferencePaths       -> 跨观测的序列路径选择与全部保留候选的路径评分
 buildChordInferenceRegions       -> 合并为 ChordInferenceRegion
 ```
 
@@ -81,6 +81,12 @@ buildChordInferenceRegions       -> 合并为 ChordInferenceRegion
 - `ChordInferenceResult`：区域、未解析观测索引与 `ChordInferenceWarning`。
 
 候选评分综合功能模板层级、音适配、低音适配、拼写一致性、节拍语境、序列语境、非和弦音惩罚与复杂度惩罚；人工已标注的非和弦音角色是硬证据，不会与之冲突。`ChordInferenceOptions` 控制是否允许绝对回退、不完整织体、非和弦音候选与最低置信度。
+
+序列阶段对每个连续的有候选区间执行前向与后向动态规划，`pathScore` 表示“经过该候选的最佳完整路径分数”。主候选与备选均按这个口径比较，分差不足 12 时保留歧义；重复起奏带来的延续奖励同样计入竞争路径。路径搜索和歧义比较使用同一批每切片最多 32 个候选。
+
+合并区段汇总所有切片的局部评分、音符引用、非和弦音角色与证据，并采用其中最低置信度。任一切片存在接近的竞争路径，整个区段均保留歧义。`score` 是局部评分的汇总；`pathScore` 包含整个连续区间的上下文，不能跨切片相加，也不能在不同连续区间之间比较。
+
+意大利、法国、德国增六候选必须覆盖各自全部构成音；缺少增六音程的任一端或其他必要音时直接拒绝。该要求不受“允许有限缺音”影响，三度叠置和弦原有的省略音策略保持不变。
 
 ### 5.1 应用写回
 

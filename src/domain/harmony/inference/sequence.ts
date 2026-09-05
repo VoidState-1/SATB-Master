@@ -64,7 +64,7 @@ interface PathState {
   readonly previousIndex?: number;
 }
 
-function chooseRun(
+function analyzeRun(
   observations: readonly ChordInferenceObservation[],
   candidateSets: readonly (readonly ChordInferenceCandidate[])[],
   fromIndex: number,
@@ -76,7 +76,9 @@ function chooseRun(
     const currentStates: PathState[] = [];
     for (let candidateIndex = 0; candidateIndex < currentCandidates.length; candidateIndex += 1) {
       const candidate = currentCandidates[candidateIndex];
-      let best: PathState = { score: candidate.score.total };
+      let best: PathState = {
+        score: index === fromIndex ? candidate.score.total : Number.NEGATIVE_INFINITY,
+      };
       if (index > fromIndex) {
         const previousCandidates = candidateSets[index - 1].slice(0, 32);
         for (let previousIndex = 0; previousIndex < previousCandidates.length; previousIndex += 1) {
@@ -104,7 +106,26 @@ function chooseRun(
     states.push(currentStates);
   }
   const lastStates = states.at(-1) ?? [];
-  if (lastStates.length === 0) return [] as readonly ChordInferenceCandidate[];
+
+  // Forward + backward scores give every candidate the same complete-run
+  // context, including competing continuations rather than the selected path.
+  const suffixScores: number[][] = [];
+  const scoredCandidates: ChordInferenceCandidate[][] = [];
+  for (let offset = states.length - 1; offset >= 0; offset -= 1) {
+    const index = fromIndex + offset;
+    const candidates = candidateSets[index].slice(0, 32);
+    suffixScores[offset] = candidates.map((candidate) => {
+      if (index === toIndex - 1) return 0;
+      return Math.max(...candidateSets[index + 1].slice(0, 32).map((next, nextIndex) =>
+        transitionScore(candidate, next, observations[index], observations[index + 1]) +
+        next.score.total + suffixScores[offset + 1][nextIndex],
+      ));
+    });
+    scoredCandidates[offset] = candidates.map((candidate, candidateIndex) => ({
+      ...candidate,
+      pathScore: states[offset][candidateIndex].score + suffixScores[offset][candidateIndex],
+    }));
+  }
   let currentIndex = lastStates.reduce(
     (bestIndex, state, index) =>
       state.score > lastStates[bestIndex].score ? index : bestIndex,
@@ -112,45 +133,24 @@ function chooseRun(
   );
   const selected: ChordInferenceCandidate[] = [];
   for (let stateIndex = states.length - 1; stateIndex >= 0; stateIndex -= 1) {
-    selected[stateIndex] = candidateSets[fromIndex + stateIndex].slice(0, 32)[currentIndex];
+    selected[stateIndex] = scoredCandidates[stateIndex][currentIndex];
     currentIndex = states[stateIndex][currentIndex].previousIndex ?? 0;
   }
-  return selected;
+  return { selected, scoredCandidates };
 }
 
-function addPathContextScores(
-  path: readonly ChordInferenceCandidate[],
-  observations: readonly ChordInferenceObservation[],
-  fromIndex: number,
-) {
-  return path.map((candidate, offset) => {
-    if (offset >= path.length - 1) return candidate;
-    const contextFit = transitionScore(
-      candidate,
-      path[offset + 1],
-      observations[fromIndex + offset],
-      observations[fromIndex + offset + 1],
-    );
-    if (contextFit === 0) return candidate;
-    return {
-      ...candidate,
-      score: {
-        ...candidate.score,
-        contextFit,
-        total: candidate.score.total + contextFit,
-      },
-    };
-  });
-}
-
-/** Selects one deterministic candidate path for each contiguous candidate run. */
-export function selectChordInferencePath(
+/** Scores all retained candidates and selects a deterministic path per run. */
+export function analyzeChordInferencePaths(
   observations: readonly ChordInferenceObservation[],
   candidateSets: readonly (readonly ChordInferenceCandidate[])[],
 ) {
   const selected: Array<ChordInferenceCandidate | undefined> = Array.from(
     { length: observations.length },
     () => undefined,
+  );
+  const scoredCandidateSets: Array<readonly ChordInferenceCandidate[]> = Array.from(
+    { length: observations.length },
+    () => Object.freeze([]),
   );
   let index = 0;
   while (index < observations.length) {
@@ -160,14 +160,21 @@ export function selectChordInferencePath(
     while (index < observations.length && candidateSets[index].length > 0)
       index += 1;
     if (index <= fromIndex) continue;
-    const run = addPathContextScores(
-      chooseRun(observations, candidateSets, fromIndex, index),
-      observations,
-      fromIndex,
-    );
-    run.forEach((candidate, offset) => {
+    const run = analyzeRun(observations, candidateSets, fromIndex, index);
+    run.selected.forEach((candidate, offset) => {
       selected[fromIndex + offset] = candidate;
+      scoredCandidateSets[fromIndex + offset] = Object.freeze(run.scoredCandidates[offset]);
     });
   }
-  return Object.freeze(selected);
+  return {
+    selectedPath: Object.freeze(selected),
+    candidateSets: Object.freeze(scoredCandidateSets),
+  };
+}
+
+export function selectChordInferencePath(
+  observations: readonly ChordInferenceObservation[],
+  candidateSets: readonly (readonly ChordInferenceCandidate[])[],
+) {
+  return analyzeChordInferencePaths(observations, candidateSets).selectedPath;
 }

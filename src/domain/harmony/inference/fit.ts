@@ -167,6 +167,15 @@ export function fitChordObservation(
   if (notes.length === 0) hardRejected = "no-active-notes";
   else if (!bassMatchesInversion) hardRejected = "bass-mismatch";
   else if (
+    identity.structure.kind === "augmented-sixth" &&
+    tones.some((tone) =>
+      !notes.some(({ note }) => matchingToneIndex([tone], note.pitch)),
+    )
+  )
+    // These variants require their complete pitch structure, including the
+    // augmented sixth; tertian degree-omission policies do not apply.
+    hardRejected = "missing-augmented-sixth-tone";
+  else if (
     nonChordToneNoteIds.length > 0 &&
     !declaredExtra &&
     !options.allowNonChordToneCandidates

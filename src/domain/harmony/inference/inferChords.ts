@@ -3,7 +3,7 @@ import {
 } from "./candidates";
 import { buildChordInferenceObservations } from "./observations";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
-import { selectChordInferencePath } from "./sequence";
+import { analyzeChordInferencePaths } from "./sequence";
 import { inferPhrases } from "../phrase";
 import type {
   ChordInferenceOptions,
@@ -82,10 +82,11 @@ export function inferChords(
     );
     candidateSets.push(candidates);
   });
-  const selectedPath = selectChordInferencePath(observations, candidateSets);
+  const sequence = analyzeChordInferencePaths(observations, candidateSets);
+  const { selectedPath } = sequence;
   const regions = buildChordInferenceRegions(
     observations,
-    candidateSets,
+    sequence.candidateSets,
     selectedPath,
   );
   return {

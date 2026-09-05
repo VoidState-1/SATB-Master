@@ -124,4 +124,49 @@ describe("当前调性的功能和弦候选", () => {
     expect(fallback?.confidence).toBe("low");
     expect(fallback?.semantics).toBeUndefined();
   });
+
+  describe.each([
+    { baseId: "It+6", innerPitch: { step: "C", alter: 0, octave: 4 } },
+    { baseId: "Fr+6", innerPitch: { step: "D", alter: 0, octave: 4 } },
+    { baseId: "Ger+6", innerPitch: { step: "E", alter: -1, octave: 4 } },
+  ] as const)("$baseId 必要构成音", ({ baseId, innerPitch }) => {
+    function augmentedSixthProject() {
+      const project = createEmptyProject();
+      project.lengthTicks = PPQ;
+      addChord(project, { soprano: 78, alto: 60, tenor: 60, bass: 56 });
+      project.satbTracks.find((track) => track.voice === "alto")!.notes[0].pitch = innerPitch;
+      project.satbTracks.find((track) => track.voice === "bass")!.notes[0].pitch = {
+        step: "A", alter: -1, octave: 2,
+      };
+      return project;
+    }
+
+    it("完整结构仍生成高置信度候选", () => {
+      const candidates = candidatesFor(augmentedSixthProject());
+      const candidate = candidates.find((item) => item.functionalBaseId === baseId);
+      expect(candidate?.confidence).toBe("high");
+      expect(candidate?.score.toneFit).toBe(1);
+    });
+
+    it.each([false, true])("缺少任意构成音均拒绝（有限缺音 %s）", (allowIncompleteVoicing) => {
+      const original = augmentedSixthProject();
+      const pitches = [...new Set(original.satbTracks.flatMap((track) =>
+        track.notes.map((item) => `${item.pitch.step}:${item.pitch.alter}`),
+      ))];
+      for (const removedPitch of pitches) {
+        const project = structuredClone(original);
+        for (const track of project.satbTracks) {
+          track.notes = track.notes.filter((item) =>
+            `${item.pitch.step}:${item.pitch.alter}` !== removedPitch,
+          );
+        }
+        const observation = buildChordInferenceObservations(project)[0];
+        const candidates = buildChordInferenceCandidates(observation, {
+          allowIncompleteVoicing,
+          allowNonChordToneCandidates: true,
+        });
+        expect(candidates.some((item) => item.functionalBaseId === baseId), removedPitch).toBe(false);
+      }
+    });
+  });
 });

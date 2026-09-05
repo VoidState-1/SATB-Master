@@ -4,6 +4,7 @@ import type {
   ChordInferenceRegion,
   ChordInferenceWarning,
 } from "./types";
+import { analyzeChordInferencePaths } from "./sequence";
 
 function sameMeaning(
   left: ChordInferenceCandidate | undefined,
@@ -16,12 +17,63 @@ function sameMeaning(
   );
 }
 
+function aggregateCandidates(
+  candidates: readonly ChordInferenceCandidate[],
+): ChordInferenceCandidate {
+  const first = candidates[0];
+  const unique = <T,>(values: readonly T[]) => Object.freeze([...new Set(values)]);
+  const sum = (key: Exclude<keyof ChordInferenceCandidate["score"], "functionalTier">) =>
+    candidates.reduce((total, candidate) => total + candidate.score[key], 0);
+  const pathScores = candidates.flatMap((candidate) =>
+    candidate.pathScore === undefined ? [] : [candidate.pathScore],
+  );
+  return {
+    ...first,
+    ...(pathScores.length > 0 ? { pathScore: Math.max(...pathScores) } : {}),
+    confidence: candidates.some((candidate) => candidate.confidence === "low")
+      ? "low"
+      : candidates.some((candidate) => candidate.confidence === "medium") ? "medium" : "high",
+    score: {
+      functionalTier: first.score.functionalTier,
+      toneFit: sum("toneFit"),
+      bassFit: sum("bassFit"),
+      spellingFit: sum("spellingFit"),
+      metricFit: sum("metricFit"),
+      contextFit: sum("contextFit"),
+      nonChordTonePenalty: sum("nonChordTonePenalty"),
+      complexityPenalty: sum("complexityPenalty"),
+      total: sum("total"),
+    },
+    fit: {
+      matchedNoteIds: unique(candidates.flatMap((candidate) => candidate.fit.matchedNoteIds)),
+      chordToneNoteIds: unique(candidates.flatMap((candidate) => candidate.fit.chordToneNoteIds)),
+      nonChordToneNoteIds: unique(candidates.flatMap((candidate) => candidate.fit.nonChordToneNoteIds)),
+      nonChordToneAssignments: Object.freeze(Object.assign(
+        {}, ...candidates.map((candidate) => candidate.fit.nonChordToneAssignments),
+      )),
+      omittedChordDegrees: unique(candidates.flatMap((candidate) => candidate.fit.omittedChordDegrees)),
+      extraPitchClasses: Object.freeze([...new Map(candidates.flatMap((candidate) =>
+        candidate.fit.extraPitchClasses.map((pitch) => [`${pitch.step}:${pitch.alter}`, pitch] as const),
+      )).values()]),
+      bassMatchesInversion: candidates.every((candidate) => candidate.fit.bassMatchesInversion),
+      spellingConsistent: candidates.every((candidate) => candidate.fit.spellingConsistent),
+    },
+    evidence: Object.freeze([...new Map(candidates.flatMap((candidate) =>
+      candidate.evidence.map((evidence) => [JSON.stringify(evidence), evidence] as const),
+    )).values()]),
+  };
+}
+
+function comparisonScore(candidate: ChordInferenceCandidate) {
+  return candidate.pathScore ?? candidate.score.total;
+}
+
 function alternativeCandidates(
   selected: ChordInferenceCandidate | undefined,
   candidateSets: readonly (readonly ChordInferenceCandidate[])[],
   indices: readonly number[],
 ) {
-  const candidates = new Map<string, ChordInferenceCandidate>();
+  const candidates = new Map<string, ChordInferenceCandidate[]>();
   for (const index of indices) {
     for (const candidate of candidateSets[index]) {
       if (selected && sameMeaning(selected, candidate)) continue;
@@ -29,16 +81,17 @@ function alternativeCandidates(
         identity: candidate.identity,
         semantics: candidate.semantics,
       });
-      const previous = candidates.get(meaningKey);
-      if (!previous || candidate.score.total > previous.score.total)
-        candidates.set(meaningKey, candidate);
+      const group = candidates.get(meaningKey) ?? [];
+      group.push(candidate);
+      candidates.set(meaningKey, group);
     }
   }
   return Object.freeze(
     [...candidates.values()]
+      .map(aggregateCandidates)
       .sort(
         (left, right) =>
-          right.score.total - left.score.total || left.id.localeCompare(right.id),
+          comparisonScore(right) - comparisonScore(left) || left.id.localeCompare(right.id),
       )
       .slice(0, 3),
   );
@@ -52,7 +105,7 @@ function regionStatus(
   const closest = alternatives[0];
   if (
     selected.confidence === "low" ||
-    (closest && selected.score.total - closest.score.total < 12)
+    (closest && comparisonScore(selected) - comparisonScore(closest) < 12)
   )
     return "ambiguous";
   return "resolved";
@@ -63,6 +116,14 @@ export function buildChordInferenceRegions(
   candidateSets: readonly (readonly ChordInferenceCandidate[])[],
   selectedPath: readonly (ChordInferenceCandidate | undefined)[],
 ) {
+  // Preserve the selectChordInferencePath + raw candidate sets calling pattern.
+  if (candidateSets.some((candidates) => candidates.some((candidate) => candidate.pathScore === undefined))) {
+    const sequence = analyzeChordInferencePaths(observations, candidateSets);
+    candidateSets = sequence.candidateSets;
+    selectedPath = selectedPath.map((selected, index) =>
+      candidateSets[index].find((candidate) => candidate.id === selected?.id),
+    );
+  }
   const regions: ChordInferenceRegion[] = [];
   let index = 0;
   while (index < observations.length) {
@@ -80,14 +141,19 @@ export function buildChordInferenceRegions(
       indices.push(index);
       index += 1;
     }
-    const alternatives = alternativeCandidates(firstSelected, candidateSets, indices);
-    const status = regionStatus(firstSelected, alternatives);
+    const selected = firstSelected
+      ? aggregateCandidates(indices.map((observationIndex) => selectedPath[observationIndex]!))
+      : undefined;
+    // A competing path at any slice makes the whole merged region uncertain.
+    // Do not add complete-run scores together: they share the same context.
+    const alternatives = alternativeCandidates(selected, candidateSets, indices);
+    const status = regionStatus(selected, alternatives);
     regions.push({
       id: `inferred-region-${regions.length}`,
       fromTick: observations[indices[0]].fromTick,
       toTick: observations[indices.at(-1)!].toTick,
       status,
-      ...(firstSelected ? { selected: firstSelected } : {}),
+      ...(selected ? { selected } : {}),
       alternatives,
       observationIndices: Object.freeze(indices),
     });

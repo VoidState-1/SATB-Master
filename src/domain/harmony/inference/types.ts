@@ -101,6 +101,8 @@ export interface ChordInferenceCandidate {
   readonly functionalBaseId?: FunctionalBaseId;
   readonly fit: ChordFitAssessment;
   readonly score: ChordInferenceScore;
+  /** Best complete-run score constrained to pass through this candidate. */
+  readonly pathScore?: number;
   readonly confidence: ChordInferenceConfidence;
   readonly evidence: readonly ChordInferenceEvidence[];
 }
