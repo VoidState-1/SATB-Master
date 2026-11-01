@@ -224,6 +224,10 @@ function isPerfectOctave(interval: VoicePairTransitionFact["currentInterval"]) {
   );
 }
 
+function bothVoicesMove(fact: VoicePairTransitionFact) {
+  return fact.upperMotion !== "stationary" && fact.lowerMotion !== "stationary";
+}
+
 function evaluateVoicePairRule(
   context: HarmonyRuleContext,
   policy: VoicePairRulePolicy,
@@ -277,10 +281,10 @@ function evaluateVoicePairRule(
 export function parallelFifthsRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.parallel-fifths",
-    title: "平行纯五度",
-    message: "两个声部同向移动，并连续形成相同类型的完全协和音程。",
+    title: "平行或反向纯五度",
+    message: "两个声部同向或反向移动，并连续形成纯五度（含复音程）。",
     matches: (fact) =>
-      fact.sameDirection &&
+      bothVoicesMove(fact) &&
       isPerfectFifth(fact.previousInterval) &&
       isPerfectFifth(fact.currentInterval),
   });
@@ -289,10 +293,10 @@ export function parallelFifthsRule(context: HarmonyRuleContext) {
 export function parallelOctavesRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.parallel-octaves",
-    title: "平行八度或同度",
-    message: "两个声部同向移动，并连续形成相同类型的完全协和音程。",
+    title: "平行或反向八度、同度",
+    message: "两个声部同向或反向移动，并连续形成纯八度或同度（含复音程）。",
     matches: (fact) =>
-      fact.sameDirection &&
+      bothVoicesMove(fact) &&
       isPerfectOctave(fact.previousInterval) &&
       isPerfectOctave(fact.currentInterval),
   });
@@ -466,11 +470,11 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
   defineStatelessRule({
     id: "voice-leading.parallel-fifths",
     catalogNumber: "C.2",
-    label: "平行纯五度",
+    label: "平行或反向纯五度",
     description:
-      "检查任意两个声部是否同向进行并连续构成纯五度（或纯十二度）。",
+      "检查任意两个声部是否同向或反向进行并连续构成纯五度（含纯十二度等复音程）；持续音或重复同音不计入。",
     rationale:
-      "纯五度是极完全协和音程，声学共鸣高度融合。两个声部同方向平行进行纯五度，会使两个声部的独立性完全丧失，听觉上如同一个声部的加倍强化，在复调与传统四部和声中是最严重的禁忌之一。",
+      "纯五度的声学共鸣高度融合。两个声部同向或反向连续形成纯五度及其复音程，都会削弱声部独立性，因此一并检查。斜向进行及两个声部均重复同音时不按连续五度处理。",
     group: "voiceLeading",
     defaultSeverity: "error",
     requires: ["written-pitches"],
@@ -480,11 +484,11 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
   defineStatelessRule({
     id: "voice-leading.parallel-octaves",
     catalogNumber: "C.3",
-    label: "平行八度或同度",
+    label: "平行或反向八度、同度",
     description:
-      "检查任意两个声部是否同向进行并连续构成纯八度或同度。",
+      "检查任意两个声部是否同向或反向进行并连续构成纯八度或同度（含纯十五度等复音程）；持续音或重复同音不计入。",
     rationale:
-      "纯八度与同度是泛音列中最为融为一体的音程。两个声部平行进行纯八度或同度，会使四部和声实质退化为三部或二部和声，严重破坏声部独立性与织体丰富度。",
+      "纯八度与同度的声音高度融合。两个声部同向或反向连续形成八度、同度及其复音程，都会削弱声部独立性，因此一并检查。斜向进行及两个声部均重复同音时不按连续八度处理。",
     group: "voiceLeading",
     defaultSeverity: "error",
     requires: ["written-pitches"],
