@@ -97,6 +97,33 @@ function ruleIds(project: ReturnType<typeof createEmptyProject>) {
 }
 
 describe("斯波索宾基础规则检查", () => {
+  it.each([
+    [62, true],
+    [66, false],
+  ] as const)("F♯ 小调自动拼写的导音进行至 MIDI %i 时检查解决", (targetMidi, shouldReport) => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    const key = {
+      ...project.keyEvents[0],
+      tonic: { step: "F" as const, alter: 1 as const },
+      mode: "minor" as const,
+    };
+    project.keyEvents = [key];
+    const track = project.satbTracks.find((item) => item.id === "soprano")!;
+    track.notes = [65, targetMidi].map((midi, index) => ({
+      ...note(`soprano-${index}`, index * PPQ, PPQ, midi),
+      pitch: spellMidi(midi, key),
+    }));
+    const diagnostics = checkHarmony(project).diagnostics.filter(
+      (item) => item.ruleId === "resolution.leading-tone",
+    );
+    expect(diagnostics).toHaveLength(shouldReport ? 1 : 0);
+    if (shouldReport) {
+      expect(diagnostics[0]).toMatchObject({ tick: PPQ });
+      expect(diagnostics[0].message).toContain("E♯");
+    }
+  });
+
   it("识别两个声部同向形成的连续纯五度", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;

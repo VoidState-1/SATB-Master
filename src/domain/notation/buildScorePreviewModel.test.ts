@@ -1,10 +1,37 @@
 import { describe, expect, it } from "vitest";
 import { addNote } from "../editing";
 import { createEmptyProject } from "../project";
+import { spellMidi } from "../pitch";
 import { buildScorePreviewModel, SCORE_VOICE_LAYOUT } from "./buildScorePreviewModel";
 import { decomposeDuration } from "./rhythm";
 
 describe("score preview notation model", () => {
+  it("preserves the automatically spelled E sharp leading tone in F sharp minor", () => {
+    const project = createEmptyProject();
+    const key = {
+      ...project.keyEvents[0],
+      tonic: { step: "F" as const, alter: 1 as const },
+      mode: "minor" as const,
+    };
+    project.keyEvents = [key];
+    const result = addNote(project, "soprano", {
+      id: "leading-e-sharp",
+      startTick: 0,
+      durationTicks: project.ppq,
+      pitch: spellMidi(65, key),
+      velocity: 88,
+      locked: false,
+      spellingSource: "manual",
+    });
+    expect(result.error).toBeUndefined();
+    const measure = buildScorePreviewModel(result.project).measures[0];
+    expect(measure.keySignature).toBe("F#m");
+    expect(measure.voices.soprano.events[0]).toMatchObject({
+      kind: "note",
+      pitch: { step: "E", alter: 1, octave: 4 },
+    });
+  });
+
   it("keeps the fixed SATB staff mapping regardless of pitch", () => {
     expect(SCORE_VOICE_LAYOUT).toEqual({
       soprano: { voiceId: "soprano", staff: "treble", stemDirection: "up" },

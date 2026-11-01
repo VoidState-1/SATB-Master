@@ -373,6 +373,13 @@ export function spellMidi(midiNote: number, key?: KeyLike): SpelledPitch {
         break;
       }
     }
+    // 小调的升高七级不在自然音阶内，先保留导音拼写，再回退到通用音名表。
+    if (!spelling && key.mode === "minor") {
+      const leadingTone = leadingTonePitchClass(key);
+      if (pitchClassValue(leadingTone) === midiPitchClass) {
+        spelling = leadingTone;
+      }
+    }
   }
   spelling ??= (
     key && keySignatureFifths(key) < 0 ? FLAT_SPELLINGS : SHARP_SPELLINGS

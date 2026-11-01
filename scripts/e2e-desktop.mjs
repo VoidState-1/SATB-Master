@@ -344,7 +344,7 @@ async function panelMetrics() {
   return evaluate(`(() => {
     const left = document.querySelector('.track-sidebar')?.getBoundingClientRect();
     const right = document.querySelector('.inspector')?.getBoundingClientRect();
-    const bottom = document.querySelector('.diagnostics-panel')?.getBoundingClientRect();
+    const bottom = document.querySelector('.bottom-panel')?.getBoundingClientRect();
     const editor = document.querySelector('.editor-area')?.getBoundingClientRect();
     const roll = document.querySelector('.piano-roll')?.getBoundingClientRect();
     const separators = [...document.querySelectorAll('[role="separator"]')];
@@ -389,7 +389,7 @@ async function verifyPanelResizing() {
   if (!before || before.separators.length !== 3) throw new Error(`Panel separators missing: ${JSON.stringify(before)}`)
   await dragPanelResizeHandle('调整声部面板宽度', 32, 0, 31)
   await dragPanelResizeHandle('调整属性面板宽度', -36, 0, 32)
-  await dragPanelResizeHandle('调整问题面板高度', 0, -40, 33)
+  await dragPanelResizeHandle('调整底部面板高度', 0, -40, 33)
   const after = await panelMetrics()
   const orientations = after?.separators.map((item) => item.orientation).sort().join(',')
   if (!after || after.left < before.left + 28 || after.right < before.right + 32 || after.bottom < before.bottom + 36
@@ -397,7 +397,7 @@ async function verifyPanelResizing() {
     throw new Error(`Panel resizing failed: ${JSON.stringify({ before, after })}`)
   }
 
-  for (const label of ['调整声部面板宽度', '调整属性面板宽度', '调整问题面板高度']) {
+  for (const label of ['调整声部面板宽度', '调整属性面板宽度', '调整底部面板高度']) {
     await evaluate(`(() => {
       const handle = [...document.querySelectorAll('[role="separator"]')].find((item) => item.getAttribute('aria-label') === ${JSON.stringify(label)});
       handle?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, button: 0 }));
@@ -445,7 +445,7 @@ async function verifyPanelLayoutAfterRuleTestRoundTrip() {
 
   await dragPanelResizeHandle('调整声部面板宽度', 40, 0, 41)
   await dragPanelResizeHandle('调整属性面板宽度', -48, 0, 42)
-  await dragPanelResizeHandle('调整问题面板高度', 0, -52, 43)
+  await dragPanelResizeHandle('调整底部面板高度', 0, -52, 43)
   const before = await panelMetrics()
   if (!before) throw new Error('进入规则测试前无法读取面板尺寸')
 
@@ -466,7 +466,7 @@ async function verifyPanelLayoutAfterRuleTestRoundTrip() {
 
   await dragPanelResizeHandle('调整声部面板宽度', 24, 0, 44)
   await dragPanelResizeHandle('调整属性面板宽度', -24, 0, 45)
-  await dragPanelResizeHandle('调整问题面板高度', 0, -24, 46)
+  await dragPanelResizeHandle('调整底部面板高度', 0, -24, 46)
   const resized = await panelMetrics()
   if (!resized
     || resized.left < restored.left + 20
@@ -999,8 +999,9 @@ async function releaseModifier(code, key) {
 async function verifyShortcutSettings() {
   await clickButton('设置')
   await waitFor(`Boolean(document.querySelector('.settings-dialog'))`, '快捷键设置页打开')
+  await clickButton('快捷键')
   const tabCount = await evaluate(`document.querySelectorAll('.settings-tabs button').length`)
-  if (tabCount !== 3) throw new Error(`设置页选项卡数量错误：${tabCount}`)
+  if (tabCount !== 4) throw new Error(`设置页选项卡数量错误：${tabCount}`)
   const dialogLayout = await evaluate(`(() => {
     const dialog = document.querySelector('.settings-dialog');
     const content = document.querySelector('.shortcut-settings-content');
@@ -1038,6 +1039,7 @@ async function verifyShortcutSettings() {
   if (!remapped) throw new Error('重映射后的选择工具快捷键未生效')
 
   await clickButton('设置')
+  await clickButton('快捷键')
   await evaluate(`document.querySelector('[aria-label="修改“铅笔工具”快捷键"]')?.click()`)
   await delay(60)
   await dispatchShortcut('Digit5')
@@ -1057,7 +1059,7 @@ async function verifyShortcutSettings() {
 async function configureHarmonyRuleSeverity() {
   await clickButton('设置')
   await clickButton('检查规则')
-  await waitFor(`document.querySelectorAll('.rule-row').length === 81`, '列出全部检查规则')
+  await waitFor(`document.querySelectorAll('.rule-row').length === 69`, '列出全部检查规则')
   await selectRuleByKey('builtin:voice-leading.parallel-fifths')
   const layout = await evaluate(`(() => {
     const content = document.querySelector('.rule-settings-content');
@@ -1071,14 +1073,14 @@ async function configureHarmonyRuleSeverity() {
     throw new Error(`检查规则设置页布局溢出：${JSON.stringify(layout)}`)
   }
   const changed = await evaluate(`(() => {
-    const select = document.querySelector('select[aria-label="设置“平行纯五度”严重程度"]');
+    const select = document.querySelector('select[aria-label="设置“平行或反向纯五度”严重程度"]');
     if (!select) return false;
     select.value = 'suggestion';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
   })()`)
-  if (!changed) throw new Error('无法修改平行纯五度严重程度')
-  await waitFor(`document.querySelector('select[aria-label="设置“平行纯五度”严重程度"]')?.value === 'suggestion'`, '检查规则严重度更新')
+  if (!changed) throw new Error('无法修改平行或反向纯五度严重程度')
+  await waitFor(`document.querySelector('select[aria-label="设置“平行或反向纯五度”严重程度"]')?.value === 'suggestion'`, '检查规则严重度更新')
   await clickButton('关闭设置')
 }
 
@@ -1138,30 +1140,30 @@ async function verifyExternalRuleSandbox() {
 
 async function verifyHarmonyRuleSeverityApplication() {
   await waitFor(`(() => {
-    const item = [...document.querySelectorAll('.diagnostic-item')].find((candidate) => candidate.textContent?.includes('平行纯五度'));
-    return item?.classList.contains('suggestion') === true && document.querySelector('.diagnostics-header')?.textContent?.includes('个建议');
-  })()`, '平行纯五度改为建议')
+    const item = [...document.querySelectorAll('.diagnostic-item')].find((candidate) => candidate.textContent?.includes('平行或反向纯五度'));
+    return item?.classList.contains('suggestion') === true && document.querySelector('.bottom-panel-context')?.textContent?.includes('个建议');
+  })()`, '平行或反向纯五度改为建议')
 
   await clickButton('设置')
   await clickButton('检查规则')
   await selectRuleByKey('builtin:voice-leading.parallel-fifths')
   await evaluate(`(() => {
-    const select = document.querySelector('select[aria-label="设置“平行纯五度”严重程度"]');
+    const select = document.querySelector('select[aria-label="设置“平行或反向纯五度”严重程度"]');
     select.value = 'off';
     select.dispatchEvent(new Event('change', { bubbles: true }));
   })()`)
   await clickButton('关闭设置')
-  await waitFor(`![...document.querySelectorAll('.diagnostic-item')].some((item) => item.textContent?.includes('平行纯五度'))`, '严重度为无时关闭规则')
+  await waitFor(`![...document.querySelectorAll('.diagnostic-item')].some((item) => item.textContent?.includes('平行或反向纯五度'))`, '严重度为无时关闭规则')
 
   await clickButton('设置')
   await clickButton('检查规则')
   await selectRuleByKey('builtin:voice-leading.parallel-fifths')
-  await clickButton('恢复“平行纯五度”默认严重程度')
+  await clickButton('恢复“平行或反向纯五度”默认严重程度')
   await clickButton('关闭设置')
   await waitFor(`(() => {
-    const item = [...document.querySelectorAll('.diagnostic-item')].find((candidate) => candidate.textContent?.includes('平行纯五度'));
+    const item = [...document.querySelectorAll('.diagnostic-item')].find((candidate) => candidate.textContent?.includes('平行或反向纯五度'));
     return item?.classList.contains('error') === true;
-  })()`, '恢复平行纯五度默认严重度')
+  })()`, '恢复平行或反向纯五度默认严重度')
 }
 
 async function verifyEditorShortcutGestures() {
@@ -1515,7 +1517,7 @@ try {
   const draftNotes = draftProject.satbTracks.map((track) => track.notes.map((note) => [note.startTick, midiOf(note)]))
   const expectedNotes = [[[0, 72], [480, 74]], [[0, 65], [480, 67]], [[0, 60], [480, 62]], [[0, 48], [480, 50]]]
   if (JSON.stringify(draftNotes) !== JSON.stringify(expectedNotes)) throw new Error('卷帘输入结果与预期不一致')
-  await waitFor(`document.body.innerText.includes('平行纯五度') && document.body.innerText.includes('平行八度或同度')`, '和声规则诊断')
+  await waitFor(`document.body.innerText.includes('平行或反向纯五度') && document.body.innerText.includes('平行或反向八度、同度')`, '和声规则诊断')
   await clickButton('撤销')
   await clickButton('重做')
 
@@ -1553,12 +1555,22 @@ try {
 
   await waitFor(`document.body.innerText.includes(${JSON.stringify(path.join(e2eDirectory, 'project.satb'))})`, '工程保存')
   await clickButton('导出 MIDI')
-  await delay(200)
+  await waitFor(`Boolean(document.querySelector('.midi-export-form'))`, 'MIDI 导出选项')
+  await evaluate(`(() => {
+    const tab = [...document.querySelectorAll('.export-format-tab')].find((item) => item.textContent.includes('MIDI 序列'));
+    if (!tab) throw new Error('MIDI 格式选项卡缺失');
+    tab.click();
+  })()`)
+  await waitFor(`document.querySelector('.export-format-tab[aria-selected="true"]')?.textContent.includes('MIDI 序列')`, '选择 MIDI 导出格式')
+  await evaluate(`document.querySelector('.midi-export-form').requestSubmit()`)
+  await waitFor(`document.body.innerText.includes('MIDI 已导出')`, 'MIDI 导出成功提示')
+  await waitForFile(path.join(e2eDirectory, 'export.mid'), 'MIDI 导出完成')
+  await waitFor(`!document.querySelector('.midi-export-dialog')`, '关闭 MIDI 导出选项')
   await evaluate(`document.querySelector('.piano-roll')?.focus()`)
   await dispatchShortcut('KeyN', { ctrlKey: true })
   await waitFor(`document.body.innerText.includes('0 个错误')`, '新建空工程')
   await clickButton('打开工程')
-  await waitFor(`document.body.innerText.includes('平行纯五度')`, '重新打开工程')
+  await waitFor(`document.body.innerText.includes('平行或反向纯五度')`, '重新打开工程')
   await clickButton('播放')
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '重开工程后恢复用户 SF2')
   await waitFor(`Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow')) > 0.001`, '用户 SF2 实际音频输出')
