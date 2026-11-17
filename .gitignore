@@ -16,3 +16,5 @@ DesignDocs/*
 !DesignDocs/vexflow-score-preview-design.md
 !DesignDocs/project-mainlines.md
 Report
+StandardCase/Origin/
+tokei.exe
