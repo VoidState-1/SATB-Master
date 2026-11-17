@@ -4,6 +4,8 @@
 
 > `Docs` 与 `DesignDocs` 的职责不同：`Docs` 记录当前实现和长期维护约定，随代码一起更新并纳入 Git；`DesignDocs` 保存开发过程中的方案讨论、阶段设计和未定结论。若设计文档与代码不一致，以代码和本目录中经过同步的说明为准。
 
+当前已确认的四条开发主线及建议验收方向见 [项目开发主线](../DesignDocs/project-mainlines.md)：完善推导系统以实现自动解题、完善日志系统以追踪报错原因、补充规则测试用例、开发供 AI 使用的 MCP 创作与调试工具。该记录用于后续规划，具体实现能力仍以本目录各专题与代码为准。
+
 ## 1. 项目定位
 
 SATB Master 是一款离线优先的四部和声学习与编辑软件。主要交互是钢琴卷帘式 SATB 编辑器，并在同一个工程中维护和弦区域、调号、拍号、速度、循环和规则配置。桌面版本使用 Electron，浏览器模式主要承担开发预览和有限降级。
@@ -105,6 +107,7 @@ npm run generate:assets
 13. [audio-midi-and-time.md](./audio-midi-and-time.md)：统一时间轴、播放、SoundFont 和 MIDI。
 14. [desktop-and-persistence.md](./desktop-and-persistence.md)：Electron 安全边界、IPC、工程保存和恢复。
 15. [testing-build-release.md](./testing-build-release.md)：验证矩阵、桌面 E2E、打包和发布检查。
+16. [score-text.md](./score-text.md)：面向脚本和 AI 的分块 SATB 简写、语义标注、独立参考答案及文本谱。
 
 按任务也可以直接定位：
 
@@ -117,6 +120,7 @@ npm run generate:assets
 | 排查误报、诊断覆盖或复制报告 | [diagnostics-and-debugging.md](./diagnostics-and-debugging.md) |
 | 维护和弦推导、乐句或终止式 | [analysis-inference.md](./analysis-inference.md) |
 | 维护规则金样本或测试工作台 | [rule-testing.md](./rule-testing.md) |
+| 用脚本编写 SATB 或查看文本谱 | [score-text.md](./score-text.md) |
 | 开发外置规则 | [external-rules.md](./external-rules.md) |
 | 排查播放、循环、节拍器或 MIDI | [audio-midi-and-time.md](./audio-midi-and-time.md) |
 | 修改文件对话框、恢复、窗口或本地资源 | [desktop-and-persistence.md](./desktop-and-persistence.md) |
