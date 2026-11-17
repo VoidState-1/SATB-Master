@@ -20,6 +20,7 @@
     "dist:win": "npm run generate:assets && npm run build && electron-builder --win nsis --x64 --config.directories.output=release-installer",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
+    "score": "node scripts/score.mjs",
     "preview": "vite preview",
     "start": "electron ."
   },

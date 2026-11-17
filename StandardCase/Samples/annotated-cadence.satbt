@@ -1,0 +1,31 @@
+satb 1
+title "带独立终止式答案的四部和声"
+key C major
+meter 4/4
+tempo 72
+meta source "手工编写的工具示例，非教材转写"
+
+bars 1..1 {
+  S: | E4/2 D4/2 |
+  A: | C4/2 B3/2 |
+  T: | G3/2 G3/2 |
+  B: | C3/2 G2/2 |
+  H: | T/2 D/2 |
+}
+
+bars 2..2 {
+  S: | C4/1 |
+  A: | G3/1 |
+  T: | E3/1 |
+  B: | C3/1 |
+  H: | T/1 |
+}
+
+annotations {
+  phrase p1 range=[1:1,3:1)
+}
+
+reference complete=cadence {
+  cadence k1 phrase=p1 range=[1:3,3:1)
+    kind=full form=authentic completion=perfect
+}

@@ -34,6 +34,7 @@ expected      { diagnostics[], allowUnexpectedDiagnostics, skips[] }
 - `target.ruleId` 使用目录稳定 ID，例如 `resolution.leading-tone`；当前只支持 `builtin`。
 - `execution` 固定 `mode: "isolated"`：只调度目标规则，注入该用例自己的严重程度、配置与特例策略。
 - `project` 是裁剪后的工程夹具，包含 `schemaVersion`、`ppq`、`lengthTicks`、tempo/meter/key 事件、`satbTracks`、`auxiliaryTracks` 与 `chordTrack`。
+- `project.structure` 可选，用于保留已知乐句边界；旧用例未提供时按空边界恢复。新建或重新保存的用例会保留该字段。
 - `expected.diagnostics` 描述期望诊断；`allowUnexpectedDiagnostics` 控制是否允许超出期望的诊断；`skips` 描述期望的结构化跳过。
 
 `ExpectedDiagnostic` 字段：`id`、`ruleId`、`messageKey`、可选 `rootCauseKey`、`tick`、可选 `endTick`、`voiceIds`、`noteIds`、`chordIds` 与 `params`。比较按 `ruleId` + `messageKey` + `rootCauseKey` 做语义匹配，再对比 tick/endTick、对象引用与参数；越具体的期望优先匹配，避免宽泛期望吞掉具体差异。
@@ -41,6 +42,8 @@ expected      { diagnostics[], allowUnexpectedDiagnostics, skips[] }
 `ExpectedRuleSkip` 使用 `reason`（`no-chords` / `missing-semantics` / `ambiguous-semantics` / `insufficient-context` / `rule-error`）与 `partial` 布尔值。
 
 仓库根目录的 [`RuleCases/`](../RuleCases) 存放随代码维护的回归金样本，按 `<group>.<ruleId>/<name>.satb-rule-case.json` 组织。
+
+可使用独立的 [SATB 简写工具](./score-text.md) 编写工程及标注，再交给用例工厂；该工具的参考标注与工程输入隔离，不会自动充当规则 expected 或写入待测输入。
 
 ## 3. 解析与校验
 
