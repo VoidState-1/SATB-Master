@@ -108,6 +108,7 @@ npm run generate:assets
 14. [desktop-and-persistence.md](./desktop-and-persistence.md)：Electron 安全边界、IPC、工程保存和恢复。
 15. [testing-build-release.md](./testing-build-release.md)：验证矩阵、桌面 E2E、打包和发布检查。
 16. [score-text.md](./score-text.md)：面向脚本和 AI 的分块 SATB 简写、语义标注、独立参考答案及文本谱。
+17. [textbook-case-workflow.md](./textbook-case-workflow.md)：教材转写、自检比对、诊断记录与人工审计分阶段执行，方案通过后修复。
 
 按任务也可以直接定位：
 

@@ -40,6 +40,8 @@ npm run build
 
 不要在文档或发布说明中写死测试总数；新增/拆分测试会使数字很快过期。
 
+教材测试用例见 [StandardCase](../StandardCase/README.md), 处理过程遵循 [两阶段工作流](./textbook-case-workflow.md): 先比对推导、自检并记录诊断, 再汇总人工审计与方案审阅, 通过后修复和验证。Git 仅接收放入 `StandardCase/Verified/` 的已核准、已验证最终教材用例; 原 PDF、候选谱例、分析报告和运行产物留在本地忽略目录。最终测试不应依赖本地 PDF 或中间产物, 也不将程序通过率当作识谱正确率。首批未核准的临时运行脚本与集成测试已撤销。
+
 ### 2.2 `npm run typecheck`
 
 依次检查：

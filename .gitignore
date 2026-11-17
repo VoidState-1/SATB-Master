@@ -17,4 +17,10 @@ DesignDocs/*
 !DesignDocs/project-mainlines.md
 Report
 StandardCase/Origin/
+# 教材原始材料、转写草稿、分析报告与运行产物仅保留本地。
+# 仅跟踪目录说明、既有工具示例和人工核准的最终测试用例。
+/StandardCase/*
+!/StandardCase/README.md
+!/StandardCase/Samples/
+!/StandardCase/Verified/
 tokei.exe
