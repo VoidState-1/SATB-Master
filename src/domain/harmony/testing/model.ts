@@ -27,6 +27,7 @@ export interface RuleTestProjectFixture {
   tempoEvents: TempoEvent[];
   meterEvents: MeterEvent[];
   keyEvents: KeyEvent[];
+  structure?: ProjectDocument["structure"];
   satbTracks: SatbTrack[];
   auxiliaryTracks: AuxiliaryTrack[];
   chordTrack: ChordTrack;
