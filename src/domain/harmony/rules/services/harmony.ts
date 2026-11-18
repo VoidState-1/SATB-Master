@@ -11,7 +11,21 @@ import type {
   AnalysisSlice,
   HarmonySpan,
 } from "../../analysis";
+import { leadingTonePitchClass, scaleDegreePitchClass, type KeyLike } from "../../../pitch";
 import { chordMemberFacts } from "../sharedFacts";
+
+export function leadingToneForFunction(baseKey: KeyLike, interpretation?: HarmonyInterpretation) {
+  const key = interpretation?.localKey ?? baseKey;
+  const designation = interpretation?.designation?.kind;
+  const targetDegree = interpretation?.appliedTarget?.degree ?? (
+    designation === "double-dominant" || designation === "double-dominant-leading-tone" ? 5 : undefined
+  );
+  if (!targetDegree) return { tone: leadingTonePitchClass(key), applied: false };
+  return {
+    tone: leadingTonePitchClass({ tonic: scaleDegreePitchClass(key, targetDegree), mode: "major" }),
+    applied: true,
+  };
+}
 
 export type Resolution<T> =
   | {

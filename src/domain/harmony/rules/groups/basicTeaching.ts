@@ -6,7 +6,6 @@ import type { RuleDiagnostic } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
-  leadingTonePitchClass,
   pitchClassEquals,
   pitchClassValue,
   scaleDegreePitchClass,
@@ -22,6 +21,7 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { leadingToneForFunction } from "../services/harmony";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 const UPPER_VOICES = ["soprano", "alto", "tenor"] as const;
@@ -194,7 +194,11 @@ export function rootPositionTriadDoublingRule(context: HarmonyRuleContext) {
       fact.chord.identity.structure.quality === "diminished"
     )
       return;
-    const leadingTone = leadingTonePitchClass(fact.slice.key);
+    const resolution = context.harmony.primaryInterpretation(fact.chord);
+    const { tone: leadingTone } = leadingToneForFunction(
+      fact.slice.key,
+      resolution.status === "resolved" ? resolution.value : undefined,
+    );
     if (
       fact.counts.some(
         (count, index) =>

@@ -9,9 +9,7 @@ import type { RuleDiagnostic } from "../../runtime";
 import { effectiveFunctionalDesignation } from "../../../functionalHarmonyCatalog";
 import {
   formatPitchClass,
-  leadingTonePitchClass,
   pitchClassEquals,
-  scaleDegreePitchClass,
   toMidi,
   writtenInterval,
   type SpelledPitchClass,
@@ -26,6 +24,7 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import { leadingToneForFunction } from "../services/harmony";
 
 interface ChordSliceFact {
   slice: HarmonyAnalysis["slices"][number];
@@ -200,9 +199,18 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
 
 interface RepeatedChordTonePolicy {
   id: "chord.doubled-leading-tone" | "chord.doubled-seventh";
-  target(fact: ChordSliceFact): SpelledPitchClass | undefined;
+  target(fact: ChordSliceFact): { tone: SpelledPitchClass; applied?: boolean } | undefined;
   title: string;
   message(chord: ChordSliceFact["chord"], target: SpelledPitchClass): string;
+}
+
+function repeatedTendencyCause(
+  { slice, chord }: ChordSliceFact,
+  tone: SpelledPitchClass,
+  repeated: ChordSliceFact["active"],
+) {
+  const subjects = repeated.map(({ voiceId, note }) => `${voiceId}:${note.id}`).sort();
+  return `repeated-tendency-tone|${chord.id}|${slice.tick}-${slice.endTick}|${formatPitchClass(tone)}|${subjects.join(",")}`;
 }
 
 function evaluateRepeatedChordToneRule(
@@ -214,9 +222,8 @@ function evaluateRepeatedChordToneRule(
     if (!fact.stableComplete) return;
     const target = policy.target(fact);
     if (!target) return;
-    const repeated = fact.active.filter(({ note }) =>
-      pitchClassEquals(note.pitch, target),
-    );
+    const { tone, applied } = target;
+    const repeated = fact.active.filter(({ note }) => pitchClassEquals(note.pitch, tone));
     if (repeated.length <= 1) return;
     diagnostics.push(
       diagnostic(
@@ -226,9 +233,10 @@ function evaluateRepeatedChordToneRule(
         repeated.map((item) => item.voiceId),
         repeated.map((item) => item.note),
         policy.title,
-        policy.message(fact.chord, target),
+        policy.message(fact.chord, tone),
         {
           chordIds: [fact.chord.id],
+          ...(applied ? { causeRefs: [repeatedTendencyCause(fact, tone, repeated)] } : {}),
           evidence: [
             chordEvidence(fact.chord),
             ...repeated.map((item) => noteEvidence(item.note)),
@@ -245,10 +253,8 @@ export function doubledLeadingToneRule(context: HarmonyRuleContext) {
     id: "chord.doubled-leading-tone",
     target: ({ slice, chord }) => {
       const resolution = context.harmony.primaryInterpretation(chord);
-      const localKey = resolution.status === "resolved"
-        ? resolution.value.localKey
-        : undefined;
-      return leadingTonePitchClass(localKey ?? slice.key);
+      const interpretation = resolution.status === "resolved" ? resolution.value : undefined;
+      return leadingToneForFunction(slice.key, interpretation);
     },
     title: "重复导音",
     message: (_chord, target) =>
@@ -259,7 +265,7 @@ export function doubledLeadingToneRule(context: HarmonyRuleContext) {
 export function doubledSeventhRule(context: HarmonyRuleContext) {
   return evaluateRepeatedChordToneRule(context, {
     id: "chord.doubled-seventh",
-    target: ({ tones }) => (tones.length === 4 ? tones[3] : undefined),
+    target: ({ tones }) => (tones.length === 4 ? { tone: tones[3] } : undefined),
     title: "重复和弦七音",
     message: (chord, target) =>
       `${chordLabel(chord)} 的七音 ${formatPitchClass(target)} 不应重复。`,
@@ -269,7 +275,8 @@ export function doubledSeventhRule(context: HarmonyRuleContext) {
 export function doubledAlteredTendencyToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   chordSliceFacts(context).forEach(
-    ({ slice, chord, active, stableComplete }) => {
+    (fact) => {
+      const { slice, chord, active, stableComplete } = fact;
       if (!stableComplete || chord.identity.structure.kind !== "tertian")
         return;
       const directionalTones: Array<{
@@ -293,59 +300,41 @@ export function doubledAlteredTendencyToneRule(context: HarmonyRuleContext) {
       const resolution = context.harmony.primaryInterpretation(chord);
       const interpretation =
         resolution.status === "resolved" ? resolution.value : undefined;
-      const designationKind = interpretation?.designation?.kind;
-      const targetDegree =
-        interpretation?.appliedTarget?.degree ??
-        (designationKind === "double-dominant" ||
-        designationKind === "double-dominant-leading-tone"
-          ? 5
-          : undefined);
-      if (targetDegree) {
-        const targetTonic = scaleDegreePitchClass(slice.key, targetDegree, 0);
-        const targetLeadingTone = leadingTonePitchClass({
-          tonic: targetTonic,
-          mode: "major",
-        });
-        if (
-          chordIdentityToneSpellings(chord.identity).some((tone) =>
-            pitchClassEquals(tone, targetLeadingTone),
-          ) &&
-          !directionalTones.some(({ tone }) =>
-            pitchClassEquals(tone, targetLeadingTone),
-          )
-        )
-          directionalTones.push({
-            tone: targetLeadingTone,
-            tendency: "up",
-            degree: 7,
-          });
-      }
-      directionalTones.forEach(({ tone, tendency, degree }) => {
-        const repeated = active.filter(({ note }) =>
-          pitchClassEquals(note.pitch, tone),
+      const leading = leadingToneForFunction(slice.key, interpretation);
+      const targetLeadingTone = leading.applied ? leading.tone : undefined;
+      if (
+        targetLeadingTone &&
+        fact.tones.some((tone) => pitchClassEquals(tone, targetLeadingTone)) &&
+        !directionalTones.some(({ tone }) => pitchClassEquals(tone, targetLeadingTone))
+      ) directionalTones.push({ tone: targetLeadingTone, tendency: "up", degree: 7 });
+      const repeatedTones = directionalTones.map((item) => ({
+        ...item,
+        repeated: active.filter(({ note }) => pitchClassEquals(note.pitch, item.tone)),
+      })).filter(({ repeated }) => repeated.length > 1);
+      repeatedTones.forEach(({ tone, tendency, degree, repeated }) => {
+        const report = diagnostic(
+          "chord.doubled-altered-tendency-tone",
+          slice.tick,
+          slice.endTick,
+          [],
+          [],
+          "重复变化倾向音",
+          `${chordLabel(chord)} 的 ${formatPitchClass(tone)} 具有明确的${tendency === "up" ? "上行" : "下行"}倾向，不应重复。`,
+          {
+            chordIds: [chord.id],
+            ...(targetLeadingTone && pitchClassEquals(tone, targetLeadingTone)
+              ? { coverageRefs: [repeatedTendencyCause(fact, tone, repeated)] }
+              : {}),
+            params: { degree, tendency, count: repeated.length },
+            evidence: [
+              chordEvidence(chord),
+              ...repeated.map(({ note }) => noteEvidence(note, "重复变化倾向音")),
+            ],
+          },
         );
-        if (repeated.length <= 1) return;
-        diagnostics.push(
-          diagnostic(
-            "chord.doubled-altered-tendency-tone",
-            slice.tick,
-            slice.endTick,
-            [],
-            [],
-            "重复变化倾向音",
-            `${chordLabel(chord)} 的 ${formatPitchClass(tone)} 具有明确的${tendency === "up" ? "上行" : "下行"}倾向，不应重复。`,
-            {
-              chordIds: [chord.id],
-              params: { degree, tendency, count: repeated.length },
-              evidence: [
-                chordEvidence(chord),
-                ...repeated.map(({ note }) =>
-                  noteEvidence(note, "重复变化倾向音"),
-                ),
-              ],
-            },
-          ),
-        );
+        diagnostics.push(repeatedTones.length > 1
+          ? { ...report, rootCauseKey: formatPitchClass(tone) }
+          : report);
       });
     },
   );
@@ -636,7 +625,7 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.8",
     label: "重复导音",
     description:
-      "检查和弦配置中是否在两个或以上声部中同时出现了调式导音（Ⅶ级）。",
+      "检查和弦中是否有两个或以上声部同时使用当前调性或功能目标的书写导音。",
     rationale:
       "导音是调式中最不稳定、具有最强烈向上半音倾向主音的倾向音。如果重复导音，按规范解决时必然导致两个声部同向级进进入主音，从而产生不可避免的平行八度；若其中一个导音不解决，又会违背倾向音解决法则。",
     group: "chord",
@@ -671,6 +660,7 @@ export const CHORD_RULES = defineRuleGroup(
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
     dependencyScope: "chord",
+    coveredRuleIds: ["chord.doubled-leading-tone"],
     evaluate: doubledAlteredTendencyToneRule,
   }),
   defineStatelessRule({
