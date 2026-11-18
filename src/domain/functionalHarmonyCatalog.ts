@@ -361,7 +361,9 @@ export function applyFunctionalDefinition(
   return {
     ...draft,
     degree: definition.degree,
-    degreeAlteration: definition.degreeAlteration,
+    degreeAlteration: definition.augmentedSixthVariant && mode === "minor"
+      ? 0
+      : definition.degreeAlteration,
     quality,
     extensions: form === "ninth" ? [9] : [],
     alterations: [],

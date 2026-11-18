@@ -483,7 +483,7 @@ export function resolveChordIdentity(
 ): ChordIdentity {
   if (draft.augmentedSixthVariant) {
     const baseKey = draft.localKey ?? key;
-    const root = scaleDegreePitchClass(baseKey, 6, -1);
+    const root = scaleDegreePitchClass(baseKey, 6, baseKey.mode === "minor" ? 0 : -1);
     return {
       root,
       structure: {
