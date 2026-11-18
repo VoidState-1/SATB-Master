@@ -1,6 +1,7 @@
-import { ScanLine } from "lucide-react";
+import { Focus, Maximize2, ScanLine } from "lucide-react";
 import { useState } from "react";
 import type { AuditCase, AuditItem } from "../../domain/audit";
+import "./audit-evidence.css";
 
 export function AuditSource({ source, title, region }: { source: AuditCase["source"]; title: string; region?: AuditItem["sourceRegion"] }) {
   const [zoom, setZoom] = useState(100);
@@ -13,9 +14,13 @@ export function AuditSource({ source, title, region }: { source: AuditCase["sour
   } : { x: 0, y: 0, right: 1, bottom: 1 };
   const width = view.right - view.x;
   const height = view.bottom - view.y;
-  return <section className="audit-source-card">
-    <div className="audit-card-heading"><div className="audit-card-label"><ScanLine size={16} /><strong>教材原图</strong>{region && <span>橙框为定位范围</span>}</div>
-      <div className="audit-inline-controls">{region && <button onClick={() => setFocus((value) => !value)}>{focus ? "完整裁图" : "定位标记"}</button>}<label title="原图缩放">{zoom}% <input aria-label="原图缩放" type="range" min="60" max="200" step="10" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} /></label></div>
+  return <section className="audit-source-card" aria-label="教材原图">
+    <div className="audit-card-heading audit-evidence-toolbar">
+      <div className="audit-card-label"><ScanLine size={15} aria-hidden="true" /><strong>教材原图</strong>{region && <span className="audit-evidence-marker source" title="橙框为定位范围" aria-label="橙框为定位范围" />}</div>
+      <div className="audit-inline-controls">
+        {region && <button className="audit-evidence-icon" aria-label={focus ? "完整裁图" : "定位标记"} title={focus ? "显示完整裁图" : "聚焦定位范围"} aria-pressed={focus} onClick={() => setFocus((value) => !value)}>{focus ? <Maximize2 size={15} /> : <Focus size={15} />}</button>}
+        <label title="原图缩放"><input aria-label="原图缩放" type="range" min="60" max="200" step="10" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} /><output className="audit-evidence-scale">{zoom}%</output></label>
+      </div>
     </div>
     {failed && <p className="audit-warning" role="status">原图无法解码，请要求模型重新提供清晰裁图。</p>}
     {source.image && !failed ? <div className="audit-source-scroll"><div className="audit-source-image" style={{ width: `${zoom}%`, maxWidth: `calc(var(--audit-source-fit-height) * ${(natural.width * width) / (natural.height * height) * zoom / 100})`, aspectRatio: `${natural.width * width} / ${natural.height * height}` }}>

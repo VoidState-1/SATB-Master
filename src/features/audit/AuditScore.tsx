@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Music2, Play, Square, ZoomIn, ZoomOut } from "lucide-react";
+import { Focus, Maximize2, Music2, Pause, Play, Square, ZoomIn, ZoomOut } from "lucide-react";
 import type { BoundAuditCase, BoundAuditItem } from "../../domain/audit";
 import type { ProjectDocument } from "../../domain/project";
 import { buildScorePreviewModel } from "../../domain/notation";
@@ -7,6 +7,8 @@ import { toMidi } from "../../domain/pitch";
 import { audioEngine } from "../../audio/audioEngine";
 import { usePlaybackController } from "../../app/controllers/usePlaybackController";
 import { loadVexFlow, renderScorePreview } from "../scorePreview";
+
+import "./audit-evidence.css";
 
 const readOnlyHistory = { commit() {} };
 export function AuditScore({ auditCase, selected, project: suppliedProject, showNotice }: { auditCase: BoundAuditCase; selected?: BoundAuditItem; project?: ProjectDocument; showNotice(message: string): void }) {
@@ -61,20 +63,21 @@ export function AuditScore({ auditCase, selected, project: suppliedProject, show
     return () => { active = false; cleanup?.(); };
   }, [model, scale, width, selected, preview]);
   return <section className="audit-score-card" aria-label="转写谱面">
-    <div className="audit-card-heading">
-      <div className="audit-card-label"><Music2 size={16} /><strong>转写五线谱</strong><span>绿色为审计范围</span></div>
-      <div className="audit-inline-controls">
-        <button onClick={() => setWholeScore((v) => !v)}>{wholeScore ? "问题附近" : "查看全谱"}</button>
-        <button aria-label="缩小谱面" onClick={() => setScale((v) => Math.max(.75, v - .15))}><ZoomOut size={16} /></button>
-        <button aria-label="放大谱面" onClick={() => setScale((v) => Math.min(1.5, v + .15))}><ZoomIn size={16} /></button>
+    <div className="audit-card-heading audit-evidence-toolbar">
+      <div className="audit-card-label"><Music2 size={15} aria-hidden="true" /><strong>转写五线谱</strong>{selected && <span className="audit-evidence-marker score" title="绿色为审计范围" aria-label="绿色为审计范围" />}</div>
+      <div className="audit-score-transport" role="group" aria-label="谱面试听">
+        <button className={`audit-evidence-icon ${playback.isPlaying ? "is-active" : ""}`} aria-label={playback.isPlaying ? "暂停试听" : "循环试听此段"} title={playback.isPlaying ? "暂停试听" : "循环试听此段"} onClick={() => void playback.handlePlay()}>{playback.isPlaying ? <Pause size={15} /> : <Play size={15} />}<span className="audit-evidence-sr">{playback.isPlaying ? "暂停试听" : "循环试听此段"}</span></button>
+        <button className="audit-evidence-icon" aria-label="停止" title="停止试听" onClick={() => { playback.handleStop(); playback.setPlayheadTick(fromTick); }}><Square size={14} /></button>
+      </div>
+      <div className="audit-inline-controls" role="group" aria-label="谱面视图">
+        <button className="audit-evidence-icon" aria-label={wholeScore ? "问题附近" : "查看全谱"} title={wholeScore ? "显示问题附近" : "查看全谱"} aria-pressed={wholeScore} onClick={() => setWholeScore((v) => !v)}>{wholeScore ? <Focus size={15} /> : <Maximize2 size={15} />}</button>
+        <button className="audit-evidence-icon" aria-label="缩小谱面" title="缩小谱面" disabled={scale <= .75} onClick={() => setScale((v) => Math.max(.75, v - .15))}><ZoomOut size={15} /></button>
+        <output className="audit-evidence-scale" aria-label="谱面缩放">{Math.round(scale * 100)}%</output>
+        <button className="audit-evidence-icon" aria-label="放大谱面" title="放大谱面" disabled={scale >= 1.5} onClick={() => setScale((v) => Math.min(1.5, v + .15))}><ZoomIn size={15} /></button>
       </div>
     </div>
     <div className="audit-score-scroll"><div ref={host} className="audit-score-surface" /></div>
     {warning && <p className="audit-warning" role="status">{warning}</p>}
-    <div className="audit-score-transport">
-      <button className={playback.isPlaying ? "is-active" : ""} onClick={() => void playback.handlePlay()}><Play size={15} />{playback.isPlaying ? "暂停试听" : "循环试听此段"}</button>
-      <button onClick={() => { playback.handleStop(); playback.setPlayheadTick(fromTick); }}><Square size={14} />停止</button>
-      <span>{playback.audioMessage}</span>
-    </div>
+    {playback.audioMessage && <p className="audit-evidence-audio" role="status">{playback.audioMessage}</p>}
   </section>;
 }

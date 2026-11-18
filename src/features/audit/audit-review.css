@@ -1,0 +1,70 @@
+/* 中央分析：将谱面与对应判断并列，窄窗口依次阅读。 */
+.audit-analysis { min-width: 0; }
+.audit-analysis .audit-detail-heading { padding: 5px 0 12px; }
+.audit-analysis .audit-tags { flex-wrap: wrap; gap: 6px 9px; }
+.audit-analysis .audit-badge { padding: 1px 5px; border-radius: 3px; }
+.audit-analysis .audit-tags code { font: 11px Consolas, monospace; }
+.audit-analysis .audit-detail-heading h3 { margin: 7px 0 0; font-size: 18px; font-weight: 650; line-height: 1.5; }
+.audit-analysis .audit-location { margin-top: 4px; font-size: 11px; line-height: 1.5; }
+.audit-analysis > .audit-question { display: grid; grid-template-columns: 58px minmax(0,1fr); align-items: start; gap: 10px; margin-bottom: 10px; padding: 10px 12px; }
+.audit-analysis h4 { font-size: 12px; font-weight: 650; line-height: 1.7; }
+.audit-analysis .audit-question p { margin: 0; }
+.audit-evidence-pair { display: grid; grid-template-columns: minmax(0,1fr); align-items: start; gap: 0 18px; margin-bottom: 12px; }
+.audit-evidence-media,.audit-evidence-caption,.audit-analysis-editor { min-width: 0; }
+.audit-evidence-media > :is(.audit-source-card,.audit-score-card) { margin-bottom: 0; }
+.audit-evidence-caption { padding: 11px 0; }
+.audit-analysis .audit-analysis-block { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.audit-analysis .audit-analysis-block h4 { margin-bottom: 5px; color: var(--muted); }
+.audit-analysis .audit-analysis-content { min-width: 0; }
+.audit-analysis :is(.audit-analysis-block,.audit-question) p,
+.audit-analysis .audit-analysis-content > strong { display: block; margin: 0; font-size: 13px; font-weight: 400; line-height: 1.8; white-space: pre-wrap; }
+.audit-analysis .audit-analysis-content > strong { font-weight: 650; }
+.audit-analysis .audit-analysis-content > strong + p { margin-top: 5px; color: var(--muted); }
+.audit-analysis .audit-run { margin-top: 6px; }
+.audit-analysis .audit-run p { font-size: 11px; }
+.audit-analysis .audit-reference { padding: 9px 0; }
+.audit-analysis .audit-reference:first-child { padding-top: 0; }
+.audit-analysis .audit-reference:last-child { border-bottom: 0; padding-bottom: 0; }
+.audit-analysis .audit-reference > :is(a,strong) { font-size: 12px; line-height: 1.7; font-weight: 550; }
+.audit-analysis .audit-reference small { margin-top: 2px; line-height: 1.6; }
+.audit-analysis .audit-reference p { margin-top: 4px; color: var(--muted); }
+.audit-analysis-text > .audit-analysis-block { display: grid; grid-template-columns: 70px minmax(0,1fr); align-items: start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.audit-analysis-editor { margin-bottom: 12px; }
+@container (min-width: 760px) {
+  .audit-evidence-pair.has-caption { grid-template-columns: minmax(0,2fr) minmax(230px,1fr); }
+  .audit-evidence-pair.has-caption .audit-evidence-caption { padding: 9px 0 9px 15px; border-left: 1px solid var(--line); }
+}
+
+/* 意见栏：预审与人工结论直接呈现，保留一处条目翻页。 */
+.audit-detail-pane .audit-panel-bar { min-height: 42px; padding: 0 14px; }
+.audit-detail-pane .audit-panel-bar h2 { font-size: 13px; }
+.audit-detail-pane .audit-review-scroll { padding: 0 14px 14px; }
+.audit-detail-pane .audit-review-scroll h4 { color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.7; }
+.audit-detail-pane .audit-preflight { padding-top: 11px; }
+.audit-detail-pane .audit-preflight-heading { margin-bottom: 5px; }
+.audit-detail-pane .audit-preflight h3 { font-size: 12px; font-weight: 650; color: var(--ink); }
+.audit-detail-pane .audit-preflight fieldset { border-top: 0; border-bottom: 1px solid var(--line); padding: 10px 0; }
+.audit-detail-pane .audit-preflight fieldset:last-child { border-bottom: 0; }
+.audit-detail-pane .audit-preflight legend { font-size: 12px; font-weight: 550; line-height: 1.7; padding-bottom: 5px; }
+.audit-question-number { color: var(--muted); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.audit-detail-pane .audit-required { display: inline-block; margin-left: 6px; font-size: 10px; }
+.audit-detail-pane .audit-question-options { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 12px; }
+.audit-detail-pane .audit-question-options label { max-width: 100%; min-width: 0; gap: 5px; padding: 3px 0; border-radius: 0; font-size: 12px; line-height: 1.6; }
+.audit-detail-pane .audit-question-options label:hover,
+.audit-detail-pane .audit-question-options label:has(:checked) { background: transparent; }
+.audit-detail-pane .audit-question-options label:has(:checked) { color: var(--accent); }
+.audit-detail-pane .audit-question-options input { margin-top: 3px; }
+.audit-detail-pane .audit-question-suggestion { gap: 8px; align-items: baseline; padding: 3px 0 0; margin-top: 2px; border-radius: 0; background: transparent; color: var(--muted); line-height: 1.6; }
+.audit-detail-pane :is(.audit-question-suggestion button,.audit-question-clear,.audit-preflight-heading button) { min-height: 23px; padding: 1px 0; border: 0; background: transparent; font-size: 11px; }
+.audit-detail-pane :is(.audit-question-suggestion button,.audit-question-clear,.audit-preflight-heading button):hover:enabled { text-decoration: underline; }
+.audit-detail-pane .audit-preflight fieldset > textarea { padding: 6px 8px; font-size: 12px; }
+.audit-detail-pane .audit-human-review { padding-top: 12px; margin-top: 2px; }
+.audit-detail-pane .audit-human-review > h4 { margin-bottom: 10px; color: var(--ink); font-weight: 650; }
+.audit-detail-pane .audit-human-review:first-child { border-top: 0; }
+.audit-workbench .audit-opinion { gap: 9px; }
+.audit-workbench .audit-opinion .audit-opinion-field { display: grid; grid-template-columns: 78px minmax(0,1fr); align-items: center; gap: 10px; line-height: 1.5; }
+.audit-workbench .audit-opinion select { min-height: 32px; padding: 5px 7px; font-size: 12px; }
+.audit-workbench .audit-opinion .audit-opinion-comment { gap: 5px; }
+.audit-workbench .audit-opinion textarea { padding: 7px 8px; font-size: 12px; }
+.audit-workbench .audit-opinion .audit-opinion-required { margin: -3px 0 1px; font-size: 11px; line-height: 1.5; }
+.audit-workbench .audit-opinion small { font-size: 10px; line-height: 1.5; }

@@ -11,7 +11,7 @@ const score = `satb 1\nkey C major\nbars 1..2 {\nS: | B4/1 | C5/1 |\nA: | G4/1 |
 const manifestValue = {
   format: "satb-audit-manifest", formatVersion: 2, id: "audit-e2e", title: "审计交互验证",
   cases: [{ id: "one", title: "手工接口样例", projectFile: "sample.satb", source: { title: "合成测试, 非教材参考答案" }, items: [
-    { id: "finding", title: "检查导音与谱面位置", category: "diagnostic", severity: "warning", range: ["1:1", "3:1"], voices: ["soprano"], model: { conclusion: "待人工判断", reason: "测试人工意见和原始结果分别保存。" }, program: { conclusion: "此处为模拟诊断, 不代表规则实际判断。", ruleId: "synthetic.example" }, questions: [
+    { id: "finding", title: "检查导音与谱面位置", category: "diagnostic", severity: "warning", range: ["1:1", "3:1"], voices: ["soprano"], model: { conclusion: "待人工判断", reason: "测试人工意见和原始结果分别保存。" }, program: { conclusion: "此处为模拟诊断, 不代表规则实际判断。", ruleId: "synthetic.example" }, question: "请独立裁定模拟诊断的适用边界。", evidence: [{ title: "合成参考材料", locator: "E2E 布局验证", content: "此依据仅验证图文与意见分区，不构成教材结论。" }], questions: [
       { id: "spelling", type: "single", label: "是否完成逐音核对", required: true, options: [{ id: "yes", label: "已核对" }, { id: "unknown", label: "仍需核对" }], suggested: "yes" },
       { id: "conditions", type: "multiple", label: "已核对的条件", options: [{ id: "voice", label: "声部位置" }, { id: "pitch", label: "书写音高" }], suggested: ["voice", "pitch"] },
       { id: "limit", type: "text", label: "补证范围", suggested: "教材依据待补" },
@@ -56,6 +56,54 @@ async function click(label) {
   const result = await evaluate(`(() => { const b=[...document.querySelectorAll('button')].find(e=>e.getAttribute('aria-label')===${JSON.stringify(label)}||e.textContent.trim()===${JSON.stringify(label)}); if(!b||b.disabled||!b.checkVisibility())return false;b.click();return true;})()`);
   if (!result) throw new Error(`Missing button: ${label}`);
 }
+async function assertReviewLayout(title, { questions = false, decision = "审计结论" } = {}) {
+  await wait(`(() => {
+    const analysis = document.querySelector('.audit-evidence-pane .audit-analysis');
+    const detail = document.querySelector('.audit-detail-pane');
+    const control = detail?.querySelector('[aria-label="${decision}"]');
+    return document.querySelectorAll('.audit-analysis').length === 1 && analysis?.checkVisibility()
+      && [...analysis.querySelectorAll('h2,h3')].some(e => e.textContent.trim() === ${JSON.stringify(title)}) && analysis.textContent.includes('模型判断')
+      && analysis.textContent.includes('参考依据') && control?.checkVisibility()
+      && !!detail.querySelector('.audit-human-review') && !!detail.querySelector('.audit-panel-bar nav')
+      && ${questions ? "!!detail.querySelector('.audit-preflight')" : "!detail.querySelector('.audit-preflight')"};
+  })()`, `中栏分析或右栏意见未就绪: ${title}`);
+  if (!await evaluate(`(() => {
+    const detail = document.querySelector('.audit-detail-pane');
+    return !detail.querySelector('.audit-analysis,.audit-detail-heading,.audit-analysis-block,.audit-question,.audit-reference,.audit-review-tabs,[role="tablist"]')
+      && ![...detail.querySelectorAll('button')].some(e => ['填写本条意见','填写意见','分析依据'].includes(e.textContent.trim()))
+      && !!document.querySelector('.audit-evidence-pane [aria-label="谱例转写复核"]');
+  })()`)) throw new Error("右栏仍混有分析内容或旧跳转，或转写复核离开了中栏");
+}
+async function assertImagePairs({ wide = false } = {}) {
+  await wait(`(() => {
+    const source = document.querySelector('.audit-analysis .audit-source-card')?.closest('.audit-evidence-pair');
+    const score = document.querySelector('.audit-analysis .audit-score-card')?.closest('.audit-evidence-pair');
+    if (!source?.querySelector('.audit-evidence-caption .model') || !score?.querySelector('.audit-evidence-caption')?.textContent.includes('程序结果')) return false;
+    return ${wide} ? [source, score].every(pair => {
+      const media = pair.querySelector('.audit-evidence-media').getBoundingClientRect();
+      const caption = pair.querySelector('.audit-evidence-caption').getBoundingClientRect();
+      return media.width > 0 && caption.width > 0 && caption.left >= media.right - 1 && Math.abs(media.top - caption.top) < 2;
+    }) : true;
+  })()`, `${wide ? "大窗口" : "谱面视图"}未将原图与模型、转写与程序结果对应排版`);
+}
+async function horizontallyVisible(selector) {
+  return evaluate(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e?.checkVisibility()) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.left >= -1 && r.right <= innerWidth + 1; })()`);
+}
+async function checkNarrowLayout() {
+  await send("Emulation.setDeviceMetricsOverride", { width: 900, height: 820, deviceScaleFactor: 1, mobile: false });
+  await wait(`innerWidth===900`, "窄窗口尺寸未应用");
+  await assertReviewLayout("检查导音与谱面位置", { questions: true });
+  if (!await horizontallyVisible(".audit-project-canvas") || !await horizontallyVisible(".audit-detail-pane") || await horizontallyVisible(".audit-sidebar") || !await horizontallyVisible(".audit-analysis")) throw new Error("窄窗口挤压或遮挡了工程、分析和意见");
+  await capture("audit-synthetic-narrow.png");
+  await click("审计目录");
+  if (!await horizontallyVisible(".audit-sidebar") || !await horizontallyVisible(".audit-project-canvas")) throw new Error("窄窗口无法同时查看目录与工程");
+  await evaluate(`document.querySelectorAll('.audit-item')[1].click()`);
+  await assertReviewLayout("独立修复方案", { decision: "方案审阅决定" });
+  if (await horizontallyVisible(".audit-sidebar") || !await horizontallyVisible(".audit-detail-pane")) throw new Error("选择条目后未回到意见面板");
+  await click("上一条");
+  await assertReviewLayout("检查导音与谱面位置", { questions: true });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+}
 async function setField(label, value, textarea = false) {
   await evaluate(`(() => {const e=document.querySelector('[aria-label="${label}"]');Object.getOwnPropertyDescriptor(${textarea ? "HTMLTextAreaElement" : "HTMLSelectElement"}.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('${textarea ? "input" : "change"}',{bubbles:true}));})()`);
 }
@@ -94,7 +142,13 @@ try {
   await wait(`!!document.querySelector('.audit-empty') && !document.querySelector('.audit-empty button.audit-primary').disabled`, "审计空态未就绪");
   await upload("审计包文件", input);
   await wait(`document.querySelectorAll('.audit-item').length===2 && !!document.querySelector('[data-audit-selected="true"]')`, "条目导入或五线谱定位失败");
-  await click("填写本条意见");
+  await assertReviewLayout("检查导音与谱面位置", { questions: true });
+  await assertImagePairs();
+  await send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  await assertImagePairs({ wide: true });
+  await capture("audit-synthetic-wide.png");
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  if (!await evaluate(`document.querySelector('.audit-evidence-pane .audit-analysis').textContent.includes('请独立裁定模拟诊断的适用边界。') && document.querySelector('.audit-evidence-pane .audit-analysis').textContent.includes('此处为模拟诊断') && document.querySelector('.audit-evidence-pane .audit-analysis').textContent.includes('合成参考材料')`)) throw new Error("中栏缺少待裁定、程序结果或参考材料");
   if (!await evaluate(`!document.querySelector('.audit-preflight input:checked') && document.querySelector('[aria-label="审计结论"] option[value="accept"]').disabled`)) throw new Error("模型建议被当作人工作答或未答必填题已可批准");
   await click("填入未作答项");
   await wait(`document.querySelectorAll('.audit-preflight input:checked').length===3`, "预填单选/多选没有应用");
@@ -114,6 +168,7 @@ try {
   await click("工程 · 钢琴卷帘");
   await wait(`!!document.querySelector('.audit-project-editor .piano-roll') && document.querySelector('.audit-project-editor')?.dataset.auditNoteCount==='8'`, "工程附件没有进入卷帘");
   await wait(`!!document.querySelector('.audit-project-properties select')`, "选中音符属性未显示");
+  await assertReviewLayout("检查导音与谱面位置", { questions: true });
   await evaluate(`(() => { const label=[...document.querySelectorAll('.audit-project-properties label')].find(e=>e.querySelector('span')?.textContent==='音名'); const e=label.querySelector('select');e.value='A';e.dispatchEvent(new Event('change',{bubbles:true})); })()`);
   if (await selectedPitch() !== "A") throw new Error("条目工程副本不能编辑");
   await wait(`document.querySelector('[aria-label="审计结论"]').value==='pending'`, "修改副本未撤回原决定");
@@ -125,15 +180,15 @@ try {
   const exportedProject = path.join(directory, "one-finding.satb");
   for (let i = 0; i < 50; i++) { try { await access(exportedProject); break; } catch { await delay(100); } }
   if (JSON.parse(await readFile(exportedProject, "utf8")).satbTracks[0].notes[0].pitch.step !== "A") throw new Error("工程导出未包含当前副本");
-  await evaluate(`document.querySelectorAll('.audit-item')[1].click()`);
+  await click("下一条");
+  await assertReviewLayout("独立修复方案", { decision: "方案审阅决定" });
   await wait(`!!document.querySelector('.audit-project-properties select')`, "另一条工程未显示");
   if (await selectedPitch() !== "B") throw new Error("编辑一个条目污染了另一条工程副本");
-  await click("填写意见");
   if (await evaluate(`document.querySelector('[aria-label="方案审阅决定"]').value`) !== "pending") throw new Error("谱例或判断审阅意外批准了修复方案");
-  await evaluate(`document.querySelectorAll('.audit-item')[0].click()`);
+  await click("上一条");
+  await assertReviewLayout("检查导音与谱面位置", { questions: true });
   await wait(`!!document.querySelector('.audit-project-properties select')`, "返回原条目工程失败");
   if (await selectedPitch() !== "A") throw new Error("切换条目丢失了已修改的副本");
-  await click("填写意见");
   await click("查看基准工程");
   await wait(`document.querySelector('.audit-project-editor')?.dataset.auditReadonly==='true'`, "基准工程不是只读");
   await click("导出此条工程");
@@ -146,6 +201,7 @@ try {
   await setField("审计结论", "needs-evidence");
   await click("原图与谱面");
   await wait(`!!document.querySelector('.audit-score-card')`, "原图选项卡未恢复");
+  await assertReviewLayout("检查导音与谱面位置", { questions: true });
   await click("循环试听此段");
   await wait(`document.querySelector('.audit-score-transport')?.textContent.includes('暂停试听')`, "切换前片段未播放");
   await evaluate(`document.querySelectorAll('.audit-item')[1].click()`);
@@ -163,11 +219,11 @@ try {
   await wait(`!!document.querySelector('button[aria-label="教材审计"]')`, "重载失败");
   await click("教材审计");
   await wait(`document.querySelector('.audit-progress')?.textContent.includes('1/2') && document.querySelector('.audit-progress')?.textContent.includes('1/1')`, "重载后意见未恢复");
-  await click("填写意见");
   if (await evaluate(`document.querySelector('[aria-label="预审：补证范围"]').value`) !== "请明确原位与终止处的条件") throw new Error("预审回答未从本机恢复");
   await click("工程 · 钢琴卷帘");
   await wait(`!!document.querySelector('.audit-project-properties select')`, "恢复工程失败");
   if (await selectedPitch() !== "A") throw new Error("工程副本未从本机恢复");
+  await checkNarrowLayout();
   await click("原图与谱面");
   await click("筛选条目");
   await setField("层级筛选", "error");
@@ -190,10 +246,28 @@ try {
     if (!await evaluate(`document.querySelectorAll('.audit-source-card').length===1 && document.querySelectorAll('.audit-score-card').length===1`)) throw new Error("切换审计包后残留旧谱面");
     await click("关闭审计提示");
     await capture("audit-pilot.png");
+    const firstTitle = await evaluate(`document.querySelector('.audit-row-title').textContent`);
+    await evaluate(`document.querySelector('.audit-group-toggle').click()`);
+    await wait(`document.querySelector('.audit-group-toggle').getAttribute('aria-expanded')==='false'`, "目录分组未折叠");
+    await setTextInput("搜索审计条目", firstTitle);
+    await wait(`document.querySelector('.audit-row-title')?.textContent===${JSON.stringify(firstTitle)}`, "搜索结果仍藏在折叠分组中");
+    await setTextInput("搜索审计条目", "");
+    await evaluate(`document.querySelector('.audit-citation summary').click()`);
+    await wait(`!!document.querySelector('.audit-citation[open] strong')?.textContent`, "无法展开教材来源");
+    await evaluate(`document.querySelector('.audit-citation summary').click()`);
+    await send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+    await wait(`(() => {
+      const analysis = document.querySelector('.audit-evidence-pane .audit-analysis');
+      const detail = document.querySelector('.audit-detail-pane');
+      return analysis?.checkVisibility() && analysis.textContent.includes('模型判断') && analysis.textContent.includes('程序结果') && !!detail?.querySelector('.audit-human-review select');
+    })()`, "大窗口未同时展示图文分析与人工意见");
+    if (!await horizontallyVisible('.audit-analysis') || !await horizontallyVisible('.audit-source-card') || !await horizontallyVisible('.audit-score-card') || !await horizontallyVisible('.audit-detail-pane')) throw new Error("大窗口图文与意见超出可用区域");
+    await assertImagePairs({ wide: true });
+    await capture("audit-wide.png");
+    await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
     await click("下一条");
     await wait(`document.querySelector('.audit-panel-bar nav span').textContent.startsWith('2 /')`, "下一条导航失败");
     await click("上一条");
-    await click("填写本条意见");
     await click("工程 · 钢琴卷帘");
     await wait(`!!document.querySelector('.audit-project-editor .piano-roll')`, "教材工程附件未渲染");
     await capture("audit-piano-roll.png");
@@ -209,7 +283,7 @@ try {
   }
   await click("返回工程");
   await wait(`!!document.querySelector('button[aria-label="教材审计"]') && !document.querySelector('.audit-workbench')`, "未能返回原工程");
-  console.log("PASS: 工程附件打包、原图/卷帘切换、单选/多选/输入题、显式采用建议、必填校验、副本编辑/撤销/隔离、工程与意见导出、自动保存恢复、筛选和版本失效");
+  console.log("PASS: 工程附件打包、中栏常驻分析与右栏意见、原图/卷帘切换、单选/多选/输入题、显式采用建议、必填校验、副本编辑/撤销/隔离、工程与意见导出、自动保存恢复、条目联动、窄屏布局、筛选和版本失效");
   console.log(`Artifacts: ${directory}`);
 } catch (error) {
   if (socket?.readyState === WebSocket.OPEN) await capture("audit-failure.png").catch(() => {});

@@ -1,0 +1,40 @@
+/* Evidence controls stay compact so the source and notation take priority. */
+.audit-workbench :is(.audit-source-card,.audit-score-card,.audit-project-editor) { border-radius: 4px; box-shadow: none; }
+.audit-workbench .audit-evidence-toolbar { gap: 6px; min-height: 38px; padding: 4px 9px; flex-wrap: wrap; }
+.audit-workbench .audit-evidence-toolbar .audit-card-label { gap: 6px; margin-right: auto; }
+.audit-workbench .audit-evidence-toolbar strong { font-size: 12px; font-weight: 600; }
+.audit-workbench .audit-evidence-toolbar .audit-inline-controls { gap: 2px; }
+.audit-workbench .audit-evidence-icon { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-color: transparent; border-radius: 3px; background: transparent; color: var(--muted); }
+.audit-workbench .audit-evidence-icon:hover:enabled { background: #eaf0eb; border-color: transparent; color: var(--accent); }
+.audit-workbench .audit-evidence-icon:is(.is-active,[aria-pressed=true],[aria-expanded=true]) { background: #e4eee6; border-color: transparent; color: var(--accent); }
+.audit-workbench .audit-evidence-marker { width: 7px; height: 7px; border: 1px solid currentColor; border-radius: 1px; }
+.audit-workbench .audit-evidence-marker.source { color: #bf8139; background: #f9eddb; }
+.audit-workbench .audit-evidence-marker.score { color: #21855e; background: #dfeee4; }
+.audit-workbench .audit-evidence-scale { display: inline-block; min-width: 35px; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.audit-workbench .audit-evidence-toolbar input[type=range] { width: 58px; height: 14px; margin: 0 4px; }
+.audit-workbench .audit-evidence-toolbar .audit-score-transport { flex: none; gap: 1px; margin: 0 3px 0 0; padding: 0 6px 0 0; border: 0; border-right: 1px solid var(--line); }
+.audit-workbench .audit-evidence-audio { padding: 5px 10px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); }
+.audit-workbench .audit-source-scroll { padding: 8px; background: #f6f6f2; }
+.audit-workbench .audit-score-scroll { padding: 6px; background: #fffefb; }
+.audit-workbench .audit-project-heading { padding: 7px 10px; gap: 4px 10px; min-height: 34px; }
+.audit-workbench .audit-project-heading strong { font-size: 12px; font-weight: 600; }
+.audit-workbench .audit-project-heading small { font-size: 10px; padding-left: 7px; border-left: 1px solid var(--line); }
+.audit-workbench .audit-project-position { font-variant-numeric: tabular-nums; }
+.audit-workbench .audit-project-tools { gap: 5px; padding: 4px 7px; background: #fafbf8; }
+.audit-workbench .audit-project-tools select { height: 27px; padding: 2px 5px; font-size: 11px; }
+.audit-workbench .audit-evidence-tool-group { display: inline-flex; align-items: center; gap: 1px; flex: none; }
+.audit-workbench .audit-project-tools > .audit-evidence-tool-group { padding-left: 5px; border-left: 1px solid var(--line); }
+.audit-workbench .audit-project-tools .audit-project-grid { gap: 4px; margin-left: auto; }
+.audit-workbench .audit-project-actions { justify-content: space-between; gap: 8px; padding: 3px 7px; border-bottom: 0; background: #fafbf8; }
+.audit-workbench .audit-project-file-actions { border-left: 1px solid var(--line); padding-left: 6px; }
+.audit-workbench .audit-project-properties { padding: 4px 8px 8px; border-top: 1px solid var(--line); }
+.audit-workbench .audit-project-properties legend { padding: 4px 6px; font-size: 11px; }
+.audit-workbench .audit-project-properties .property-section:has(> label) { display: grid; grid-template-columns: repeat(auto-fit,minmax(134px,1fr)); gap: 7px 10px; padding: 4px; }
+.audit-workbench .audit-project-properties .property-section > :not(label) { grid-column: 1 / -1; }
+.audit-workbench .audit-project-properties .property-section > header { min-height: 20px; margin: 0; padding-bottom: 2px; }
+.audit-workbench .audit-project-properties .property-section > label { grid-template-columns: minmax(0,1fr); gap: 3px; min-width: 0; margin: 0; }
+.audit-workbench .audit-evidence-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 720px) {
+  .audit-workbench .audit-project-tools .audit-project-grid { margin-left: 0; }
+  .audit-workbench .audit-evidence-toolbar .audit-card-label { min-width: 90px; }
+}

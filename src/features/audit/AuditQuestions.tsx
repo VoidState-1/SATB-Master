@@ -18,12 +18,11 @@ export function AuditQuestions({ questions, answers = [], onChange }: Props) {
   const fillable = questions.some((q) => q.suggested !== undefined && !auditQuestionAnswered(q, auditAnswer(answers, q.id)));
   return <section className="audit-preflight" aria-label="预审问答">
     <div className="audit-preflight-heading"><h3>预审问答</h3><button disabled={!fillable} onClick={() => onChange(suggestedAuditAnswers(questions, answers))}>填入未作答项</button></div>
-    <p className="audit-muted">可采用模型建议，也可直接作答。</p>
-    {questions.map((question) => {
+    {questions.map((question, index) => {
       const value = auditAnswer(answers, question.id);
       const change = (value: AuditAnswer) => onChange(setAuditAnswer(answers, question.id, value));
       return <fieldset key={question.id} data-question-id={question.id}>
-        <legend>{question.label}{question.required && <span className="audit-required"> · 必填</span>}</legend>
+        <legend><span className="audit-question-number" aria-hidden="true">{index + 1}.</span>{question.label}{question.required && <span className="audit-required">必填</span>}</legend>
         {question.type === "text" ? <textarea rows={2} aria-label={`预审：${question.label}`} placeholder={question.placeholder} maxLength={20_000} value={typeof value === "string" ? value : ""} onChange={(e) => change(e.target.value)} /> : <div className="audit-question-options">
           {question.options?.map((option) => <label key={option.id}><input type={question.type === "single" ? "radio" : "checkbox"} name={`${prefix}-${question.id}`} value={option.id} checked={question.type === "single" ? value === option.id : Array.isArray(value) && value.includes(option.id)} onChange={(e) => {
             if (question.type === "single") change(option.id);
