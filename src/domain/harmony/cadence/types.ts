@@ -6,6 +6,7 @@ import type {
 } from "../../project/types";
 import type { HarmonySpan, AnalysisChord, AnalysisSlice } from "../analysis";
 import type { PhraseSegment } from "../phrase";
+import type { KeyReference } from "../../chordModel";
 
 export type CadenceKind = ProjectCadenceKind;
 export type CadenceForm = ProjectCadenceForm;
@@ -49,6 +50,7 @@ export type CadenceAnnotation = ProjectCadenceAnnotation;
 
 export interface CadenceSpanFacts {
   readonly span: HarmonySpan;
+  readonly key: KeyReference;
   readonly chord?: AnalysisChord;
   readonly boundarySlice?: AnalysisSlice;
   readonly family?: "tonic" | "subdominant" | "dominant";

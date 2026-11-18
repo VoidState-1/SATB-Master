@@ -9,6 +9,7 @@ import {
 } from "../../chordModel";
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
+import { buildMeasures, measureAtTick } from "../../time";
 import type {
   AnalysisChord,
   AnalysisSlice,
@@ -98,18 +99,17 @@ function factsFor(
     : "unknown";
   const projectKey = keyAtTick(analysis, span.fromTick);
   const localKey = interpretation?.localKey ?? projectKey;
-  const sameProjectKey = sameKey(localKey, projectKey);
   const unavailable = !span.semantics || !chord || !interpretation;
   const ambiguous =
     span.status !== "complete" ||
     semanticConfidence === "ambiguous" ||
     semanticConfidence === "unknown" ||
-    !sameProjectKey ||
     Boolean(interpretation?.appliedTarget);
   const family = ambiguous ? undefined : familyOf(span, chord);
   const degree = ambiguous ? undefined : interpretation?.degree;
   return {
     span,
+    key: localKey,
     chord,
     boundarySlice: slice,
     family,
@@ -136,6 +136,7 @@ function connectionIsValid(
 ) {
   return (
     previous.span.toTick === current.span.fromTick &&
+    sameKey(previous.key, current.key) &&
     previous.interpretationStatus === "resolved" &&
     current.interpretationStatus === "resolved"
   );
@@ -167,16 +168,7 @@ function confidenceFor(
     : phrase.confidence;
 }
 
-function degreePitch(
-  analysis: Pick<HarmonyAnalysis, "project">,
-  tick: number,
-  degree: 1 | 4 | 5 | 6,
-) {
-  return scaleDegreePitchClass(keyAtTick(analysis, tick), degree);
-}
-
 function hasBassFormula(
-  analysis: Pick<HarmonyAnalysis, "project">,
   source: CadenceSpanFacts,
   target: CadenceSpanFacts,
   sourceDegree: 4 | 5,
@@ -188,17 +180,26 @@ function hasBassFormula(
   return (
     pitchClassEquals(
       sourceBass.pitch,
-      degreePitch(analysis, source.span.fromTick, sourceDegree),
+      scaleDegreePitchClass(source.key, sourceDegree),
     ) &&
     pitchClassEquals(
       targetBass.pitch,
-      degreePitch(analysis, target.span.fromTick, targetDegree),
+      scaleDegreePitchClass(target.key, targetDegree),
     )
   );
 }
 
+function isFifthDegreeDominant(facts: CadenceSpanFacts) {
+  return facts.isDominant && facts.degree === 5 && facts.chord !== undefined &&
+    pitchClassEquals(facts.chord.identity.root, scaleDegreePitchClass(facts.key, 5));
+}
+
+function writtenBassMatches(facts: CadenceSpanFacts) {
+  const bass = facts.boundarySlice?.notes.bass;
+  return bass && facts.chord && pitchClassEquals(bass.pitch, facts.chord.identity.bass);
+}
+
 function completionFor(
-  analysis: Pick<HarmonyAnalysis, "project">,
   source: CadenceSpanFacts,
   target: CadenceSpanFacts,
 ): CadenceCompletion | undefined {
@@ -206,14 +207,17 @@ function completionFor(
   if (
     chordIdentityInversion(source.chord.identity) !== 0 ||
     chordIdentityInversion(target.chord.identity) !== 0
-  )
+  ) {
+    if (isFifthDegreeDominant(source) && pitchClassEquals(target.chord.identity.root, target.key.tonic) &&
+        writtenBassMatches(source) && writtenBassMatches(target)) return "imperfect";
     return undefined;
-  if (!hasBassFormula(analysis, source, target, 5, 1)) return undefined;
+  }
+  if (!hasBassFormula(source, target, 5, 1)) return undefined;
   const soprano = target.boundarySlice?.notes.soprano;
   if (!soprano) return "imperfect";
   return pitchClassEquals(
     soprano.pitch,
-    degreePitch(analysis, target.span.fromTick, 1),
+    scaleDegreePitchClass(target.key, 1),
   )
     ? "perfect"
     : "imperfect";
@@ -256,14 +260,15 @@ function candidate(
 }
 
 function resolveConflicts(candidates: readonly CadenceCandidate[]) {
-  const byPhrase = new Map<string, CadenceCandidate[]>();
+  const byLanding = new Map<string, CadenceCandidate[]>();
   candidates.forEach((item) => {
-    const group = byPhrase.get(item.phraseId) ?? [];
+    const key = `${item.phraseId}:${item.toTick}`;
+    const group = byLanding.get(key) ?? [];
     group.push(item);
-    byPhrase.set(item.phraseId, group);
+    byLanding.set(key, group);
   });
   const resolved: CadenceCandidate[] = [];
-  for (const group of byPhrase.values()) {
+  for (const group of byLanding.values()) {
     const ordered = [...group].sort(
       (left, right) =>
         right.score - left.score ||
@@ -292,17 +297,31 @@ function evidenceForPhrase(phrase: PhraseSegment): CadenceEvidence {
   };
 }
 
-function terminalSpans(
-  analysis: Pick<HarmonyAnalysis, "harmonySpans" | "project" | "chordById" | "slices">,
+function authenticCadence(
   phrase: PhraseSegment,
+  preparation: CadenceSpanFacts | undefined,
+  dominant: CadenceSpanFacts,
+  tonic: CadenceSpanFacts,
+  landingEvidence: CadenceEvidence,
+  completion = completionFor(dominant, tonic),
 ) {
-  return analysis.harmonySpans
-    .filter(
-      (span) =>
-        span.fromTick >= phrase.fromTick && span.toTick <= phrase.toTick,
-    )
-    .map((span) => factsFor(analysis, span))
-    .filter((facts) => facts.span.toTick === phrase.toTick);
+  const cadential64 = preparation?.isCadential64 && connectionIsValid(preparation, dominant);
+  const path = cadential64 ? [preparation, dominant, tonic] : [dominant, tonic];
+  const bassFormula = hasBassFormula(dominant, tonic, 5, 1);
+  const evidence: CadenceEvidence[] = [
+    landingEvidence,
+    { code: "dominant-to-tonic", value: "当前调性 D -> T" },
+  ];
+  if (cadential64) evidence.push({ code: "cadential64-chain", value: "K46 -> D -> T" });
+  if (bassFormula) evidence.push({ code: "bass-formula", value: "低音 5 -> 1" });
+  evidence.push({ code: "stable-ending", value: "末端主功能稳定" });
+  return candidate(phrase, "full", path, evidence, {
+    form: "authentic",
+    completion,
+    confidenceCap: completion && bassFormula && tonic.span.toTick === phrase.toTick
+      ? undefined
+      : "probable",
+  });
 }
 
 export function detectCadences(
@@ -312,6 +331,7 @@ export function detectCadences(
   >,
 ): readonly CadenceCandidate[] {
   const allCandidates: CadenceCandidate[] = [];
+  let measures: ReturnType<typeof buildMeasures> | undefined;
   for (const phrase of analysis.phraseSegments) {
     if (phrase.confidence === "ambiguous") continue;
     const facts = analysis.harmonySpans
@@ -320,13 +340,18 @@ export function detectCadences(
           span.fromTick >= phrase.fromTick && span.toTick <= phrase.toTick,
       )
       .map((span) => factsFor(analysis, span));
-    const terminal = terminalSpans(analysis, phrase).at(-1);
-    if (!terminal || terminal.interpretationStatus !== "resolved") continue;
-    const terminalIndex = facts.findIndex((item) => item.span.id === terminal.span.id);
-    if (terminalIndex < 0) continue;
-    const previous = facts[terminalIndex - 1];
-    const previousPrevious = facts[terminalIndex - 2];
+    const terminal = facts.at(-1);
+    if (!terminal || terminal.span.toTick !== phrase.toTick || terminal.interpretationStatus !== "resolved") continue;
+    const previous = facts.at(-2);
+    const previousPrevious = facts.at(-3);
     const phraseEvidence = evidenceForPhrase(phrase);
+    // A local label alone can denote tonicization. Require a closing V–I and
+    // the written bass formula before recognizing a cadence in a different key.
+    if (!sameKey(terminal.key, keyAtTick(analysis, terminal.span.fromTick))) {
+      if (!previous?.chord || !terminal.chord || previous.degree !== 5 || !previous.isDominant || !terminal.isTonic ||
+          chordIdentityInversion(previous.chord.identity) !== 0 || chordIdentityInversion(terminal.chord.identity) !== 0 ||
+          !connectionIsValid(previous, terminal) || !hasBassFormula(previous, terminal, 5, 1)) continue;
+    }
 
     if (
       previous &&
@@ -334,36 +359,7 @@ export function detectCadences(
       previous.isDominant &&
       terminal.isTonic
     ) {
-      const path =
-        previousPrevious &&
-        previousPrevious.isCadential64 &&
-        connectionIsValid(previousPrevious, previous)
-          ? [previousPrevious, previous, terminal]
-          : [previous, terminal];
-      const bassFormula = hasBassFormula(analysis, previous, terminal, 5, 1);
-      const evidence: CadenceEvidence[] = [
-        phraseEvidence,
-        { code: "dominant-to-tonic", value: "当前调性 D -> T" },
-        ...(path.length === 3
-          ? ([
-              { code: "cadential64-chain", value: "K46 -> D -> T" },
-            ] satisfies CadenceEvidence[])
-          : []),
-        ...(bassFormula
-          ? ([
-              { code: "bass-formula", value: "低音 5 -> 1" },
-            ] satisfies CadenceEvidence[])
-          : []),
-        { code: "stable-ending", value: "末端主功能稳定" },
-      ];
-      const completion = completionFor(analysis, previous, terminal);
-      allCandidates.push(
-        candidate(phrase, "full", path, evidence, {
-          form: "authentic",
-          completion,
-          confidenceCap: completion ? undefined : "probable",
-        }),
-      );
+      allCandidates.push(authenticCadence(phrase, previousPrevious, previous, terminal, phraseEvidence));
     }
 
     if (
@@ -372,6 +368,35 @@ export function detectCadences(
       previous.isSubdominant &&
       terminal.isTonic
     ) {
+      const dominant = facts.at(-4);
+      const firstTonic = previousPrevious;
+      if (
+        firstTonic?.isTonic &&
+        dominant && isFifthDegreeDominant(dominant) &&
+        previous.degree === 4 &&
+        writtenBassMatches(previous) && writtenBassMatches(terminal) &&
+        connectionIsValid(dominant, firstTonic) &&
+        connectionIsValid(firstTonic, previous) &&
+        completionFor(dominant, firstTonic) === "perfect"
+      ) {
+        measures ??= buildMeasures(analysis.project);
+        const onset = firstTonic.span.fromTick;
+        const measure = measureAtTick(measures, onset);
+        const soprano = firstTonic.boundarySlice?.notes.soprano;
+        // 强拍上的 V–I 也可以只是句内连接。主和弦占满小节，或女高主音
+        // 从落点保持到补充段结束时，才另记此前的正格收束。
+        if (
+          measure?.startTick === onset &&
+          soprano?.startTick === onset &&
+          (firstTonic.span.toTick >= measure.endTick || soprano.startTick + soprano.durationTicks >= phrase.toTick)
+        ) {
+          allCandidates.push(authenticCadence(phrase, facts.at(-5), dominant, firstTonic, {
+            code: "metric-support",
+            value: "小节强拍落主，正格收束后紧接句末补充变格",
+            refs: [firstTonic.span.id, previous.span.id, terminal.span.id],
+          }, "perfect"));
+        }
+      }
       allCandidates.push(
         candidate(
           phrase,
@@ -422,6 +447,7 @@ export function detectCadences(
           "half",
           path,
           [phraseEvidence, { code: "ends-on-dominant", value: "乐句末端为属功能" }],
+          { form: isFifthDegreeDominant(terminal) ? "authentic" : undefined },
         ),
       );
     }
