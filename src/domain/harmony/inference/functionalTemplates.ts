@@ -34,10 +34,12 @@ function inversionsFor(
 }
 
 export function buildFunctionalTemplates(
-  _key: KeyEvent,
+  key: KeyEvent,
 ): readonly FunctionalChordTemplate[] {
   return Object.freeze(
-    FUNCTIONAL_BASE_DEFINITIONS.flatMap((definition) =>
+    FUNCTIONAL_BASE_DEFINITIONS.filter((definition) =>
+      key.mode === "minor" || (definition.id !== "dtIII" && definition.id !== "dVII"),
+    ).flatMap((definition) =>
       definition.forms.flatMap((form) =>
         inversionsFor(definition, form).map((expectedInversion) => ({
           baseId: definition.id,

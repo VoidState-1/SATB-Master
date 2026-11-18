@@ -104,7 +104,7 @@ export function createChordEditorModel(
   draft: ChordDraft,
   keyEvent: KeyEvent,
 ): ChordEditorModel {
-  const baseId = functionalBaseIdFromDraft(draft);
+  const baseId = functionalBaseIdFromDraft(draft, keyEvent.mode);
   const baseDefinition = baseId ? functionalDefinition(baseId) : undefined;
   const identity = resolveChordIdentity(draft, keyEvent);
   const primary = primaryHarmonyInterpretation(semanticsFromChordDraft(draft));

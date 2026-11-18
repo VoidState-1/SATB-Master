@@ -32,8 +32,10 @@ export type FunctionalBaseId =
   | "d"
   | "SII"
   | "DTIII"
+  | "dtIII"
   | "TSVI"
   | "DVII"
+  | "dVII"
   | "K46"
   | "DD"
   | "DDVII"
@@ -211,6 +213,30 @@ export const FUNCTIONAL_BASE_DEFINITIONS: readonly FunctionalBaseDefinition[] =
           : mode === "major"
             ? "halfDiminished7"
             : "diminished7",
+    },
+    {
+      id: "dtIII",
+      label: "dtIII",
+      title: "自然小调 III 级大三和弦",
+      scope: "C",
+      degree: 3,
+      degreeAlteration: -1,
+      minorDegreeAlteration: 0,
+      forms: ["triad"],
+      designation: sideDegree("dominant", "tonic"),
+      quality: () => "major",
+    },
+    {
+      id: "dVII",
+      label: "dVII",
+      title: "自然小调 VII 级大三和弦",
+      scope: "C",
+      degree: 7,
+      degreeAlteration: -1,
+      minorDegreeAlteration: 0,
+      forms: ["triad"],
+      designation: sideDegree("dominant"),
+      quality: () => "major",
     },
     {
       id: "K46",
@@ -503,6 +529,7 @@ export function applyFunctionalTarget(
 
 export function functionalBaseIdFromDraft(
   draft: ChordDraft,
+  keyMode?: KeyMode,
 ): FunctionalBaseId | undefined {
   if (draft.augmentedSixthVariant)
     return draft.augmentedSixthVariant === "italian"
@@ -522,12 +549,19 @@ export function functionalBaseIdFromDraft(
   }
   const primary = draft.designation?.primaryFunction;
   const secondary = draft.designation?.secondaryFunction;
+  const mode = draft.localKey?.mode ?? keyMode;
+  const naturalMinorTriad = draft.quality === "major" && !draft.appliedTarget && (
+    (mode === "minor" && draft.degreeAlteration === 0) ||
+    (mode !== "minor" && draft.degreeAlteration === -1) ||
+    (!mode && draft.degreeAlteration === 0 && /^inferred:(dtIII|dVII):/.test(draft.interpretationId ?? ""))
+  );
   if (draft.degree === 2 && primary === "subdominant") return "SII";
   if (draft.degree === 3 && primary === "dominant" && secondary === "tonic")
-    return "DTIII";
+    return naturalMinorTriad ? "dtIII" : "DTIII";
   if (draft.degree === 6 && primary === "tonic" && secondary === "subdominant")
     return "TSVI";
-  if (draft.degree === 7 && primary === "dominant") return "DVII";
+  if (draft.degree === 7 && primary === "dominant")
+    return naturalMinorTriad ? "dVII" : "DVII";
   if (draft.degree === 1 && primary === "tonic")
     return draft.quality === "minor" ? "t" : "T";
   if (draft.degree === 4 && primary === "subdominant")
@@ -540,6 +574,7 @@ export function functionalBaseIdFromDraft(
 export function inferredFunctionalDefinition(
   semantics: HarmonySemantics,
   quality: ChordQuality | undefined,
+  keyMode?: KeyMode,
 ): FunctionalBaseDefinition | undefined {
   if (semantics.cadenceRole === "cadential64")
     return functionalDefinition("K46");
@@ -548,6 +583,9 @@ export function inferredFunctionalDefinition(
   const explicitDraft = {
     degree: primary.degree,
     degreeAlteration: primary.degreeAlteration,
+    interpretationId: primary.id,
+    localKey: primary.localKey,
+    appliedTarget: primary.appliedTarget?.degree,
     quality: quality ?? "major",
     inversion: 0,
     designation: primary.designation,
@@ -562,7 +600,7 @@ export function inferredFunctionalDefinition(
     source: primary.source,
     confidence: primary.confidence,
   } satisfies ChordDraft;
-  const explicitId = functionalBaseIdFromDraft(explicitDraft);
+  const explicitId = functionalBaseIdFromDraft(explicitDraft, keyMode);
   if (explicitId) return functionalDefinition(explicitId);
 
   if (primary.degreeAlteration === -1 && primary.degree === 2)

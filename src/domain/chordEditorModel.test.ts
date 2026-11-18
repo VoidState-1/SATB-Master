@@ -26,6 +26,15 @@ function initialDraft() {
 }
 
 describe("ChordEditorModel", () => {
+  it("以实际调式区分自然小调 III 与大调中手动改质的 III", () => {
+    const { project, draft } = initialDraft();
+    const key = project.keyEvents[0];
+    const third = applyFunctionalDefinition(draft, functionalDefinition("dtIII"), "minor");
+    expect(createChordEditorModel(third, { ...key, mode: "minor" }).baseId).toBe("dtIII");
+    expect(createChordEditorModel(third, { ...key, mode: "major" }).baseId).toBe("DTIII");
+    const borrowed = applyFunctionalDefinition(draft, functionalDefinition("dtIII"), "major");
+    expect(createChordEditorModel(borrowed, { ...key, mode: "major" }).baseId).toBe("dtIII");
+  });
   it("统一功能、转位、变化音与共同和弦 action", () => {
     const { project, draft } = initialDraft();
     const key = project.keyEvents[0];

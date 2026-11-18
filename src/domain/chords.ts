@@ -182,11 +182,12 @@ function semanticSummary(semantics?: HarmonySemantics) {
 function functionalNameSingle(
   identity: ChordIdentity,
   semantics?: HarmonySemantics,
+  keyMode?: KeyEvent["mode"],
 ) {
   if (!semantics) return "?";
   const interpretation = primaryHarmonyInterpretation(semantics);
   const quality = chordStructureQuality(identity);
-  const definition = inferredFunctionalDefinition(semantics, quality);
+  const definition = inferredFunctionalDefinition(semantics, quality, keyMode);
   if (!definition) return "?";
   if (["K46", "N6", "It+6", "Fr+6", "Ger+6"].includes(definition.id))
     return definition.label;
@@ -207,12 +208,14 @@ export function formatChord(
   return formatChordIdentity(
     resolveChordIdentity(draft, key),
     semanticsFromChordDraft(draft),
+    key.mode,
   );
 }
 
 export function formatChordIdentity(
   identity: ChordIdentity,
   semantics?: HarmonySemantics,
+  keyMode?: KeyEvent["mode"],
 ): FormattedChordName {
   const roman = semantics
     ? semantics.interpretations
@@ -231,6 +234,7 @@ export function formatChordIdentity(
           functionalNameSingle(
             identity,
             semanticsForInterpretation(semantics, interpretation),
+            keyMode,
           ),
         )
         .join(" = ")
@@ -246,10 +250,10 @@ export function formatChordIdentity(
 }
 
 export function formatChordRegion(
-  _project: ProjectDocument,
+  project: ProjectDocument,
   region: ChordRegion,
 ) {
-  return formatChordIdentity(region.identity, region.semantics);
+  return formatChordIdentity(region.identity, region.semantics, keyAtTick(project.keyEvents, region.startTick).mode);
 }
 
 export function chordAtTick(project: ProjectDocument, tick: number) {
