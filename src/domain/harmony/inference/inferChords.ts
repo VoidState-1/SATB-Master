@@ -8,6 +8,8 @@ import { withDiatonicSevenths } from "./diatonicSevenths";
 import { withAppliedSequences } from "./appliedSequences";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
 import { analyzeChordInferencePaths } from "./sequence";
+import { classifySixFours } from "./sixFours";
+import { withProlongedHarmony } from "./prolongation";
 import { inferLocalKeys } from "./localKeys";
 import { inferPhrases } from "../phrase";
 import type {
@@ -97,7 +99,9 @@ export function inferChords(
   const predominants = withLoweredSupertonics(observations, diatonic);
   const sequences = withAppliedSequences(observations, predominants, options);
   const applied = withAppliedDominants(observations, sequences, options);
-  const sequence = analyzeChordInferencePaths(observations, applied);
+  const prolonged = withProlongedHarmony(observations, applied, options, project.ppq);
+  const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high");
+  const sequence = analyzeChordInferencePaths(observations, classified);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;

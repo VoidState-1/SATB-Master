@@ -281,11 +281,46 @@ export function buildChordInferenceCandidates(
 }
 
 
+export function fitProlongedHarmony(
+  anchor: ChordInferenceCandidate,
+  observation: ChordInferenceObservation,
+  movingId: string,
+): ChordInferenceCandidate | undefined {
+  const fit = fitChordObservation(observation, anchor.identity, {
+    allowIncompleteVoicing: true, allowNonChordToneCandidates: true,
+  });
+  if (fit.hardRejected || !fit.spellingConsistent ||
+      fit.nonChordToneNoteIds.length !== 1 || fit.nonChordToneNoteIds[0] !== movingId) return;
+  return {
+    ...anchor,
+    id: `${observation.index}:prolonged:${anchor.id}`,
+    observationIndex: observation.index,
+    fit,
+    score: scoreFor(observation, anchor.identity, fit, anchor.score.functionalTier),
+    confidence: "medium",
+    evidence: [...evidenceFor(fit, true), {
+      kind: "sequence-context", code: "prolonged-harmony", noteIds: [movingId],
+    }],
+  };
+}
+
 export function candidateDescription(candidate: ChordInferenceCandidate) {
   const noteCount = candidate.fit.matchedNoteIds.length;
   return candidate.functionalBaseId
     ? `${candidate.functionalBaseId} · ${noteCount} 个观察音`
     : `绝对结构 · ${noteCount} 个观察音`;
+}
+
+/** A revoicing on the same dominant bass can omit one upper member of K64. */
+export function fitCadentialRevoicing(anchor: ChordInferenceCandidate, observation: ChordInferenceObservation) {
+  const fit = fitChordObservation(observation, anchor.identity, { allowIncompleteVoicing: true });
+  if (!observation.completeSatb || fit.hardRejected || !fit.spellingConsistent || fit.nonChordToneNoteIds.length ||
+      fit.omittedChordDegrees.length !== 1) return;
+  return {
+    ...anchor, id: `${observation.index}:revoiced:${anchor.id}`, observationIndex: observation.index,
+    fit, confidence: "medium" as const, score: scoreFor(observation, anchor.identity, fit, anchor.score.functionalTier),
+    evidence: [...evidenceFor(fit, true), { kind: "sequence-context" as const, code: "cadential64-revoicing" }],
+  };
 }
 
 /** Spasobin §47.5–6 distinguishes root-position flat II and its major seventh
