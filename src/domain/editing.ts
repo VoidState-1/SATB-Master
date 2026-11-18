@@ -486,7 +486,11 @@ function cadenceAnnotationError(
     return "终止式范围不能与其他标注重叠";
   if (annotation.kind !== "full" && annotation.completion !== undefined)
     return "只有全终止可以设置完满性";
-  if (annotation.kind !== "full" && annotation.form === "plagal")
+  if (
+    annotation.kind !== "full" &&
+    annotation.kind !== "supplementary" &&
+    annotation.form === "plagal"
+  )
     return "变格限定只适用于全终止或补充终止";
   if (annotation.kind === "supplementary" && annotation.form !== "plagal")
     return "补充终止必须使用变格限定";

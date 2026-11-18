@@ -177,7 +177,7 @@ export function cadenceBassFormulaRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   cadenceRuleContexts(context).forEach((context) => {
     const valid =
-      context.cadence.kind === "full"
+      context.cadence.kind === "full" && context.cadence.form !== "plagal"
         ? Boolean(context.sourceBass) &&
           context.sourceFamily === "dominant" &&
           context.targetFamily === "tonic" &&
@@ -186,7 +186,8 @@ export function cadenceBassFormulaRule(context: HarmonyRuleContext) {
         : context.cadence.kind === "half"
           ? context.targetFamily === "dominant" &&
             pitchClassEquals(context.targetBass.pitch, context.degreePitch(5))
-          : context.cadence.kind === "supplementary"
+          : context.cadence.kind === "supplementary" ||
+              (context.cadence.kind === "full" && context.cadence.form === "plagal")
             ? Boolean(context.sourceBass) &&
               context.sourceFamily === "subdominant" &&
               context.targetFamily === "tonic" &&
