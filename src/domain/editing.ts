@@ -19,6 +19,8 @@ import {
 } from "./project";
 import { toMidi } from "./pitch";
 import { keyAtTick } from "./time";
+import { cadenceChordCoverage } from "./project/cadenceCoverage";
+import { reconcileCadenceAnnotationStaleness } from "./project/normalize";
 
 export interface EditResult {
   project: ProjectDocument;
@@ -59,6 +61,7 @@ export function addPhraseBoundary(project: ProjectDocument, tick: number): EditR
     });
   }
   next.structure.phraseBoundaries.sort((left, right) => left.tick - right.tick);
+  reconcileCadenceAnnotationStaleness(next);
   next.updatedAt = new Date().toISOString();
   return { project: next };
 }
@@ -76,6 +79,7 @@ export function deletePhraseBoundary(
   next.structure.phraseBoundaries = next.structure.phraseBoundaries.filter(
     (item) => item.id !== boundaryId,
   );
+  reconcileCadenceAnnotationStaleness(next);
   next.updatedAt = new Date().toISOString();
   return { project: next };
 }
@@ -456,24 +460,7 @@ function cadenceAnnotationError(
     return "终止式范围参数无效";
   if (project.keyEvents.some((event) => event.tick > annotation.fromTick && event.tick < annotation.toTick))
     return "终止式范围不能跨越调性变化";
-  const regions = [...project.chordTrack.regions]
-    .filter(
-      (region) =>
-        region.startTick >= annotation.fromTick &&
-        region.startTick + region.durationTicks <= annotation.toTick,
-    )
-    .sort((left, right) => left.startTick - right.startTick);
-  if (
-    regions.length === 0 ||
-    regions[0].startTick !== annotation.fromTick ||
-    regions.at(-1)!.startTick + regions.at(-1)!.durationTicks !== annotation.toTick ||
-    regions.some(
-      (region, index) =>
-        index > 0 &&
-        regions[index - 1].startTick + regions[index - 1].durationTicks !==
-          region.startTick,
-    )
-  )
+  if (!cadenceChordCoverage(annotation, project.chordTrack.regions, project.structure.phraseBoundaries).continuous)
     return "终止式范围必须覆盖连续的和弦区域";
   if (
     project.chordTrack.cadenceAnnotations.some(
@@ -486,12 +473,8 @@ function cadenceAnnotationError(
     return "终止式范围不能与其他标注重叠";
   if (annotation.kind !== "full" && annotation.completion !== undefined)
     return "只有全终止可以设置完满性";
-  if (
-    annotation.kind !== "full" &&
-    annotation.kind !== "supplementary" &&
-    annotation.form === "plagal"
-  )
-    return "变格限定只适用于全终止或补充终止";
+  if (annotation.kind === "deceptive" && annotation.form === "plagal")
+    return "阻碍终止不能使用变格限定";
   if (annotation.kind === "supplementary" && annotation.form !== "plagal")
     return "补充终止必须使用变格限定";
   return undefined;

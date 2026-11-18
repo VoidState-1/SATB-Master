@@ -179,7 +179,7 @@ export function resolveAnnotations(
       (completion !== undefined && !["perfect", "imperfect"].includes(completion)) ||
       !["certain", "probable"].includes(confidence)) fail("终止式类型或置信度无效", spec.location);
     if ((kind !== "full" && completion !== undefined) ||
-      (form === "plagal" && kind !== "full" && kind !== "supplementary") ||
+      (form === "plagal" && kind === "deceptive") ||
       (kind === "supplementary" && form !== "plagal")) fail("终止式类型与限定不一致", spec.location);
     const cadence: CadenceAnnotation = {
       id: `cadence-${spec.name}`, phraseId: phrase.phraseId, fromTick, toTick, kind,

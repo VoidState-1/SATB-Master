@@ -1,5 +1,6 @@
 import type { ProjectDocument } from "../../project";
 import { cloneProject } from "../../project/selectors";
+import { reconcileCadenceAnnotationStaleness } from "../../project/normalize";
 import { inferPhrases } from "../phrase";
 import { applyChordInference } from "./apply";
 import { inferChords } from "./inferChords";
@@ -51,6 +52,7 @@ function applyInferredPhraseBoundaries(project: ProjectDocument) {
   next.structure.phraseBoundaries = boundaries.map((boundary) => ({
     ...boundary,
   }));
+  reconcileCadenceAnnotationStaleness(next);
   next.updatedAt = new Date().toISOString();
   return {
     project: next,

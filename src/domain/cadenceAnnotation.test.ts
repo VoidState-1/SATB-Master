@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createChordRegion } from "./chords";
 import { addCadenceAnnotation, updateCadenceAnnotation } from "./editing";
-import { createEmptyProject, PPQ, type CadenceAnnotation } from "./project";
+import { createEmptyProject, normalizeProject, PPQ, validateProject, type CadenceAnnotation } from "./project";
+import { compileScoreText } from "./scoreText";
 
 function fixture() {
   const project = createEmptyProject();
@@ -34,7 +35,7 @@ describe("补充变格终止标注", () => {
   });
 
   it.each([
-    { kind: "half", form: "plagal" },
+    { kind: "half", form: "plagal", completion: "imperfect" },
     { kind: "deceptive", form: "plagal" },
     { kind: "supplementary", form: "authentic" },
     { kind: "supplementary", form: "plagal", completion: "perfect" },
@@ -48,5 +49,30 @@ describe("补充变格终止标注", () => {
     const updated = updateCadenceAnnotation(full.project, annotation.id, patch);
     expect(updated.error).toBeTruthy();
     expect(updated.project).toBe(full.project);
+  });
+
+  it("变格半终止可由简写标注、人工编辑并保存重读", () => {
+    const score = `satb 1
+key C major
+meter 2/4
+bars 1..1 {
+  S: | C5/4 C5/4 |
+  A: | G4/4 F4/4 |
+  T: | E4/4 A3/4 |
+  B: | C3/4 F2/4 |
+  H: | T/4 S/4 |
+}
+annotations {
+  phrase p range=[1:1,2:1)
+  cadence h phrase=p range=[1:1,2:1) kind=half form=plagal
+}`;
+    const { project } = compileScoreText(score);
+    const annotation = project.chordTrack.cadenceAnnotations[0];
+    expect(annotation).toMatchObject({ kind: "half", form: "plagal" });
+    const updated = updateCadenceAnnotation(project, annotation.id, { confidence: "probable" });
+    expect(updated.error).toBeUndefined();
+    const reopened = JSON.parse(JSON.stringify(normalizeProject(updated.project)));
+    expect(validateProject(reopened)).toBe(true);
+    expect(reopened.chordTrack.cadenceAnnotations[0]).toMatchObject({ kind: "half", form: "plagal", stale: false });
   });
 });

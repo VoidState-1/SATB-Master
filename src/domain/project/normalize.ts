@@ -2,6 +2,7 @@ import { chordDraftFromIdentity, resolveChordIdentity } from "../chordModel";
 import { toMidi } from "../pitch";
 import { cloneProject, getAllPlayableTracks } from "./selectors";
 import type { ProjectDocument } from "./types";
+import { cadenceChordCoverage } from "./cadenceCoverage";
 
 export function reconcileChordIdentities(project: ProjectDocument) {
   project.chordTrack.regions = project.chordTrack.regions.map((region) => {
@@ -57,30 +58,11 @@ function normalizeDiagnosticPreferences(project: ProjectDocument) {
   ].sort();
 }
 
-function reconcileCadenceAnnotationStaleness(project: ProjectDocument) {
-  const regions = [...project.chordTrack.regions].sort(
-    (left, right) => left.startTick - right.startTick,
-  );
+export function reconcileCadenceAnnotationStaleness(project: ProjectDocument) {
+  const regions = project.chordTrack.regions;
   project.chordTrack.cadenceAnnotations = project.chordTrack.cadenceAnnotations.map(
     (annotation) => {
-      const covered = regions
-        .filter(
-          (region) =>
-            region.startTick >= annotation.fromTick &&
-            region.startTick + region.durationTicks <= annotation.toTick,
-        )
-        .sort((left, right) => left.startTick - right.startTick);
-      const active =
-        covered.length > 0 &&
-        covered[0].startTick === annotation.fromTick &&
-        covered.at(-1)!.startTick + covered.at(-1)!.durationTicks ===
-          annotation.toTick &&
-        covered.every(
-          (region, index) =>
-            index === 0 ||
-            covered[index - 1].startTick + covered[index - 1].durationTicks ===
-              region.startTick,
-        );
+      const active = cadenceChordCoverage(annotation, regions, project.structure.phraseBoundaries).continuous;
       return { ...annotation, stale: !active };
     },
   );

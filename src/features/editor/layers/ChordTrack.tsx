@@ -6,6 +6,7 @@ import { primaryDiagnostic } from "../geometry";
 import type { ChordInteraction } from "../interactions/types";
 import type { EditorTool } from "../types";
 import { durationToWidth, tickToX } from "../viewport";
+import { cadenceRangeLabel, cadencesOverlappingChord } from "../cadenceRanges";
 import type { ChordRect, MeasureGuidePosition } from "./types";
 
 interface ChordTrackProps {
@@ -92,17 +93,11 @@ export function ChordTrack({
           });
           const chordDiagnostics = diagnosticsByChord.get(chord.id) ?? [];
           const issue = primaryDiagnostic(chordDiagnostics);
-          const annotation = project.chordTrack.cadenceAnnotations.find(
-            (candidate) =>
-              candidate.fromTick <= startTick &&
-              startTick + durationTicks <= candidate.toTick,
+          const cadences = cadencesOverlappingChord(
+            project.chordTrack.cadenceAnnotations, cadenceCandidates ?? [], startTick, startTick + durationTicks,
           );
-          const detected = cadenceCandidates?.find(
-            (candidate) =>
-              candidate.fromTick <= startTick &&
-              startTick + durationTicks <= candidate.toTick,
-          );
-          const cadence = annotation ?? detected;
+          const cadence = cadences.length === 1 && cadences[0].fromTick <= startTick &&
+            startTick + durationTicks <= cadences[0].toTick ? cadences[0] : undefined;
           const display =
             project.chordTrack.displayMode === "functional"
               ? formatted.functional
@@ -114,23 +109,24 @@ export function ChordTrack({
                     ? `${formatted.functional}  ${formatted.absolute}`
                     : `${formatted.roman}  ${formatted.absolute}`;
           const fullLabel = `${formatted.functional} · ${formatted.roman} · ${formatted.absolute}`;
+          const tooltip = [fullLabel, ...cadences.map(item => cadenceRangeLabel(project, item))].join("\n");
           return (
             <button
               type="button"
               key={chord.id}
               tabIndex={-1}
-              className={`chord-block ${cadence ? `cadence-${cadence.kind}` : ""} ${detected && !annotation ? "cadence-is-candidate" : ""} ${selectedChordIds.has(chord.id) ? "is-selected" : ""} ${chord.locked ? "is-locked" : ""} ${issue ? `has-${issue.severity}` : ""} ${missingExpectedChordIds?.has(chord.id) ? "has-missing-expectation" : ""}`}
+              className={`chord-block ${cadence ? `cadence-${cadence.kind}` : ""} ${cadence && "evidence" in cadence ? "cadence-is-candidate" : ""} ${selectedChordIds.has(chord.id) ? "is-selected" : ""} ${chord.locked ? "is-locked" : ""} ${issue ? `has-${issue.severity}` : ""} ${missingExpectedChordIds?.has(chord.id) ? "has-missing-expectation" : ""}`}
               style={{ left: x, width }}
               title={
                 chordDiagnostics.length === 0
-                ? `${fullLabel}${cadence ? ` · ${cadence.kind}` : ""}${chord.locked ? "（已锁定）" : ""}`
+                ? `${tooltip}${chord.locked ? "（已锁定）" : ""}`
                   : undefined
               }
               onPointerEnter={(event) =>
                 onShowDiagnosticTooltip(
                   event,
                   `chord:${chord.id}`,
-                  fullLabel,
+                  tooltip,
                   chordDiagnostics,
                 )
               }

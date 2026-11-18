@@ -1,14 +1,9 @@
 import { Check, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { createId, type CadenceAnnotation } from "../../domain/project";
 import type { CadenceCandidate } from "../../domain/harmony";
 import type { CadenceAnnotationPatch } from "../../domain/editing";
-
-const kindLabels = {
-  full: "全终止",
-  half: "半终止",
-  supplementary: "补充终止",
-  deceptive: "阻碍终止",
-} as const;
+import { cadenceKindLabels, cadenceRangeKey, cadenceRangeLabel, cadencesOverlappingChord } from "../editor/cadenceRanges";
 
 export function CadenceEditor({
   project,
@@ -25,16 +20,12 @@ export function CadenceEditor({
   onUpdate?: (annotationId: string, patch: CadenceAnnotationPatch) => void;
   onDelete?: (annotationId: string) => void;
 }) {
-  const annotation = project.chordTrack.cadenceAnnotations.find(
-    (item) =>
-      item.fromTick <= selectedChord.startTick &&
-      selectedChord.startTick + selectedChord.durationTicks <= item.toTick,
-  );
-  const candidate = candidates.find(
-    (item) =>
-      item.fromTick <= selectedChord.startTick &&
-      selectedChord.startTick + selectedChord.durationTicks <= item.toTick,
-  );
+  const [selectedRange, selectRange] = useState("");
+  const available = cadencesOverlappingChord(project.chordTrack.cadenceAnnotations, candidates,
+    selectedChord.startTick, selectedChord.startTick + selectedChord.durationTicks);
+  const selected = available.find(item => cadenceRangeKey(item) === selectedRange) ?? available[0];
+  const annotation = selected && "source" in selected ? selected : undefined;
+  const candidate = selected && "evidence" in selected ? selected : undefined;
   if (!annotation && !candidate) return null;
 
   const acceptCandidate = () => {
@@ -60,10 +51,20 @@ export function CadenceEditor({
   return (
     <section className="cadence-editor property-section">
       <header>终止式范围</header>
+      {available.length > 1 && (
+        <label>
+          <span>当前终止式</span>
+          <select value={cadenceRangeKey(selected)} onChange={event => selectRange(event.target.value)}>
+            {available.map(item => (
+              <option key={item.id} value={cadenceRangeKey(item)}>{cadenceRangeLabel(project, item)}</option>
+            ))}
+          </select>
+        </label>
+      )}
       <p className="property-hint">
         {annotation
-          ? `${annotation.fromTick} – ${annotation.toTick} · ${annotation.source === "manual" ? "人工标注" : "已确认候选"}${annotation.stale ? " · 需要复核" : ""}`
-          : `检测候选 · ${candidate!.fromTick} – ${candidate!.toTick} · ${candidate!.confidence}`}
+          ? `${cadenceRangeLabel(project, annotation)} · ${annotation.source === "manual" ? "人工标注" : "已确认候选"}${annotation.stale ? " · 需要复核" : ""}`
+          : `检测候选 · ${cadenceRangeLabel(project, candidate!)} · ${candidate!.confidence}`}
       </p>
       {!annotation ? (
         <button type="button" className="command-button" onClick={acceptCandidate}>
@@ -85,7 +86,9 @@ export function CadenceEditor({
                       ? "plagal"
                       : event.target.value === "full"
                         ? annotation.form ?? "authentic"
-                        : undefined,
+                        : event.target.value === "half"
+                          ? annotation.form
+                          : undefined,
                   completion:
                     event.target.value === "full"
                       ? annotation.completion
@@ -93,49 +96,44 @@ export function CadenceEditor({
                 })
               }
             >
-              {Object.entries(kindLabels).map(([value, label]) => (
+              {Object.entries(cadenceKindLabels).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>
               ))}
             </select>
           </label>
+          {annotation.kind === "full" || annotation.kind === "half" ? (
+            <label>
+              <span>终止形式</span>
+              <select
+                value={annotation.form ?? ""}
+                disabled={annotation.locked || !onUpdate}
+                onChange={(event) =>
+                  update({ form: (event.target.value || undefined) as CadenceAnnotation["form"] })
+                }
+              >
+                <option value="">未指定</option>
+                <option value="authentic">正格</option>
+                <option value="plagal">变格</option>
+              </select>
+            </label>
+          ) : null}
           {annotation.kind === "full" ? (
-            <>
-              <label>
-                <span>终止形式</span>
-                <select
-                  value={annotation.form ?? "authentic"}
-                  disabled={annotation.locked || !onUpdate}
-                  onChange={(event) =>
-                    update({
-                      form: event.target.value as CadenceAnnotation["form"],
-                    })
-                  }
-                >
-                  <option value="authentic">正格</option>
-                  <option value="plagal">变格</option>
-                </select>
-              </label>
-              <label>
-                <span>完满性</span>
-                <select
-                  value={annotation.completion ?? ""}
-                  disabled={annotation.locked || !onUpdate}
-                  onChange={(event) =>
-                    update({
-                      completion: (event.target.value || undefined) as
-                        | CadenceAnnotation["completion"]
-                        | undefined,
-                    })
-                  }
-                >
-                  <option value="">未指定</option>
-                  <option value="perfect">完满</option>
-                  <option value="imperfect">不完满</option>
-                </select>
-              </label>
-            </>
+            <label>
+              <span>完满性</span>
+              <select
+                value={annotation.completion ?? ""}
+                disabled={annotation.locked || !onUpdate}
+                onChange={(event) =>
+                  update({ completion: (event.target.value || undefined) as CadenceAnnotation["completion"] })
+                }
+              >
+                <option value="">未指定</option>
+                <option value="perfect">完满</option>
+                <option value="imperfect">不完满</option>
+              </select>
+            </label>
           ) : null}
           <div className="inline-commands">
             <button

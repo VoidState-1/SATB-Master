@@ -30,6 +30,7 @@ import type {
   ProjectDocument,
   VoiceId,
 } from "./types";
+import { cadenceChordCoverage } from "./cadenceCoverage";
 import {
   METER_DENOMINATORS,
   PPQ,
@@ -246,7 +247,7 @@ function validateCadenceAnnotation(
     &&
     (value.kind === "full" || value.completion === undefined) &&
     (value.kind !== "supplementary" || value.form === "plagal") &&
-    (value.form !== "plagal" || value.kind === "full" || value.kind === "supplementary")
+    (value.form !== "plagal" || value.kind !== "deceptive")
   );
 }
 
@@ -254,6 +255,7 @@ function validateCadenceAnnotations(
   value: unknown,
   projectLength: number,
   regions: readonly ChordRegion[],
+  boundaries: readonly PhraseBoundary[],
 ) {
   if (!Array.isArray(value) || !value.every((item) => validateCadenceAnnotation(item, projectLength)))
     return false;
@@ -269,11 +271,7 @@ function validateCadenceAnnotations(
   )
     return false;
   return annotations.every((annotation) => {
-    const startAligned = regions.some((region) => region.startTick === annotation.fromTick);
-    const endAligned = regions.some(
-      (region) => region.startTick + region.durationTicks === annotation.toTick,
-    );
-    return annotation.stale === true || (startAligned && endAligned);
+    return annotation.stale === true || cadenceChordCoverage(annotation, regions, boundaries).aligned;
   });
 }
 
@@ -658,6 +656,7 @@ export function validateProject(value: unknown): value is ProjectDocument {
       project.chordTrack.cadenceAnnotations,
       project.lengthTicks as number,
       project.chordTrack.regions as ChordRegion[],
+      (project.structure as ProjectDocument["structure"]).phraseBoundaries,
     )
   )
     return false;
