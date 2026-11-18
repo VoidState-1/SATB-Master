@@ -1,6 +1,6 @@
 ﻿.app-shell {
   display: grid;
-  grid-template-rows: 42px 52px minmax(0, 1fr);
+  grid-template-rows: 42px auto minmax(0, 1fr);
   height: 100vh;
   background: #ecece8;
   user-select: none;
