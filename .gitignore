@@ -24,3 +24,4 @@ StandardCase/Origin/
 !/StandardCase/Samples/
 !/StandardCase/Verified/
 tokei.exe
+.agents
