@@ -33,6 +33,8 @@ export interface PianoRollProps {
   loopEndTick: number;
   cancelRequest: number;
   scaleGuideEnabled?: boolean;
+  /** 显式定位请求; 调用方保持对象稳定, 不随每次音符编辑重新定位。 */
+  focusRange?: { fromTick: number; toTick: number; noteIds?: ReadonlySet<string>; requestKey?: number };
   onSetPlayhead(tick: number): void;
   onSetPixelsPerBeat(value: number): void;
   onSetActiveVoice(voiceId: VoiceId): void;

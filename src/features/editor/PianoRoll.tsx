@@ -4,6 +4,7 @@ import {
   defaultChordDraftAtTick,
 } from "../../domain/chords";
 import { buildMeasures, keyAtTick, snapTickBackward } from "../../domain/time";
+import { toMidi } from "../../domain/pitch";
 import type { HarmonyDiagnostic } from "../../domain/harmony";
 import {
   buildTimelineRulerTicks,
@@ -32,6 +33,8 @@ import {
   initialScrollTopForMidi,
   scrollLeftForZoom,
   tickToX,
+  midiToY,
+  PIANO_WIDTH,
   xToTick,
 } from "./viewport";
 import type { EditorDomain, PianoRollProps } from "./types";
@@ -63,6 +66,7 @@ export function PianoRoll({
   pixelsPerBeat,
   selectedNoteIds,
   selectedChordIds,
+  focusRange,
   chordBrush,
   diagnostics,
   missingExpectedNoteIds,
@@ -215,6 +219,22 @@ export function PianoRoll({
       scroll.scrollTop = initialScrollTopForMidi(72);
     }
   }, []);
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll || !focusRange) return;
+    scroll.scrollLeft = Math.max(0, tickToX(focusRange.fromTick, project.ppq, pixelsPerBeat) - PIANO_WIDTH - 24);
+    const pitches = project.satbTracks.flatMap((track) => track.notes.filter((note) => focusRange.noteIds?.size
+      ? focusRange.noteIds.has(note.id)
+      : note.startTick < focusRange.toTick && focusRange.fromTick < note.startTick + note.durationTicks).map((note) => toMidi(note.pitch)));
+    if (pitches.length) {
+      let low = pitches[0];
+      let high = pitches[0];
+      for (const pitch of pitches) { low = Math.min(low, pitch); high = Math.max(high, pitch); }
+      scroll.scrollTop = Math.max(0, midiToY((low + high) / 2) - scroll.clientHeight / 2 + ROW_HEIGHT / 2);
+    }
+    // 定位是离散请求, 普通工程编辑或缩放继续沿用原来的视口行为。
+  }, [focusRange]);
 
   const rawTickAtX = (x: number) => {
     return xToTick(x, project.ppq, pixelsPerBeat, project.lengthTicks);
