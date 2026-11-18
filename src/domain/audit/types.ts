@@ -4,7 +4,7 @@ export const AUDIT_CATEGORIES = ["transcription", "chord", "cadence", "diagnosti
 export type AuditCategory = typeof AUDIT_CATEGORIES[number];
 export const AUDIT_SEVERITIES = ["error", "warning", "suggestion", "info"] as const;
 export type AuditSeverity = typeof AUDIT_SEVERITIES[number];
-export const AUDIT_DECISIONS = ["pending", "accept", "reject", "needs-evidence"] as const;
+export const AUDIT_DECISIONS = ["pending", "answered", "accept", "reject", "needs-evidence"] as const;
 export type AuditDecision = typeof AUDIT_DECISIONS[number];
 export const AUDIT_ATTRIBUTIONS = ["uncertain", "program", "transcription", "reference", "policy", "context", "none"] as const;
 export type AuditAttribution = typeof AUDIT_ATTRIBUTIONS[number];
@@ -26,6 +26,13 @@ export interface AuditQuestion {
   suggested?: AuditAnswer;
 }
 export interface AuditAnswerRecord { id: string; value: AuditAnswer }
+/** 已在整张原图上核对的拍点及所在谱行, 所有坐标均为 0..1 比例。 */
+export interface AuditBeatAnchor {
+  position: string;
+  x: number;
+  top: number;
+  bottom: number;
+}
 export interface AuditItem {
   id: string;
   title: string;
@@ -38,17 +45,26 @@ export interface AuditItem {
   evidence?: AuditEvidence[];
   question?: string;
   questions?: AuditQuestion[];
+  /** 独立标注或特定程序运行的原始结果。范围左闭右开。 */
+  annotations?: AuditAnnotation[];
   /** v2 包中必须附带本条独立的原始工程快照。 */
   project?: ProjectDocument;
   /** 相对于原图宽高的比例, 用于可选框选; 不代替音乐位置。 */
   sourceRegion?: { x: number; y: number; width: number; height: number };
+}
+export interface AuditAnnotation {
+  source: "model" | "program";
+  kind: "chord" | "cadence";
+  range: [string, string];
+  label: string;
+  context?: string;
 }
 export interface AuditCase {
   id: string;
   title: string;
   score?: string;
   project?: ProjectDocument;
-  source: { title: string; locator?: string; image?: string };
+  source: { title: string; locator?: string; image?: string; beatAnchors?: AuditBeatAnchor[] };
   items: AuditItem[];
 }
 export interface AuditPackage {
@@ -90,6 +106,7 @@ export interface BoundAuditItem {
   fingerprint: string;
   fromTick: number;
   toTick: number;
+  annotations?: (AuditAnnotation & { fromTick: number; toTick: number })[];
   noteIds: ReadonlySet<string>;
   project: ProjectDocument;
 }

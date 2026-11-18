@@ -1,4 +1,12 @@
-import type { AuditAnswer, AuditAnswerRecord, AuditQuestion } from "./types";
+import type { AuditAnswer, AuditAnswerRecord, AuditItem, AuditQuestion } from "./types";
+
+export function effectiveAuditQuestions(item: AuditItem): AuditQuestion[] {
+  if (item.questions?.length || item.category !== "proposal") return item.questions ?? [];
+  return [{ id: "proposal-verdict", type: "single", label: "修复方案", options: [
+    { id: "accept", label: "批准此修复方案" }, { id: "reject", label: "拒绝此修复方案" },
+    { id: "needs-evidence", label: "需要补证" },
+  ] }];
+}
 
 export function auditAnswer(answers: readonly AuditAnswerRecord[] | undefined, id: string): AuditAnswer | undefined {
   return answers?.find((answer) => answer.id === id)?.value;

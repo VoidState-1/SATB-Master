@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { BookMarked, Cpu, ExternalLink, Sparkles } from "lucide-react";
 import type { AuditItem } from "../../domain/audit";
 import { categoryLabels, severityLabels } from "./auditLabels";
 import "./audit-review.css";
@@ -7,18 +8,16 @@ const voices = { soprano: "女高音", alto: "女低音", tenor: "男高音", ba
 
 interface Props {
   item: AuditItem;
-  source?: ReactNode;
-  score?: ReactNode;
-  editor?: ReactNode;
+  children: ReactNode;
 }
 
-export function AuditAnalysis({ item, source, score, editor }: Props) {
+export function AuditAnalysis({ item, children }: Props) {
   const model = (item.model.conclusion || item.model.reason) && <section className="audit-analysis-block model">
-    <h4>模型判断</h4>
-    <div className="audit-analysis-content"><strong>{item.model.conclusion}</strong><p>{item.model.reason}</p></div>
+    <h4><Sparkles size={13} aria-hidden="true" />模型判断</h4>
+    <div className="audit-analysis-content">{item.model.conclusion && <strong>{item.model.conclusion}</strong>}{item.model.reason && <p>{item.model.reason}</p>}</div>
   </section>;
-  const program = item.program && <section className="audit-analysis-block">
-    <h4>程序结果</h4>
+  const program = item.program && <section className="audit-analysis-block program">
+    <h4><Cpu size={13} aria-hidden="true" />程序结果</h4>
     <div className="audit-analysis-content">
       <p>{item.program.conclusion}</p>
       {(item.program.ruleId || item.program.run) && <details className="audit-run"><summary>运行信息</summary>
@@ -27,32 +26,27 @@ export function AuditAnalysis({ item, source, score, editor }: Props) {
     </div>
   </section>;
   const references = <section className="audit-analysis-block audit-analysis-references">
-    <h4>参考依据</h4>
+    <h4><BookMarked size={13} aria-hidden="true" />参考依据{item.evidence?.length ? <span className="audit-block-count">{item.evidence.length}</span> : null}</h4>
     <div className="audit-analysis-content">{item.evidence?.length ? item.evidence.map((e, i) => <div className="audit-reference" key={i}>
-      {e.url ? <a href={e.url} target="_blank" rel="noreferrer">{e.title}</a> : <strong>{e.title}</strong>}
-      {e.locator && <small>{e.locator}</small>}{e.content && <p>{e.content}</p>}
+      <span className="audit-reference-index" aria-hidden="true">{i + 1}</span>
+      <div>
+        {e.url ? <a href={e.url} target="_blank" rel="noreferrer">{e.title}<ExternalLink size={11} aria-hidden="true" /></a> : <strong>{e.title}</strong>}
+        {e.locator && <small>{e.locator}</small>}{e.content && <p>{e.content}</p>}
+      </div>
     </div>) : <p className="audit-muted">尚未提供依据，可在意见中要求补证。</p>}</div>
   </section>;
   return <section className="audit-analysis" aria-label="条目分析">
     <header className="audit-detail-heading">
-      <div className="audit-tags"><span className={`audit-badge severity-${item.severity}`}>{severityLabels[item.severity]}</span><span>{categoryLabels[item.category]}</span><code>{item.range.join(" → ")}</code></div>
-      <h3>{item.title}</h3>
-      {item.voices?.length ? <p className="audit-location">{item.voices.map(v => voices[v]).join("、")}</p> : null}
+      <div className="audit-tags">
+        <span className={`audit-badge severity-${item.severity}`}>{severityLabels[item.severity]}</span>
+        <span className="audit-tag">{categoryLabels[item.category]}</span>
+        <code className="audit-tag audit-range" title="审计范围（小节:拍）">{item.range.join(" → ")}</code>
+        {item.voices?.length ? <span className="audit-tag audit-location">{item.voices.map(v => voices[v]).join("、")}</span> : null}
+      </div>
+      <h2>{item.question ?? item.title}</h2>
     </header>
-    {item.question && <section className="audit-question"><h4>待裁定</h4><p>{item.question}</p></section>}
-    {editor ? <>
-      <div className="audit-analysis-editor">{editor}</div>
-      <div className="audit-analysis-text">{program}{model}{references}</div>
-    </> : <>
-      {(source || model) && <div className={`audit-evidence-pair${source && model ? " has-caption" : ""}`}>
-        {source && <div className="audit-evidence-media">{source}</div>}
-        {model && <div className="audit-evidence-caption">{model}</div>}
-      </div>}
-      {(score || program) && <div className={`audit-evidence-pair${score && program ? " has-caption" : ""}`}>
-        {score && <div className="audit-evidence-media">{score}</div>}
-        {program && <div className="audit-evidence-caption">{program}</div>}
-      </div>}
-      <div className="audit-analysis-text">{references}</div>
-    </>}
+    {children}
+    {item.evidence?.length ? <details className="audit-evidence-details"><summary>教材依据 · {item.evidence.length}</summary>{references}</details> : null}
+    <details className="audit-evidence-details"><summary>模型判断与程序结果</summary><div className="audit-analysis-text">{model}{program}</div></details>
   </section>;
 }

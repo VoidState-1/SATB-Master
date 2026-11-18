@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BookOpen, BookOpenCheck, Check, ChevronDown, CircleAlert, CircleHelp, ClipboardCheck, Download, FileMusic, FolderOpen, Image as ImageIcon, Info, Lightbulb, ListFilter, ListMusic, Maximize2, Minimize2, Minus, PanelLeftOpen, Piano, Search, TriangleAlert, Upload, UserRound, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, CircleAlert, CircleHelp, ClipboardCheck, Download, FileMusic, FolderOpen, Info, Lightbulb, ListFilter, ListMusic, Maximize2, Minimize2, Minus, PanelLeftClose, PanelLeftOpen, Search, TriangleAlert, Upload, UserRound, X } from "lucide-react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { ConfirmationState } from "../../app/controllers/useConfirmationController";
 import { AUDIT_CATEGORIES, AUDIT_SEVERITIES, parseAuditFeedback, restoreAuditFeedback, createAuditFeedback, updateAuditReview, type AuditCategory, type AuditFeedback, type AuditReviewPatch, type AuditSeverity, type BoundAuditPackage } from "../../domain/audit";
 import { downloadAuditFeedback, loadAuditSession, prepareAuditPackage, readAuditJson, saveAuditSession } from "../../services/audit";
-import { AuditScore } from "./AuditScore";
-import { AuditSource } from "./AuditSource";
-import { AuditProjectEditor } from "./AuditProjectEditor";
-import { AuditOpinion } from "./AuditOpinion";
-import { AuditAnalysis } from "./AuditAnalysis";
+import { AuditEvidenceWorkspace } from "./AuditEvidenceWorkspace";
 import { AuditReviewPanel } from "./AuditReviewPanel";
 import { categoryLabels, severityLabels, shortDecisionLabels } from "./auditLabels";
 import "./audit.css";
@@ -23,7 +19,7 @@ interface Props {
 }
 function errorText(error: unknown) { return error instanceof Error ? error.message : "审计操作失败"; }
 const severityIcons = { error: CircleAlert, warning: TriangleAlert, suggestion: Lightbulb, info: Info };
-const decisionIcons = { accept: Check, reject: X, "needs-evidence": CircleHelp };
+const decisionIcons = { answered: ClipboardCheck, accept: Check, reject: X, "needs-evidence": CircleHelp };
 
 export function AuditWorkbench({ onBack, windowController, confirmation, answerConfirmation, requestConfirmation }: Props) {
   const [session, setSession] = useState<Session>();
@@ -31,13 +27,12 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
   const [notice, setNotice] = useState("");
   const [saveStatus, setSaveStatus] = useState("尚未导入");
   const [selectedKey, setSelectedKey] = useState("");
+  const [editingKey, setEditingKey] = useState("");
   const [caseFilter, setCaseFilter] = useState("");
   const [severity, setSeverity] = useState<AuditSeverity | "">("");
   const [category, setCategory] = useState<AuditCategory | "">("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
-  const [centerTab, setCenterTab] = useState<"image" | "project">("image");
-  const [baselineView, setBaselineView] = useState(false);
   const [editorGeneration, setEditorGeneration] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -87,8 +82,9 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
       if (request !== sequence.current) return;
       setSession({ bound, feedback });
       setEditorGeneration((n) => n + 1);
-      setBaselineView(false); setCenterTab("image"); setQueueOpen(false); setShowFilters(false);
+      setQueueOpen(false); setShowFilters(false);
       setSelectedKey(""); setCaseFilter(""); setSearch(""); setSeverity(""); setCategory(""); setStatus("");
+      setEditingKey("");
       setCollapsedCases(new Set());
       setNotice(message + (bound.data.formatVersion === 1 ? "；旧包由谱文临时生成工程，新提交请附带 .satb 工程使用 v2" : ""));
     } catch (error) { if (request === sequence.current) setNotice(errorText(error)); }
@@ -117,7 +113,7 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
   };
 
   const rows = useMemo(() => session?.bound.cases.flatMap((c) => c.items.map((i) => ({ c, i, key: `${c.data.id}/${i.item.id}`, review: session.feedback.cases.find((r) => r.id === c.data.id)!.items.find((r) => r.id === i.item.id)! }))) ?? [], [session]);
-  const filtered = rows.filter(({ c, i, review }) => (!caseFilter || c.data.id === caseFilter) && (!severity || i.item.severity === severity) && (!category || i.item.category === category) && (!status || (status === "reviewed" ? review.decision !== "pending" : review.decision === status)) && `${i.item.title} ${c.data.title} ${i.item.program?.ruleId ?? ""}`.toLowerCase().includes(search.toLowerCase()));
+  const filtered = rows.filter(({ c, i, key, review }) => (!caseFilter || c.data.id === caseFilter) && (!severity || i.item.severity === severity) && (!category || i.item.category === category) && (!status || editingKey === key || (status === "reviewed" ? review.decision !== "pending" : review.decision === status)) && `${i.item.title} ${c.data.title} ${i.item.program?.ruleId ?? ""}`.toLowerCase().includes(search.toLowerCase()));
   const active = filtered.find((r) => r.key === selectedKey) ?? filtered[0];
   const auditCase = active?.c ?? session?.bound.cases.find((c) => c.data.id === caseFilter) ?? session?.bound.cases[0];
   const caseReview = session?.feedback.cases.find((c) => c.id === auditCase?.data.id);
@@ -125,9 +121,12 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
   const approvedCases = session?.feedback.cases.filter((c) => c.source.decision === "accept").length ?? 0;
   const update = (itemId: string | undefined, patch: AuditReviewPatch) => {
     if (!auditCase) return;
+    if (itemId && active && status && status !== "pending" && (patch.decision === "pending" || "project" in patch || "answers" in patch)) {
+      setSelectedKey(active.key);
+      setEditingKey(active.key);
+    }
     setSession((current) => current ? { ...current, feedback: updateAuditReview(current.feedback, auditCase.data.id, itemId, patch, new Date().toISOString()) } : current);
   };
-  const activeProject = active?.review.project ?? active?.i.project ?? auditCase?.project;
   const activeIndex = active ? filtered.indexOf(active) : -1;
   const groupRows = new Map<(typeof rows)[number]["c"], typeof rows>();
   for (const row of filtered) {
@@ -142,10 +141,10 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
     return next;
   });
   const selectItem = (key: string) => {
+    setEditingKey("");
     const group = filtered.find(row => row.key === key)?.c.data.id;
     if (group && collapsedCases.has(group)) toggleGroup(group);
     setSelectedKey(key);
-    setBaselineView(false);
     setQueueOpen(false);
     if (queueOpen) compactQueueToggle.current?.focus();
   };
@@ -153,46 +152,43 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
   const compactQueueToggle = useRef<HTMLButtonElement>(null);
   const directoryList = useRef<HTMLDivElement>(null);
   const evidencePane = useRef<HTMLElement>(null);
-  const [sourceReviewOpen, setSourceReviewOpen] = useState(false);
   const queueSearch = useRef<HTMLInputElement>(null);
-  useEffect(() => { setCollapsedCases(new Set()); }, [search, caseFilter, severity, category, status]);
+  useEffect(() => { setCollapsedCases(new Set()); setEditingKey(""); }, [search, caseFilter, severity, category, status]);
   useEffect(() => { if (queueOpen) queueSearch.current?.focus(); }, [queueOpen]);
 
   useEffect(() => {
     evidencePane.current?.scrollTo({ top: 0 });
     directoryList.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: "nearest" });
-    setBaselineView(false);
   }, [active?.key, session?.bound.fingerprint]);
-  useEffect(() => { setSourceReviewOpen(false); }, [auditCase?.fingerprint]);
+  const submit = (patch: AuditReviewPatch) => {
+    if (!active) return;
+    setEditingKey("");
+    update(active.i.item.id, patch);
+    const ordered = [...filtered.slice(activeIndex + 1), ...filtered.slice(0, activeIndex)];
+    const next = ordered.find(row => row.review.decision === "pending");
+    if (next) selectItem(next.key);
+    else setNotice("当前筛选中的条目已全部审阅");
+  };
 
-  const source = centerTab === "image" && auditCase && (
-    <AuditSource key={`source/${auditCase.fingerprint}/${active?.i.item.id ?? "all"}`}
-      source={auditCase.data.source} title={auditCase.data.title} region={active?.i.item.sourceRegion} />
-  );
-  const score = centerTab === "image" && auditCase && (
-    <AuditScore key={`score/${auditCase.fingerprint}/${active?.i.item.id ?? "all"}/${editorGeneration}`}
-      auditCase={auditCase} selected={active?.i} project={activeProject} showNotice={showNotice} />
-  );
-  const editor = centerTab === "project" && auditCase && activeProject && (
-    <AuditProjectEditor key={`${baselineView ? "baseline" : "project"}/${active?.i.fingerprint ?? auditCase.fingerprint}/${editorGeneration}`}
-      initialProject={baselineView ? auditCase.project : activeProject}
-      originalProject={baselineView ? auditCase.project : active?.i.project ?? auditCase.project}
-      selected={baselineView ? undefined : active?.i} label={baselineView ? "谱例提交基准" : undefined}
-      filename={`${auditCase.data.id}-${baselineView ? "source" : active?.i.item.id ?? "source"}`}
-      confirmation={confirmation} requestConfirmation={requestConfirmation} showNotice={showNotice}
-      onProjectChange={active && !baselineView ? (project) => update(active.i.item.id, { project: project === active.i.project ? undefined : project }) : undefined} />
-  );
+  const tally = { answered: 0, accept: 0, reject: 0, "needs-evidence": 0, pending: 0 };
+  for (const row of rows) tally[row.review.decision]++;
+  const share = (n: number) => `${rows.length ? (n / rows.length) * 100 : 0}%`;
+  const saveTone = saveStatus.includes("失败") ? "error" : saveStatus.includes("正在") ? "busy" : session ? "ok" : "idle";
 
   return <main className="audit-workbench">
     <header className="app-titlebar audit-titlebar">
-      <button className="audit-back" aria-label="返回工程" title="返回工程" onClick={() => void leave(onBack)}><ArrowLeft size={17} /></button>
-      <strong>教材审计</strong>
-      {session && <span className="audit-batch-name" title={session.bound.data.title}>{session.bound.data.title}</span>}
-      {session && <button className="audit-directory-toggle" ref={compactQueueToggle} aria-expanded={queueOpen} aria-controls="audit-directory" onClick={() => setQueueOpen(v => !v)}><PanelLeftOpen size={16} />{queueOpen ? "收起目录" : "审计目录"}</button>}
+      <button className="audit-back" aria-label="返回工程" title="返回工程" onClick={() => void leave(onBack)}><ArrowLeft size={16} /></button>
+      <div className="audit-title-group">
+        <span className="audit-title-mark" aria-hidden="true"><ClipboardCheck size={14} /></span>
+        <strong>教材审计</strong>
+        {session && <span className="audit-batch-name" title={session.bound.data.title}>{session.bound.data.title}</span>}
+      </div>
+      {session && <button className="audit-directory-toggle" ref={compactQueueToggle} aria-expanded={queueOpen} aria-controls="audit-directory" onClick={() => setQueueOpen(v => !v)}>{queueOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}{queueOpen ? "收起目录" : "审计目录"}</button>}
       <nav className="audit-toolbar" aria-label="审计工具栏">
-        {session && <><button aria-label="导入审计包" title="导入审计包" onClick={() => packageInput.current?.click()} disabled={loading}><FolderOpen size={16} /></button>
-        <button aria-label="导入意见" title="导入意见" onClick={() => feedbackInput.current?.click()} disabled={loading}><Upload size={16} /></button>
-        <button className="audit-primary" onClick={() => { downloadAuditFeedback(session.feedback); setNotice("已发起意见文件导出，可交给模型读取"); }}><Download size={15} />导出意见</button></>}
+        {session && <><button className="audit-tool" aria-label="导入审计包" title="导入审计包" onClick={() => packageInput.current?.click()} disabled={loading}><FolderOpen size={16} /></button>
+        <button className="audit-tool" aria-label="导入意见" title="导入意见" onClick={() => feedbackInput.current?.click()} disabled={loading}><Upload size={16} /></button>
+        <span className="audit-toolbar-divider" aria-hidden="true" />
+        <button className="audit-primary" onClick={() => { downloadAuditFeedback(session.feedback); setNotice("已发起意见文件导出，可交给模型读取"); }}><Download size={14} />导出意见</button></>}
       </nav>
       <input ref={packageInput} aria-label="审计包文件" type="file" accept=".json" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; void importPackage(file); }} />
       <input ref={feedbackInput} aria-label="审计意见文件" type="file" accept=".json" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; void importFeedback(file); }} />
@@ -204,22 +200,32 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
     </header>
     {notice && <div className="audit-notice" role="status"><Info size={14} /><span>{notice}</span><button aria-label="关闭审计提示" onClick={() => setNotice("")}><X size={14} /></button></div>}
     {!session ? <section className="audit-empty">
-      <FileMusic aria-hidden="true" size={30} strokeWidth={1.5} />
-      <h1>打开教材审计包</h1>
-      <button className="audit-primary" disabled={loading} onClick={() => packageInput.current?.click()}><FolderOpen size={17} />{loading ? "正在恢复本机记录…" : "选择审计包"}</button>
-      <small>.satb-audit.json</small>
+      <div className="audit-empty-card">
+        <span className="audit-empty-icon" aria-hidden="true"><FileMusic size={26} strokeWidth={1.6} /></span>
+        <h1>打开教材审计包</h1>
+        <p>载入模型提交的审计包，逐条对照教材原图、转写谱面与程序结果，记录人工结论。意见自动保存在本机，可随时导出。</p>
+        <button className="audit-primary audit-empty-action" disabled={loading} onClick={() => packageInput.current?.click()}><FolderOpen size={16} />{loading ? "正在恢复本机记录…" : "选择审计包"}</button>
+        <small>支持 <code>.satb-audit.json</code></small>
+      </div>
     </section> : <>
       <div className={`audit-layout ${queueOpen ? "queue-open" : ""}`}>
         <aside className="audit-sidebar" id="audit-directory" aria-label="待审条目" onKeyDown={e => { if (queueOpen && e.key === "Escape") { setQueueOpen(false); compactQueueToggle.current?.focus(); } }}>
-          <header className="audit-queue-head"><h2><ListMusic size={16} />审计目录</h2><span>{filterCount || search ? `${filtered.length} / ${rows.length}` : rows.length} 条</span></header>
-          <div className="audit-queue-search"><label><Search size={14} /><input ref={queueSearch} aria-label="搜索审计条目" placeholder="搜索条目或规则" value={search} onChange={e => setSearch(e.target.value)} /></label>
-            <button aria-label="筛选条目" title="筛选条目" aria-expanded={showFilters} aria-controls="audit-filters" onClick={() => setShowFilters(v => !v)}><ListFilter size={16} />{filterCount > 0 && filterCount}</button>
+          <header className="audit-pane-head audit-queue-head"><h2><ListMusic size={15} />审计目录</h2><span className="audit-count">{filterCount || search ? `${filtered.length} / ${rows.length}` : rows.length} 条</span></header>
+          <div className="audit-queue-progress">
+            <div className="audit-progress-figure"><span>审阅进度</span><strong>{completed}<small> / {rows.length}</small></strong></div>
+            <div className="audit-stack-bar" role="progressbar" aria-label="条目已审" aria-valuemin={0} aria-valuemax={rows.length} aria-valuenow={completed}>
+              <i className="is-answered" style={{ width: share(tally.answered) }} /><i className="is-accept" style={{ width: share(tally.accept) }} /><i className="is-needs-evidence" style={{ width: share(tally["needs-evidence"]) }} /><i className="is-reject" style={{ width: share(tally.reject) }} />
+            </div>
+          </div>
+          <div className="audit-queue-search"><label><Search size={14} /><input ref={queueSearch} aria-label="搜索审计条目" placeholder="搜索条目或规则" value={search} onChange={e => setSearch(e.target.value)} />{search && <button type="button" className="audit-search-clear" aria-label="清空搜索" onClick={() => setSearch("")}><X size={12} /></button>}</label>
+            <button className="audit-filter-toggle" aria-label="筛选条目" title="筛选条目" aria-expanded={showFilters} aria-controls="audit-filters" data-active={filterCount > 0 || undefined} onClick={() => setShowFilters(v => !v)}><ListFilter size={15} />{filterCount > 0 && <span className="audit-filter-count">{filterCount}</span>}</button>
           </div>
           {showFilters && <div className="audit-filters" id="audit-filters">
-          <select aria-label="谱例筛选" value={caseFilter} onChange={(e) => setCaseFilter(e.target.value)}><option value="">全部谱例</option>{session.bound.cases.map((c) => <option key={c.data.id} value={c.data.id}>{c.data.title}</option>)}</select>
-          <div><select aria-label="层级筛选" value={severity} onChange={(e) => setSeverity(e.target.value as typeof severity)}><option value="">全部层级</option>{AUDIT_SEVERITIES.map((key) => <option key={key} value={key}>{severityLabels[key]}</option>)}</select><select aria-label="审计状态筛选" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">全部状态</option><option value="pending">待审</option><option value="needs-evidence">需补证</option><option value="accept">已认可</option><option value="reject">未认可</option><option value="reviewed">已有决定</option></select></div>
-          <select aria-label="类型筛选" value={category} onChange={(e) => setCategory(e.target.value as typeof category)}><option value="">全部类型</option>{AUDIT_CATEGORIES.map((key) => <option key={key} value={key}>{categoryLabels[key]}</option>)}</select>
-            <button onClick={clearFilters}>清除筛选</button>
+            <label className="is-wide"><span>谱例</span><select aria-label="谱例筛选" value={caseFilter} onChange={(e) => setCaseFilter(e.target.value)}><option value="">全部谱例</option>{session.bound.cases.map((c) => <option key={c.data.id} value={c.data.id}>{c.data.title}</option>)}</select></label>
+            <label><span>层级</span><select aria-label="层级筛选" value={severity} onChange={(e) => setSeverity(e.target.value as typeof severity)}><option value="">全部层级</option>{AUDIT_SEVERITIES.map((key) => <option key={key} value={key}>{severityLabels[key]}</option>)}</select></label>
+            <label><span>状态</span><select aria-label="审计状态筛选" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">全部状态</option><option value="pending">待审</option><option value="answered">已作答</option><option value="needs-evidence">需补证</option><option value="accept">已认可</option><option value="reject">未认可</option><option value="reviewed">已有决定</option></select></label>
+            <label className="is-wide"><span>类型</span><select aria-label="类型筛选" value={category} onChange={(e) => setCategory(e.target.value as typeof category)}><option value="">全部类型</option>{AUDIT_CATEGORIES.map((key) => <option key={key} value={key}>{categoryLabels[key]}</option>)}</select></label>
+            <button className="audit-filters-clear" disabled={!filterCount && !search} onClick={clearFilters}>清除筛选</button>
           </div>}
           <div className="audit-item-list" ref={directoryList}>
             {Array.from(groupRows, ([c, entries]) => {
@@ -230,69 +236,47 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
                 if (seenTitles.has(item.title)) repeatedTitles.add(item.title);
                 seenTitles.add(item.title);
               }
+              const groupDone = entries.filter(e => e.review.decision !== "pending").length;
               return <section key={c.data.id} className="audit-queue-group">
                 <h3><button type="button" className="audit-group-toggle" aria-expanded={expanded} onClick={() => toggleGroup(c.data.id)}>
-                  <ChevronDown size={13} /><span>{c.data.title}</span><small>{entries.length}</small>
+                  <ChevronDown size={13} /><span>{c.data.title}</span><small data-complete={groupDone === entries.length || undefined}>{groupDone}/{entries.length}</small>
                 </button></h3>
                 {expanded && entries.map(({ i: { item }, key, review }) => {
                   const SeverityIcon = severityIcons[item.severity];
                   const DecisionIcon = review.decision === "pending" ? undefined : decisionIcons[review.decision];
                   const context = [severityLabels[item.severity], item.range.join("–"), shortDecisionLabels[review.decision]].join(" · ");
-                  return <button key={key} className="audit-item" aria-label={`${item.title}，${context}`} title={`${item.title}\n${context}`}
+                  return <button key={key} className={`audit-item is-${review.decision}`} aria-label={`${item.title}，${context}`} title={`${item.title}\n${context}`}
                     aria-pressed={active?.key === key} onClick={() => selectItem(key)}>
                     <SeverityIcon size={14} className={`audit-row-severity severity-${item.severity}`} />
                     <span className="audit-row-copy"><span className="audit-row-title">{item.title}</span>
                       {repeatedTitles.has(item.title) && <small className="audit-row-position">{item.range.join("–")}</small>}
                     </span>
-                    {DecisionIcon && <DecisionIcon size={14} className="audit-row-decision" />}
+                    <span className={`audit-row-status is-${review.decision}`} aria-hidden="true">{DecisionIcon && <DecisionIcon size={10} strokeWidth={3.2} className="audit-row-decision" />}</span>
                   </button>;
                 })}
               </section>;
             })}
-            {!filtered.length && <div className="audit-queue-empty"><p>{rows.length ? "没有匹配的条目" : "本批次没有审计条目"}</p>{(filterCount > 0 || search) && <button onClick={clearFilters}>清除筛选</button>}</div>}
+            {!filtered.length && <div className="audit-queue-empty"><Search size={20} strokeWidth={1.6} /><p>{rows.length ? "没有匹配的条目" : "本批次没有审计条目"}</p>{(filterCount > 0 || search) && <button onClick={clearFilters}>清除筛选</button>}</div>}
           </div>
-          <div className="audit-queue-progress"><div><span>条目已审</span><strong>{completed} / {rows.length}</strong></div><progress aria-label="条目已审" max={rows.length || 1} value={completed} /></div>
         </aside>
         <section className="audit-evidence-pane" ref={evidencePane} aria-label="谱面与分析依据">
-          {auditCase && <>
-            <header className="audit-case-heading">
-              <h1>{auditCase.data.title}</h1>
-              <details className="audit-citation" key={auditCase.fingerprint}><summary title="教材来源"><BookOpen size={14} />来源</summary>
-                <div><strong>{auditCase.data.source.title}</strong>{auditCase.data.source.locator && <p>{auditCase.data.source.locator}</p>}</div>
-              </details>
-            </header>
-            <div className="audit-view-bar"><div className="audit-center-tabs" role="tablist" aria-label="审计视图" onKeyDown={e => {
-              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-              e.preventDefault();
-              e.currentTarget.querySelector<HTMLButtonElement>('button[aria-selected="false"]')?.focus();
-              setCenterTab(centerTab === "image" ? "project" : "image"); setBaselineView(false);
-            }}>
-              <button role="tab" aria-label="原图与谱面" aria-selected={centerTab === "image"} tabIndex={centerTab === "image" ? 0 : -1} aria-controls="audit-image-panel" id="audit-image-tab" onClick={() => { setCenterTab("image"); setBaselineView(false); }}><ImageIcon size={15} />谱面对照</button>
-              <button role="tab" aria-label="工程 · 钢琴卷帘" aria-selected={centerTab === "project"} tabIndex={centerTab === "project" ? 0 : -1} aria-controls="audit-project-panel" id="audit-project-tab" onClick={() => setCenterTab("project")}><Piano size={15} />钢琴卷帘</button>
-            </div><div className="audit-view-actions">{baselineView && active && <button onClick={() => setBaselineView(false)}>返回条目副本</button>}
-              {caseReview && <button className="audit-source-toggle" aria-label="谱例转写复核" title="谱例转写复核" aria-expanded={sourceReviewOpen} aria-controls="audit-source-review" onClick={() => setSourceReviewOpen(v => !v)}><BookOpenCheck size={15} />转写复核<ChevronDown size={13} /></button>}
-            </div></div>
-            {caseReview && sourceReviewOpen && <section className="audit-source-review" id="audit-source-review" aria-label="谱例转写复核">
-              <div className="audit-card-heading"><strong>原始转写 · 谱例基准工程</strong><button onClick={() => { setBaselineView(true); setCenterTab("project"); setSourceReviewOpen(false); }}>查看基准工程</button></div>
-              <AuditOpinion mode="source" record={caseReview.source} onChange={patch => update(undefined, patch)} />
-            </section>}
-            {!baselineView && active?.review.project && <div className="audit-draft-note">当前条目副本已修改 · {active.review.decision === "pending" ? "结论需重新确认" : "意见已保存"}</div>}
-            <div role="tabpanel" id={`audit-${centerTab}-panel`} aria-labelledby={`audit-${centerTab}-tab`}>
-              {active
-                ? <AuditAnalysis key={active.key} item={active.i.item} source={source} score={score} editor={editor} />
-                : <>{source}{score}{editor}</>}
-            </div>
-          </>}
+          {auditCase && caseReview && <AuditEvidenceWorkspace
+            key={`${auditCase.fingerprint}/${active?.i.fingerprint ?? "all"}/${editorGeneration}`}
+            auditCase={auditCase} selected={active?.i} review={active?.review} sourceReview={caseReview.source}
+            onSourceChange={patch => update(undefined, patch)}
+            onProjectChange={active ? project => update(active.i.item.id, { project: project === active.i.project ? undefined : project }) : undefined}
+            confirmation={confirmation} requestConfirmation={requestConfirmation} showNotice={showNotice} />}
         </section>
         <aside className="audit-detail-pane" aria-label="条目审计意见">{active
           ? <AuditReviewPanel key={active.key} item={active.i.item} review={active.review} index={activeIndex} total={filtered.length}
-              onNavigate={offset => selectItem(filtered[activeIndex + offset].key)} onChange={patch => update(active.i.item.id, patch)} />
-          : <p className="audit-detail-empty"><ClipboardCheck size={28} />选择条目填写意见</p>}</aside>
+              hasNextPending={filtered.some(row => row.key !== active.key && row.review.decision === "pending")}
+              onNavigate={offset => selectItem(filtered[activeIndex + offset].key)} onChange={patch => update(active.i.item.id, patch)} onSubmit={submit} />
+          : <p className="audit-detail-empty"><ClipboardCheck size={26} strokeWidth={1.6} />选择条目填写意见</p>}</aside>
       </div>
       <footer className="audit-statusbar">
-        <span className="audit-save-status" role="status">{saveStatus}</span>
-        <span className="audit-progress"><span className="audit-compact-count">条目已审 {completed}/{rows.length}　·　</span>待补证 {rows.filter(r => r.review.decision === "needs-evidence").length}　·　转写核准 {approvedCases}/{session.bound.cases.length}</span>
-        <label className="audit-reviewer"><UserRound size={14} />审计人<input aria-label="审计人" placeholder="填写姓名" maxLength={300} value={session.feedback.reviewer} onChange={e => setSession({ ...session, feedback: { ...session.feedback, reviewer: e.target.value } })} /></label>
+        <span className={`audit-save-status is-${saveTone}`} role="status"><i aria-hidden="true" />{saveStatus}</span>
+        <span className="audit-progress"><span className="audit-compact-count">条目已审 {completed}/{rows.length}<b aria-hidden="true">·</b></span>待补证 {tally["needs-evidence"]}<b aria-hidden="true">·</b>转写核准 {approvedCases}/{session.bound.cases.length}</span>
+        <label className="audit-reviewer"><UserRound size={13} />审计人<input aria-label="审计人" placeholder="填写姓名" maxLength={300} value={session.feedback.reviewer} onChange={e => setSession({ ...session, feedback: { ...session.feedback, reviewer: e.target.value } })} /></label>
       </footer>
     </>}
     {confirmation && <ConfirmDialog {...confirmation} onConfirm={() => answerConfirmation(true)} onCancel={() => answerConfirmation(false)} />}

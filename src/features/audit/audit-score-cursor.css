@@ -1,0 +1,56 @@
+.audit-score-surface .score-preview-system[data-audit-timeline] {
+  position: relative;
+  margin-bottom: 40px;
+}
+
+.audit-score-surface .audit-score-playhead {
+  position: absolute;
+  top: 5px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--accent);
+  opacity: .8;
+  pointer-events: none;
+}
+
+.audit-score-playhead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -3px;
+  border-top: 6px solid var(--accent);
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+
+.audit-score-surface .audit-score-beat {
+  position: absolute;
+  top: 100%;
+  transform: translateX(-50%);
+  min-width: 18px;
+  height: 19px;
+  padding: 0 3px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 11px/19px var(--font-mono, monospace);
+  white-space: nowrap;
+}
+
+.audit-score-surface .audit-score-beat:hover,
+.audit-score-surface .audit-score-beat:focus-visible {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.audit-score-surface .audit-score-chord {
+  position: absolute;
+  top: calc(100% + 18px);
+  margin-left: -3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}

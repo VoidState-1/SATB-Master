@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { bindAuditPackage, canonicalAuditJson, createAuditFeedback, missingAuditQuestions, parseAuditFeedback, parseAuditPackage, restoreAuditFeedback, setAuditAnswer, suggestedAuditAnswers, updateAuditReview, type AuditPackage, type AuditQuestion } from "./index";
 import { compileScoreText } from "../scoreText";
+import { buildMeasures } from "../time";
+import { locateSourceBeats, nearestSourceBeat, sourceBeatAt } from "./sourceAnchors";
 
 const hash = async (text: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))), (b) => b.toString(16).padStart(2, "0")).join("");
 function input() {
@@ -26,6 +28,32 @@ const questions: AuditQuestion[] = [
 ];
 
 describe("可视化审计协议与人工意见", () => {
+  it("保存独立标注和条件推导的不同起拍，拒绝界外或倒置的标注", async () => {
+    const pkg = nativeInput(), item = pkg.cases[0].items[0];
+    item.annotations = [
+      { kind: "cadence", source: "model", label: "半终止", range: ["1:4", "3:1"] },
+      { kind: "cadence", source: "program", label: "半终止", range: ["2:1", "3:1"], context: "给定和弦与乐句" },
+    ];
+    const bound = await bindAuditPackage(parseAuditPackage(pkg), hash);
+    expect(bound.cases[0].items[0].annotations).toMatchObject([
+      { source: "model", fromTick: 2880, toTick: 7680 },
+      { source: "program", fromTick: 3840, toTick: 7680, context: "给定和弦与乐句" },
+    ]);
+    item.annotations[0].range = ["2:1", "1:4"];
+    await expect(bindAuditPackage(parseAuditPackage(pkg), hash)).rejects.toThrow("标注范围");
+    item.annotations[0].range = ["2:1", "4:1"];
+    await expect(bindAuditPackage(parseAuditPackage(pkg), hash)).rejects.toThrow("annotations[0]");
+  });
+
+  it("自填意见可替代备选，空白回复不能恢复为已作答", async () => {
+    const pkg = nativeInput();
+    pkg.cases[0].items[0].questions = questions;
+    const b = await bindAuditPackage(parseAuditPackage(pkg), hash);
+    const feedback = updateAuditReview(createAuditFeedback(b), "one", "finding", { decision: "answered", comment: "这一拍有另一种解释" }, "2026-11-18T12:00:00Z");
+    expect(restoreAuditFeedback(b, parseAuditFeedback(feedback)).feedback.cases[0].items[0].decision).toBe("answered");
+    feedback.cases[0].items[0].comment = "  ";
+    expect(() => restoreAuditFeedback(b, feedback)).toThrow("缺少人工答案");
+  });
   it("将小节/拍点和声部绑定到音符, 不把独立参考注入输入", async () => {
     const b = await bound();
     expect(b.cases[0].project.chordTrack.regions).toEqual([]);
@@ -103,6 +131,37 @@ describe("可视化审计协议与人工意见", () => {
     await expect(bound(value)).rejects.toThrow(/one\/finding/);
     const empty = input(); empty.cases[0].score = empty.cases[0].score.replace("S: | B4/1 | C5/1 |", "S: empty");
     await expect(bound(empty)).rejects.toThrow(/没有音符/);
+  });
+  it("保留原图的不等距拍点, 区分多行、未标拍点与谱行空白", async () => {
+    const value = nativeInput();
+    value.cases[0].source.beatAnchors = [
+      { position: "2:1", x: .16, top: .58, bottom: .93 },
+      { position: "1:1", x: .14, top: .12, bottom: .42 },
+      { position: "1:3", x: .36, top: .12, bottom: .42 },
+    ];
+    const result = await bindAuditPackage(parseAuditPackage(value), hash);
+    const c = result.cases[0];
+    const located = locateSourceBeats(c.data.source.beatAnchors!, buildMeasures(c.project));
+    expect(located.map((a) => a.tick)).toEqual([0, 1920, 3840]);
+    expect(sourceBeatAt(located, 1920).beat?.x).toBe(.36);
+    expect(sourceBeatAt(located, 960)).toEqual({ row: { top: .12, bottom: .42 } });
+    expect(sourceBeatAt(located, 2880)).toEqual({});
+    expect(sourceBeatAt([], 0)).toEqual({});
+    expect(nearestSourceBeat(located, .32, .25)?.tick).toBe(1920);
+    expect(nearestSourceBeat(located, .32, .75)?.tick).toBe(3840);
+    expect(nearestSourceBeat(located, .32, .5)).toBeUndefined();
+  });
+  it("拒绝原图越界坐标、重复或越界的音乐位置", async () => {
+    const value = nativeInput(), source = value.cases[0].source;
+    const anchor = { position: "1:1", x: .1, top: .2, bottom: .7 };
+    source.beatAnchors = [{ ...anchor, bottom: .1 }];
+    expect(() => parseAuditPackage(value)).toThrow(/beatAnchors/);
+    source.beatAnchors = [anchor, { ...anchor, position: "1:1+0/2" }];
+    await expect(bindAuditPackage(parseAuditPackage(value), hash)).rejects.toThrow(/重复拍点/);
+    source.beatAnchors = [{ ...anchor, position: "8:3" }];
+    await expect(bindAuditPackage(parseAuditPackage(value), hash)).rejects.toThrow(/source.beatAnchors/);
+    source.beatAnchors = [{ ...anchor, position: "3:1" }];
+    await expect(bindAuditPackage(parseAuditPackage(value), hash)).rejects.toThrow(/工程结束线/);
   });
   it("模型审计包无法携带自动生效的人工批准", async () => {
     const value = { ...input(), feedback: { decision: "accept" } };

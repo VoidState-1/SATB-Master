@@ -1,6 +1,7 @@
 import { compileScore, parseScoreText, positionTick } from "../scoreText";
 import { buildMeasures } from "../time";
-import { missingAuditQuestions, validateAuditAnswers } from "./questions";
+import { locateSourceBeats } from "./sourceAnchors";
+import { auditAnswer, auditQuestionAnswered, effectiveAuditQuestions, missingAuditQuestions, validateAuditAnswers } from "./questions";
 import type { AuditFeedback, AuditItemReview, AuditPackage, AuditReviewPatch, BoundAuditPackage, ReviewRecord } from "./types";
 export * from "./types";
 export { parseAuditPackage, parseAuditFeedback, parseAuditProject } from "./parse";
@@ -21,6 +22,9 @@ export async function bindAuditPackage(pkg: AuditPackage, hash: (text: string) =
   const cases = await Promise.all(pkg.cases.map(async (c) => {
     // 参考层只用于独立判断, 不能注入谱面或依赖尚未核准的推导/规则修复。
     const project = atAuditLocation(c.id, () => c.project ? structuredClone(c.project) : compileScore({ ...parseScoreText(c.score!), reference: [], referenceComplete: [] }).project);
+    if (c.source.beatAnchors?.length) {
+      atAuditLocation(`${c.id}/source.beatAnchors`, () => locateSourceBeats(c.source.beatAnchors!, buildMeasures(project)));
+    }
     const fingerprint = await hash(canonicalAuditJson(c.project ? { id: c.id, project: c.project, source: c.source } : { id: c.id, score: c.score, source: c.source }));
     const items = await Promise.all(c.items.map(async (item) => {
       const itemProject = structuredClone(item.project ?? project);
@@ -31,7 +35,12 @@ export async function bindAuditPackage(pkg: AuditPackage, hash: (text: string) =
       const tracks = itemProject.satbTracks.filter((track) => !item.voices?.length || item.voices.includes(track.voice));
       const noteIds = new Set(tracks.flatMap((track) => track.notes.filter((note) => note.startTick < toTick && fromTick < note.startTick + note.durationTicks).map((note) => note.id)));
       if (item.voices?.length && !noteIds.size) throw new Error(`${c.id}/${item.id}: 指定声部在审计范围内没有音符`);
-      return { item, project: itemProject, fromTick, toTick, noteIds, fingerprint: await hash(canonicalAuditJson({ fingerprint, item })) };
+      const annotations = item.annotations?.map((entry, index) => atAuditLocation(`${c.id}/${item.id}/annotations[${index}]`, () => {
+        const start = positionTick(entry.range[0], measures), end = positionTick(entry.range[1], measures);
+        if (start >= end || start < 0 || end > itemProject.lengthTicks) throw new Error("标注范围越界或为空");
+        return { ...entry, fromTick: start, toTick: end };
+      }));
+      return { item, project: itemProject, fromTick, toTick, noteIds, annotations, fingerprint: await hash(canonicalAuditJson({ fingerprint, item })) };
     }));
     return { data: c, fingerprint, project, items };
   }));
@@ -61,7 +70,11 @@ export function restoreAuditFeedback(bound: BoundAuditPackage, incoming: AuditFe
       if (index < 0) { stale += Number(hasAuditOpinion(item)); continue; }
       const definition = bound.cases.find((c) => c.data.id === current.id)!.items.find((i) => i.item.id === item.id)!;
       atAuditLocation(`${current.id}/${item.id}`, () => {
-        validateAuditAnswers(definition.item.questions, item.answers);
+        const questions = effectiveAuditQuestions(definition.item);
+        validateAuditAnswers(questions, item.answers);
+        if (item.decision === "answered" && !item.comment.trim() &&
+          (!questions.some(q => auditQuestionAnswered(q, auditAnswer(item.answers, q.id))) || missingAuditQuestions(questions, item.answers).length))
+          throw new Error("已作答意见缺少人工答案");
         if (item.decision === "accept" && missingAuditQuestions(definition.item.questions, item.answers).length) throw new Error("批准意见缺少必填预审回答");
       });
       if (hasAuditOpinion(item) || item.updatedAt) current.items[index] = structuredClone(item);

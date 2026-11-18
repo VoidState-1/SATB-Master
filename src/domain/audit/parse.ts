@@ -63,11 +63,38 @@ function questions(value: unknown, path: string): AuditQuestion[] | undefined {
     return result;
   }), path);
 }
+function annotations(value: unknown, path: string) {
+  if (value === undefined) return undefined;
+  return list(value, path, 2000).map((entry, index) => {
+    const p = `${path}[${index}]`;
+    const a = object(entry, p);
+    const range = list(a.range, `${p}.range`, 2);
+    if (range.length !== 2) fail(p, "标注需要开始和结束位置");
+    return {
+      source: choice(a.source, ["model", "program"] as const, `${p}.source`),
+      kind: choice(a.kind, ["chord", "cadence"] as const, `${p}.kind`),
+      range: [text(range[0], p, 100), text(range[1], p, 100)] as [string, string],
+      label: text(a.label, `${p}.label`, 120), context: optional(a.context, `${p}.context`),
+    };
+  });
+}
 function image(value: unknown, path: string) {
   if (value === undefined) return undefined;
   const result = text(value, path, 24 * 1024 * 1024);
   if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(result)) fail(path, "原图须为内嵌 PNG/JPEG/WebP, 请用 audit pack 打包本地图片");
   return result;
+}
+
+function beatAnchors(value: unknown, path: string) {
+  if (value === undefined) return undefined;
+  return list(value, path, 4096).map((value, index) => {
+    const p = `${path}[${index}]`;
+    const anchor = object(value, p);
+    const { x, top, bottom } = anchor;
+    const coordinate = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+    if (!coordinate(x) || !coordinate(top) || !coordinate(bottom) || top >= bottom) fail(p, "拍点 x 和谱行 top、bottom 须在 0..1 内, bottom 大于 top");
+    return { position: text(anchor.position, `${p}.position`, 100), x, top, bottom };
+  });
 }
 
 export function parseAuditPackage(value: unknown): AuditPackage {
@@ -80,7 +107,7 @@ export function parseAuditPackage(value: unknown): AuditPackage {
       id: id(c.id, `${p}.id`), title: text(c.title, `${p}.title`, 300),
       score: c.score === undefined && root.formatVersion === 2 ? undefined : text(c.score, `${p}.score`, 1_000_000),
       project: c.project === undefined && root.formatVersion === 1 ? undefined : parseAuditProject(c.project, `${p}.project`),
-      source: { title: text(source.title, `${p}.source.title`, 1000), locator: optional(source.locator, `${p}.source.locator`), image: image(source.image, `${p}.source.image`) },
+      source: { title: text(source.title, `${p}.source.title`, 1000), locator: optional(source.locator, `${p}.source.locator`), image: image(source.image, `${p}.source.image`), beatAnchors: beatAnchors(source.beatAnchors, `${p}.source.beatAnchors`) },
       items: unique(list(c.items, `${p}.items`, 1000).map((value, j) => {
         const q = `${p}.items[${j}]`;
         const item = object(value, q);
@@ -114,6 +141,7 @@ export function parseAuditPackage(value: unknown): AuditPackage {
           model: { conclusion: text(model.conclusion, `${q}.model.conclusion`), reason: text(model.reason, `${q}.model.reason`) },
           program: program ? { conclusion: text(program.conclusion, `${q}.program.conclusion`), ruleId: optional(program.ruleId, `${q}.program.ruleId`), run: optional(program.run, `${q}.program.run`) } : undefined,
           question: optional(item.question, `${q}.question`), questions: questions(item.questions, `${q}.questions`),
+          annotations: annotations(item.annotations, `${q}.annotations`),
           project: item.project === undefined && root.formatVersion === 1 ? undefined : parseAuditProject(item.project, `${q}.project`), evidence, sourceRegion,
         };
       }), `${p}.items`),
