@@ -161,6 +161,7 @@ function leadingToneDiagnostic(
     step: payload.targetStep,
     alter: payload.targetAlter,
   };
+  const targetKeyName = `${formatPitchClass(targetTonic)} ${payload.targetMode}`;
   return diagnostic(
     "resolution.leading-tone",
     current.startTick,
@@ -171,7 +172,7 @@ function leadingToneDiagnostic(
     `书写导音 ${formatPitchClass(leadingTone)} 通常应上行半音解决到主音。`,
     {
       params: {
-        key: `${formatPitchClass(environment.context.slice.key.tonic)} ${environment.context.slice.key.mode}`,
+        key: targetKeyName,
         leadingTone: formatPitchClass(leadingTone),
         targetTonic: formatPitchClass(targetTonic),
       },
@@ -181,9 +182,9 @@ function leadingToneDiagnostic(
           noteEvidence(current, "后继音"),
           {
             kind: "key",
-            id: environment.context.slice.key.id,
+            id: openedSourceChord(environment)?.id ?? environment.context.slice.key.id,
             label: "局部调性",
-            value: `${formatPitchClass(environment.context.slice.key.tonic)} ${environment.context.slice.key.mode}`,
+            value: targetKeyName,
           },
         ],
         obligationContext.evidence,

@@ -243,7 +243,13 @@ function evaluateRepeatedChordToneRule(
 export function doubledLeadingToneRule(context: HarmonyRuleContext) {
   return evaluateRepeatedChordToneRule(context, {
     id: "chord.doubled-leading-tone",
-    target: ({ slice }) => leadingTonePitchClass(slice.key),
+    target: ({ slice, chord }) => {
+      const resolution = context.harmony.primaryInterpretation(chord);
+      const localKey = resolution.status === "resolved"
+        ? resolution.value.localKey
+        : undefined;
+      return leadingTonePitchClass(localKey ?? slice.key);
+    },
     title: "重复导音",
     message: (_chord, target) =>
       `四部和声中通常不应重复局部调性内的书写导音 ${formatPitchClass(target)}。`,

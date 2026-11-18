@@ -29,6 +29,7 @@ export type LeadingTonePayload = VoiceObligationPayload & {
   readonly leadingAlter: SpelledPitchClass["alter"];
   readonly targetStep: SpelledPitchClass["step"];
   readonly targetAlter: SpelledPitchClass["alter"];
+  readonly targetMode: "major" | "minor";
   readonly sourceKeyStep: SpelledPitchClass["step"];
   readonly sourceKeyAlter: SpelledPitchClass["alter"];
   readonly sourceKeyMode: "major" | "minor";
@@ -70,13 +71,14 @@ function leadingToneExpectation(context: RuleStepContext) {
   const baseKey = interpretation?.localKey ?? context.slice.key;
   const targetTonic = interpretation?.appliedTarget
     ? scaleDegreePitchClass(baseKey, interpretation.appliedTarget.degree)
-    : context.slice.key.tonic;
+    : baseKey.tonic;
   const targetKey = interpretation?.appliedTarget
     ? { tonic: targetTonic, mode: "major" as const }
-    : context.slice.key;
+    : baseKey;
   return {
     leadingTone: leadingTonePitchClass(targetKey),
     targetTonic,
+    targetMode: targetKey.mode,
   };
 }
 
@@ -91,7 +93,7 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
   collect({ context, moment }) {
     if (!supportsTendencyResolutionRules(context, context.slice.chord))
       return [];
-    const { leadingTone, targetTonic } = leadingToneExpectation(context);
+    const { leadingTone, targetTonic, targetMode } = leadingToneExpectation(context);
     return moment.attackedVoiceIds.flatMap((voiceId) => {
       const note = context.slice.notes[voiceId];
       if (!note || !pitchClassEquals(note.pitch, leadingTone)) return [];
@@ -105,6 +107,7 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
             leadingAlter: leadingTone.alter,
             targetStep: targetTonic.step,
             targetAlter: targetTonic.alter,
+            targetMode,
             sourceKeyStep: context.slice.key.tonic.step,
             sourceKeyAlter: context.slice.key.tonic.alter,
             sourceKeyMode: context.slice.key.mode,
