@@ -6,7 +6,7 @@ import { primaryDiagnostic } from "../geometry";
 import type { ChordInteraction } from "../interactions/types";
 import type { EditorTool } from "../types";
 import { durationToWidth, tickToX } from "../viewport";
-import { cadenceRangeLabel, cadencesOverlappingChord } from "../cadenceRanges";
+import { cadenceRangeLabel, cadencesOverlappingChord } from "../../../components/cadenceRanges";
 import type { ChordRect, MeasureGuidePosition } from "./types";
 
 interface ChordTrackProps {

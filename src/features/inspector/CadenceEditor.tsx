@@ -3,7 +3,7 @@ import { useState } from "react";
 import { createId, type CadenceAnnotation } from "../../domain/project";
 import type { CadenceCandidate } from "../../domain/harmony";
 import type { CadenceAnnotationPatch } from "../../domain/editing";
-import { cadenceKindLabels, cadenceRangeKey, cadenceRangeLabel, cadencesOverlappingChord } from "../editor/cadenceRanges";
+import { cadenceKindLabels, cadenceRangeKey, cadenceRangeLabel, cadencesOverlappingChord } from "../../components/cadenceRanges";
 
 export function CadenceEditor({
   project,

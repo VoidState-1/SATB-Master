@@ -1,6 +1,6 @@
-import type { CadenceCandidate } from "../../domain/harmony";
-import type { CadenceAnnotation, ProjectDocument } from "../../domain/project";
-import { formatPosition } from "../../domain/time";
+import type { CadenceCandidate } from "../domain/harmony";
+import type { CadenceAnnotation, ProjectDocument } from "../domain/project";
+import { formatPosition } from "../domain/time";
 
 type DisplayCadence = CadenceAnnotation | CadenceCandidate;
 

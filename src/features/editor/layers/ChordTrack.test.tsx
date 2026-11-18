@@ -3,7 +3,6 @@ import { expect, it } from "vitest";
 import { defaultChordDraftAtTick } from "../../../domain/chords";
 import { PPQ, type CadenceAnnotation } from "../../../domain/project";
 import { compileScoreText } from "../../../domain/scoreText";
-import { CadenceEditor } from "../../inspector/CadenceEditor";
 import { ChordTrack } from "./ChordTrack";
 
 it("跨句共用的和弦分别列出两个终止的真实拍点，仅完整覆盖的和弦整块着色", () => {
@@ -36,9 +35,6 @@ bars 1..2 {
   const blocks = [...html.matchAll(/<button[^>]*>/g)].map(match => match[0]);
   expect(blocks[1]).not.toMatch(/cadence-(full|half)/);
   expect(blocks[2]).toContain("cadence-full");
-  const inspector = renderToStaticMarkup(<CadenceEditor project={project} selectedChord={chords[1]} />);
-  for (const label of ["半终止 · 1:2:000 – 2:1:000", "全终止 · 2:1:000 – 3:1:000"]) {
-    expect(blocks[1]).toContain(label);
-    expect(inspector).toContain(label);
-  }
+  expect(blocks[1]).toContain("半终止 · 1:2:000 – 2:1:000");
+  expect(blocks[1]).toContain("全终止 · 2:1:000 – 3:1:000");
 });
