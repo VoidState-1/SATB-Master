@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
     "score": "node scripts/score.mjs",
+    "benchmark": "node scripts/benchmark.mjs",
     "audit": "node scripts/audit.mjs",
     "preview": "vite preview",
     "start": "electron ."

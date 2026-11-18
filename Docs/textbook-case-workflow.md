@@ -92,8 +92,31 @@ Agent 自检确认谱面转写忠实后, 才进入规则检查, 并记录确认�
 
 ## 现有工具与首批试验的衔接
 
+### 批量评测入口
+
+在仓库根目录运行以下命令。每次指定一个新输出目录，旧版本和新版本可使用同一份清单。
+
+```powershell
+npm run benchmark -- --manifest <本地清单.json> --out <新目录>
+npm run benchmark -- --manifest <本地清单.json> --out <旧版输出目录> --engine-root <冻结的源码根目录>
+```
+
+清单的 `cases` 数组逐题提供 `id`、原题键 `parentQuestion`、转写文件 `sourceFile` 和转写确认记录 `analysisFile`。输入路径以仓库根目录为基准。可同时提供 `sourceSha256` 和 `analysisSha256` 校验冻结的文件。只有原谱明确更换调号时，才在 `printedKeyChanges` 列出题内对应的“小节:拍”位置。盲推只用四声部和题面节拍、调号。条件终止使用已标和弦与乐句，条件规则还可使用已标终止。缺少连续和弦覆盖而无法使用的终止会写入逐题记录。
+
+和弦按参考覆盖时值评价首选，各原题等权结果另列。终止按类型和区间右端一对一匹配，仅在声明 `reference complete=cadence` 的原题汇总精确率与 F1，部分覆盖题只对已知标签统计命中。规则默认报告诊断量。已有独立预期时，可为某题添加如下局部断言。拍位使用从工程起点计的整数 tick，声部集合精确匹配。
+
+```json
+{"mode":"conditioned","ruleId":"voice.crossing","tick":0,"voiceIds":["soprano","alto"],"severity":"error","expected":"absent"}
+```
+
+把这些对象放入该题的 `ruleAssertions` 数组。`mode` 可选 `conditioned` 或 `blind`，`expected` 可选 `present` 或 `absent`。两条路径各自统计已核验位置的 TP、TN、FP、FN 和剩余未核验诊断。题库缺少应报样本时，召回率为空。
+
+输出包括 `environment.json`、`summary.json` 和 `cases/<id>/` 下的原始推导、参考、输入副本与诊断。比较不同引擎时，核对清单、运行器、输入、规则档与参考内容一致，受限输入和执行异常单列。教材派生的输出和人工待审预期保存在本地忽略目录。
+
+### 转写与审计工具
+
 - [可视化审计区](./audit-workspace.md) 提供教材原图/转写谱对照、问题定位、人工意见保存与导出。模型使用 `npm run audit -- pack` 打包分析条目，`feedback` 读取人工意见；这些工具不运行推导/规则或自动实施修复。
 - `.satbt` 编译与文本谱可用于识读、自检和修订记录。
 - `inferChords` 和 `buildHarmonyAnalysis` 可分别产生推导结果, 以支持“先比对、确认转写, 再检查规则”的顺序。
-- 首批临时串行脚本与集成测试已从活动目录撤销。其源码文本及程序补丁副本保留在本地 `StandardCase/Pilot/2026-11-17/review/reverted-code/`, 不再作为当前工具或持续集成入口。后续分阶段执行工具另提方案。
+- 首批临时串行脚本与集成测试已从活动目录撤销。其源码文本及程序补丁副本保留在本地 `StandardCase/Pilot/2026-11-17/review/reverted-code/`。后续批量运行使用上面的评测入口。
 - 首轮程序与单元测试文件已恢复到试验前的 HEAD, 对应实现说明同步撤回。历史谱例、报告和待审方案仅保留本地, 见 `StandardCase/Pilot/2026-11-17/review/audit-queue.md`; 这些记录不表示修复当前仍生效或已经人工核准。
