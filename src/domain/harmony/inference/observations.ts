@@ -102,6 +102,8 @@ export function buildChordInferenceObservations(
       return note?.startTick === start;
     });
     const bass = activeNotes.bass;
+    const metric = metricPositionAt(metricTimeline, start);
+    const measure = metric && metricTimeline.measures[metric.measureNumber - 1];
     observations.push({
       index: observations.length,
       fromTick: start,
@@ -111,7 +113,8 @@ export function buildChordInferenceObservations(
       soundingPitchClasses: uniquePitchClasses(notes),
       bass,
       key: keyAt(project.keyEvents, start),
-      metric: metricPositionAt(metricTimeline, start),
+      metric,
+      measureDurationTicks: measure && measure.numerator * measure.beatLength,
       completeSatb: notes.length === VOICE_ORDER.length,
     });
   }

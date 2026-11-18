@@ -1,7 +1,9 @@
 import type {
   ChordIdentity,
   ChordToneDegree,
+  ScaleDegree,
   HarmonySemantics,
+  KeyReference,
 } from "../../chordModel";
 import type { AnalysisKey, AnalysisNote } from "../analysis";
 import type {
@@ -54,7 +56,9 @@ export interface ChordInferenceObservation {
   readonly soundingPitchClasses: readonly SpelledPitchClass[];
   readonly bass?: AnalysisNote;
   readonly key: AnalysisKey;
+  readonly localKey?: KeyReference;
   readonly metric?: MetricPosition;
+  readonly measureDurationTicks?: number;
   readonly completeSatb: boolean;
 }
 
@@ -85,6 +89,7 @@ export interface ChordInferenceScore {
 }
 
 export interface FunctionalChordTemplate {
+  readonly appliedTarget?: ScaleDegree;
   readonly baseId: FunctionalBaseId;
   readonly definition: FunctionalBaseDefinition;
   readonly form: FunctionalChordForm;

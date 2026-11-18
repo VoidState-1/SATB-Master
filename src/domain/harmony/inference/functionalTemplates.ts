@@ -1,5 +1,6 @@
 import {
   applyFunctionalDefinition,
+  applyFunctionalTarget,
   FUNCTIONAL_BASE_DEFINITIONS,
   type FunctionalBaseDefinition,
   type FunctionalBaseId,
@@ -7,6 +8,7 @@ import {
 } from "../../functionalHarmonyCatalog";
 import {
   resolveChordIdentity,
+  functionalTargetForDegree,
   semanticsFromChordDraft,
   type ChordDraft,
   type ChordIdentity,
@@ -74,8 +76,10 @@ export function draftForFunctionalTemplate(
     key.mode,
   );
   return {
-    ...draft,
-    interpretationId: `inferred:${definition.id}:${form}:${expectedInversion}`,
+    ...(template.appliedTarget
+      ? applyFunctionalTarget(draft, functionalTargetForDegree(template.appliedTarget), key.mode)
+      : draft),
+    interpretationId: `inferred:${definition.id}:${form}:${expectedInversion}${template.appliedTarget ? "/" + template.appliedTarget : ""}`,
     source: "inferred",
     confidence: "probable",
   };
@@ -84,8 +88,9 @@ export function draftForFunctionalTemplate(
 export function identityForFunctionalTemplate(
   template: FunctionalChordTemplate,
   key: KeyEvent,
+  localKey?: KeyReference,
 ) {
-  const draft = draftForFunctionalTemplate(template, key);
+  const draft = { ...draftForFunctionalTemplate(template, key), localKey };
   return {
     draft,
     identity: resolveChordIdentity(draft, key),
@@ -114,5 +119,6 @@ export function functionalTemplateKey(
   template: FunctionalChordTemplate,
   key: KeyReference,
 ) {
-  return `${key.tonic.step}:${key.tonic.alter}:${key.mode}:${template.baseId}:${template.form}:${template.expectedInversion}`;
+  const target = template.appliedTarget ? `/${template.appliedTarget}` : "";
+  return `${key.tonic.step}:${key.tonic.alter}:${key.mode}:${template.baseId}:${template.form}:${template.expectedInversion}${target}`;
 }

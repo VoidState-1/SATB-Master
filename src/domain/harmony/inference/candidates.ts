@@ -1,9 +1,12 @@
 import {
   chordIdentityToneSpellings,
   chordToneSpellings,
+  primaryHarmonyInterpretation,
   type ChordIdentity,
   type ChordQuality,
 } from "../../chordModel";
+import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
+import { functionalDefinition } from "../../functionalHarmonyCatalog";
 import {
   buildFunctionalTemplates,
   functionalTemplateKey,
@@ -58,7 +61,7 @@ function scoreFor(
   observation: ChordInferenceObservation,
   identity: ChordIdentity,
   fit: ReturnType<typeof fitChordObservation>,
-  functionalTierValue: 0 | 1 | 2 | 4,
+  functionalTierValue: ChordInferenceScore["functionalTier"],
 ): ChordInferenceScore {
   const toneFit = fitRatio(observation, identity, fit);
   const bassFit = fit.bassMatchesInversion ? 1 : 0;
@@ -145,7 +148,7 @@ function evidenceFor(
   return Object.freeze(evidence);
 }
 
-function candidateComparator(
+export function candidateComparator(
   left: ChordInferenceCandidate,
   right: ChordInferenceCandidate,
 ) {
@@ -156,7 +159,7 @@ function candidateComparator(
   );
 }
 
-function createFunctionalCandidate(
+export function createFunctionalCandidate(
   observation: ChordInferenceObservation,
   template: ReturnType<typeof buildFunctionalTemplates>[number],
   options: ChordInferenceOptions,
@@ -164,6 +167,7 @@ function createFunctionalCandidate(
   const { identity, semantics } = identityForFunctionalTemplate(
     template,
     observation.key,
+    observation.localKey,
   );
   const canonicalTonicOmission =
     (template.baseId === "T" || template.baseId === "t") &&
@@ -189,7 +193,7 @@ function createFunctionalCandidate(
         (note) => note?.pitch.step === identity.root.step && note.pitch.alter === identity.root.alter,
       ))
     return undefined;
-  const score = scoreFor(observation, identity, fit, functionalTier(template.baseId));
+  const score = scoreFor(observation, identity, fit, template.appliedTarget ? 1 : functionalTier(template.baseId));
   return {
     id: `${observation.index}:${functionalTemplateKey(template, observation.key)}`,
     observationIndex: observation.index,
@@ -199,7 +203,9 @@ function createFunctionalCandidate(
     fit,
     score,
     confidence: confidenceFor(score, fit),
-    evidence: evidenceFor(fit, true),
+    evidence: observation.localKey
+      ? [...evidenceFor(fit, true), { kind: "sequence-context", code: "local-key-cadence" }]
+      : evidenceFor(fit, true),
   } satisfies ChordInferenceCandidate;
 }
 
@@ -274,11 +280,56 @@ export function buildChordInferenceCandidates(
   return Object.freeze(candidates.sort(candidateComparator));
 }
 
+
 export function candidateDescription(candidate: ChordInferenceCandidate) {
   const noteCount = candidate.fit.matchedNoteIds.length;
   return candidate.functionalBaseId
     ? `${candidate.functionalBaseId} · ${noteCount} 个观察音`
     : `绝对结构 · ${noteCount} 个观察音`;
+}
+
+/** Spasobin §47.5–6 distinguishes root-position flat II and its major seventh
+ * from the familiar first-inversion triad. Their characteristic continuation
+ * supplies the predominant reading, including a seventh added to the triad. */
+export function withLoweredSupertonics(
+  observations: readonly ChordInferenceObservation[],
+  sets: readonly (readonly ChordInferenceCandidate[])[],
+) {
+  const result = sets.slice();
+  let leadsToDominant = false;
+  for (let i = observations.length - 1; i >= 0; i--) {
+    const item = observations[i], next = observations[i + 1];
+    const continuation: boolean = leadsToDominant && !!next && item.key.mode === next.key.mode &&
+      pitchClassEquals(item.key.tonic, next.key.tonic);
+    const direct = sets[i].filter(c => c.semantics && !primaryHarmonyInterpretation(c.semantics).appliedTarget &&
+      c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length);
+    leadsToDominant = direct.some(c => c.functionalBaseId === "D" || c.functionalBaseId === "DVII") ||
+      !!continuation && direct.some(c => c.functionalBaseId === "K46");
+    if (!continuation || !item.completeSatb || !item.bass) continue;
+    const root = scaleDegreePitchClass(item.key, 2, -1);
+    const quality = item.soundingPitchClasses.length === 4 ? "major7" : "major";
+    const tones = chordToneSpellings(root, quality);
+    if (tones.length !== item.soundingPitchClasses.length ||
+        !tones.every(tone => item.soundingPitchClasses.some(p => pitchClassEquals(p, tone)))) continue;
+    const inversion = tones.findIndex(tone => pitchClassEquals(tone, item.bass!.pitch));
+    if (inversion < 0 || inversion > 3) continue;
+    if (quality === "major" && inversion !== 0) {
+      if (inversion === 1) leadsToDominant = true;
+      continue;
+    }
+    const lowered = createFunctionalCandidate(item, {
+      baseId: "SII", localKeyPolicy: "current-key",
+      definition: { ...functionalDefinition("SII"), degreeAlteration: -1, minorDegreeAlteration: -1,
+        quality: () => quality },
+      form: quality === "major7" ? "seventh" : "triad", expectedInversion: inversion as 0 | 1 | 2 | 3,
+    }, {});
+    if (!lowered?.fit.spellingConsistent) continue;
+    leadsToDominant = true;
+    result[i] = [...sets[i], { ...lowered, id: lowered.id + ":lowered",
+      evidence: [...lowered.evidence, { kind: "sequence-context" as const, code: "lowered-supertonic-resolution" }],
+    }].sort(candidateComparator);
+  }
+  return result;
 }
 
 export function candidateHasNonChordToneAssignments(
