@@ -63,7 +63,11 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
       targetInterpretation?.designation?.primaryFunction === "dominant" ||
       targetInterpretation?.degree === 5 ||
       targetInterpretation?.degree === 7;
-    const dominantPitch = scaleDegreePitchClass(sourceSlice.key, 5, 0);
+    const sourceResolution = context.harmony.primaryInterpretation(sourceChord);
+    const sourceKey = sourceResolution.status === "resolved"
+      ? sourceResolution.value.localKey ?? sourceSlice.key
+      : sourceSlice.key;
+    const dominantPitch = scaleDegreePitchClass(sourceKey, 5, 0);
     const lowDelta = targetLow
       ? toMidi(targetLow.pitch) - toMidi(low.note.pitch)
       : undefined;
