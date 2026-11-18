@@ -27,6 +27,10 @@ function subscribeDesktop<Channel extends DesktopEventChannel>(
 }
 
 const desktop: DesktopApi = {
+  audit: {
+    hasStartupPackage: process.argv.includes('--satb-open-startup-audit'),
+    readStartupPackage: () => invokeDesktop(DESKTOP_CHANNELS.auditReadStartupPackage),
+  },
   versions: {
     electron: process.versions.electron,
     chrome: process.versions.chrome,

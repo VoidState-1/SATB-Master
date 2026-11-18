@@ -1,6 +1,7 @@
 import type { InstalledExternalRulePackage } from "./external-rules.js";
 
 export const MAX_RULE_TEST_CASE_BYTES = 20 * 1024 * 1024;
+export const MAX_AUDIT_FILE_BYTES = 32 * 1024 * 1024;
 
 export interface ProjectSaveRequest {
   project: unknown;
@@ -31,6 +32,7 @@ export interface InstallExternalRuleRequest {
 }
 
 export interface DesktopInvokeMap {
+  "audit:read-startup-package": { request: void; response: string };
   "window:minimize": { request: void; response: void };
   "window:toggle-maximize": { request: void; response: boolean };
   "window:is-maximized": { request: void; response: boolean };
@@ -171,6 +173,7 @@ export type DesktopInvokeChannel = keyof DesktopInvokeMap;
 export type DesktopEventChannel = keyof DesktopEventMap;
 
 export const DESKTOP_CHANNELS = Object.freeze({
+  auditReadStartupPackage: "audit:read-startup-package",
   windowMinimize: "window:minimize",
   windowToggleMaximize: "window:toggle-maximize",
   windowIsMaximized: "window:is-maximized",
@@ -204,6 +207,10 @@ export const DESKTOP_CHANNELS = Object.freeze({
 } as const satisfies Record<string, DesktopInvokeChannel | DesktopEventChannel>);
 
 export interface DesktopApi {
+  audit: {
+    hasStartupPackage: boolean;
+    readStartupPackage(): Promise<string>;
+  };
   versions: { electron: string; chrome: string; node: string };
   windowControls: {
     minimize(): Promise<void>;

@@ -31,7 +31,13 @@ function unique<T extends { id: string }>(values: T[], path: string): T[] {
 }
 function envelope(value: unknown, format: string) {
   const result = object(value, format);
-  if (result.format !== format || (result.formatVersion !== 1 && result.formatVersion !== 2)) fail(format, "格式或版本不受支持");
+  if (result.format !== format) {
+    if (result.format === "satb-audit-manifest") fail(format, "这是打包清单。请在「导入审计包」中选择打包后的 .satb-audit.json 文件。");
+    if (result.format === "satb-audit-package") fail(format, "这是教材审计包。请用「导入审计包」打开。");
+    if (result.format === "satb-audit-feedback") fail(format, "这是审计意见。请打开对应的审计包，再使用「导入意见」。");
+    fail(format, "无法识别此文件的审计格式");
+  }
+  if (result.formatVersion !== 1 && result.formatVersion !== 2) fail(format, "此审计文件版本不受支持，当前支持 v1 和 v2");
   return result;
 }
 export function parseAuditProject(value: unknown, path = "project"): ProjectDocument {

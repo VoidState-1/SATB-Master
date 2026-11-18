@@ -28,6 +28,13 @@ const questions: AuditQuestion[] = [
 ];
 
 describe("可视化审计协议与人工意见", () => {
+  it("区分选错审计文件与文件版本不受支持", () => {
+    expect(() => parseAuditFeedback(input())).toThrow("导入审计包");
+    expect(() => parseAuditPackage({ format: "satb-audit-feedback" })).toThrow("导入意见");
+    expect(() => parseAuditPackage({ format: "satb-audit-manifest" })).toThrow("打包清单");
+    expect(() => parseAuditPackage({ ...input(), formatVersion: 3 })).toThrow("当前支持 v1 和 v2");
+  });
+
   it("保存独立标注和条件推导的不同起拍，拒绝界外或倒置的标注", async () => {
     const pkg = nativeInput(), item = pkg.cases[0].items[0];
     item.annotations = [

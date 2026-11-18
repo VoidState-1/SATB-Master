@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell } from 'electron'
+import { open } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerProjectIpc } from './project-ipc.js'
@@ -6,7 +7,7 @@ import { registerRuleLibraryIpc } from './rule-library.js'
 import { registerRuleTestCaseIpc } from './rule-test-cases.js'
 import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
 import { installReactDevToolsIfAvailable } from './dev-extensions.js'
-import { DESKTOP_CHANNELS } from '../shared/desktop.js'
+import { DESKTOP_CHANNELS, MAX_AUDIT_FILE_BYTES } from '../shared/desktop.js'
 import { handleDesktop } from './typed-ipc.js'
 import {
   loadSavedWindowState,
@@ -20,6 +21,8 @@ const developmentServerUrl = process.argv.includes('--dev')
   ? 'http://localhost:5173'
   : undefined
 const shouldOpenDevTools = process.argv.includes('--devtools')
+const auditArgument = process.argv.indexOf('--audit-package')
+const startupAuditPath = auditArgument < 0 ? undefined : process.argv[auditArgument + 1]
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
 
 if (e2eDirectory) app.setPath('userData', path.join(e2eDirectory, 'user-data'))
@@ -43,6 +46,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      additionalArguments: auditArgument < 0 ? [] : ['--satb-open-startup-audit'],
     },
   })
 
@@ -107,6 +111,21 @@ app.whenReady().then(async () => {
   registerRuleTestCaseIpc()
   registerRuleLibraryIpc()
   registerWindowIpc()
+  handleDesktop(DESKTOP_CHANNELS.auditReadStartupPackage, async () => {
+    if (!startupAuditPath || !path.isAbsolute(startupAuditPath) || !startupAuditPath.toLowerCase().endsWith('.satb-audit.json')) {
+      throw new Error('启动审计需要 .satb-audit.json 文件的绝对路径')
+    }
+    const file = await open(startupAuditPath, 'r').catch(() => { throw new Error('无法打开启动审计包，请确认文件存在且可读取') })
+    try {
+      const stat = await file.stat()
+      if (!stat.isFile()) throw new Error('启动审计包必须是普通文件')
+      if (stat.size > MAX_AUDIT_FILE_BYTES) throw new Error('审计文件超过 32 MB，请拆成较小批次')
+      const bytes = await file.readFile()
+      if (bytes.length > MAX_AUDIT_FILE_BYTES) throw new Error('审计文件超过 32 MB，请拆成较小批次')
+      try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+      catch { throw new Error('无法读取审计包，请使用 UTF-8 编码') }
+    } finally { await file.close() }
+  })
   createWindow()
 
   app.on('activate', () => {

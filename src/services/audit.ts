@@ -1,14 +1,18 @@
 import { bindAuditPackage, parseAuditFeedback, parseAuditPackage, type AuditFeedback, type AuditPackage } from "../domain/audit";
 import type { ProjectDocument } from "../domain/project";
+import { MAX_AUDIT_FILE_BYTES } from "../../shared/desktop";
 
-export const MAX_AUDIT_FILE_BYTES = 32 * 1024 * 1024;
+export { MAX_AUDIT_FILE_BYTES };
 export async function auditHash(text: string): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 export async function readAuditJson(file: File): Promise<unknown> {
   if (file.size > MAX_AUDIT_FILE_BYTES) throw new Error("审计文件超过 32 MB, 请拆成较小批次");
-  try { return JSON.parse(await file.text()); }
+  return parseAuditJson(await file.text());
+}
+export function parseAuditJson(text: string): unknown {
+  try { return JSON.parse(text); }
   catch { throw new Error("无法解析审计文件, 需要 UTF-8 JSON"); }
 }
 export function prepareAuditPackage(value: unknown) { return bindAuditPackage(parseAuditPackage(value), auditHash); }
@@ -46,6 +50,11 @@ export async function loadAuditSession(packageId?: string): Promise<AuditSession
   const feedback = await getStored(`feedback:${key}`);
   if (!document || !feedback) return;
   return { document: parseAuditPackage(document), feedback: parseAuditFeedback(feedback) };
+}
+export async function loadAuditFeedback(packageId: string, fingerprint: string): Promise<AuditFeedback | undefined> {
+  const exact = await getStored(`feedback:${fingerprint}`);
+  if (exact !== undefined) return parseAuditFeedback(exact);
+  return (await loadAuditSession(packageId))?.feedback;
 }
 /** 每个包内容版本独立保存, 导入新版本不覆盖原版本的谱面和人工意见。 */
 export async function saveAuditSession(fingerprint: string, document: AuditPackage, feedback: AuditFeedback): Promise<void> {

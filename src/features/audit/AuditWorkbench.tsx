@@ -3,7 +3,7 @@ import { ArrowLeft, Check, ChevronDown, CircleAlert, CircleHelp, ClipboardCheck,
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { ConfirmationState } from "../../app/controllers/useConfirmationController";
 import { AUDIT_CATEGORIES, AUDIT_SEVERITIES, parseAuditFeedback, restoreAuditFeedback, createAuditFeedback, updateAuditReview, type AuditCategory, type AuditFeedback, type AuditReviewPatch, type AuditSeverity, type BoundAuditPackage } from "../../domain/audit";
-import { downloadAuditFeedback, loadAuditSession, prepareAuditPackage, readAuditJson, saveAuditSession } from "../../services/audit";
+import { downloadAuditFeedback, loadAuditFeedback, loadAuditSession, parseAuditJson, prepareAuditPackage, readAuditJson, saveAuditSession } from "../../services/audit";
 import { AuditEvidenceWorkspace } from "./AuditEvidenceWorkspace";
 import { AuditReviewPanel } from "./AuditReviewPanel";
 import { categoryLabels, severityLabels, shortDecisionLabels } from "./auditLabels";
@@ -11,6 +11,7 @@ import "./audit.css";
 
 type Session = { bound: BoundAuditPackage; feedback: AuditFeedback };
 interface Props {
+  startupPackage?: boolean;
   onBack(): void;
   windowController: { isMaximized: boolean; toggleMaximize(): Promise<void>; close(): Promise<void> };
   confirmation?: ConfirmationState;
@@ -21,7 +22,7 @@ function errorText(error: unknown) { return error instanceof Error ? error.messa
 const severityIcons = { error: CircleAlert, warning: TriangleAlert, suggestion: Lightbulb, info: Info };
 const decisionIcons = { answered: ClipboardCheck, accept: Check, reject: X, "needs-evidence": CircleHelp };
 
-export function AuditWorkbench({ onBack, windowController, confirmation, answerConfirmation, requestConfirmation }: Props) {
+export function AuditWorkbench({ startupPackage, onBack, windowController, confirmation, answerConfirmation, requestConfirmation }: Props) {
   const [session, setSession] = useState<Session>();
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
@@ -44,16 +45,6 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
   const showNotice = useCallback((message: string) => setNotice(message), []);
 
   useEffect(() => {
-    const request = sequence.current;
-    let active = true;
-    void loadAuditSession().then(async (saved) => {
-      if (!saved) return;
-      const bound = await prepareAuditPackage(saved.document);
-      if (active && request === sequence.current) setSession({ bound, feedback: restoreAuditFeedback(bound, saved.feedback).feedback });
-    }).catch((error) => { if (active) setNotice(errorText(error)); }).finally(() => { if (active && request === sequence.current) setLoading(false); });
-    return () => { active = false; };
-  }, []);
-  useEffect(() => {
     if (!session) return;
     let active = true;
     setSaveStatus("正在保存…");
@@ -63,22 +54,19 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
     return () => { active = false; };
   }, [session]);
 
-  const importPackage = async (file?: File) => {
-    if (!file) return;
+  const importDocument = useCallback(async (read: () => Promise<unknown>) => {
     const request = ++sequence.current;
     setLoading(true);
     try {
-      const bound = await prepareAuditPackage(await readAuditJson(file));
+      const bound = await prepareAuditPackage(await read());
       let feedback = createAuditFeedback(bound);
       let message = `已导入 ${bound.cases.length} 个谱例`;
-      try {
-        const saved = await loadAuditSession(bound.data.id);
-        if (saved) {
-          const restored = restoreAuditFeedback(bound, saved.feedback);
-          feedback = restored.feedback;
-          message += `，恢复 ${restored.restored} 条意见${restored.stale ? `，${restored.stale} 条旧意见因内容变更需重新审阅` : ""}`;
-        }
-      } catch (error) { message += `；本机恢复不可用: ${errorText(error)}`; }
+      const saved = await loadAuditFeedback(bound.data.id, bound.fingerprint);
+      if (saved) {
+        const restored = restoreAuditFeedback(bound, saved);
+        feedback = restored.feedback;
+        message += `，恢复 ${restored.restored} 条意见${restored.stale ? `，${restored.stale} 条旧意见因内容变更需重新审阅` : ""}`;
+      }
       if (request !== sequence.current) return;
       setSession({ bound, feedback });
       setEditorGeneration((n) => n + 1);
@@ -89,7 +77,22 @@ export function AuditWorkbench({ onBack, windowController, confirmation, answerC
       setNotice(message + (bound.data.formatVersion === 1 ? "；旧包由谱文临时生成工程，新提交请附带 .satb 工程使用 v2" : ""));
     } catch (error) { if (request === sequence.current) setNotice(errorText(error)); }
     finally { if (request === sequence.current) setLoading(false); }
-  };
+  }, []);
+  useEffect(() => {
+    if (startupPackage && window.desktop?.audit) {
+      const api = window.desktop.audit;
+      void importDocument(async () => parseAuditJson(await api.readStartupPackage()));
+    } else {
+      const request = ++sequence.current;
+      void loadAuditSession().then(async (saved) => {
+        if (!saved) return;
+        const bound = await prepareAuditPackage(saved.document);
+        if (request === sequence.current) setSession({ bound, feedback: restoreAuditFeedback(bound, saved.feedback).feedback });
+      }).catch((error) => { if (request === sequence.current) setNotice(errorText(error)); }).finally(() => { if (request === sequence.current) setLoading(false); });
+    }
+    return () => { sequence.current++; };
+  }, [startupPackage, importDocument]);
+  const importPackage = (file?: File) => file && importDocument(() => readAuditJson(file));
   const importFeedback = async (file?: File) => {
     if (!file || !session) return;
     const current = session;

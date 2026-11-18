@@ -169,7 +169,8 @@ function AppShell() {
     midiOutputManager.isEnabled(),
   );
   const [ruleTestMode, setRuleTestMode] = useState(false);
-  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState<false | "startup" | "manual">(() =>
+    window.desktop?.audit?.hasStartupPackage ? "startup" : false);
   const panelLayout = usePanelLayout();
   const workspaceColumns = useMemo(() => {
     const cols: string[] = [];
@@ -544,6 +545,7 @@ function AppShell() {
   };
   if (auditOpen) {
     return <AuditWorkbench
+      startupPackage={auditOpen === "startup"}
       onBack={() => setAuditOpen(false)}
       requestConfirmation={requestConfirmation}
       windowController={windowController}
@@ -666,7 +668,7 @@ function AppShell() {
           <IconButton
             label="教材审计"
             icon={<ClipboardCheck />}
-            onClick={() => { handleStop(); setAuditOpen(true); }}
+            onClick={() => { handleStop(); setAuditOpen("manual"); }}
           />
           {developerMode.enabled && developerMode.showRuleTestEntry ? (
             <IconButton

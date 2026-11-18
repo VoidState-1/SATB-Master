@@ -3,6 +3,15 @@ import { mkdir, mkdtemp, readFile, writeFile, access } from "node:fs/promises";
 import path from "node:path";
 
 const root = process.cwd();
+const [firstArgument, packageArgument, exeFlag, exeArgument] = process.argv.slice(2);
+const startupMode = firstArgument === "--startup-package";
+if (startupMode && (!packageArgument || (exeFlag !== undefined && (exeFlag !== "--exe" || !exeArgument)) || process.argv.length > 6)) {
+  throw new Error('Usage: node scripts/e2e-audit.mjs --startup-package <package> [--exe <packaged executable>]');
+}
+const startupPackage = startupMode ? path.resolve(packageArgument) : undefined;
+const packagedExe = startupMode && exeArgument ? path.resolve(exeArgument) : undefined;
+if (startupPackage) await access(startupPackage);
+if (packagedExe) await access(packagedExe);
 const parent = path.resolve("node_modules/.satb-audit-e2e");
 await mkdir(parent, { recursive: true });
 const directory = await mkdtemp(path.join(parent, "run-"));
@@ -24,18 +33,17 @@ const manifestValue = {
   ] }],
 };
 const input = path.join(directory, "sample.satb-audit.json");
-const scoreInput = path.join(directory, "sample.satbt");
-await writeFile(scoreInput, score);
-execFileSync(process.execPath, ["scripts/score.mjs", "compile", scoreInput, "--out", path.join(directory, "sample.satb")], { windowsHide: true });
-const manifestInput = path.join(directory, "manifest.json");
-await writeFile(path.join(directory, "source.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAeAAAAB4AQAAAAAC7RyiAAAA/0lEQVR4nO2YPQ6CQBBGZ0cLqWws7OAYlh7Fo3kTW48BvYUFiRSYMTES1h9WPyZqYOe18GD4dhfYcUL9YYVLJoMwKviYHEdgpFjP4oJyNfvJMxcaebdWyPkWl10DFe6RxIUgJmmgVB45SQjyys42aNnUXiiX13eunyu68cEkKctlZ2BvqReKuT2vutRp0L6WfZxI/7KnB+ovJ6uuI+5vS5IG/ybB4b/JZGlHMc5sMgaD599hMgijgo/JIIwKPiaDMCr4mBxHYGT/YRhMGkShOttjgMhY0z5nCvm0V8j1iLsVBdyt4PeduEk+tE6cfLET59oxLFKFHM33mU3GGGhgFwgD7XAl1TI+AAAAAElFTkSuQmCC", "base64"));
-await writeFile(manifestInput, JSON.stringify(manifestValue));
-execFileSync(process.execPath, ["scripts/audit.mjs", "pack", manifestInput, "--out", input], { windowsHide: true });
-const packageValue = JSON.parse(await readFile(input, "utf8"));
-const port = 9400 + Math.floor(Math.random() * 400);
-let log = "";
-const child = spawn(path.resolve("node_modules/electron/dist/electron.exe"), [`--remote-debugging-port=${port}`, "--remote-allow-origins=*", "--disable-gpu", root], { env: { ...process.env, SATB_MASTER_E2E_DIRECTORY: directory }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => { log = (log + chunk).slice(-5000); });
+async function prepareFixture() {
+  const scoreInput = path.join(directory, "sample.satbt");
+  await writeFile(scoreInput, score);
+  execFileSync(process.execPath, ["scripts/score.mjs", "compile", scoreInput, "--out", path.join(directory, "sample.satb")], { windowsHide: true });
+  const manifestInput = path.join(directory, "manifest.json");
+  await writeFile(path.join(directory, "source.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAeAAAAB4AQAAAAAC7RyiAAAA/0lEQVR4nO2YPQ6CQBBGZ0cLqWws7OAYlh7Fo3kTW48BvYUFiRSYMTES1h9WPyZqYOe18GD4dhfYcUL9YYVLJoMwKviYHEdgpFjP4oJyNfvJMxcaebdWyPkWl10DFe6RxIUgJmmgVB45SQjyys42aNnUXiiX13eunyu68cEkKctlZ2BvqReKuT2vutRp0L6WfZxI/7KnB+ovJ6uuI+5vS5IG/ybB4b/JZGlHMc5sMgaD599hMgijgo/JIIwKPiaDMCr4mBxHYGT/YRhMGkShOttjgMhY0z5nCvm0V8j1iLsVBdyt4PeduEk+tE6cfLET59oxLFKFHM33mU3GGGhgFwgD7XAl1TI+AAAAAElFTkSuQmCC", "base64"));
+  await writeFile(manifestInput, JSON.stringify(manifestValue));
+  execFileSync(process.execPath, ["scripts/audit.mjs", "pack", manifestInput, "--out", input], { windowsHide: true });
+  return JSON.parse(await readFile(input, "utf8"));
+}
+let child;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let socket;
 const pending = new Map(); let sequence = 0;
@@ -123,11 +131,29 @@ async function capture(name) {
   await writeFile(filename, Buffer.from(screenshot.data, "base64"));
   console.log(`Screenshot: ${filename}`);
 }
-try {
+async function launch() {
+  const args = ["--remote-debugging-port=0", "--remote-allow-origins=*", "--disable-gpu", `--user-data-dir=${path.join(directory, "user-data")}`];
+  if (!packagedExe) args.push(root);
+  if (startupPackage) args.push("--audit-package", startupPackage);
+  child = spawn(packagedExe ?? path.resolve("node_modules/electron/dist/electron.exe"), args, {
+    env: { ...process.env, SATB_MASTER_E2E_DIRECTORY: directory }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+  });
+  let log = "";
+  let port;
+  let spawnError;
+  child.once("error", error => { spawnError = error; });
+  for (const stream of [child.stdout, child.stderr]) stream.on("data", chunk => {
+    log = (log + chunk).slice(-5000);
+    port ??= /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/.exec(log)?.[1];
+  });
   const deadline = Date.now() + 20_000;
   let target;
   while (Date.now() < deadline) {
-    try { target = (await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())).find((t) => t.type === "page"); if (target?.webSocketDebuggerUrl) break; } catch {}
+    if (spawnError) throw spawnError;
+    if (child.exitCode !== null) break;
+    if (port) {
+      try { target = (await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())).find((t) => t.type === "page"); if (target?.webSocketDebuggerUrl) break; } catch {}
+    }
     await delay(150);
   }
   if (!target?.webSocketDebuggerUrl) throw new Error(`Electron failed to start\n${log}`);
@@ -136,6 +162,8 @@ try {
   socket.addEventListener("message", (message) => { const p = JSON.parse(String(message.data)); const request = pending.get(p.id); if (!request) return; clearTimeout(request.timer); pending.delete(p.id); if (p.error) request.reject(new Error(p.error.message)); else request.resolve(p.result); });
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: directory });
+}
+async function runWorkbenchChecks(packageValue) {
   await wait(`!!document.querySelector('button[aria-label="教材审计"]')`, "审计入口未出现");
   await click("教材审计");
   await wait(`!!document.querySelector('.audit-empty') && !document.querySelector('.audit-empty button.audit-primary').disabled`, "审计空态未就绪");
@@ -285,6 +313,48 @@ try {
   await click("返回工程");
   await wait(`!!document.querySelector('button[aria-label="教材审计"]') && !document.querySelector('.audit-workbench')`, "未能返回原工程");
   console.log("PASS: 三视图双向拍点、稀疏原图标定、草稿保留、自填与备选意见、方案独立批准、工程副本与基准、自动保存与导出、宽窄布局、旧意见失效");
+}
+
+async function checkStartupPackage() {
+  const pkg = JSON.parse(await readFile(startupPackage, "utf8"));
+  const titles = pkg.cases.flatMap(c => c.items.map(item => item.title));
+  if (pkg.cases[0]?.id !== "N035" || titles.length !== 3) throw new Error("启动回归需要以 N035 为首题的三题审计包");
+  const heading = JSON.stringify(pkg.cases[0].title);
+  const itemTitle = JSON.stringify(titles[0]);
+  const directoryReady = `document.querySelector('.audit-case-heading h1')?.textContent===${heading} &&
+    document.querySelector('.audit-item[aria-pressed="true"] .audit-row-title')?.textContent===${itemTitle} &&
+    JSON.stringify([...document.querySelectorAll('.audit-row-title')].map(el=>el.textContent))===${JSON.stringify(JSON.stringify(titles))}`;
+  await wait(directoryReady, "启动未直接显示 N035 或三条审计目录不符");
+  await wait(`document.querySelector('[aria-label="自填答案"]')?.value==='' && document.querySelector('.audit-review-footer')?.dataset.decision==='pending'`, "新用户目录已有草稿或人工结果");
+  await click("原谱");
+  await wait(`document.querySelector('.audit-source-card img')?.naturalWidth>0 && !!document.querySelector('.audit-source-cursor')`, "原谱或拍点标记未显示");
+  const tick = await evaluate("document.querySelector('[data-audit-cursor-tick]').dataset.auditCursorTick");
+  await assertCursor(tick, `[data-audit-source-tick="${tick}"][aria-pressed="true"]`);
+  await click("转写谱");
+  await assertCursor(tick, `.audit-score-playhead[data-tick="${tick}"]`);
+  await click("钢琴卷帘");
+  await assertCursor(tick, `.audit-project-editor[data-cursor-tick="${tick}"] .piano-roll`);
+
+  const draft = "仅用于启动回归的审计草稿";
+  await setTextInput("自填答案", draft);
+  await wait(`document.querySelector('[aria-label="自填答案"]').value===${JSON.stringify(draft)} && document.querySelector('.audit-save-status')?.textContent.includes('已自动保存')`, "测试草稿未自动保存");
+  // Allow Runtime.evaluate to respond before the native window tears down its CDP connection.
+  await evaluate(`setTimeout(()=>document.querySelector('button[aria-label="关闭窗口"]').click(), 50); true`);
+  const deadline = Date.now() + 12_000;
+  while (child.exitCode === null && child.signalCode === null && Date.now() < deadline) await delay(100);
+  if (child.exitCode !== 0) throw new Error("临时用户目录中的客户端未正常退出");
+  socket.close();
+  await launch();
+  await wait(directoryReady, "在同一用户目录重开后未恢复审计包");
+  await wait(`document.querySelector('[aria-label="自填答案"]')?.value===${JSON.stringify(draft)} && document.querySelector('.audit-review-footer')?.dataset.decision==='pending'`, "重启后未恢复待提交的草稿");
+  console.log("PASS: 命令行直达 N035、三题目录与三视图拍点、独立用户目录保存草稿及重启恢复");
+}
+
+try {
+  const packageValue = startupMode ? undefined : await prepareFixture();
+  await launch();
+  if (startupMode) await checkStartupPackage();
+  else await runWorkbenchChecks(packageValue);
   console.log(`Artifacts: ${directory}`);
 } catch (error) {
   if (socket?.readyState === WebSocket.OPEN) await capture("audit-failure.png").catch(() => {});
@@ -292,5 +362,5 @@ try {
 } finally {
   socket?.close();
   for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error("CDP closed")); }
-  child.kill();
+  if (child?.exitCode === null) child.kill();
 }
