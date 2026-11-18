@@ -27,6 +27,8 @@ export interface PianoRollProps {
   playheadTick: number;
   isPlaying?: boolean;
   followPlayhead?: boolean;
+  /** Keep a shared review cursor in view and allow single-click seeking on notes and ruler. */
+  seekOnClick?: boolean;
   onDisengageFollow?(): void;
   loopEnabled: boolean;
   loopStartTick: number;

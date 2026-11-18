@@ -75,6 +75,7 @@ export function PianoRoll({
   playheadTick,
   isPlaying = false,
   followPlayhead = true,
+  seekOnClick = false,
   onDisengageFollow,
   loopEnabled,
   loopStartTick,
@@ -236,6 +237,15 @@ export function PianoRoll({
     // 定位是离散请求, 普通工程编辑或缩放继续沿用原来的视口行为。
   }, [focusRange]);
 
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!seekOnClick || isPlaying || !scroll) return;
+    const left = playheadX - scroll.scrollLeft;
+    if (left < PIANO_WIDTH || left > scroll.clientWidth - 4) {
+      scroll.scrollLeft = Math.max(0, playheadX - PIANO_WIDTH - 24);
+    }
+  }, [seekOnClick, playheadX, isPlaying, focusRange]);
+
   const rawTickAtX = (x: number) => {
     return xToTick(x, project.ppq, pixelsPerBeat, project.lengthTicks);
   };
@@ -295,6 +305,7 @@ export function PianoRoll({
     diagnosticsByNote,
     scrollRef,
     cancelRequest,
+    seekOnClick,
     onSetPlayhead,
     onSetEditorDomain,
     onSetActiveVoice,
@@ -444,6 +455,7 @@ export function PianoRoll({
           activeTimingTick={timingMarkerEditor?.tick}
           onFocus={() => focusEditor()}
           onDoubleClick={(x) => onSetPlayhead(snapStartTick(x))}
+          onClick={seekOnClick ? (x) => onSetPlayhead(snapStartTick(x)) : undefined}
           onContextMenu={handleRulerContextMenu}
           onTimingMarkerClick={onSetPlayhead}
           onTimingMarkerDoubleClick={(tick, anchor) =>

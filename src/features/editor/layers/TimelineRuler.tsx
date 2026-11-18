@@ -23,6 +23,7 @@ interface TimelineRulerProps {
   loopEndX: number;
   activeTimingTick?: number;
   onFocus(): void;
+  onClick?(x: number): void;
   onDoubleClick(x: number): void;
   onContextMenu(event: MouseEvent<HTMLDivElement>): void;
   onTimingMarkerClick(tick: number): void;
@@ -46,6 +47,7 @@ export function TimelineRuler({
   loopEndX,
   activeTimingTick,
   onFocus,
+  onClick,
   onDoubleClick,
   onContextMenu,
   onTimingMarkerClick,
@@ -56,6 +58,7 @@ export function TimelineRuler({
       className="ruler-lane"
       style={{ width: totalWidth }}
       onPointerDown={onFocus}
+      onClick={onClick && ((event) => onClick(event.clientX - event.currentTarget.getBoundingClientRect().left))}
       onDoubleClick={(event) =>
         onDoubleClick(
           event.clientX - event.currentTarget.getBoundingClientRect().left,

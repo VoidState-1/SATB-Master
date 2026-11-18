@@ -45,6 +45,7 @@ interface UseNoteInteractionProps {
   scrollRef: RefObject<HTMLDivElement | null>;
   cancelRequest: number;
   onSetPlayhead(tick: number): void;
+  seekOnClick?: boolean;
   onSetEditorDomain(domain: EditorDomain): void;
   onSetActiveVoice(voiceId: VoiceId): void;
   onSelectNotes(noteIds: Set<string>): void;
@@ -88,6 +89,7 @@ export function useNoteInteraction({
   scrollRef,
   cancelRequest,
   onSetPlayhead,
+  seekOnClick,
   onSetEditorDomain,
   onSetActiveVoice,
   onSelectNotes,
@@ -438,6 +440,8 @@ export function useNoteInteraction({
         interaction.tickDelta,
         interaction.pitchDelta,
       );
+    } else if (seekOnClick && (interaction.kind === "move" || interaction.kind === "resize")) {
+      onSetPlayhead(snapStartTick(interaction.originX));
     } else if (interaction.kind === "draw") {
       onAddNote(
         interaction.voiceId,
