@@ -58,6 +58,16 @@ export interface RenderScorePreviewOptions {
   /** Available width in CSS pixels. If omitted, the renderer reads its scroll viewport. */
   availableWidth?: number;
   onNoteClick?(selection: ScoreNoteSelection): void;
+  /** Positions in CSS pixels relative to this staff system after VexFlow formatting. */
+  onMeasureLayout?(measure: ScoreMeasureLayout): void;
+}
+
+export interface ScoreMeasureLayout {
+  host: HTMLDivElement;
+  measure: ScoreMeasure;
+  left: number;
+  right: number;
+  anchors: { tick: number; x: number }[];
 }
 
 export interface RenderScorePreviewResult {
@@ -570,6 +580,28 @@ function drawMeasure(
     { ...tenorResult, voiceId: "tenor" as const },
     { ...bassResult, voiceId: "bass" as const },
   ];
+
+  if (options.onMeasureLayout) {
+    const scale = Math.max(0.75, Math.min(1.5, options.scale ?? 1));
+    const positions = new Map<number, number>([[measure.fromTick, treble.getNoteStartX()]]);
+    const soundingTicks = new Set<number>();
+    for (const { voice, voiceId } of voiceResults) {
+      const events = measure.voices[voiceId].events.filter(event => event.kind !== "unsupported");
+      const tickables = voice.getTickables() as StaveNote[];
+      events.forEach((event, index) => {
+        // A whole-measure rest is centered on the page, not placed at the beat.
+        if (event.kind === "rest" && (soundingTicks.has(event.fromTick) || event.toTick - event.fromTick === measure.toTick - measure.fromTick)) return;
+        const note = tickables[index];
+        positions.set(event.fromTick, (note.getNoteHeadBeginX() + note.getNoteHeadEndX()) / 2);
+        if (event.kind === "note") soundingTicks.add(event.fromTick);
+      });
+    }
+    positions.set(measure.toTick, staveX + staveWidth);
+    options.onMeasureLayout({
+      host, measure, left: staveX * scale, right: (staveX + staveWidth) * scale,
+      anchors: [...positions].sort(([a], [b]) => a - b).map(([tick, x]) => ({ tick, x: x * scale })),
+    });
+  }
 
   voiceResults.forEach(({ noteRefs }) => {
     noteRefs.forEach(({ event, note }) =>

@@ -21,4 +21,5 @@ export {
   type RenderScorePreviewResult,
   type ScoreNoteSelection,
   type ScoreRenderedNoteRef,
+  type ScoreMeasureLayout,
 } from "./vexflowRenderer";
