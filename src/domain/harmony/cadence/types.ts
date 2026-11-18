@@ -17,6 +17,7 @@ export interface CadenceEvidence {
   readonly code:
     | "phrase-boundary"
     | "dominant-to-tonic"
+    | "predominant-to-dominant"
     | "predominant-to-tonic"
     | "dominant-to-alternative"
     | "ends-on-dominant"

@@ -12,6 +12,7 @@ import type {
   PhraseTargetRatio,
 } from "./types";
 import {
+  chordIdentityInversion,
   chordStructureQuality,
   harmonySemanticsConfidence,
   primaryHarmonyInterpretation,
@@ -260,6 +261,7 @@ function boundaryFacts(
   timeline: ReturnType<typeof buildMetricTimeline>,
   regions: readonly ChordRegion[],
   tick: number,
+  atTemplateTarget: boolean,
 ) {
   const evidence: PhraseEvidence[] = [];
   const trackCount = project.satbTracks?.length ?? 0;
@@ -288,17 +290,26 @@ function boundaryFacts(
       value: metric.role === "downbeat" ? "位于小节线" : "位于次强拍",
     });
 
-  const terminal = terminalRegionAt(regions, tick);
+  const reattack = allVoicesEnd && startingVoices === trackCount;
+  const terminal = terminalRegionAt(regions, tick) ??
+    (atTemplateTarget && reattack
+      ? regions.find((region) => region.startTick < tick && tick < region.startTick + region.durationTicks)
+      : undefined);
   const previous = previousRegion(regions, terminal);
   const following = followingRegion(regions, tick);
   const terminalFamily = functionalFamily(terminal);
   const previousFamily = functionalFamily(previous);
   const followingFamily = functionalFamily(following);
+  const terminalDegree = terminal?.semantics && primaryHarmonyInterpretation(terminal.semantics).degree;
+  const endsOnDominant = terminalFamily === "dominant" && terminalDegree === 5;
+  const endsOnSubdominant = terminalFamily === "subdominant" && terminalDegree === 4 &&
+    previousFamily === "tonic" && terminal && chordIdentityInversion(terminal.identity) === 0 &&
+    tick - terminal.startTick >= measureLengthAt(timeline, tick - 1);
   if (terminalFamily)
     evidence.push({ code: "stable-harmony", value: "末端具有确定功能和声" });
   if (
-    terminalFamily === "dominant" ||
-    (terminalFamily === "tonic" &&
+    endsOnDominant || endsOnSubdominant ||
+    (terminalFamily === "tonic" && terminalDegree === 1 &&
       (previousFamily === "dominant" || previousFamily === "subdominant"))
   ) evidence.push({ code: "cadential-connection", value: "末端具有和声收束" });
   if (followingFamily && terminalFamily && followingFamily !== terminalFamily)
@@ -306,7 +317,6 @@ function boundaryFacts(
   else if (following)
     evidence.push({ code: "continuous-following-harmony", value: "边界后和声材料连续" });
 
-  // 长音释放本身不足以证明断句；若下一拍立即重新进入，仍视为连续材料。
   const strongBreak = actualSilence;
   const moderate = new Set<string>();
   if (metric && metric.level >= 2 && metric.confidence === "certain")
@@ -323,13 +333,19 @@ function boundaryFacts(
   const sameMaterial = evidence.some(
     (item) => item.code === "continuous-following-harmony",
   );
-  const synchronizedReattack = allVoicesEnd && startingVoices === trackCount;
+  // A chorale can breathe at a barline with all four parts rearticulating.
+  // At the metrical midpoint, a lengthened closing harmony gives that
+  // articulation structural weight even if the next phrase starts at once.
+  const articulatedCadence = reattack && atTemplateTarget && metric?.role === "downbeat" &&
+    longRelease && evidence.some((item) => item.code === "cadential-connection");
+  const rootPositionArrival = terminal && chordIdentityInversion(terminal.identity) === 0;
   const support: PhraseSupport = strongBreak
     ? "strong"
-    : moderate.size >= 2 && hasStructuralCategory && !sameMaterial && !synchronizedReattack
+    : (articulatedCadence && rootPositionArrival) ||
+      (moderate.size >= 2 && hasStructuralCategory && !sameMaterial && !reattack)
       ? "moderate"
       : "weak";
-  return { evidence, support };
+  return { evidence, support, articulatedDominant: articulatedCadence && endsOnDominant && previousFamily === "dominant" };
 }
 
 function candidateAtRatio(
@@ -346,12 +362,12 @@ function candidateAtRatio(
     Math.min(measureLengthAt(timeline, targetTick), length * REGULAR_PHRASE_POLICY.searchWindowRatio),
   );
   const regions = regionsOf(project);
-  const candidates = eventTicks(project, timeline)
+  const nearby = eventTicks(project, timeline)
     .filter((tick) =>
       tick >= targetTick - window && tick <= targetTick + window &&
       tick > range.startTick && tick < range.endTick)
     .map((tick) => {
-      const facts = boundaryFacts(project, timeline, regions, tick);
+      const facts = boundaryFacts(project, timeline, regions, tick, targetRatio === "half" && tick === targetTick);
       const metric = metricPositionAt(timeline, tick);
       const snapPriority = metric?.role === "downbeat"
         ? 0
@@ -368,7 +384,15 @@ function candidateAtRatio(
         distance: Math.abs(tick - targetTick),
         snapPriority,
       };
-    })
+    });
+  // An inverted dominant can locate an already supported division at the
+  // exact barline, but by itself cannot justify cutting an ongoing V2–I6.
+  const hasNearbyDivision = nearby.some(item => item.facts.support !== "weak" && item.distance > 0 &&
+    item.distance <= measureLengthAt(timeline, targetTick) / 2);
+  const candidates = nearby
+    .map(item => item.facts.articulatedDominant && hasNearbyDivision && item.facts.support === "weak"
+      ? { ...item, facts: { ...item.facts, support: "moderate" as const } }
+      : item)
     .filter((item) => item.facts.support !== "weak")
     .sort((left, right) =>
       supportRank[right.facts.support] - supportRank[left.facts.support] ||

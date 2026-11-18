@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createChordRegion } from "../../chords";
-import { createEmptyProject, PPQ, type ChordDraft, type NoteEvent } from "../../project";
+import { createEmptyProject, normalizeProject, PPQ, validateProject, type ChordDraft, type NoteEvent } from "../../project";
+import { addCadenceAnnotation, deletePhraseBoundary } from "../../editing";
+import { createHarmonyRuleIndexes } from "../rules/context/indexes";
 import { spellMidi } from "../../pitch";
 import { buildHarmonyAnalysis } from "../analysis";
 import { detectCadences } from "./detect";
@@ -139,6 +141,94 @@ bars 1..2 {
   H: | D/1 | T/4 S/4 T/2 |
 }`;
 
+  it("把同一主音的实际再奏计作补充前的旋律延长", () => {
+    const score = plagalEnding.replace("C5/1", "C5/4 C5/4 C5/2");
+    expect(buildHarmonyAnalysis(compileScoreText(score).project).cadenceCandidates)
+      .toMatchObject([{ kind: "full", toTick: 5 * PPQ }, { kind: "supplementary" }]);
+  });
+
+  it.each(["passing64", "pedal64"] as const)("句界上的 %s 不能用作正格终止的主和弦", (role) => {
+    const score = `satb 1
+key C major
+meter 2/4
+bars 1..1 {
+  S: | D5/4 C5/4 |
+  A: | G4/4 G4/4 |
+  T: | B3/4 E4/4 |
+  B: | G2/4 G2/4 |
+  H: | D/4 T64/4 |
+}`;
+    const project = compileScoreText(score).project;
+    project.chordTrack.regions[1].semantics!.cadenceRole = role;
+    expect(buildHarmonyAnalysis(project).cadenceCandidates).toEqual([]);
+  });
+
+  it("终止随真实谱尾定位，未标和声的后续音符不能算作尾部静音", () => {
+    const project = baseProject();
+    project.lengthTicks += PPQ;
+    expect(buildHarmonyAnalysis(project).cadenceCandidates).toMatchObject([{ kind: "full", toTick: 2 * PPQ }]);
+    project.satbTracks[0].notes.push(note("extra", 2 * PPQ, 60));
+    expect(buildHarmonyAnalysis(project).cadenceCandidates).toEqual([]);
+  });
+
+  it("同一属和弦在已确定句界两侧重新起音时，前句可以止于属", () => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 2/4
+bars 1..2 {
+  S: | C5/4 D5/4 | D5/4 C5/4 |
+  A: | G4/4 G4/4 | G4/4 G4/4 |
+  T: | E4/4 B3/4 | B3/4 E4/4 |
+  B: | C3/4 G2/4 | G2/4 C3/4 |
+  H: | T/4 D/4 | D/4 T/4 |
+}`).project;
+    project.structure.phraseBoundaries = [{ id: "split", tick: 2 * PPQ, source: "manual", confidence: "certain" }];
+    const regions = project.chordTrack.regions;
+    regions[1].durationTicks += regions[2].durationTicks;
+    regions.splice(2, 1);
+    const analysis = buildHarmonyAnalysis(project);
+    expect(analysis.cadenceCandidates).toMatchObject([
+      { kind: "half", fromTick: PPQ, toTick: 2 * PPQ },
+      { kind: "full", fromTick: 2 * PPQ, toTick: 4 * PPQ },
+    ]);
+    const views = createHarmonyRuleIndexes(analysis).cadenceViews;
+    expect(views.map(view => [view.spans[0].firstSlice.tick, view.spans.at(-1)?.lastSlice.endTick]))
+      .toEqual([[PPQ, 2 * PPQ], [2 * PPQ, 4 * PPQ]]);
+    const [half] = analysis.cadenceCandidates;
+    const annotation = {
+      id: "accepted-half", fromTick: half.fromTick, toTick: half.toTick, kind: half.kind, form: half.form,
+      phraseId: half.phraseId, source: "accepted-candidate" as const, confidence: "probable" as const, locked: false,
+    };
+    expect(addCadenceAnnotation(project, { ...annotation, toTick: half.toTick - 1 }).error).toBeTruthy();
+    const added = addCadenceAnnotation(project, annotation);
+    expect(added.error).toBeUndefined();
+    const reopened = JSON.parse(JSON.stringify(normalizeProject(added.project)));
+    expect(validateProject(reopened)).toBe(true);
+    expect(reopened.chordTrack.cadenceAnnotations[0]).toMatchObject({ ...annotation, stale: false });
+    const afterDeletion = deletePhraseBoundary(added.project, "split").project;
+    expect(afterDeletion.chordTrack.cadenceAnnotations[0].stale).toBe(true);
+    expect(validateProject(afterDeletion)).toBe(true);
+  });
+
+  it("连续属色彩及其终止四六进入范围，强拍延长的下属可作为完全终止的起点", () => {
+    const score = `satb 1
+key C major
+meter 3/4
+bars 1..2 {
+  S: | C5/2 B4/4 | C5/2. |
+  A: | F4/2 F4/4 | E4/2. |
+  T: | A3/2 D4/4 | G3/2. |
+  B: | F2/2 G2/4 | C3/2. |
+  H: | S/2 D7/4 | T/2. |
+}`;
+    const analyze = (text: string) => buildHarmonyAnalysis(compileScoreText(text).project).cadenceCandidates;
+    expect(analyze(score)).toMatchObject([{ kind: "full", fromTick: 0, evidence: expect.arrayContaining([
+      expect.objectContaining({ code: "predominant-to-dominant" }),
+    ]) }]);
+    expect(analyze(score.replace("S/2 D7/4", "K46/4 D/4 D7/4").replace("F2/2", "G2/2")))
+      .toMatchObject([{ kind: "full", fromTick: 0, spanIds: expect.arrayContaining([expect.any(String)]) }]);
+  });
+
   it("保留同一句内正格收束与后续补充变格的两个落点", () => {
     const pedalEnding = plagalEnding.replace("F2/4", "C3/4").replace(" S/4", " S64/4");
     for (const score of [plagalEnding, pedalEnding]) {
@@ -239,6 +329,24 @@ bars 1..1 {
     const half = buildHarmonyAnalysis(project).cadenceCandidates.find(item => item.kind === "half");
     expect(half).toBeDefined();
     expect(half?.form).toBeUndefined();
+  });
+
+  it.each([
+    ["iii6", "E5", "G4", "B3", "G2"],
+    ["iii7", "D5", "G4", "B3", "E3"],
+    ["K46", "E5", "G4", "C4", "G2"],
+  ])("模进停在 %s 时，属功能色彩不能单独构成半终止", (symbol, s, a, t, b) => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 3/4
+bars 1..1 {
+  S: | F5/4 E5/4 ${s}/4 |
+  A: | A4/4 C5/4 ${a}/4 |
+  T: | D4/4 G4/4 ${t}/4 |
+  B: | D3/4 C3/4 ${b}/4 |
+  H: | ii/4 T/4 ${symbol}/4 |
+}`).project;
+    expect(buildHarmonyAnalysis(project).cadenceCandidates.some(item => item.kind === "half")).toBe(false);
   });
 
   it("乐句置信度会限制终止置信度", () => {

@@ -11,6 +11,7 @@ import {
   isCurrentPhraseBoundary,
   phraseAtTick,
 } from "./index";
+import { compileScoreText } from "../../scoreText";
 
 function note(id: string, startTick: number, durationTicks: number): NoteEvent {
   return {
@@ -143,6 +144,25 @@ describe("乐句分析", () => {
       0,
       project.lengthTicks,
     ]);
+  });
+
+  it("规整乐段的中点凭长音释放和原位属收束分句，转位属七连续解决时保留整句", () => {
+    const score = `satb 1
+key C major
+meter 4/4
+bars 1..4 {
+  S: | E5/1 | D5/1 | E5/1 | C5/1 |
+  A: | G4/1 | G4/1 | G4/1 | G4/1 |
+  T: | C4/1 | B3/1 | C4/1 | E4/1 |
+  B: | C3/1 | G2/1 | C3/1 | C3/1 |
+  H: | T/1 | D/1 | T/1 | T/1 |
+}`;
+    const midpoint = (source: string) => inferPhrases(compileScoreText(source).project).boundaries
+      .filter(boundary => boundary.tick === 8 * PPQ);
+    expect(midpoint(score)).toMatchObject([{ confidence: "probable" }]);
+    expect(midpoint(score.replace("| D/1 |", "| iii7/1 |").replace("| G2/1 |", "| E3/1 |"))).toEqual([]);
+    expect(midpoint(score.replace("| D/1 | T/1", "| D2/1 | T6/1")
+      .replace("| G2/1 | C3/1", "| F2/1 | E2/1"))).toEqual([]);
   });
 
   it("长音在同一拍立即重奏时不建立强乐句边界", () => {

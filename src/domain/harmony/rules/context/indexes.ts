@@ -1,5 +1,6 @@
 import type { NonChordToneRole, VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
+import { clipHarmonySpan } from "../../cadence/spanRange";
 import type {
   AnalysisSlice,
   HarmonyAnalysis,
@@ -123,14 +124,19 @@ export function createHarmonyRuleIndexes(
     analysis.phraseSegments.map((phrase) => [phrase.id, phrase] as const),
   );
   const spanViewsInRange = (fromTick: number, toTick: number) =>
-    frozenSpanViews.filter(
-      (view) => view.span.fromTick >= fromTick && view.span.toTick <= toTick,
-    );
+    frozenSpanViews.flatMap(view => {
+      const span = clipHarmonySpan(view.span, analysis.slices, fromTick, toTick);
+      if (!span) return [];
+      if (span === view.span) return [view];
+      const slices = span.sliceIndices.map(index => analysis.slices[index]);
+      return [Object.freeze({ span, slices: Object.freeze(slices), firstSlice: slices[0], lastSlice: slices[slices.length - 1],
+        chords: Object.freeze(view.chords.filter(chord => span.regionIds.includes(chord.id))) })];
+    });
   const chordViewsInRange = (fromTick: number, toTick: number) =>
     analysis.project.chordTrack.regions.filter(
       (chord) =>
-        chord.startTick >= fromTick &&
-        chord.startTick + chord.durationTicks <= toTick,
+        chord.startTick < toTick &&
+        chord.startTick + chord.durationTicks > fromTick,
     );
   const candidateViews = analysis.cadenceCandidates.map((candidate) => {
     const spans = spanViewsInRange(candidate.fromTick, candidate.toTick);
