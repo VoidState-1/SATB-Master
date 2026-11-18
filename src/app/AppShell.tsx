@@ -3,6 +3,7 @@ import {
   BellRing,
   Cable,
   Clipboard,
+  ClipboardCheck,
   Copy,
   Download,
   Eraser,
@@ -50,6 +51,7 @@ import {
 import { SettingsDialog } from "../features/settings";
 import { TrackSidebar } from "../features/tracks";
 import { RuleTestWorkbench } from "../features/ruleTesting";
+import { AuditWorkbench } from "../features/audit";
 import { ChordInferenceDialog } from "../features/chordInference";
 import { ScorePreviewDialog, loadVexFlow } from "../features/scorePreview";
 import { ExportDialog } from "../features/export";
@@ -167,6 +169,7 @@ function AppShell() {
     midiOutputManager.isEnabled(),
   );
   const [ruleTestMode, setRuleTestMode] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
   const panelLayout = usePanelLayout();
   const workspaceColumns = useMemo(() => {
     const cols: string[] = [];
@@ -248,7 +251,7 @@ function AppShell() {
   } = usePlaybackController({
     project,
     history,
-    preloadSoundFont: !ruleTestMode,
+    preloadSoundFont: !ruleTestMode && !auditOpen,
     gridTicks,
     pausePlayheadBehavior,
     showNotice,
@@ -367,7 +370,7 @@ function AppShell() {
     requestConfirmation,
   });
   useKeyboardController({
-    enabled: !ruleTestMode,
+    enabled: !ruleTestMode && !auditOpen,
     bindings: shortcutSettings.bindings,
     confirmation,
     settingsOpen,
@@ -539,6 +542,15 @@ function AppShell() {
     ruleTestWorkspace.editor.setSelectedChordIds(new Set());
     setRuleTestMode(false);
   };
+  if (auditOpen) {
+    return <AuditWorkbench
+      onBack={() => setAuditOpen(false)}
+      requestConfirmation={requestConfirmation}
+      windowController={windowController}
+      confirmation={confirmation}
+      answerConfirmation={answerConfirmation}
+    />;
+  }
   if (ruleTestMode) {
     return (
       <RuleTestWorkbench
@@ -650,6 +662,11 @@ function AppShell() {
             label="从音符推导和弦"
             icon={<WandSparkles />}
             onClick={() => setChordInferenceOpen(true)}
+          />
+          <IconButton
+            label="教材审计"
+            icon={<ClipboardCheck />}
+            onClick={() => { handleStop(); setAuditOpen(true); }}
           />
           {developerMode.enabled && developerMode.showRuleTestEntry ? (
             <IconButton

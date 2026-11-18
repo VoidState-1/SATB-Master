@@ -76,6 +76,7 @@ describe("architecture boundaries", () => {
     const allowedDependencies: Record<string, ReadonlySet<string>> = {
       ruleTesting: new Set(["editor", "inspector", "settings", "tracks"]),
       bottomPanel: new Set(["diagnostics", "scorePreview"]),
+      audit: new Set(["scorePreview", "editor", "inspector"]),
     };
     const violations = sourceFiles(featuresRoot).flatMap((path) => {
       const owner = relative(featuresRoot, path).split(sep)[0];
