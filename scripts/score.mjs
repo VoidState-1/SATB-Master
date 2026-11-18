@@ -49,7 +49,7 @@ async function main() {
     if (exists) throw new Error(`输出文件已存在：${target}；覆盖请使用 --force`);
   }
   const root = fileURLToPath(new URL("../", import.meta.url));
-  const server = await createServer({ root, configFile: false, server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
+  const server = await createServer({ root, configFile: false, server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom", logLevel: "error" });
   try {
     const api = await server.ssrLoadModule("/src/domain/scoreText/index.ts");
     const { migrateProject } = await server.ssrLoadModule("/src/domain/project/index.ts");
