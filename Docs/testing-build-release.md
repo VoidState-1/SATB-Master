@@ -85,6 +85,8 @@ typecheck
 
 ## 4. 桌面 E2E
 
+教材审计的独立桌面验证使用 `npm run e2e:audit`，涵盖工程附件、原图/卷帘切换、单选/多选/输入题、显式采用建议、独立编辑与撤销、审批隔离、自动保存、工程/意见导出、重载恢复及版本失效。测试在隔离 userData 中运行，使用手工协议样例，不依赖本地教材；真实教材包可作为 `scripts/e2e-audit.mjs` 的可选参数用于布局复核。详见 [audit-workspace.md](./audit-workspace.md)。
+
 运行：
 
 ```powershell

@@ -83,6 +83,7 @@ flowchart LR
 - [`features/settings`](../src/features/settings)：设置窗口、规则字段和快捷键/规则配置子区。
 - [`features/chordInference`](../src/features/chordInference)：自动和弦推导的引导与对话框，见 [analysis-inference.md](./analysis-inference.md)。
 - [`features/ruleTesting`](../src/features/ruleTesting)：规则测试工作台，见 [rule-testing.md](./rule-testing.md)。
+- [`features/audit`](../src/features/audit)：教材审计工作区，组合原图/工程选项卡、逐条独立副本编辑、预审问答与结构化分析；人工意见和修改副本独立存储，见 [audit-workspace.md](./audit-workspace.md)。
 - [`features/tracks`](../src/features/tracks)：声部/轨道侧栏与赞助对话框。
 
 组件负责：
