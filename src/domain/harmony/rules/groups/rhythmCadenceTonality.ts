@@ -173,41 +173,49 @@ const CADENCE_KIND_LABELS = {
   deceptive: "阻碍终止",
 } as const;
 
+function validCadenceBassFormula(fact: ReturnType<typeof cadenceRuleContexts>[number]) {
+  const {
+    cadence, sourceChord, targetChord, sourceFamily, targetFamily, sourceBass,
+    targetBass, targetInterpretation, degreePitch,
+  } = fact;
+  if (cadence.kind === "half") {
+    return (
+      (cadence.form !== "plagal" && targetFamily === "dominant" &&
+        pitchClassEquals(targetBass.pitch, degreePitch(5))) ||
+      (cadence.form !== "authentic" && targetFamily === "subdominant" &&
+        pitchClassEquals(targetChord.identity.root, degreePitch(4)) &&
+        chordInversion(targetChord) === 0 &&
+        pitchClassEquals(targetBass.pitch, degreePitch(4)))
+    );
+  }
+
+  if (!sourceBass) return false;
+  if (cadence.kind === "deceptive") {
+    return sourceFamily === "dominant" && targetInterpretation?.degree === 6 &&
+      pitchClassEquals(sourceBass.pitch, degreePitch(5)) &&
+      pitchClassEquals(targetBass.pitch, degreePitch(6));
+  }
+
+  const tonic = degreePitch(1);
+  if (targetFamily !== "tonic" || !pitchClassEquals(targetBass.pitch, tonic)) return false;
+  const plagal = cadence.kind === "supplementary" || cadence.form === "plagal";
+  if (sourceFamily !== (plagal ? "subdominant" : "dominant")) return false;
+  const sourceRoot = degreePitch(plagal ? 4 : 5);
+  if (pitchClassEquals(sourceBass.pitch, sourceRoot)) return true;
+
+  if (!sourceChord || !pitchClassEquals(sourceChord.identity.root, sourceRoot) ||
+    !pitchClassEquals(sourceBass.pitch, sourceChord.identity.bass)) return false;
+  if (cadence.kind === "full" && cadence.completion === "imperfect") return true;
+
+  return cadence.kind === "supplementary" && sourceChord.semantics?.cadenceRole === "pedal64" &&
+    chordInversion(sourceChord) === 2 && pitchClassEquals(sourceBass.pitch, tonic) &&
+    sourceBass.pitch.octave === targetBass.pitch.octave;
+}
+
 export function cadenceBassFormulaRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   cadenceRuleContexts(context).forEach((context) => {
-    const valid =
-      context.cadence.kind === "full" && context.cadence.form !== "plagal"
-        ? Boolean(context.sourceBass) &&
-          context.sourceFamily === "dominant" &&
-          context.targetFamily === "tonic" &&
-          pitchClassEquals(context.sourceBass!.pitch, context.degreePitch(5)) &&
-          pitchClassEquals(context.targetBass.pitch, context.degreePitch(1))
-        : context.cadence.kind === "half"
-          ? context.targetFamily === "dominant" &&
-            pitchClassEquals(context.targetBass.pitch, context.degreePitch(5))
-          : context.cadence.kind === "supplementary" ||
-              (context.cadence.kind === "full" && context.cadence.form === "plagal")
-            ? Boolean(context.sourceBass) &&
-              context.sourceFamily === "subdominant" &&
-              context.targetFamily === "tonic" &&
-              pitchClassEquals(
-                context.sourceBass!.pitch,
-                context.degreePitch(4),
-              ) &&
-              pitchClassEquals(context.targetBass.pitch, context.degreePitch(1))
-            : Boolean(context.sourceBass) &&
-              context.sourceFamily === "dominant" &&
-              context.targetInterpretation?.degree === 6 &&
-              pitchClassEquals(
-                context.sourceBass!.pitch,
-                context.degreePitch(5),
-              ) &&
-              pitchClassEquals(
-                context.targetBass.pitch,
-                context.degreePitch(6),
-              );
-    if (valid) return;
+    if (validCadenceBassFormula(context)) return;
     diagnostics.push(
       diagnostic(
         "cadence.bass-formula",
@@ -540,7 +548,7 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     description:
       "检查各类终止式（完全终止、半终止、变格终止等）的低音声部走向是否符合终止式公式。",
     rationale:
-      "终止式是乐句收束的结构支柱。完全终止低音必须是 5→1；半终止低音停留在 5 级；变格终止低音为 4→1；阻碍终止低音为 5→6。低音音级不符会导致乐段终止感瓦解或结构边界不清。",
+      "完满正格与变格终止的典型低音分别为 5→1 和 4→1。不完满终止可用转位的属或下属和弦。正格半终止可停在 5 级，变格半终止可停在 4 级。补充变格终止可用主音持续的辅助下属四六和弦，阻碍终止通常为 5→6。",
     group: "cadence",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],

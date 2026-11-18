@@ -1,7 +1,13 @@
 import type { HarmonyAnalysis, MelodyTransition } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import { chordIdentityToneSpellings } from "../../../chordModel";
-import { formatSpelledPitch, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
+import {
+  formatSpelledPitch,
+  leadingTonePitchClass,
+  pitchClassEquals,
+  scaleDegreePitchClass,
+  toMidi,
+} from "../../../pitch";
 import {
   diagnostic,
   hasExactPitch,
@@ -117,7 +123,7 @@ export function tritoneRule(context: HarmonyRuleContext) {
   return evaluateMelodyTransitionRule(context, TRITONE_POLICY);
 }
 
-function preparesDoubleDominant(context: HarmonyRuleContext, transition: MelodyTransition) {
+function preparesChromaticDominant(context: HarmonyRuleContext, transition: MelodyTransition) {
   const { previous, current, writtenInterval } = transition;
   if (!transition.sameKey || writtenInterval.diatonicSteps !== 0 || Math.abs(writtenInterval.semitones) !== 1) return false;
   const targetSlice = context.sliceAt(current.startTick);
@@ -134,10 +140,26 @@ function preparesDoubleDominant(context: HarmonyRuleContext, transition: MelodyT
   const kind = meaning.designation?.kind;
   const targetsDominant = kind === "double-dominant" || kind === "double-dominant-leading-tone" ||
     (meaning.appliedTarget?.degree === 5 && (kind === "applied-dominant" || kind === "applied-leading-tone"));
-  if (writtenInterval.semitones === 1) {
-    return (augmentedSixth || targetsDominant) && pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 4, 1));
+  if (writtenInterval.semitones === -1) {
+    return augmentedSixth && key.mode === "major" &&
+      pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 6, -1));
   }
-  return augmentedSixth && key.mode === "major" && pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 6, -1));
+  if (augmentedSixth || targetsDominant)
+    return pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 4, 1));
+
+  if (!meaning.appliedTarget || (kind !== "applied-dominant" && kind !== "applied-leading-tone")) return false;
+  const tonic = scaleDegreePitchClass(key, meaning.appliedTarget.degree);
+  if (!pitchClassEquals(current.pitch, leadingTonePitchClass({ tonic, mode: "major" }))) return false;
+
+  const following = context.notes({ voiceId: transition.voiceId, startingAfter: current.startTick }).first()?.note;
+  const landing = context.sliceAt(target.startTick + target.durationTicks)?.chord;
+  return Boolean(following && landing &&
+    following.startTick === current.startTick + current.durationTicks &&
+    following.startTick === landing.startTick &&
+    !previous.nonChordToneRole && !current.nonChordToneRole && !following.nonChordToneRole &&
+    pitchClassEquals(landing.identity.root, tonic) &&
+    pitchClassEquals(following.pitch, tonic) &&
+    toMidi(following.pitch) === toMidi(current.pitch) + 1);
 }
 
 function alteredIntervalRule(
@@ -152,7 +174,7 @@ function alteredIntervalRule(
       !named.altered ||
       named.quality !== expectedQuality ||
       Math.abs(transition.writtenInterval.semitones) === 0 ||
-      (expectedQuality === "增" && preparesDoubleDominant(context, transition))
+      (expectedQuality === "增" && preparesChromaticDominant(context, transition))
     )
       continue;
     diagnostics.push(
@@ -369,7 +391,7 @@ export const MELODY_RULES = defineRuleGroup(
     description:
       "检查单声部旋律进行中是否包含增二度、增四度等增音程。",
     rationale:
-      "旋律中的增二度、增四度等增音程会影响平稳进行。重属可以由同声部的自然 IV 级半音上行引入，大调变音重属的增六低端也可由 VI 级半音下行准备。",
+      "旋律中的增二度、增四度等增音程会影响平稳进行。重属可以由同声部的自然 IV 级半音上行引入，大调变音重属的增六低端也可由 VI 级半音下行准备。其他副属和弦也可以用半音引入导音，再上行级进解决到相应的局部主音。",
     group: "melody",
     defaultSeverity: "warning",
     requires: ["written-pitches"],

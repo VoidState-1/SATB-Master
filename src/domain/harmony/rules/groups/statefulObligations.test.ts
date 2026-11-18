@@ -435,6 +435,49 @@ describe("倾向音义务决策原因", () => {
     expect(reasons).not.toContain("leading-tone-moved-elsewhere");
   });
 
+  it.each([V, V7])("原位属和弦接完整主和弦时，允许内声部导音下行三度至五音", (dominant) => {
+    const project = projectForVoices([dominant(), I()], {
+      soprano: [pitch("D", 0, 5), pitch("C", 0, 5)],
+      alto: [pitch(dominant === V ? "G" : "F", 0, 4), pitch("E", 0, 4)],
+      tenor: [pitch("B", 0, 3), pitch("G", 0, 3)],
+      bass: [pitch("G", 0, 2), pitch("C", 0, 3)],
+    });
+
+    const result = runObligation("resolution.leading-tone", project);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.trace).toContainEqual(expect.objectContaining({ reason: "inner-leading-tone-descends-to-fifth" }));
+  });
+
+  it.each([
+    { soprano: pitch("C", 0, 5), alto: pitch("E", 0, 4), tenor: pitch("F", 2, 3) },
+    { soprano: pitch("C", 0, 5), alto: pitch("E", 0, 4), tenor: pitch("G", 0, 2) },
+    { soprano: pitch("C", 0, 5), alto: pitch("C", 0, 4), tenor: pitch("G", 0, 3) },
+  ])("内声部例外仍要求书写下行单三度和完整主和弦", (target) => {
+    const project = projectForVoices([V7(), I()], {
+      soprano: [pitch("D", 0, 5), target.soprano],
+      alto: [pitch("F", 0, 4), target.alto],
+      tenor: [pitch("B", 0, 3), target.tenor],
+      bass: [pitch("G", 0, 2), pitch("C", 0, 3)],
+    });
+
+    expect(runObligation("resolution.leading-tone", project).diagnostics).toContainEqual(
+      expect.objectContaining({ tick: PPQ, voiceIds: ["tenor"] }),
+    );
+  });
+
+  it("外声部导音直接下行至主和弦五音仍报警", () => {
+    const project = projectForVoices([V7(), I()], {
+      soprano: [pitch("B", 0, 4), pitch("G", 0, 4)],
+      alto: [pitch("F", 0, 4), pitch("E", 0, 4)],
+      tenor: [pitch("D", 0, 4), pitch("C", 0, 4)],
+      bass: [pitch("G", 0, 2), pitch("C", 0, 3)],
+    });
+
+    expect(runObligation("resolution.leading-tone", project).diagnostics).toContainEqual(
+      expect.objectContaining({ tick: PPQ, voiceIds: ["soprano"] }),
+    );
+  });
+
   it("七音保持到下一个和弦作为协和音（如 ii7 -> I）直接消除倾向并解决", () => {
     const ii7 = tertianRegion(
       "supertonic-seventh",

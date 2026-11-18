@@ -58,3 +58,26 @@ bars 1..1 {
     expect(warnings(symbol, before, after).some(d => d.voiceIds.includes("soprano"))).toBe(true);
   });
 });
+
+describe("其他副属和弦的导音半音引入", () => {
+  it.each([
+    { nextNote: "A4", nextChord: "vi", reports: false },
+    { nextNote: "E4", nextChord: "vi", reports: true },
+    { nextNote: "A4", nextChord: "IV", reports: true },
+  ])("G–G#–$nextNote 落在 $nextChord 时，增一度警告为 $reports", ({ nextNote, nextChord, reports }) => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 2/4
+bars 1..3 {
+ S: | G4/2 | G#4/2 | ${nextNote}/2 |
+ A: | E4/2 | D4/2 | C4/2 |
+ T: | C4/2 | B3/2 | E3/2 |
+ B: | C3/2 | E3/2 | A2/2 |
+ H: | I/2 | V7/VI/2 | ${nextChord}/2 |
+}`).project;
+    expect(checkHarmony(project).diagnostics.some(diagnostic =>
+      diagnostic.ruleId === "melody.augmented-interval" &&
+      diagnostic.tick === project.ppq * 2 && diagnostic.voiceIds.includes("soprano"),
+    )).toBe(reports);
+  });
+});

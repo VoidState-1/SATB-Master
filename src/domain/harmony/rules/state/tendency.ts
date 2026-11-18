@@ -3,11 +3,13 @@ import {
   chordIdentityToneSpellingForDegree,
 } from "../../../chordModel";
 import type { VoiceId } from "../../../project/types";
+import type { AnalysisSlice } from "../../analysis";
 import {
   leadingTonePitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
   toMidi,
+  writtenInterval,
   type SpelledPitchClass,
 } from "../../../pitch";
 import type { JsonValue, RuleStepContext } from "../../runtime";
@@ -288,6 +290,65 @@ export function leadingToneResolves(
       current.pitch.step === payload.targetStep &&
       current.pitch.alter === payload.targetAlter &&
       toMidi(current.pitch) - payload.leadingMidi === 1,
+  );
+}
+
+function completeRootPositionChord(context: RuleStepContext, slice: AnalysisSlice) {
+  const chord = slice.chord;
+  if (!chord || !slice.completeSatb || !pitchClassEquals(chord.identity.bass, chord.identity.root)) return false;
+  const members = context.rules.harmony.chordMembersAt(slice);
+  return (
+    members.some(member => member.voiceId === "bass" && member.chordToneIndex === 0) &&
+    members.every(member => member.isWrittenChordTone && !member.note.nonChordToneRole) &&
+    chordIdentityToneSpellings(chord.identity).every((_, index) =>
+      members.some(member => member.chordToneIndex === index),
+    )
+  );
+}
+
+export function innerLeadingToneDescendsToFifth(
+  environment: ObligationEnvironment<LeadingTonePayload>,
+) {
+  const { context, obligation: { payload } } = environment;
+  if (payload.voiceId !== "alto" && payload.voiceId !== "tenor") return false;
+  const source = context.previous;
+  const target = context.slice;
+  const from = source?.chord;
+  const to = target.chord;
+  const leading = source?.notes[payload.voiceId];
+  const landing = target.notes[payload.voiceId];
+  if (
+    !source || !from || !to || !leading || !landing ||
+    !context.transitionFromPrevious?.contiguous || !context.transitionFromPrevious.sameKey ||
+    context.rules.phraseAt(source.tick)?.id !== context.rules.phraseAt(target.tick)?.id ||
+    !supportsTendencyResolutionRules(context, from) || !supportsTendencyResolutionRules(context, to)
+  ) return false;
+
+  const interval = writtenInterval(leading.pitch, landing.pitch);
+  if (interval.diatonicSteps !== -2 || interval.semitones !== -4) return false;
+
+  const fromInterpretation = context.rules.harmony.primaryInterpretation(from);
+  const toInterpretation = context.rules.harmony.primaryInterpretation(to);
+  const fromKey = fromInterpretation.status === "resolved"
+    ? fromInterpretation.value.localKey ?? source.key : source.key;
+  const toKey = toInterpretation.status === "resolved"
+    ? toInterpretation.value.localKey ?? target.key : target.key;
+  const tonic = { step: payload.targetStep, alter: payload.targetAlter };
+  const fromStructure = from.identity.structure;
+  const toStructure = to.identity.structure;
+  return (
+    pitchClassEquals(fromKey.tonic, tonic) && pitchClassEquals(toKey.tonic, tonic) &&
+    fromKey.mode === toKey.mode &&
+    pitchClassEquals(leading.pitch, { step: payload.leadingStep, alter: payload.leadingAlter }) &&
+    pitchClassEquals(from.identity.root, scaleDegreePitchClass(fromKey, 5)) &&
+    pitchClassEquals(to.identity.root, tonic) &&
+    fromStructure.kind === "tertian" && toStructure.kind === "tertian" &&
+    (fromStructure.quality === "major" || fromStructure.quality === "dominant7") &&
+    (toStructure.quality === "major" || toStructure.quality === "minor") &&
+    fromStructure.extensions.length === 0 && fromStructure.alterations.length === 0 &&
+    toStructure.extensions.length === 0 && toStructure.alterations.length === 0 &&
+    completeRootPositionChord(context, source) && completeRootPositionChord(context, target) &&
+    pitchClassEquals(landing.pitch, scaleDegreePitchClass(toKey, 5))
   );
 }
 

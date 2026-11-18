@@ -35,6 +35,7 @@ import {
   chordSeventhSource,
   dominantNinthResolves,
   dominantNinthSource,
+  innerLeadingToneDescendsToFifth,
   leadingTargetUnchanged,
   leadingToneResolves,
   leadingToneSource,
@@ -553,6 +554,9 @@ function leadingToneTransition(
       "leading-tone-resolved",
       debugFacts,
     );
+
+  if (attacked && targetUnchanged && innerLeadingToneDescendsToFifth(environment))
+    return decision(environment, "resolve", "inner-leading-tone-descends-to-fifth", debugFacts);
 
   if (
     targetUnchanged &&
