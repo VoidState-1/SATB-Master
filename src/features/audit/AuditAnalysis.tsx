@@ -35,6 +35,7 @@ export function AuditAnalysis({ item, children }: Props) {
       </div>
     </div>) : <p className="audit-muted">尚未提供依据，可在意见中要求补证。</p>}</div>
   </section>;
+  const hasVerdictSummary = Boolean(model || program);
   return <section className="audit-analysis" aria-label="条目分析">
     <header className="audit-detail-heading">
       <div className="audit-tags">
@@ -45,8 +46,11 @@ export function AuditAnalysis({ item, children }: Props) {
       </div>
       <h2>{item.question ?? item.title}</h2>
     </header>
+    {hasVerdictSummary && <details className="audit-evidence-details audit-verdict-summary" open>
+      <summary>模型判断与程序结果</summary>
+      <div className="audit-analysis-text audit-verdict-grid">{model}{program}</div>
+    </details>}
     {children}
-    {item.evidence?.length ? <details className="audit-evidence-details"><summary>教材依据 · {item.evidence.length}</summary>{references}</details> : null}
-    <details className="audit-evidence-details"><summary>模型判断与程序结果</summary><div className="audit-analysis-text">{model}{program}</div></details>
+    {item.evidence?.length ? <details className="audit-evidence-details" open><summary>教材依据 · {item.evidence.length}</summary>{references}</details> : null}
   </section>;
 }

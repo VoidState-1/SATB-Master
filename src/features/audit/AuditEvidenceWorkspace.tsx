@@ -16,29 +16,32 @@ const views = [
   { id: "score", name: "转写谱", icon: FileMusic },
   { id: "roll", name: "钢琴卷帘", icon: Piano },
 ] as const;
-type View = typeof views[number]["id"];
+export type AuditView = typeof views[number]["id"];
 interface Props {
   auditCase: BoundAuditCase;
   selected?: BoundAuditItem;
   review?: AuditItemReview;
   sourceReview: ReviewRecord;
+  view: AuditView;
+  onViewChange(view: AuditView): void;
+  compare: boolean;
+  onCompareChange(compare: boolean): void;
   onSourceChange(patch: AuditReviewPatch): void;
   onProjectChange?(project: ProjectDocument): void;
   confirmation?: ConfirmationState;
   requestConfirmation(options: ConfirmationState): Promise<boolean>;
   showNotice(message: string): void;
+  onRegisterPlayToggle?(toggle: (() => void) | undefined): void;
 }
 
-function initialView(selected: BoundAuditItem | undefined, hasImage: boolean): View {
+export function initialAuditView(selected: BoundAuditItem | undefined, hasImage: boolean): AuditView {
   if (selected?.item.category === "transcription" && hasImage) return "source";
   const rule = selected?.item.program?.ruleId ?? "";
   if (selected?.item.category === "diagnostic" && /parallel|contrary|crossing|overlap|voice-leading/i.test(rule)) return "roll";
   return "score";
 }
 
-export function AuditEvidenceWorkspace({ auditCase, selected, review, sourceReview, onSourceChange, onProjectChange, ...editorProps }: Props) {
-  const [view, setView] = useState<View>(() => initialView(selected, !!auditCase.data.source.image));
-  const [compare, setCompare] = useState(false);
+export function AuditEvidenceWorkspace({ auditCase, selected, review, sourceReview, view, onViewChange, compare, onCompareChange, onSourceChange, onProjectChange, onRegisterPlayToggle, ...editorProps }: Props) {
   const [baseline, setBaseline] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [tick, setTick] = useState(selected?.fromTick ?? 0);
@@ -51,11 +54,11 @@ export function AuditEvidenceWorkspace({ auditCase, selected, review, sourceRevi
   const cursor = { cursorTick, onCursorTickChange };
   const reference = <AuditSource source={auditCase.data.source} title={auditCase.data.title}
     region={selected?.item.sourceRegion} project={project} {...cursor} />;
-  const score = <AuditScore auditCase={auditCase} selected={baseline ? undefined : selected} project={project} showNotice={editorProps.showNotice} {...cursor} />;
+  const score = <AuditScore auditCase={auditCase} selected={baseline ? undefined : selected} project={project} showNotice={editorProps.showNotice} onRegisterPlayToggle={view === "roll" ? undefined : onRegisterPlayToggle} {...cursor} />;
   const editor = <AuditProjectEditor key={baseline ? "baseline" : "copy"} initialProject={project}
     originalProject={baseline ? auditCase.project : original} selected={baseline ? undefined : selected}
     filename={auditCase.data.id + "-" + (baseline ? "source" : selected?.item.id ?? "source")}
-    label={baseline ? "谱例提交基准" : undefined} onProjectChange={baseline ? undefined : onProjectChange} {...editorProps} {...cursor} />;
+    label={baseline ? "谱例提交基准" : undefined} onProjectChange={baseline ? undefined : onProjectChange} onRegisterPlayToggle={view === "roll" ? onRegisterPlayToggle : undefined} {...editorProps} {...cursor} />;
   const pairLabel = view === "source" ? "对照转写谱" : "对照原谱";
   const content = <>
     <div className="audit-view-controls">
@@ -65,15 +68,15 @@ export function AuditEvidenceWorkspace({ auditCase, selected, review, sourceRevi
           : event.key === "ArrowRight" ? (i + 1) % 3 : event.key === "ArrowLeft" ? (i + 2) % 3 : -1;
         if (target < 0) return;
         event.preventDefault();
-        setView(views[target].id);
+        onViewChange(views[target].id);
         event.currentTarget.querySelectorAll<HTMLButtonElement>("button")[target].focus();
       }}>
         {views.map(({ id, name, icon: Icon }) => <button key={id} id={`audit-tab-${id}`} role="tab"
           aria-selected={view === id} aria-label={name} aria-controls="audit-evidence-panel" tabIndex={view === id ? 0 : -1}
-          onClick={() => setView(id)}><Icon size={14} />{name}</button>)}
+          onClick={() => onViewChange(id)}><Icon size={14} />{name}</button>)}
       </div>
-      {auditCase.data.source.image && <label className="audit-compare-control"><input type="checkbox" checked={compare}
-        aria-label={pairLabel} onChange={event => setCompare(event.target.checked)} />{pairLabel}</label>}
+      {auditCase.data.source.image && <label className="audit-compare-control" title="快捷键 C"><input type="checkbox" checked={compare}
+        aria-label={pairLabel} onChange={event => onCompareChange(event.target.checked)} />{pairLabel}</label>}
     </div>
     <div id="audit-evidence-panel" role="tabpanel" aria-labelledby={`audit-tab-${view}`} className="audit-media-panes">
       <div>{view === "source" ? reference : view === "score" ? score : editor}</div>
@@ -98,7 +101,7 @@ export function AuditEvidenceWorkspace({ auditCase, selected, review, sourceRevi
     <div className="audit-evidence-body">
       {sourceOpen && <section className="audit-source-review" id="audit-source-review" aria-label="谱例转写复核">
         <div className="audit-card-heading"><strong>谱例基准工程</strong><button className="audit-ghost" onClick={() => {
-          setBaseline(true); setView("roll"); setSourceOpen(false);
+          setBaseline(true); onViewChange("roll"); setSourceOpen(false);
         }}>查看基准工程</button></div>
         <AuditOpinion mode="source" record={sourceReview} onChange={onSourceChange} />
       </section>}

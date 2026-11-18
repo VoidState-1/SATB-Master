@@ -230,6 +230,7 @@ async function runWorkbenchChecks(packageValue) {
   await clickElement('[aria-label="谱例转写核准"] input[value="accept"]');
   await click("谱例转写复核");
   await click("钢琴卷帘");
+  await click("编辑选中属性");
   await wait(`document.querySelector('.audit-project-editor')?.dataset.auditNoteCount==='8' && !!document.querySelector('.audit-project-properties select')`, "工程副本/选中属性未显示");
   await evaluate(`(() => { const label=[...document.querySelectorAll('.audit-project-properties label')].find(e=>e.querySelector('span')?.textContent==='音名'); const e=label.querySelector('select');e.value='A';e.dispatchEvent(new Event('change',{bubbles:true})); })()`);
   if (await selectedPitch() !== "A") throw new Error("条目工程副本不能编辑");
@@ -252,6 +253,7 @@ async function runWorkbenchChecks(packageValue) {
   await click("导出此条工程");
   if ((await downloadJson("one-source.satb")).satbTracks[0].notes[0].pitch.step !== "B") throw new Error("人工副本污染基准");
   await click("返回条目副本");
+  await click("编辑选中属性");
   await wait(`document.querySelector('.audit-project-editor')?.dataset.auditReadonly==='false' && !!document.querySelector('.audit-project-properties select')`, "无法恢复条目副本");
   if (await selectedPitch() !== "A") throw new Error("切换基准丢失修改");
   await setTextInput("自填答案", "");
@@ -276,6 +278,7 @@ async function runWorkbenchChecks(packageValue) {
   await assertReviewLayout("检查导音与谱面位置");
   await wait(`document.querySelector('.audit-review-footer').dataset.decision==='answered' && document.querySelector('[aria-label="补证范围"]').value==='补查教材例号'`, "重新打开后作答未恢复");
   await click("钢琴卷帘");
+  await click("编辑选中属性");
   await wait(`!!document.querySelector('.audit-project-properties select')`, "重新打开后工程未恢复");
   if (await selectedPitch() !== "A") throw new Error("副本未从本机恢复");
   await checkNarrowLayout();

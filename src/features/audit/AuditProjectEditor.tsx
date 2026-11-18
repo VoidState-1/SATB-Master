@@ -29,14 +29,15 @@ interface Props {
   showNotice(message: string): void;
   confirmation?: ConfirmationState;
   requestConfirmation(options: ConfirmationState): Promise<boolean>;
+  onRegisterPlayToggle?(toggle: (() => void) | undefined): void;
 }
 
-export function AuditProjectEditor({ initialProject, originalProject, selected, filename, cursorTick: playhead, onCursorTickChange: setPlayhead, label = "当前条目工程", onProjectChange, showNotice, confirmation, requestConfirmation }: Props) {
+export function AuditProjectEditor({ initialProject, originalProject, selected, filename, cursorTick: playhead, onCursorTickChange: setPlayhead, label = "当前条目工程", onProjectChange, showNotice, confirmation, requestConfirmation, onRegisterPlayToggle }: Props) {
   const history = useProjectHistory(initialProject);
   const project = history.project;
   const editor = useEditorState(initialProject, project);
   const [keyboardFocused, setKeyboardFocused] = useState(false);
-  const [showProperties, setShowProperties] = useState(true);
+  const [showProperties, setShowProperties] = useState(false);
   const [focusSerial, setFocusSerial] = useState(0);
   const stopRef = useRef<() => void>(() => {});
   const emitted = useRef(initialProject);
@@ -56,6 +57,10 @@ export function AuditProjectEditor({ initialProject, originalProject, selected, 
   }, [project, onProjectChange]);
   const playback = useAuditPlayback({ project, history: { commit }, soundFont: auditSoundFont, gridTicks: editor.gridTicks, playheadTick: playhead, onPlayheadChange: setPlayhead, showNotice });
   stopRef.current = playback.handleStop;
+  useEffect(() => {
+    onRegisterPlayToggle?.(() => void playback.handlePlay());
+    return () => onRegisterPlayToggle?.(undefined);
+  }, [onRegisterPlayToggle, playback.handlePlay]);
   const commands = useEditorCommands({ project, history: { commit }, editor, playheadTick: playhead, setPlayheadTick: setPlayhead, showNotice });
   const shortcuts = useShortcutBindings();
   const focusRange = useMemo(() => ({ fromTick: Math.min(selected?.fromTick ?? 0, project.lengthTicks - 1), toTick: Math.min(selected?.toTick ?? project.lengthTicks, project.lengthTicks), noteIds: selected?.noteIds, requestKey: focusSerial }), [selected, focusSerial, project.lengthTicks]);
@@ -97,6 +102,10 @@ export function AuditProjectEditor({ initialProject, originalProject, selected, 
       <span className="audit-project-position">{noteCount} 音符<span aria-hidden="true"> · </span>{formatPosition(project, playhead)}</span>
     </div>
     <div className="audit-project-tools" aria-label="工程编辑工具">
+      <div className="audit-evidence-tool-group audit-project-transport" role="group" aria-label="工程试听">
+        <button className={`audit-evidence-icon ${playback.isPlaying ? "is-active" : ""}`} aria-label={playback.isPlaying ? "暂停工程" : "播放工程"} title={playback.isPlaying ? "暂停工程 (Space)" : "播放工程 (Space)"} onClick={() => void playback.handlePlay()}>{playback.isPlaying ? <Pause size={15} /> : <Play size={15} />}</button>
+        <button className="audit-evidence-icon" aria-label="停止工程" title="停止工程" onClick={() => playback.handleStop()}><Square size={14} /></button>
+      </div>
       <label><span className="audit-evidence-sr">声部</span><select aria-label="工程声部" title="当前声部" value={editor.activeVoice} onChange={(e) => editor.setActiveVoice(e.target.value as VoiceId)}>{VOICE_ORDER.map((voice) => <option key={voice} value={voice}>{VOICE_CONFIG[voice].name}</option>)}</select></label>
       <div className="audit-evidence-tool-group" role="group" aria-label="编辑工具">
         {([["select", "选择", MousePointer2], ["pencil", "画笔", Pencil], ["eraser", "橡皮", Eraser], ["split", "切分", Scissors]] as const).map(([tool, label, Icon]) => <button key={tool} aria-label={`工程${label}`} title={label} aria-pressed={editor.tool === tool} className={`audit-evidence-icon ${editor.tool === tool ? "is-active" : ""}`} disabled={readOnly && tool !== "select"} onClick={() => editor.setTool(tool as EditorTool)}><Icon size={15} /></button>)}
@@ -126,14 +135,11 @@ export function AuditProjectEditor({ initialProject, originalProject, selected, 
         onSetLoopBoundary={playback.setLoopBoundary} />
     </div>
     <div className="audit-project-actions">
-      <div className="audit-evidence-tool-group" role="group" aria-label="工程试听">
-        <button className={`audit-evidence-icon ${playback.isPlaying ? "is-active" : ""}`} aria-label={playback.isPlaying ? "暂停工程" : "播放工程"} title={playback.isPlaying ? "暂停工程" : "播放工程"} onClick={() => void playback.handlePlay()}>{playback.isPlaying ? <Pause size={15} /> : <Play size={15} />}</button>
-        <button className="audit-evidence-icon" aria-label="停止工程" title="停止工程" onClick={() => playback.handleStop()}><Square size={14} /></button>
-      </div>
+      <span className="audit-project-hint">提示：音符编辑仅保存在本条独立副本</span>
       <div className="audit-evidence-tool-group audit-project-file-actions" role="group" aria-label="工程副本操作">
         <button className="audit-evidence-icon" aria-label="导出此条工程" title="导出此条工程" onClick={() => void exportProject()}><Download size={15} /></button>
         <button className="audit-evidence-icon" aria-label="恢复提交工程" title="恢复提交工程" disabled={readOnly} onClick={() => void reset()}><RotateCcw size={15} /></button>
-        <button className="audit-evidence-icon" aria-label={showProperties ? "收起选中属性" : "编辑选中属性"} title={showProperties ? "收起选中属性" : "编辑选中属性"} aria-expanded={showProperties} onClick={() => setShowProperties((v) => !v)}><SlidersHorizontal size={15} /></button>
+        <button className={`audit-evidence-text-btn ${showProperties ? "is-active" : ""}`} aria-label={showProperties ? "收起选中属性" : "编辑选中属性"} title={showProperties ? "收起选中属性" : "编辑选中属性"} aria-expanded={showProperties} onClick={() => setShowProperties((v) => !v)}><SlidersHorizontal size={14} /><span>选中属性</span></button>
       </div>
     </div>
     {showProperties && <fieldset className="audit-project-properties" disabled={readOnly}><legend>选中对象属性</legend>

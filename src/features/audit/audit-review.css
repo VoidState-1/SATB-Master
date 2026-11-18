@@ -36,6 +36,10 @@
 .audit-analysis-text { overflow: hidden; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-1); }
 .audit-analysis-text > .audit-analysis-block { padding: 14px 16px 16px; }
 .audit-analysis-text > .audit-analysis-block + .audit-analysis-block { border-top: 1px solid var(--line); }
+@container (min-width: 600px) {
+  .audit-verdict-grid:has(> section:nth-child(2)) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .audit-verdict-grid:has(> section:nth-child(2)) > .audit-analysis-block + .audit-analysis-block { border-top: 0; border-left: 1px solid var(--line); }
+}
 .audit-analysis-text:empty { display: none; }
 .audit-analysis-editor { margin-bottom: 0; }
 .audit-reference { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 10px; padding: 10px 0; border-top: 1px dashed var(--line); }
@@ -49,9 +53,10 @@
 .audit-analysis .audit-reference p { margin-top: 4px; color: var(--muted); font-size: 12.5px; line-height: 1.75; }
 
 /* 意见栏 */
+.audit-review-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .audit-panel-bar nav { display: flex; align-items: center; gap: 0; padding: 1px; border-radius: 7px; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .audit-panel-bar nav span { min-width: 46px; text-align: center; }
-.audit-workbench .audit-panel-bar nav button { width: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); }
+.audit-workbench .audit-panel-bar nav button { width: 30px; min-height: 30px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); }
 .audit-workbench .audit-panel-bar nav button:hover:enabled { background: var(--sunken); }
 .audit-review-scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 20px; scrollbar-width: thin; }
 
@@ -67,9 +72,10 @@
 .audit-answer-options label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
 .audit-answer-options input { flex: none; width: 14px; height: 14px; margin: 0; align-self: flex-start; margin-top: 2px; accent-color: var(--accent); }
 .audit-answer-options label > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.audit-answer-options small { color: var(--accent); }
+.audit-answer-options small { padding: 0 5px; border-radius: 4px; background: var(--sunken); color: var(--muted); }
 .audit-answer-questions textarea, .audit-free-answer textarea { display: block; width: 100%; padding: 7px 9px; font-size: 13px; }
 .audit-free-answer { display: grid; gap: 6px; margin: 14px 0 0; }
+.audit-answer-hint { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
 .audit-workbench .audit-suggested-text { justify-content: flex-start; text-align: left; height: auto; padding: 4px 0; border: none; color: var(--accent); background: none; font-size: 12px; overflow-wrap: anywhere; }
 .audit-workbench .audit-opinion { display: grid; gap: 14px; }
 .audit-field-label { color: var(--ink-2); font-size: 12px; font-weight: 600; }
@@ -101,10 +107,11 @@
 
 /* 提交与反馈 */
 .audit-review-footer { position: relative; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; flex: none; padding: 9px 16px; border-top: 1px solid var(--line); background: var(--paper); }
-.audit-proposal-actions summary { color: var(--muted); font-size: 12px; }
-.audit-proposal-actions [role=group] { position: absolute; z-index: 1; bottom: 100%; left: 12px; display: grid; gap: 2px; padding: 5px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--paper); box-shadow: var(--shadow-1); }
-.audit-proposal-actions button { justify-content: flex-start; border: 0; }
-.audit-proposal-actions small { padding: 0 8px 3px; color: var(--muted); }
+.audit-submit-hint { flex-basis: 100%; margin: 0 0 2px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.audit-proposal-inline { display: flex; flex-wrap: wrap; gap: 5px; flex-basis: 100%; padding-bottom: 4px; }
+.audit-workbench .audit-proposal-btn { min-height: 28px; padding: 3px 9px; font-size: 11.5px; font-weight: 550; }
+.audit-workbench .audit-proposal-btn.is-accept:enabled { color: var(--accept); border-color: #a9c6b6; background: var(--accept-soft); }
+.audit-workbench .audit-proposal-btn.is-reject:enabled { color: var(--reject); border-color: #e6beb7; background: var(--reject-soft); }
 .audit-workbench .audit-defer { min-height: 30px; padding: 2px 0; border: 0; background: none; color: var(--muted); font-size: 12px; }
 .audit-workbench .audit-submit { gap: 4px; min-height: 32px; margin-left: auto; padding: 5px 12px; border-color: var(--accent); background: var(--accent); color: white; font-size: 12.5px; font-weight: 600; }
 .audit-workbench .audit-submit:hover:enabled { background: var(--accent-hover); color: white; }

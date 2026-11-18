@@ -22,7 +22,7 @@
 .audit-workbench .audit-evidence-icon:is(.is-active,[aria-pressed=true],[aria-expanded=true]) { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
 .audit-workbench .audit-evidence-marker { width: 8px; height: 8px; border: 1.5px solid currentColor; border-radius: 2px; }
 .audit-workbench .audit-evidence-marker.source { color: #c27c2c; background: #fbeedc; }
-.audit-workbench .audit-evidence-marker.score { color: var(--accept); background: var(--accept-soft); }
+.audit-workbench .audit-evidence-marker.score { color: var(--focus-note); background: var(--focus-note-soft); }
 .audit-workbench .audit-evidence-scale { display: inline-block; min-width: 38px; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .audit-workbench .audit-inline-controls label { gap: 2px; font-size: 11px; color: var(--muted); }
 .audit-workbench .audit-evidence-toolbar input[type=range] { width: 72px; height: 14px; margin: 0 4px 0 6px; accent-color: var(--accent); cursor: pointer; }
@@ -50,14 +50,14 @@
 .audit-media-panes { display: grid; gap: 8px; min-width: 0; }
 .audit-media-panes > div { min-width: 0; }
 .audit-workbench .audit-media-panes :is(.audit-source-card,.audit-score-card,.audit-project-editor) { margin: 0; }
-@container (min-width: 880px) {
+@container (min-width: 680px) {
   .audit-media-panes:has(> div:nth-child(2)) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
 }
 .audit-beat-inspector { padding: 8px 0; border-bottom: 1px solid var(--line); }
 .audit-beat-summary { gap: 6px 16px; }
 .audit-beat-controls { gap: 2px; }
 .audit-beat-controls output { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
-.audit-beat-controls button { padding: 2px 4px; min-height: 26px; }
+.audit-beat-controls button { padding: 2px 5px; min-width: 28px; min-height: 28px; }
 .audit-beat-voices { gap: 4px 12px; }
 .audit-beat-voices span { padding-left: 4px; border-left: 3px solid; font-size: 12px; white-space: nowrap; }
 .audit-beat-annotation { gap: 4px 8px; margin-top: 5px; font-size: 12px; overflow-wrap: anywhere; }
@@ -66,20 +66,11 @@
 .audit-cadence-axis i { position: absolute; top: 1px; height: 6px; border: 1px solid var(--accent); border-top: 0; }
 .audit-cadence-axis b { position: absolute; height: 9px; border-left: 2px solid var(--ink-2); }
 .audit-workbench .audit-annotation-range { min-height: 22px; padding: 0 4px; border: 0; background: transparent; color: var(--accent); font-variant-numeric: tabular-nums; }
-.audit-evidence-details { margin: 8px 0 0; }
+.audit-evidence-details { margin: 10px 0 0; }
+.audit-evidence-details.audit-verdict-summary { margin: 0 0 12px; }
 .audit-evidence-details > summary { padding: 4px 0; color: var(--ink-2); font-size: 12px; font-weight: 600; cursor: pointer; }
-.audit-evidence-details[open] > .audit-analysis-block { margin: 5px 0; }
-.audit-note-focus :is(path,text,rect) { fill: var(--accept) !important; stroke: var(--accept) !important; }
-
-/* 图文配对: 证据与对应判断合为一张卡, 宽屏左右对照 */
-.audit-evidence-pair { display: grid; grid-template-columns: minmax(0,1fr); align-items: stretch; margin-bottom: 16px; overflow: hidden; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-1); }
-.audit-evidence-media,.audit-evidence-caption,.audit-analysis-editor { min-width: 0; }
-.audit-workbench .audit-evidence-media > :is(.audit-source-card,.audit-score-card) { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
-.audit-evidence-caption { padding: 14px 16px 16px; border-top: 1px solid var(--line); background: #fafbf8; }
-@container (min-width: 760px) {
-  .audit-evidence-pair.has-caption { grid-template-columns: minmax(0,2fr) minmax(240px,1fr); }
-  .audit-evidence-pair.has-caption .audit-evidence-caption { border-top: 0; border-left: 1px solid var(--line); }
-}
+.audit-evidence-details[open] > :is(.audit-analysis-block,.audit-analysis-text) { margin-top: 5px; }
+.audit-note-focus :is(path,text,rect) { fill: var(--focus-note) !important; stroke: var(--focus-note) !important; }
 
 /* 条目工程(钢琴卷帘) */
 .audit-workbench .audit-project-heading { padding: 8px 14px; gap: 4px 10px; min-height: 42px; }
@@ -94,10 +85,17 @@
 .audit-workbench .audit-project-tools select { height: 28px; padding: 0 6px; font-size: 11.5px; border-radius: 6px; }
 .audit-workbench .audit-evidence-tool-group { display: inline-flex; align-items: center; gap: 1px; flex: none; }
 .audit-workbench .audit-project-tools > .audit-evidence-tool-group { padding-left: 6px; border-left: 1px solid var(--line); }
+.audit-workbench .audit-project-tools > .audit-project-transport { padding-left: 0; padding-right: 6px; border-left: 0; border-right: 1px solid var(--line); }
 .audit-workbench .audit-project-tools .audit-project-grid { gap: 5px; margin-left: auto; }
 .audit-project-canvas { display: grid; height: clamp(320px,46vh,620px); min-width: 0; min-height: 0; }
-.audit-workbench .audit-project-actions { justify-content: space-between; gap: 8px; padding: 4px 8px; border-top: 1px solid var(--line); border-bottom: 0; }
-.audit-workbench .audit-project-file-actions { border-left: 1px solid var(--line); padding-left: 6px; }
+.audit-project-canvas .roll-playhead,
+.audit-project-canvas .timeline-playhead-segment { background: var(--accent); }
+.audit-project-canvas .timeline-playhead-segment.is-ruler::before { border-top-color: var(--accent); }
+.audit-workbench .audit-project-actions { justify-content: space-between; gap: 8px; padding: 5px 10px; border-top: 1px solid var(--line); border-bottom: 0; }
+.audit-project-hint { color: var(--muted); font-size: 11px; }
+.audit-workbench .audit-project-file-actions { border-left: 1px solid var(--line); padding-left: 6px; margin-left: auto; gap: 4px; }
+.audit-workbench .audit-evidence-text-btn { min-height: 28px; padding: 0 8px; gap: 5px; border-color: var(--line-strong); border-radius: 6px; background: var(--paper); color: var(--ink-2); font-size: 11.5px; }
+.audit-workbench .audit-evidence-text-btn.is-active { background: var(--accent-soft); border-color: #a9c6b6; color: var(--accent); }
 .audit-workbench .audit-project-properties { min-width: 0; margin: 0; padding: 6px 10px 10px; border: 0; border-top: 1px solid var(--line); }
 .audit-workbench .audit-project-properties legend { float: left; width: 100%; padding: 6px 4px 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
 .audit-workbench .audit-project-properties .property-section { margin: 0; padding: 4px; }

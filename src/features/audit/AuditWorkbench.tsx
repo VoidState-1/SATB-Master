@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, CircleAlert, CircleHelp, ClipboardCheck, Download, FileMusic, FolderOpen, Info, Lightbulb, ListFilter, ListMusic, Maximize2, Minimize2, Minus, PanelLeftClose, PanelLeftOpen, Search, TriangleAlert, Upload, UserRound, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, CircleAlert, CircleHelp, ClipboardCheck, Download, FileMusic, FolderOpen, Info, Keyboard, Lightbulb, ListFilter, ListMusic, Maximize2, Minimize2, Minus, PanelLeftClose, PanelLeftOpen, Search, TriangleAlert, Upload, UserRound, X } from "lucide-react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { ConfirmationState } from "../../app/controllers/useConfirmationController";
 import { AUDIT_CATEGORIES, AUDIT_SEVERITIES, parseAuditFeedback, restoreAuditFeedback, createAuditFeedback, updateAuditReview, type AuditCategory, type AuditFeedback, type AuditReviewPatch, type AuditSeverity, type BoundAuditPackage } from "../../domain/audit";
 import { downloadAuditFeedback, loadAuditFeedback, loadAuditSession, parseAuditJson, prepareAuditPackage, readAuditJson, saveAuditSession } from "../../services/audit";
-import { AuditEvidenceWorkspace } from "./AuditEvidenceWorkspace";
+import { AuditEvidenceWorkspace, initialAuditView, type AuditView } from "./AuditEvidenceWorkspace";
 import { AuditReviewPanel } from "./AuditReviewPanel";
 import { categoryLabels, severityLabels, shortDecisionLabels } from "./auditLabels";
 import "./audit.css";
@@ -36,13 +36,20 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
   const [search, setSearch] = useState("");
   const [editorGeneration, setEditorGeneration] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [compare, setCompare] = useState(false);
+  const [view, setView] = useState<AuditView>("score");
   const [queueOpen, setQueueOpen] = useState(false);
   const [collapsedCases, setCollapsedCases] = useState<Set<string>>(new Set());
   const packageInput = useRef<HTMLInputElement>(null);
   const feedbackInput = useRef<HTMLInputElement>(null);
+  const playToggleRef = useRef<(() => void) | undefined>(undefined);
   const sequence = useRef(0);
   const pendingSave = useRef<Promise<void>>(Promise.resolve());
   const showNotice = useCallback((message: string) => setNotice(message), []);
+  const registerPlayToggle = useCallback((toggle: (() => void) | undefined) => {
+    playToggleRef.current = toggle;
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -163,6 +170,9 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
     evidencePane.current?.scrollTo({ top: 0 });
     directoryList.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: "nearest" });
   }, [active?.key, session?.bound.fingerprint]);
+  useEffect(() => {
+    setView(initialAuditView(active?.i, Boolean(auditCase?.data.source.image)));
+  }, [active?.key, session?.bound.fingerprint]);
   const submit = (patch: AuditReviewPatch) => {
     if (!active) return;
     setEditingKey("");
@@ -172,14 +182,64 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
     if (next) selectItem(next.key);
     else setNotice("当前筛选中的条目已全部审阅");
   };
+  useEffect(() => {
+    if (!session || confirmation || loading) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && showShortcuts) {
+        event.preventDefault();
+        setShowShortcuts(false);
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("input, textarea, select, [contenteditable]")) return;
+      if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        if (!filtered.length || activeIndex < 0) return;
+        const offset = event.key === "ArrowUp" ? -1 : 1;
+        const nextRow = filtered[activeIndex + offset];
+        if (!nextRow) return;
+        event.preventDefault();
+        selectItem(nextRow.key);
+        return;
+      }
+      if (target?.closest(".audit-project-editor")) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key === "1") { event.preventDefault(); setView("source"); }
+      else if (event.key === "2") { event.preventDefault(); setView("score"); }
+      else if (event.key === "3") { event.preventDefault(); setView("roll"); }
+      else if ((event.key === "c" || event.key === "C") && auditCase?.data.source.image) {
+        event.preventDefault();
+        setCompare(value => !value);
+      } else if (event.key === " " && !target?.closest("button, a, summary, [role=tab]")) {
+        if (playToggleRef.current) {
+          event.preventDefault();
+          playToggleRef.current();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [session, confirmation, loading, showShortcuts, filtered, activeIndex, auditCase?.data.source.image]);
 
   const tally = { answered: 0, accept: 0, reject: 0, "needs-evidence": 0, pending: 0 };
   for (const row of rows) tally[row.review.decision]++;
   const share = (n: number) => `${rows.length ? (n / rows.length) * 100 : 0}%`;
   const saveTone = saveStatus.includes("失败") ? "error" : saveStatus.includes("正在") ? "busy" : session ? "ok" : "idle";
+  const hasWindowControls = Boolean(window.desktop?.windowControls);
+  const caseReviewMap = new Map((session?.feedback.cases ?? []).map(c => [c.id, c.source.decision]));
+  const exportFeedback = () => {
+    if (!session) return;
+    downloadAuditFeedback(session.feedback);
+    const pendingCount = tally.pending;
+    const unapprovedCases = session.bound.cases.length - approvedCases;
+    const reminders: string[] = [];
+    if (pendingCount > 0) reminders.push(`尚有 ${pendingCount} 条待审`);
+    if (unapprovedCases > 0) reminders.push(`${unapprovedCases} 例转写未核准`);
+    if (!session.feedback.reviewer.trim()) reminders.push("未填写审计人");
+    setNotice(reminders.length ? `已发起意见文件导出（提醒：${reminders.join("，")}）` : "已发起意见文件导出，可交给模型读取");
+  };
 
   return <main className="audit-workbench">
-    <header className="app-titlebar audit-titlebar">
+    <header className={`app-titlebar audit-titlebar ${hasWindowControls ? "has-window-controls" : ""}`}>
       <button className="audit-back" aria-label="返回工程" title="返回工程" onClick={() => void leave(onBack)}><ArrowLeft size={16} /></button>
       <div className="audit-title-group">
         <span className="audit-title-mark" aria-hidden="true"><ClipboardCheck size={14} /></span>
@@ -188,18 +248,33 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
       </div>
       {session && <button className="audit-directory-toggle" ref={compactQueueToggle} aria-expanded={queueOpen} aria-controls="audit-directory" onClick={() => setQueueOpen(v => !v)}>{queueOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}{queueOpen ? "收起目录" : "审计目录"}</button>}
       <nav className="audit-toolbar" aria-label="审计工具栏">
-        {session && <><button className="audit-tool" aria-label="导入审计包" title="导入审计包" onClick={() => packageInput.current?.click()} disabled={loading}><FolderOpen size={16} /></button>
-        <button className="audit-tool" aria-label="导入意见" title="导入意见" onClick={() => feedbackInput.current?.click()} disabled={loading}><Upload size={16} /></button>
-        <span className="audit-toolbar-divider" aria-hidden="true" />
-        <button className="audit-primary" onClick={() => { downloadAuditFeedback(session.feedback); setNotice("已发起意见文件导出，可交给模型读取"); }}><Download size={14} />导出意见</button></>}
+        {session && <>
+          <button className="audit-tool audit-tool-labeled" aria-label="导入审计包" title="导入审计包" onClick={() => packageInput.current?.click()} disabled={loading}><FolderOpen size={15} /><span>导入包</span></button>
+          <button className="audit-tool audit-tool-labeled" aria-label="导入意见" title="导入意见" onClick={() => feedbackInput.current?.click()} disabled={loading}><Upload size={15} /><span>导入意见</span></button>
+          <div className="audit-shortcut-wrap">
+            <button className={`audit-tool ${showShortcuts ? "is-active" : ""}`} aria-label="快捷键说明" title="快捷键说明" aria-expanded={showShortcuts} onClick={() => setShowShortcuts(v => !v)}><Keyboard size={15} /></button>
+            {showShortcuts && <div className="audit-shortcut-popover" role="dialog" aria-label="审计快捷键">
+              <strong>审阅快捷键</strong>
+              <ul>
+                <li><kbd>Alt</kbd>+<kbd>↑/↓</kbd><span>上一条 / 下一条</span></li>
+                <li><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd><span>原谱 / 转写谱 / 卷帘</span></li>
+                <li><kbd>C</kbd><span>切换对照原谱</span></li>
+                <li><kbd>Space</kbd><span>试听 / 暂停当前谱</span></li>
+                <li><kbd>Ctrl</kbd>+<kbd>Enter</kbd><span>提交并下一条</span></li>
+              </ul>
+            </div>}
+          </div>
+          <span className="audit-toolbar-divider" aria-hidden="true" />
+          <button className="audit-primary" onClick={exportFeedback}><Download size={14} />导出意见</button>
+        </>}
       </nav>
       <input ref={packageInput} aria-label="审计包文件" type="file" accept=".json" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; void importPackage(file); }} />
       <input ref={feedbackInput} aria-label="审计意见文件" type="file" accept=".json" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; void importFeedback(file); }} />
-      <div className="titlebar-controls">
+      {hasWindowControls && <div className="titlebar-controls">
         <button className="window-control" aria-label="最小化" onClick={() => void window.desktop?.windowControls.minimize()}><Minus size={16} /></button>
         <button className="window-control" aria-label="切换最大化" onClick={() => void windowController.toggleMaximize()}>{windowController.isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
         <button className="window-control close" aria-label="关闭窗口" onClick={() => void leave(windowController.close)}><X size={17} /></button>
-      </div>
+      </div>}
     </header>
     {notice && <div className="audit-notice" role="status"><Info size={14} /><span>{notice}</span><button aria-label="关闭审计提示" onClick={() => setNotice("")}><X size={14} /></button></div>}
     {!session ? <section className="audit-empty">
@@ -212,6 +287,7 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
       </div>
     </section> : <>
       <div className={`audit-layout ${queueOpen ? "queue-open" : ""}`}>
+        {queueOpen && <div className="audit-drawer-backdrop" aria-hidden="true" onClick={() => setQueueOpen(false)} />}
         <aside className="audit-sidebar" id="audit-directory" aria-label="待审条目" onKeyDown={e => { if (queueOpen && e.key === "Escape") { setQueueOpen(false); compactQueueToggle.current?.focus(); } }}>
           <header className="audit-pane-head audit-queue-head"><h2><ListMusic size={15} />审计目录</h2><span className="audit-count">{filterCount || search ? `${filtered.length} / ${rows.length}` : rows.length} 条</span></header>
           <div className="audit-queue-progress">
@@ -219,6 +295,13 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
             <div className="audit-stack-bar" role="progressbar" aria-label="条目已审" aria-valuemin={0} aria-valuemax={rows.length} aria-valuenow={completed}>
               <i className="is-answered" style={{ width: share(tally.answered) }} /><i className="is-accept" style={{ width: share(tally.accept) }} /><i className="is-needs-evidence" style={{ width: share(tally["needs-evidence"]) }} /><i className="is-reject" style={{ width: share(tally.reject) }} />
             </div>
+            <ul className="audit-legend" aria-label="审阅进度图例">
+              <li className="is-answered">已作答 {tally.answered}</li>
+              <li className="is-accept">已认可 {tally.accept}</li>
+              <li className="is-needs-evidence">补证 {tally["needs-evidence"]}</li>
+              <li className="is-reject">未认可 {tally.reject}</li>
+              <li className="is-pending">待审 {tally.pending}</li>
+            </ul>
           </div>
           <div className="audit-queue-search"><label><Search size={14} /><input ref={queueSearch} aria-label="搜索审计条目" placeholder="搜索条目或规则" value={search} onChange={e => setSearch(e.target.value)} />{search && <button type="button" className="audit-search-clear" aria-label="清空搜索" onClick={() => setSearch("")}><X size={12} /></button>}</label>
             <button className="audit-filter-toggle" aria-label="筛选条目" title="筛选条目" aria-expanded={showFilters} aria-controls="audit-filters" data-active={filterCount > 0 || undefined} onClick={() => setShowFilters(v => !v)}><ListFilter size={15} />{filterCount > 0 && <span className="audit-filter-count">{filterCount}</span>}</button>
@@ -240,9 +323,12 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
                 seenTitles.add(item.title);
               }
               const groupDone = entries.filter(e => e.review.decision !== "pending").length;
+              const sourceDecision = caseReviewMap.get(c.data.id) ?? "pending";
               return <section key={c.data.id} className="audit-queue-group">
                 <h3><button type="button" className="audit-group-toggle" aria-expanded={expanded} onClick={() => toggleGroup(c.data.id)}>
-                  <ChevronDown size={13} /><span>{c.data.title}</span><small data-complete={groupDone === entries.length || undefined}>{groupDone}/{entries.length}</small>
+                  <ChevronDown size={13} /><span>{c.data.title}</span>
+                  <em className={`audit-group-source is-${sourceDecision}`} title={`转写复核：${shortDecisionLabels[sourceDecision]}`}>{shortDecisionLabels[sourceDecision]}</em>
+                  <small data-complete={groupDone === entries.length || undefined}>{groupDone}/{entries.length}</small>
                 </button></h3>
                 {expanded && entries.map(({ i: { item }, key, review }) => {
                   const SeverityIcon = severityIcons[item.severity];
@@ -266,9 +352,11 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
           {auditCase && caseReview && <AuditEvidenceWorkspace
             key={`${auditCase.fingerprint}/${active?.i.fingerprint ?? "all"}/${editorGeneration}`}
             auditCase={auditCase} selected={active?.i} review={active?.review} sourceReview={caseReview.source}
+            view={view} onViewChange={setView} compare={compare} onCompareChange={setCompare}
             onSourceChange={patch => update(undefined, patch)}
             onProjectChange={active ? project => update(active.i.item.id, { project: project === active.i.project ? undefined : project }) : undefined}
-            confirmation={confirmation} requestConfirmation={requestConfirmation} showNotice={showNotice} />}
+            confirmation={confirmation} requestConfirmation={requestConfirmation} showNotice={showNotice}
+            onRegisterPlayToggle={registerPlayToggle} />}
         </section>
         <aside className="audit-detail-pane" aria-label="条目审计意见">{active
           ? <AuditReviewPanel key={active.key} item={active.i.item} review={active.review} index={activeIndex} total={filtered.length}

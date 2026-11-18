@@ -1,10 +1,14 @@
 .audit-source-image[data-has-beats="true"] { cursor: crosshair; }
 .audit-workbench .audit-source-beat {
-  position: absolute; transform: translateX(-50%); width: 10px; min-width: 0; min-height: 0;
+  position: absolute; transform: translateX(-50%); width: 20px; min-width: 0; min-height: 0;
   padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; cursor: crosshair;
 }
 .audit-workbench .audit-source-beat:is(:hover, :focus-visible) {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.audit-workbench .audit-source-beat:is(:hover, :focus-visible)::after {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
+  transform: translateX(-50%); background: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 .audit-source-cursor, .audit-source-row { position: absolute; pointer-events: none; }
 .audit-source-cursor { width: 2px; transform: translateX(-50%); background: var(--accent); }

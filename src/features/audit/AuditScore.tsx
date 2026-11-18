@@ -29,9 +29,10 @@ interface Props {
   cursorTick: number;
   onCursorTickChange(tick: number): void;
   showNotice(message: string): void;
+  onRegisterPlayToggle?(toggle: (() => void) | undefined): void;
 }
 
-export function AuditScore({ auditCase, selected, project: suppliedProject, cursorTick, onCursorTickChange, showNotice }: Props) {
+export function AuditScore({ auditCase, selected, project: suppliedProject, cursorTick, onCursorTickChange, showNotice, onRegisterPlayToggle }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
   const [scale, setScale] = useState(1);
@@ -48,6 +49,10 @@ export function AuditScore({ auditCase, selected, project: suppliedProject, curs
   const fromTick = Math.min(selected?.fromTick ?? 0, toTick - 1);
   const playbackProject = useMemo(() => ({ ...project, loop: { enabled: true, startTick: fromTick, endTick: toTick } }), [project, fromTick, toTick]);
   const playback = useAuditPlayback({ project: playbackProject, history: readOnlyHistory, soundFont: { kind: "default", name: "SATB Master 默认音色" }, gridTicks: project.ppq / 4, playheadTick: cursorTick, onPlayheadChange: onCursorTickChange, showNotice });
+  useEffect(() => {
+    onRegisterPlayToggle?.(() => void playback.handlePlay());
+    return () => onRegisterPlayToggle?.(undefined);
+  }, [onRegisterPlayToggle, playback.handlePlay]);
   const fullModel = useMemo(() => buildScorePreviewModel(project), [project]);
   const measures = fullModel.measures;
   const localStart = Math.max(0, measures.findIndex(m => m.toTick > fromTick) - 1);
@@ -160,7 +165,7 @@ export function AuditScore({ auditCase, selected, project: suppliedProject, curs
   }, [model, scale, width, selected, preview, moveLine, project]);
   return <section className="audit-score-card" aria-label="转写谱面">
     <div className="audit-card-heading audit-evidence-toolbar">
-      <div className="audit-card-label"><Music2 size={15} aria-hidden="true" /><strong>转写五线谱</strong>{selected && <span className="audit-evidence-marker score" title="绿色为审计范围" aria-label="绿色为审计范围" />}</div>
+      <div className="audit-card-label"><Music2 size={15} aria-hidden="true" /><strong>转写五线谱</strong>{selected && <span className="audit-evidence-marker score" title="琥珀色为审计范围" aria-label="琥珀色为审计范围" />}</div>
       <div className="audit-score-transport" role="group" aria-label="谱面试听">
         <button className={`audit-evidence-icon ${playback.isPlaying ? "is-active" : ""}`} aria-label={playback.isPlaying ? "暂停试听" : "循环试听此段"} title={playback.isPlaying ? "暂停试听" : "循环试听此段"} onClick={() => void playback.handlePlay()}>{playback.isPlaying ? <Pause size={15} /> : <Play size={15} />}<span className="audit-evidence-sr">{playback.isPlaying ? "暂停试听" : "循环试听此段"}</span></button>
         <button className="audit-evidence-icon" aria-label="停止" title="停止试听" onClick={() => { playback.handleStop(); playback.setPlayheadTick(fromTick); }}><Square size={14} /></button>
