@@ -182,6 +182,13 @@ function createFunctionalCandidate(
       : options,
   );
   if (fit.hardRejected) return undefined;
+  // The raised leading tone anchors this minor-key reading. An enharmonic
+  // pivot with a respelled root cannot establish the same local DVII.
+  if (template.baseId === "DVII" && observation.key.mode === "minor" &&
+      template.form === "seventh" && !Object.values(observation.activeNotes).some(
+        (note) => note?.pitch.step === identity.root.step && note.pitch.alter === identity.root.alter,
+      ))
+    return undefined;
   const score = scoreFor(observation, identity, fit, functionalTier(template.baseId));
   return {
     id: `${observation.index}:${functionalTemplateKey(template, observation.key)}`,

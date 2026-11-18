@@ -50,6 +50,7 @@ export interface FunctionalBaseDefinition {
   formScopes?: Partial<Record<FunctionalChordForm, FunctionalScope>>;
   degree: ScaleDegree;
   degreeAlteration: ChordDraft["degreeAlteration"];
+  minorDegreeAlteration?: ChordDraft["degreeAlteration"];
   forms: readonly FunctionalChordForm[];
   fixedInversion?: ChordDraft["inversion"];
   designation: FunctionalDesignation;
@@ -201,6 +202,7 @@ export const FUNCTIONAL_BASE_DEFINITIONS: readonly FunctionalBaseDefinition[] =
       scope: "A",
       degree: 7,
       degreeAlteration: 0,
+      minorDegreeAlteration: 1,
       forms: ["triad", "seventh"],
       designation: sideDegree("dominant"),
       quality: (mode, form) =>
@@ -299,6 +301,7 @@ export const FUNCTIONAL_BASE_DEFINITIONS: readonly FunctionalBaseDefinition[] =
         scope: "C",
         degree: 6,
         degreeAlteration: -1,
+        minorDegreeAlteration: 0,
         forms: ["triad"],
         fixedInversion: 0,
         designation: {
@@ -361,8 +364,8 @@ export function applyFunctionalDefinition(
   return {
     ...draft,
     degree: definition.degree,
-    degreeAlteration: definition.augmentedSixthVariant && mode === "minor"
-      ? 0
+    degreeAlteration: mode === "minor"
+      ? definition.minorDegreeAlteration ?? definition.degreeAlteration
       : definition.degreeAlteration,
     quality,
     extensions: form === "ninth" ? [9] : [],
@@ -452,9 +455,16 @@ export function applyFunctionalForm(
 export function applyFunctionalTarget(
   draft: ChordDraft,
   target: FunctionalTarget | undefined,
+  functionalMode?: KeyMode,
 ): ChordDraft {
   const designation = draft.designation;
   if (!designation) return draft;
+  const leadingTone = draft.degree === 7;
+  // The applied-target context uses that target's major scale for root lookup.
+  // Explicit Roman-numeral input supplies its own alteration.
+  let degreeAlteration = draft.degreeAlteration;
+  if (leadingTone && functionalMode)
+    degreeAlteration = !target && functionalMode === "minor" ? 1 : 0;
   if (!target) {
     const nextKind =
       draft.degree === 7
@@ -464,6 +474,7 @@ export function applyFunctionalTarget(
           : designation.kind;
     return {
       ...draft,
+      degreeAlteration,
       appliedTarget: undefined,
       appliedTargetFunction: undefined,
       designation: { ...designation, kind: nextKind },
@@ -471,9 +482,9 @@ export function applyFunctionalTarget(
       alternatives: undefined,
     };
   }
-  const leadingTone = draft.degree === 7;
   return {
     ...draft,
+    degreeAlteration,
     appliedTarget: target.degree,
     appliedTargetFunction: {
       primaryFunction: target.primaryFunction,

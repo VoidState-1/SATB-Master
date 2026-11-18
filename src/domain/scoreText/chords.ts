@@ -55,7 +55,7 @@ export function chordDraft(symbol: string, mode: KeyMode, location?: SourceLocat
   }
   if (targetMatch) {
     if (![5, 7].includes(draft.degree)) fail("副属目标只能用于 V 或 VII 级和弦", location);
-    draft = applyFunctionalTarget(draft, functionalTargetForDegree((degrees.indexOf(targetMatch[1]) + 1) as ScaleDegree));
+    draft = applyFunctionalTarget(draft, functionalTargetForDegree((degrees.indexOf(targetMatch[1]) + 1) as ScaleDegree), definition ? mode : undefined);
   }
   return draft;
 }

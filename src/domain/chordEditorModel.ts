@@ -156,12 +156,13 @@ export function applyChordEditorAction(
   action: ChordEditorAction,
 ): ChordDraft {
   const model = createChordEditorModel(draft, keyEvent);
+  const mode = draft.localKey?.mode ?? keyEvent.mode;
   switch (action.type) {
     case "select-functional-definition":
       return applyFunctionalDefinition(
         draft,
         functionalDefinition(action.id),
-        keyEvent.mode,
+        mode,
       );
     case "select-functional-form":
       return model.baseDefinition
@@ -169,7 +170,7 @@ export function applyChordEditorAction(
             draft,
             model.baseDefinition,
             action.form,
-            keyEvent.mode,
+            mode,
           )
         : draft;
     case "set-inversion":
@@ -183,6 +184,7 @@ export function applyChordEditorAction(
         draft,
         FUNCTIONAL_TARGET_OPTIONS.find((item) => item.target.degree === action.degree)
           ?.target,
+        mode,
       );
     case "set-structural-applied-target":
       return {

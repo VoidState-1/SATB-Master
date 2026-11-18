@@ -23,6 +23,7 @@ import {
   type FunctionalChordForm,
 } from "./functionalHarmonyCatalog";
 import { createEmptyProject, PPQ, validateProject } from "./project";
+import { chordDraft } from "./scoreText/chords";
 
 const C_MAJOR = {
   id: "c-major",
@@ -56,6 +57,19 @@ function functionalDraft(
 }
 
 describe("斯波索宾功能标记目录", () => {
+  it("按实际调式区分导音、自然七级和副属目标的导音", () => {
+    const key = { ...C_MAJOR, mode: "minor" as const };
+    const rootFor = (symbol: string, context: typeof key | typeof C_MAJOR = key) =>
+      resolveChordIdentity(chordDraft(symbol, context.mode), context).root;
+    expect(rootFor("DVII7")).toEqual({ step: "B", alter: 0 });
+    expect(rootFor("VII")).toEqual({ step: "B", alter: -1 });
+    expect(rootFor("DVII7", C_MAJOR)).toEqual({ step: "B", alter: 0 });
+    const applied = chordDraft("DVII65/II", key.mode);
+    expect(resolveChordIdentity(applied, key).root).toEqual({ step: "C", alter: 1 });
+    expect(resolveChordIdentity(applyFunctionalTarget(applied, undefined, key.mode), key).root)
+      .toEqual({ step: "B", alter: 0 });
+  });
+
   it("基础三和弦、七和弦和复合功能生成唯一三种名称", () => {
     expect(formatChord(functionalDraft("T"), C_MAJOR)).toMatchObject({
       functional: "T",

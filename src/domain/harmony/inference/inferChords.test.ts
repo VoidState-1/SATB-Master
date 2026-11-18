@@ -9,6 +9,7 @@ import { updateChordRegion } from "../../editing";
 import { createEmptyProject, PPQ, type NoteEvent, type VoiceId } from "../../project";
 import { spellMidi } from "../../pitch";
 import { buildHarmonyAnalysis } from "../analysis";
+import { compileScoreText } from "../../scoreText";
 
 function note(
   id: string,
@@ -48,6 +49,44 @@ function addHarmony(project: ReturnType<typeof createEmptyProject>) {
 }
 
 describe("自动和弦推导", () => {
+  it("区分和声小调的减导七及等音改写后的不同根音", () => {
+    const { project } = compileScoreText(`satb 1
+key E minor
+meter 3/4
+bars 1..1 {
+S: | F#5/4 Gb5/4 F5/4 |
+A: | A4/4 A4/4 Ab4/4 |
+T: | C4/4 C4/4 B3/4 |
+B: | D#3/4 Eb3/4 D3/4 |
+}`);
+    const regions = inferChords(project).regions;
+    expect(regions[0]).toMatchObject({
+      fromTick: 0, toTick: PPQ, status: "resolved",
+      selected: { functionalBaseId: "DVII", identity: { root: { step: "D", alter: 1 } } },
+    });
+    for (const tick of [PPQ, 2 * PPQ]) {
+      const region = regions.find(item => item.fromTick <= tick && tick < item.toTick)!;
+      expect(region.selected?.functionalBaseId).not.toBe("DVII");
+    }
+  });
+
+  it("重属导七保留已写明的根音及等音七音的备选读法", () => {
+    const { project } = compileScoreText(`satb 1
+key G major
+meter 1/4
+bars 1..2 {
+S: | A#4/4 | B4/4 |
+A: | G4/4 | G4/4 |
+T: | E4/4 | D4/4 |
+B: | C#3/4 | D3/4 |
+}`);
+    const candidate = inferChords(project).regions[0].selected;
+    expect(candidate).toMatchObject({
+      functionalBaseId: "DDVII", identity: { root: { step: "C", alter: 1 } },
+      fit: { spellingConsistent: false },
+    });
+  });
+
   it("按时间序列合并连续的同一功能，并保留不同功能区段", () => {
     const project = createEmptyProject();
     addHarmony(project);
