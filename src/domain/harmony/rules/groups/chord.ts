@@ -26,6 +26,7 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { leadingToneForFunction } from "../services/harmony";
 import { resolvesDominantSixthSubstitution } from "./dominantSixthSubstitution";
@@ -182,13 +183,14 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
   standardChordSliceFacts(context).forEach(
     ({ slice, chord, active, stableComplete }) => {
       if (!stableComplete) return;
+      const structural = notesWithAnticipationReplacements(context, slice, active);
       const requiredDegrees = chordVoicingPolicy(chord.identity).requiredDegrees;
       const missing = requiredDegrees
         .map((degree) => chordIdentityToneSpellingForDegree(chord.identity, degree))
         .filter(
           (tone): tone is SpelledPitchClass => {
             if (!tone) return false;
-            return !active.some(({ note }) => pitchClassEquals(note.pitch, tone));
+            return !structural.some(({ note }) => pitchClassEquals(note.pitch, tone));
           },
         );
       if (missing.length === 0) return;

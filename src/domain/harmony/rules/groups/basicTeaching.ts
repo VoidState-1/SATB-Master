@@ -21,6 +21,7 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { leadingToneForFunction } from "../services/harmony";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
@@ -43,10 +44,9 @@ function isPlainTriad(
 }
 
 function chordToneCounts(
-  slice: HarmonyAnalysis["slices"][number],
+  active: ReturnType<typeof activeNotes>,
   tones: ReturnType<typeof chordIdentityToneSpellings>,
 ) {
-  const active = activeNotes(slice);
   return {
     active,
     counts: tones.map(
@@ -151,7 +151,13 @@ function triadVoicingFacts(context: HarmonyRuleContext, inversion: 0 | 1 | 2) {
       )
         return [];
       const tones = chordIdentityToneSpellings(chord.identity);
-      const { active, counts } = chordToneCounts(slice, tones);
+      const sounding = activeNotes(slice);
+      const { active, counts } = chordToneCounts(
+        inversion === 0
+          ? notesWithAnticipationReplacements(context, slice, sounding)
+          : sounding,
+        tones,
+      );
       if (counts.some((count) => count === 0)) return [];
       return [{ slice, chord, tones, active, counts, inversion }];
     })
@@ -180,7 +186,11 @@ function triadVoicingDiagnostic(
       params: { counts: fact.counts.join("/"), inversion: fact.inversion },
       evidence: [
         chordEvidence(fact.chord),
-        ...fact.active.map(({ note }) => noteEvidence(note, "当前配置")),
+        ...fact.active.map(({ note }) =>
+          noteEvidence(note, note.startTick + note.durationTicks <= fact.slice.tick
+            ? "先现前的结构音"
+            : "当前配置"),
+        ),
       ],
     },
   );
