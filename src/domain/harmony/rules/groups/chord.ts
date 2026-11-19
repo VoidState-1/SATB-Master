@@ -30,6 +30,7 @@ import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { leadingToneForFunction } from "../services/harmony";
 import { resolvesDominantSixthSubstitution } from "./dominantSixthSubstitution";
+import { heldSuspensionsAt } from "./heldSuspensions";
 
 interface ChordSliceFact {
   slice: HarmonyAnalysis["slices"][number];
@@ -74,12 +75,15 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   standardChordSliceFacts(context).forEach(
     ({ slice, chord, active, tones }) => {
-      const outside = active.filter(
+      const unresolved = active.filter(
         ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
       );
-      if (outside.length === 0) return;
-      if (outside.length === 1 && outside[0].voiceId === "soprano" &&
+      if (unresolved.length === 0) return;
+      if (unresolved.length === 1 && unresolved[0].voiceId === "soprano" &&
           resolvesDominantSixthSubstitution(slice, context.sliceAt(slice.endTick))) return;
+      const confirmed = heldSuspensionsAt(context, slice);
+      const outside = unresolved.filter(({ note }) => !confirmed.includes(note.id));
+      if (outside.length === 0) return;
       diagnostics.push(
         diagnostic(
           "chord.unclassified-nonchord-tone",
