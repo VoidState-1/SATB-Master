@@ -106,7 +106,7 @@ export function inferChords(
     .filter(boundary => isCurrentPhraseBoundary(project, boundary))
     .map(boundary => boundary.tick);
   const anticipated = withAnticipations(observations, applied, options, project.ppq, phraseBoundaryTicks);
-  const prolonged = withProlongedHarmony(observations, anticipated, options, project.ppq);
+  const prolonged = withProlongedHarmony(observations, anticipated, options, project.ppq, phraseBoundaryTicks);
   const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high");
   const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence);
   const sequence = analyzeChordInferencePaths(observations, withSixths);

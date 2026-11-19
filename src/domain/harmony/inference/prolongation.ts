@@ -1,13 +1,16 @@
 import { chordIdentityEquals } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, writtenInterval } from "../../pitch";
+import { isWrittenStep, pitchClassEquals, spelledPitchEquals, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
+import { compareMetricStrength } from "../../rhythm/metric";
 import { fitProlongedHarmony } from "./candidates";
+import { hasCompleteWrittenTertianChord } from "./fit";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
 
 function movingNote(
   before: ChordInferenceObservation, middle: ChordInferenceObservation, after: ChordInferenceObservation,
 ) {
-  let movingId: string | undefined;
+  let motion: { id: string; returnsByStep: boolean } | undefined;
+  let companionsHeld = true;
   for (const voice of VOICE_ORDER) {
     const first = before.activeNotes[voice];
     const note = middle.activeNotes[voice];
@@ -15,11 +18,23 @@ function movingNote(
     if (!first || !note || !last) return;
     const into = writtenInterval(first.pitch, note.pitch);
     const onward = writtenInterval(note.pitch, last.pitch);
-    if (!into.diatonicSteps && !into.semitones && !onward.diatonicSteps && !onward.semitones) continue;
-    if (movingId || voice === "bass" || !isWrittenStep(into) || !isWrittenStep(onward)) return;
-    movingId = note.id;
+    if (!into.diatonicSteps && !into.semitones && !onward.diatonicSteps && !onward.semitones) {
+      if (first.id !== note.id || note.id !== last.id) companionsHeld = false;
+      continue;
+    }
+    if (motion || voice === "bass" || !isWrittenStep(into) || !isWrittenStep(onward)) return;
+    motion = {
+      id: note.id,
+      returnsByStep: !first.nonChordToneRole && !note.nonChordToneRole && !last.nonChordToneRole &&
+        spelledPitchEquals(first.pitch, last.pitch) &&
+        Math.sign(into.semitones) === into.diatonicSteps &&
+        first.startTick + first.durationTicks === note.startTick &&
+        note.startTick === middle.fromTick && note.startTick + note.durationTicks === last.startTick &&
+        last.startTick === after.fromTick &&
+        note.durationTicks <= first.durationTicks && note.durationTicks <= last.durationTicks,
+    };
   }
-  return movingId;
+  return motion && { id: motion.id, isNeighbor: motion.returnsByStep && companionsHeld };
 }
 
 /** Bridge an otherwise unexplained weak note between two statements of the same harmony. */
@@ -28,6 +43,7 @@ export function withProlongedHarmony(
   sets: readonly (readonly ChordInferenceCandidate[])[],
   options: ChordInferenceOptions,
   ppq: number,
+  phraseBoundaryTicks: readonly number[],
 ) {
   if (options.minConfidence === "high") return sets;
   const result = sets.slice();
@@ -39,16 +55,31 @@ export function withProlongedHarmony(
     if (middle.metric.level >= 2 || duration > ppq || duration > before.toTick - before.fromTick) continue;
     if (middle.metric.measureNumber !== after.metric.measureNumber && after.metric.beatPosition !== 0) continue;
     if (![before, after].every(o => middle.key.mode === o.key.mode && pitchClassEquals(middle.key.tonic, o.key.tonic))) continue;
-    const movingId = movingNote(before, middle, after);
-    if (!movingId) continue;
+    const motion = movingNote(before, middle, after);
+    if (!motion) continue;
+    // Spasobin §40.1, ex. 40-600. Assign the role only when the other
+    // voices sustain the harmony throughout the departure and return.
+    const inferNeighbor = motion.isNeighbor && options.allowNonChordToneCandidates !== false &&
+      (compareMetricStrength(middle.metric, before.metric) === "weaker" ||
+        compareMetricStrength(middle.metric, after.metric) === "weaker") &&
+      !phraseBoundaryTicks.some(tick => before.fromTick < tick && tick <= after.fromTick) &&
+      !hasCompleteWrittenTertianChord(middle);
     const matches = sets[i - 1].flatMap(left => {
       if (!left.semantics || left.fit.nonChordToneNoteIds.length || !left.fit.spellingConsistent ||
           !sets[i + 1].some(right => right.functionalBaseId === left.functionalBaseId &&
             right.semantics?.primaryInterpretationId === left.semantics!.primaryInterpretationId &&
             right.fit.spellingConsistent && !right.fit.nonChordToneNoteIds.length &&
             chordIdentityEquals(left.identity, right.identity))) return [];
-      const candidate = fitProlongedHarmony(left, middle, movingId);
-      return candidate ? [candidate] : [];
+      const candidate = fitProlongedHarmony(left, middle, motion.id);
+      if (!candidate) return [];
+      if (!inferNeighbor) return [candidate];
+      return [{
+        ...candidate,
+        fit: { ...candidate.fit, nonChordToneAssignments: { [motion.id]: "neighbor" as const } },
+        evidence: [...candidate.evidence, {
+          kind: "inferred-nonchord-tone" as const, code: "neighbor", noteIds: [motion.id],
+        }],
+      }];
     });
     if (matches.length) result[i] = matches;
   }

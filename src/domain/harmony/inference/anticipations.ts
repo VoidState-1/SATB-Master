@@ -1,12 +1,8 @@
-import {
-  QUALITY_INTERVALS,
-  chordIdentityToneSpellingForDegree,
-  chordToneSpellings,
-  type ChordQuality,
-} from "../../chordModel";
+import { chordIdentityToneSpellingForDegree } from "../../chordModel";
 import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../../pitch";
 import { compareMetricStrength } from "../../rhythm/metric";
 import { candidateComparator, fitAnticipation } from "./candidates";
+import { hasCompleteWrittenTertianChord } from "./fit";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
 
@@ -23,19 +19,6 @@ function exactFit(candidate: ChordInferenceCandidate) {
 function anchorFit(candidate: ChordInferenceCandidate) {
   return candidate.semantics && candidate.identity.structure.kind === "tertian" &&
     !candidate.identity.structure.extensions.length && exactFit(candidate);
-}
-
-const tertianQualities = Object.keys(QUALITY_INTERVALS) as ChordQuality[];
-
-function hasCompleteWrittenTertianChord(observation: ChordInferenceObservation) {
-  const notes = observationNotes(observation);
-  const pitches = observation.soundingPitchClasses;
-  return pitches.some(root => tertianQualities.some(quality => {
-    if (QUALITY_INTERVALS[quality].length !== pitches.length) return false;
-    const tones = chordToneSpellings(root, quality);
-    return notes.every(({ note }) => tones.some(tone => pitchClassEquals(note.pitch, tone))) &&
-      tones.every(tone => pitches.some(pitch => pitchClassEquals(pitch, tone)));
-  }));
 }
 
 /** Spasobin §42.1, 3–5: one voice steps early to the next chord; two
