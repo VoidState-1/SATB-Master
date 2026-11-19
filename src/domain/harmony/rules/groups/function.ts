@@ -3,7 +3,9 @@ import {
   formatPitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
+  toMidi,
 } from "../../../pitch";
+import type { AnalysisSlice } from "../../analysis";
 import { chordEvidence, chordLabel, diagnostic } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
@@ -74,6 +76,79 @@ export function mixtureSourceRule(context: HarmonyRuleContext) {
   return diagnostics;
 }
 
+function naturalMinorFirstInversion(
+  context: HarmonyRuleContext,
+  slice: AnalysisSlice,
+  degree: 4 | 5,
+) {
+  const { chord, notes, completeSatb } = slice;
+  const bass = notes.bass;
+  if (
+    !chord ||
+    !completeSatb ||
+    !bass ||
+    chord.semantics?.mixture ||
+    chord.semantics?.pedalContext
+  )
+    return undefined;
+
+  const { identity } = chord;
+  const { structure } = identity;
+  if (
+    structure.kind !== "tertian" ||
+    structure.quality !== "minor" ||
+    structure.extensions.length > 0 ||
+    structure.alterations.length > 0
+  )
+    return undefined;
+
+  const reading = context.harmony.primaryInterpretation(chord);
+  if (
+    reading.status !== "resolved" ||
+    reading.value.degree !== degree ||
+    reading.value.degreeAlteration !== 0 ||
+    reading.value.appliedTarget
+  )
+    return undefined;
+
+  const key = reading.value.localKey ?? slice.key;
+  if (
+    key.mode !== "minor" ||
+    !pitchClassEquals(identity.root, scaleDegreePitchClass(key, degree)) ||
+    !pitchClassEquals(identity.bass, scaleDegreePitchClass(key, degree + 2)) ||
+    !pitchClassEquals(bass.pitch, identity.bass)
+  )
+    return undefined;
+
+  const bassMidi = toMidi(bass.pitch);
+  const members = context.harmony.chordMembersAt(slice);
+  if (
+    members.some(member =>
+      !member.isWrittenChordTone ||
+      member.note.nonChordToneRole ||
+      toMidi(member.note.pitch) < bassMidi,
+    ) ||
+    new Set(members.map(member => member.chordToneIndex)).size !== 3
+  )
+    return undefined;
+
+  return { key, bassMidi };
+}
+
+// Example 25–363 and chapter 27: natural-minor d6–s6 over a descending VII–VI bass.
+function isNaturalMinorDescendingBass(
+  context: HarmonyRuleContext,
+  before: AnalysisSlice,
+  after: AnalysisSlice,
+): boolean {
+  if (before.endTick !== after.tick || before.key.id !== after.key.id) return false;
+  const source = naturalMinorFirstInversion(context, before, 5);
+  const target = naturalMinorFirstInversion(context, after, 4);
+  return source !== undefined && target !== undefined &&
+    pitchClassEquals(source.key.tonic, target.key.tonic) &&
+    target.bassMidi === source.bassMidi - 2;
+}
+
 export function functionalRetrogressionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   const halfCadenceEndpoints = new Set<string>();
@@ -101,7 +176,12 @@ export function functionalRetrogressionRule(context: HarmonyRuleContext) {
       !sourcePhrase ||
       !targetPhrase ||
       sourcePhrase.id !== targetPhrase.id ||
-      halfCadenceEndpoints.has(previous.id)
+      halfCadenceEndpoints.has(previous.id) ||
+      isNaturalMinorDescendingBass(
+        context,
+        candidate.sourceBoundary,
+        candidate.targetBoundary,
+      )
     )
       continue;
     diagnostics.push(
@@ -263,7 +343,7 @@ export const FUNCTION_RULES = defineRuleGroup(
     description:
       "检查和声进行中是否出现了属功能（D）直接进入下属功能（S）的逆向进行。",
     rationale:
-      "调式和声的功能逻辑以 T → S → D → T 的向心循环为基石。下属功能是远离主功能的离心力量，属功能是高度紧张、强烈倾向主功能的向心力量。由 D 直接进入 S 违背了功能张力递增并在主和弦释放的自然逻辑，在古典和声中被称为“逆功能进行”（例外如模进或特定阻碍连接除外）。",
+      "调式和声的功能逻辑以 T → S → D → T 的向心循环为基石。下属功能是远离主功能的离心力量，属功能是高度紧张、强烈倾向主功能的向心力量。由 D 直接进入 S 违背了功能张力递增并在主和弦释放的自然逻辑，在古典和声中被称为“逆功能进行”（例外如模进或特定阻碍连接除外）。自然小调中，确证低音由自然七级下行到六级时，小属六和弦可接小下属六和弦。",
     group: "function",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],
