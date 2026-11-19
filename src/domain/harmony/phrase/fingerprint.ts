@@ -14,11 +14,13 @@ function hash(value: string) {
 }
 
 /**
- * 乐句结构依赖节奏、音符与和弦解释，而不依赖工程标题或规则配置。
+ * 乐句结构依赖节奏、音符、调性与和弦解释，而不依赖工程标题或规则配置。
  * 它只用于判断自动推导结果是否仍可被视为当前输入的产物，不作持久化 ID。
  */
 export function phraseInferenceFingerprint(project: PhraseAnalysisInput) {
   const chordRegions = project.chordRegions ?? project.chordTrack?.regions ?? [];
+  const hasProlongingSixFour = chordRegions.some(({ semantics }) =>
+    semantics?.cadenceRole === "passing64" || semantics?.cadenceRole === "pedal64");
   return hash(
     stableJson({
       ppq: project.ppq,
@@ -26,6 +28,11 @@ export function phraseInferenceFingerprint(project: PhraseAnalysisInput) {
       meterEvents: [...(project.meterEvents ?? [])].sort(
         (left, right) => left.tick - right.tick,
       ),
+      keyEvents: hasProlongingSixFour
+        ? project.keyEvents?.map(({ tick, tonic, mode }) => ({ tick, tonic, mode }))
+          .sort((left, right) => left.tick - right.tick)
+        : undefined,
+      // Keep the written pitch and octave with each note. Both six-four roles use the actual bass.
       satbTracks: [...(project.satbTracks ?? [])]
         .map((track) => ({
           id: track.id,

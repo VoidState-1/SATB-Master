@@ -12,6 +12,7 @@ import type {
   PhraseTargetRatio,
 } from "./types";
 import {
+  chordIdentityEquals,
   chordIdentityInversion,
   chordStructureQuality,
   harmonySemanticsConfidence,
@@ -20,6 +21,14 @@ import {
 } from "../../chordModel";
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
+import {
+  isWrittenStep,
+  pitchClassEquals,
+  writtenInterval,
+  type KeyLike,
+  type SpelledPitch,
+} from "../../pitch";
+import { eventAtTick, orderedEvents } from "../../time";
 import type { ChordRegion } from "../../project/types";
 import { isCurrentPhraseBoundary, phraseInferenceFingerprint } from "./fingerprint";
 
@@ -256,6 +265,99 @@ function followingRegion(regions: readonly ChordRegion[], tick: number) {
   return regions.find((region) => region.startTick === tick);
 }
 
+function sameKey(left: KeyLike, right: KeyLike) {
+  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
+}
+
+function sameWrittenPitch(left: SpelledPitch, right: SpelledPitch) {
+  return left.octave === right.octave && pitchClassEquals(left, right);
+}
+
+function sixFourBassPath(
+  project: PhraseAnalysisInput,
+  source: ChordRegion,
+  middle: ChordRegion,
+  target: ChordRegion,
+  role: "pedal64" | "passing64",
+) {
+  const bass = project.satbTracks?.find(track => track.id === "bass");
+  // A chord's bass spelling has no register and cannot rule out octave leaps.
+  if (!bass) return undefined;
+  const notes = [...bass.notes].sort((left, right) => left.startTick - right.startTick);
+  const pitchAcross = (fromTick: number, toTick: number) => {
+    let coveredTo = fromTick;
+    let pitch: SpelledPitch | undefined;
+    for (const note of notes) {
+      const endTick = note.startTick + note.durationTicks;
+      if (endTick <= coveredTo) continue;
+      if (note.startTick > coveredTo || !note.pitch ||
+          (pitch && !sameWrittenPitch(pitch, note.pitch))) {
+        return undefined;
+      }
+      pitch = note.pitch;
+      coveredTo = endTick;
+      if (coveredTo >= toTick) return pitch;
+    }
+    return undefined;
+  };
+  // A passing bass needs the two steps at the edges. A pedal must
+  // stay on the same written pitch through all three harmonies.
+  const before = pitchAcross(role === "pedal64" ? source.startTick : middle.startTick - 1, middle.startTick);
+  const during = pitchAcross(middle.startTick, target.startTick);
+  const after = pitchAcross(target.startTick, target.startTick + (role === "pedal64" ? target.durationTicks : 1));
+  if (!before || !during || !after ||
+      !pitchClassEquals(before, source.identity.bass) ||
+      !pitchClassEquals(during, middle.identity.bass) ||
+      !pitchClassEquals(after, target.identity.bass)) return undefined;
+  return { before, during, after };
+}
+
+function isProlongingSixFour(
+  project: PhraseAnalysisInput,
+  source: ChordRegion | undefined,
+  middle: ChordRegion | undefined,
+  target: ChordRegion | undefined,
+) {
+  const role = middle?.semantics?.cadenceRole;
+  if ((role !== "pedal64" && role !== "passing64") ||
+      !source?.semantics || !middle?.semantics || !target?.semantics ||
+      chordIdentityInversion(middle.identity) !== 2 ||
+      source.startTick + source.durationTicks !== middle.startTick ||
+      middle.startTick + middle.durationTicks !== target.startTick) return false;
+
+  const family = functionalFamily(source);
+  if (!family || family !== functionalFamily(target) || !functionalFamily(middle)) return false;
+  const keyEvents = orderedEvents(project.keyEvents ?? []);
+  const printedKey = keyEvents.length ? eventAtTick(keyEvents, source.startTick) : undefined;
+  if (printedKey && keyEvents.some(event => event.tick > source.startTick &&
+      event.tick <= target.startTick && !sameKey(printedKey, event))) return false;
+
+  const keys = [source.semantics, middle.semantics, target.semantics].map(semantics =>
+    primaryHarmonyInterpretation(semantics).localKey ?? printedKey);
+  const key = keys.find(candidate => candidate !== undefined);
+  if (!key || keys.some(other => !other || !sameKey(key, other))) return false;
+
+  const sourceInversion = chordIdentityInversion(source.identity);
+  const targetInversion = chordIdentityInversion(target.identity);
+  const sameHarmony = role === "pedal64"
+    ? sourceInversion === 0 && chordIdentityEquals(source.identity, target.identity)
+    : ((sourceInversion === 0 && targetInversion === 1) ||
+       (sourceInversion === 1 && targetInversion === 0)) &&
+      chordIdentityEquals(source.identity, { ...target.identity, bass: source.identity.bass });
+  if (!sameHarmony) return false;
+
+  const bass = sixFourBassPath(project, source, middle, target, role);
+  if (!bass) return false;
+  const { before, during, after } = bass;
+  if (role === "pedal64") {
+    return sameWrittenPitch(before, during) && sameWrittenPitch(during, after);
+  }
+
+  const into = writtenInterval(before, during);
+  const out = writtenInterval(during, after);
+  return isWrittenStep(into) && isWrittenStep(out) && into.diatonicSteps === out.diatonicSteps;
+}
+
 function boundaryFacts(
   project: PhraseAnalysisInput,
   timeline: ReturnType<typeof buildMetricTimeline>,
@@ -297,25 +399,35 @@ function boundaryFacts(
       : undefined);
   const previous = previousRegion(regions, terminal);
   const following = followingRegion(regions, tick);
+  const afterFollowing = following && followingRegion(regions, following.startTick + following.durationTicks);
+  const leavesSixFour = isProlongingSixFour(project, previous, terminal, following);
+  const entersSixFour = isProlongingSixFour(project, terminal, following, afterFollowing);
+  const insideProlongation = leavesSixFour || entersSixFour;
+
   const terminalFamily = functionalFamily(terminal);
   const previousFamily = functionalFamily(previous);
   const followingFamily = functionalFamily(following);
   const terminalDegree = terminal?.semantics && primaryHarmonyInterpretation(terminal.semantics).degree;
-  const endsOnDominant = terminalFamily === "dominant" && terminalDegree === 5;
+  const endsOnDominant = !insideProlongation && terminalFamily === "dominant" && terminalDegree === 5;
   const endsOnSubdominant = terminalFamily === "subdominant" && terminalDegree === 4 &&
     previousFamily === "tonic" && terminal && chordIdentityInversion(terminal.identity) === 0 &&
     tick - terminal.startTick >= measureLengthAt(timeline, tick - 1);
-  if (terminalFamily)
+  if (terminalFamily && !leavesSixFour)
     evidence.push({ code: "stable-harmony", value: "末端具有确定功能和声" });
-  if (
+  if (!leavesSixFour && (
     endsOnDominant || endsOnSubdominant ||
     (terminalFamily === "tonic" && terminalDegree === 1 &&
       (previousFamily === "dominant" || previousFamily === "subdominant"))
-  ) evidence.push({ code: "cadential-connection", value: "末端具有和声收束" });
-  if (followingFamily && terminalFamily && followingFamily !== terminalFamily)
-    evidence.push({ code: "new-material", value: "边界后进入不同功能材料" });
-  else if (following)
-    evidence.push({ code: "continuous-following-harmony", value: "边界后和声材料连续" });
+  )) evidence.push({ code: "cadential-connection", value: "末端具有和声收束" });
+
+  // The change into or out of a prolonging six-four contributes no material
+  // vote. Duration, release, and metre still contribute on their own.
+  if (!insideProlongation && following) {
+    if (followingFamily && terminalFamily && followingFamily !== terminalFamily)
+      evidence.push({ code: "new-material", value: "边界后进入不同功能材料" });
+    else
+      evidence.push({ code: "continuous-following-harmony", value: "边界后和声材料连续" });
+  }
 
   const strongBreak = actualSilence;
   const moderate = new Set<string>();

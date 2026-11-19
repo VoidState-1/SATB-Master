@@ -1,9 +1,11 @@
 import type {
   ChordRegion,
+  KeyEvent,
   MeterEvent,
   PhraseBoundary as ProjectPhraseBoundary,
   PhraseConfidence as ProjectPhraseConfidence,
 } from "../../project/types";
+import type { SpelledPitch } from "../../pitch";
 
 export type PhraseBoundarySource = ProjectPhraseBoundary["source"];
 export type PhraseConfidence = ProjectPhraseConfidence;
@@ -89,6 +91,7 @@ export interface PhraseAnalysisInput {
   readonly lengthTicks: number;
   readonly ppq?: number;
   readonly meterEvents?: readonly MeterEvent[];
+  readonly keyEvents?: readonly KeyEvent[];
   readonly structure?: {
     readonly phraseBoundaries?: readonly PhraseBoundary[];
   };
@@ -98,6 +101,7 @@ export interface PhraseAnalysisInput {
       readonly id?: string;
       readonly startTick: number;
       readonly durationTicks: number;
+      readonly pitch?: SpelledPitch;
     }[];
   }[];
   readonly chordRegions?: readonly ChordRegion[];
