@@ -6,13 +6,12 @@ import {
   type ChordToneDegree,
 } from "../../chordModel";
 import {
-  normalizePitchClassNumber,
   pitchClassEquals,
   pitchClassValue,
-  stepIndex,
   type SpelledPitchClass,
 } from "../../pitch";
 import type { NonChordToneRole } from "../../project";
+import { hasCompleteWrittenTertianVoicing } from "../writtenTertian";
 import { observationNotes } from "./observations";
 import type {
   ChordFitAssessment,
@@ -32,22 +31,7 @@ const MAX_INFERRED_OMISSIONS = 1;
 /** Recognize a literal competing chord even when the local functional
  * catalogue does not offer a candidate with this root and quality. */
 export function hasCompleteWrittenTertianChord(observation: ChordInferenceObservation) {
-  const pitches = observation.soundingPitchClasses;
-  if ((pitches.length !== 3 && pitches.length !== 4) || observationNotes(observation).some(
-    ({ note }) => !pitches.some(pitch => pitchClassEquals(pitch, note.pitch)),
-  )) return false;
-  return pitches.some(root => {
-    let current = root;
-    for (let degree = 1; degree < pitches.length; degree++) {
-      const nextStep = (stepIndex(current.step) + 2) % 7;
-      const next = pitches.find(pitch => stepIndex(pitch.step) === nextStep);
-      if (!next) return false;
-      const third = normalizePitchClassNumber(pitchClassValue(next) - pitchClassValue(current));
-      if (third !== 3 && third !== 4) return false;
-      current = next;
-    }
-    return true;
-  });
+  return hasCompleteWrittenTertianVoicing(observationNotes(observation).map(({ note }) => note.pitch));
 }
 
 function chordDegrees(identity: ChordIdentity): readonly ChordToneDegree[] {

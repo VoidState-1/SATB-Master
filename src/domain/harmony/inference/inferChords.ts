@@ -13,6 +13,7 @@ import { withAppliedSequences } from "./appliedSequences";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
 import { analyzeChordInferencePaths } from "./sequence";
 import { classifySixFours } from "./sixFours";
+import { withPreparedSuspensions } from "./preparedSuspensions";
 import { withProlongedHarmony } from "./prolongation";
 import { inferLocalKeys } from "./localKeys";
 import { inferPhrases, isCurrentPhraseBoundary } from "../phrase";
@@ -107,7 +108,8 @@ export function inferChords(
     .filter(boundary => isCurrentPhraseBoundary(project, boundary))
     .map(boundary => boundary.tick);
   const anticipated = withAnticipations(observations, applied, options, project.ppq, phraseBoundaryTicks);
-  const prolonged = withProlongedHarmony(observations, anticipated, options, project.ppq, phraseBoundaryTicks);
+  const suspended = withPreparedSuspensions(observations, anticipated, options, project.ppq, phraseBoundaryTicks);
+  const prolonged = withProlongedHarmony(observations, suspended, options, project.ppq, phraseBoundaryTicks);
   const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high");
   const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence);
   const recovered = withDeceptiveDominants(observations, withSixths, options, project.ppq, phraseBoundaryTicks);

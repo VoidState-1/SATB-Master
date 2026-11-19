@@ -331,6 +331,36 @@ export function fitAnticipation(
   };
 }
 
+export function fitPreparedSuspension(
+  tonic: ChordInferenceCandidate,
+  observation: ChordInferenceObservation,
+  suspensions: readonly { noteId: string; figure: "4-3" | "9-8" }[],
+): ChordInferenceCandidate | undefined {
+  const fit = fitChordObservation(observation, tonic.identity, {
+    allowNonChordToneCandidates: true,
+    allowedOmittedChordDegrees: [3],
+  });
+  if (fit.hardRejected || !fit.spellingConsistent || fit.omittedChordDegrees.length !== 1 ||
+      fit.omittedChordDegrees[0] !== 3 || fit.nonChordToneNoteIds.length !== suspensions.length ||
+      !suspensions.every(({ noteId }) => fit.nonChordToneNoteIds.includes(noteId))) return;
+  return {
+    ...tonic,
+    id: `${observation.index}:prepared-suspension:${tonic.id}`,
+    observationIndex: observation.index,
+    fit,
+    score: scoreFor(observation, tonic.identity, fit, tonic.score.functionalTier),
+    confidence: "medium",
+    // A held note also belongs to the preparation chord. Its suspension
+    // evidence covers only the slice between the tonic attack and resolution.
+    evidence: [...evidenceFor(fit, true), ...suspensions.map(({ noteId, figure }) => ({
+      kind: "inferred-nonchord-tone" as const,
+      code: "prepared-suspension",
+      noteIds: [noteId],
+      details: { figure, fromTick: observation.fromTick, toTick: observation.toTick },
+    }))],
+  };
+}
+
 export function fitDominantSixthSubstitution(
   observation: ChordInferenceObservation,
   reading: ChordInferenceCandidate,
