@@ -22,6 +22,7 @@ import {
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
 import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
+import { exchangesSupertonicSeventhWithRoot } from "./supertonicSeventhExchange";
 import {
   defineObligationRule,
   mergeDiagnosticEvidence,
@@ -220,16 +221,23 @@ function seventhDiagnostic(
   if (!source || !chord || !current || !targetChord) return undefined;
   const tones = chordIdentityToneSpellings(chord.identity);
   const resolution = toMidi(current.pitch) - payload.seventhMidi;
+  let title = "七音未级进下行解决";
+  let message = `书写七音 ${formatPitchClass(tones[3])} 通常应以半音或全音级进下行解决。`;
+  if (decision.reason === "chord-seventh-bass-rises-to-root") {
+    title = "属七和弦换位时低音七音上行";
+    message = "属二和弦换为同一属七和弦原位时，低音七音不可级进上行到根音。";
+  } else if (decision.reason === "supertonic-seventh-exchanges-with-root") {
+    title = "下属七和弦的七音与根音互换";
+    message = "Ⅱ级七和弦重新排列时，七音上行到根音，同时原根音下行接走七音。此处应避免两音互换。";
+  }
   return diagnostic(
     "resolution.chord-seventh",
     current.startTick,
     current.startTick + current.durationTicks,
     [payload.voiceId],
     [source, current],
-    decision.reason === "chord-seventh-bass-rises-to-root" ? "属七和弦换位时低音七音上行" : "七音未级进下行解决",
-    decision.reason === "chord-seventh-bass-rises-to-root"
-      ? "属二和弦换为同一属七和弦原位时，低音七音不可级进上行到根音。"
-      : `书写七音 ${formatPitchClass(tones[3])} 通常应以半音或全音级进下行解决。`,
+    title,
+    message,
     {
       chordIds: [chord.id, targetChord.id],
       params: {
@@ -734,9 +742,13 @@ function seventhTransition(
   )
     return decision(environment, "cancel", "chord-seventh-context-ended");
 
-  if (sameSeventhContext(environment) && seventhTransferVoiceIds(environment).length) {
+  const receivers = sameSeventhContext(environment) ? seventhTransferVoiceIds(environment) : [];
+  if (receivers.length) {
     if (bassSeventhRisesToDominantRoot(environment))
       return decision(environment, "violate", "chord-seventh-bass-rises-to-root");
+    const { context, obligation: { payload, openedAt } } = environment;
+    if (exchangesSupertonicSeventhWithRoot(context, payload.voiceId, payload.seventhMidi, openedAt.tick, receivers))
+      return decision(environment, "violate", "supertonic-seventh-exchanges-with-root");
     return decision(environment, "cancel", "chord-seventh-transferred");
   }
 
