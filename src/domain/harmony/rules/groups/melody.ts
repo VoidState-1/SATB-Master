@@ -18,6 +18,7 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { chromaticPassingTransitionIds } from "./chromaticPassing";
+import { isRespeltDoubleDominantSeventh } from "./chromaticDoubleDominant";
 
 function validMelodyTransitions(
   context: HarmonyRuleContext,
@@ -177,7 +178,8 @@ function alteredIntervalRule(
       named.quality !== expectedQuality ||
       Math.abs(transition.writtenInterval.semitones) === 0 ||
       passing?.has(transition.id) ||
-      (expectedQuality === "增" && preparesChromaticDominant(context, transition))
+      (expectedQuality === "增" && (preparesChromaticDominant(context, transition) ||
+        isRespeltDoubleDominantSeventh(context, transition)))
     )
       continue;
     diagnostics.push(
