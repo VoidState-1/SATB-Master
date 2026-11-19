@@ -163,11 +163,17 @@ export function neighborToneRule(context: HarmonyRuleContext) {
     const currentSlice = neighborhood.attackSlice;
     const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
     if (!previous || !next || !currentSlice.chord) continue;
+    // A sustained note may become a chord member after it was attacked.
+    const departure = context.sliceAt(note.startTick - 1);
+    const preparedOnCurrentChord = departure?.chord?.id === currentSlice.chord.id &&
+      departure.notes[voiceId]?.id === previous.id &&
+      previous.startTick + previous.durationTicks === note.startTick &&
+      isChordTone(context, previous, departure);
     const entering = writtenInterval(previous.pitch, note.pitch);
     const leaving = writtenInterval(note.pitch, next.pitch);
     const valid =
       !isChordTone(context, note, currentSlice) &&
-      isChordTone(context, previous, previousSlice) &&
+      (isChordTone(context, previous, previousSlice) || preparedOnCurrentChord) &&
       isChordTone(context, next, nextSlice) &&
       context.pitch.isStep(previous, note) &&
       context.pitch.isStep(note, next) &&
