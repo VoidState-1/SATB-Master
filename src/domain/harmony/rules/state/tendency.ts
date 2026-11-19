@@ -2,14 +2,16 @@ import {
   chordIdentityToneSpellings,
   chordIdentityToneSpellingForDegree,
   identityContainsWrittenPitchClass,
+  type ChordQuality,
 } from "../../../chordModel";
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
-import type { AnalysisSlice } from "../../analysis";
+import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import {
   leadingTonePitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
+  spelledPitchEquals,
   toMidi,
   writtenInterval,
   type SpelledPitchClass,
@@ -21,6 +23,7 @@ import type {
   SubjectRefs,
 } from "./obligation";
 import { hasExactPitch, noteEvidence } from "../helpers/core";
+import type { SpanView } from "../context/views";
 
 export type VoiceObligationPayload = {
   readonly [key: string]: JsonValue;
@@ -376,10 +379,98 @@ function resolvesDownward<Payload extends VoiceObligationPayload>(
   );
 }
 
+function passingChordKey(context: RuleStepContext, slice: AnalysisSlice) {
+  if (!slice.chord || !supportsTendencyResolutionRules(context, slice.chord)) return;
+  const reading = context.rules.harmony.primaryInterpretation(slice.chord);
+  if (reading.status !== "resolved") return slice.key;
+  if (!reading.value.appliedTarget) return reading.value.localKey ?? slice.key;
+}
+
+function hasPassingVoicing(
+  context: RuleStepContext,
+  slice: AnalysisSlice,
+  quality: ChordQuality,
+  root: SpelledPitchClass,
+  bass: SpelledPitchClass,
+) {
+  const identity = slice.chord?.identity;
+  const bassNote = slice.notes.bass;
+  if (!slice.completeSatb || !identity || !bassNote || identity.structure.kind !== "tertian" ||
+      identity.structure.quality !== quality || identity.structure.extensions.length ||
+      identity.structure.alterations.length || !pitchClassEquals(identity.root, root) ||
+      !pitchClassEquals(identity.bass, bass) || !pitchClassEquals(bassNote.pitch, bass)) return false;
+  const members = context.rules.harmony.chordMembersAt(slice);
+  return members.every(member => member.isWrittenChordTone && !member.note.nonChordToneRole) &&
+    chordIdentityToneSpellings(identity).every((_, index) => members.some(member => member.chordToneIndex === index));
+}
+
+function upwardStep(from: AnalysisNote | undefined, to: AnalysisNote | undefined) {
+  if (!from || !to) return false;
+  const motion = writtenInterval(from.pitch, to.pitch);
+  return motion.diatonicSteps === 1 && (motion.semitones === 1 || motion.semitones === 2);
+}
+
+function carriesPassingBass(context: RuleStepContext, span: SpanView, next: AnalysisSlice) {
+  const structural = span.firstSlice.notes.bass;
+  const last = span.lastSlice.notes.bass;
+  const landing = next.notes.bass;
+  if (!structural || !landing || !upwardStep(structural, landing)) return false;
+  const metric = context.rules.metric;
+  const rearticulatedAnticipation = last && (!last.nonChordToneRole || last.nonChordToneRole === "anticipation") &&
+    landing.startTick === next.tick && last.startTick > span.firstSlice.tick &&
+    last.startTick + last.durationTicks === next.tick &&
+    last.durationTicks <= last.startTick - span.firstSlice.tick && last.durationTicks <= landing.durationTicks &&
+    spelledPitchEquals(last.pitch, landing.pitch) &&
+    metric.compare(metric.positionAt(last.startTick), metric.positionAt(next.tick)) === "weaker";
+  return span.slices.every(({ chord, notes: { bass } }) =>
+    chord && bass && pitchClassEquals(chord.identity.bass, structural.pitch) &&
+    (bass.id === last?.id && rearticulatedAnticipation ||
+      !bass.nonChordToneRole && spelledPitchEquals(bass.pitch, structural.pitch)),
+  );
+}
+
+/** Spasobin §15.4, ex. 15-210/211; the minor realization is marked in 15-214. */
+function passingDominantSeventhAscends(environment: ObligationEnvironment<SeventhPayload>) {
+  const { context, obligation } = environment;
+  const { voiceId, seventhMidi } = obligation.payload;
+  const { previous, slice: target, rules, transitionFromPrevious } = context;
+  const departure = previous?.notes[voiceId];
+  const arrival = target.notes[voiceId];
+  if (voiceId === "bass" || !previous || !departure || !arrival || departure.nonChordToneRole ||
+      toMidi(departure.pitch) !== seventhMidi || arrival.startTick !== target.tick ||
+      !upwardStep(departure, arrival) || !context.isSpanStart ||
+      !transitionFromPrevious?.contiguous || !transitionFromPrevious.sameKey) return false;
+
+  const dominant = rules.spanAt(previous.tick);
+  if (!dominant || !obligation.openedBy.spanIds?.includes(dominant.span.id)) return false;
+  const tonic = rules.spanNeighborhood(dominant).previous;
+  if (!tonic || tonic.span.toTick !== dominant.span.fromTick ||
+      tonic.firstSlice.key.id !== target.key.id ||
+      rules.phraseAt(tonic.firstSlice.tick)?.id !== rules.phraseAt(target.tick)?.id) return false;
+
+  const key = passingChordKey(context, target);
+  if (!key || ![tonic.firstSlice, dominant.firstSlice].every(slice => {
+    const earlierKey = passingChordKey(context, slice);
+    return earlierKey?.mode === key.mode && pitchClassEquals(earlierKey.tonic, key.tonic);
+  })) return false;
+  const second = scaleDegreePitchClass(key, 2);
+  const third = scaleDegreePitchClass(key, 3);
+  const fifth = scaleDegreePitchClass(key, 5);
+  return pitchClassEquals(departure.pitch, scaleDegreePitchClass(key, 4)) &&
+    pitchClassEquals(arrival.pitch, fifth) &&
+    hasPassingVoicing(context, tonic.firstSlice, key.mode, key.tonic, key.tonic) &&
+    hasPassingVoicing(context, dominant.firstSlice, "dominant7", fifth, second) &&
+    hasPassingVoicing(context, target, key.mode, key.tonic, third) &&
+    rules.harmony.chordMembersAt(target).filter(member => member.chordToneIndex === 1).length === 1 &&
+    carriesPassingBass(context, tonic, dominant.firstSlice) &&
+    carriesPassingBass(context, dominant, target);
+}
+
 export function chordSeventhResolves(
   environment: ObligationEnvironment<SeventhPayload>,
 ) {
-  return resolvesDownward(environment, environment.obligation.payload.seventhMidi);
+  return resolvesDownward(environment, environment.obligation.payload.seventhMidi) ||
+    passingDominantSeventhAscends(environment);
 }
 
 export function dominantNinthResolves(

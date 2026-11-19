@@ -937,9 +937,9 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "E.2",
     label: "和弦七音未解决",
     description:
-      "检查各类七和弦中的七音在和弦转换后是否顺应倾向在同一声部向下级进解决。",
+      "检查和弦七音在和弦转换时是否按其声部进行解决。",
     rationale:
-      "从声学起源与历史对位看，和弦七音是由经过音或挂留音演化而来的下行倾向音。在古典和声的所有七和弦解决中，七音均具有绝对强制性的下行二度级进要求，逆向跳进或上行均属严重违规。",
+      "和弦七音通常同声部下行级进。经过 T–D43–T6 时，属七音可同声部上行至主和弦五音，与结构低音同向级进并避免重复主和弦三音。",
     group: "resolution",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
