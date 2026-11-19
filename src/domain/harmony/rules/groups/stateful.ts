@@ -14,6 +14,7 @@ import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass } from "../../analysis";
 import { formatPitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import { writtenSeventhHandoff } from "../state/writtenSeventhHandoff";
+import { leavesDiatonicSequenceLeadingTone } from "../state/diatonicSequenceLeadingTone";
 import {
   chordEvidence,
   chordLabel,
@@ -631,6 +632,9 @@ function leadingToneTransition(
       "leading-tone-context-ended",
       debugFacts,
     );
+
+  if (attacked && leavesDiatonicSequenceLeadingTone(environment))
+    return decision(environment, "cancel", "leading-tone-diatonic-sequence", debugFacts);
 
   if (attacked)
     return decision(
