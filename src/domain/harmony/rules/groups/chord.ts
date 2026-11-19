@@ -80,7 +80,7 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
       );
       if (unresolved.length === 0) return;
       if (unresolved.length === 1 && unresolved[0].voiceId === "soprano" &&
-          resolvesDominantSixthSubstitution(slice, context.sliceAt(slice.endTick))) return;
+          resolvesDominantSixthSubstitution(slice, context)) return;
       const confirmed = heldSuspensionsAt(context, slice);
       const outside = unresolved.filter(({ note }) => !confirmed.includes(note.id));
       if (outside.length === 0) return;

@@ -7,6 +7,7 @@ import {
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
+import { crossesManualPhraseBoundary, resolvesDominantSixthSubstitution } from "../groups/dominantSixthSubstitution";
 import {
   leadingTonePitchClass,
   pitchClassEquals,
@@ -319,6 +320,39 @@ function completeRootPositionChord(context: RuleStepContext, slice: AnalysisSlic
   );
 }
 
+function obligationFollowsWrittenLeadingTone(
+  environment: ObligationEnvironment<LeadingTonePayload>,
+  source: AnalysisSlice,
+  leading: AnalysisNote,
+  landing: AnalysisNote,
+) {
+  const { context, obligation } = environment;
+  const { payload, openedAt, openedBy } = obligation;
+  const target = context.slice;
+  const opened = context.rules.sliceAt(openedAt.tick)?.notes[payload.voiceId];
+  if (!opened || !openedBy.noteIds?.includes(opened.id) ||
+      !spelledPitchEquals(opened.pitch, leading.pitch) ||
+      !pitchClassEquals(leading.pitch, { step: payload.leadingStep, alter: payload.leadingAlter }) ||
+      toMidi(leading.pitch) !== payload.leadingMidi || landing.startTick !== target.tick ||
+      !pitchClassEquals(source.key.tonic, { step: payload.sourceKeyStep, alter: payload.sourceKeyAlter }) ||
+      source.key.mode !== payload.sourceKeyMode ||
+      !pitchClassEquals(target.key.tonic, { step: payload.targetStep, alter: payload.targetAlter }) ||
+      target.key.mode !== payload.targetMode ||
+      !pitchClassEquals(landing.pitch, scaleDegreePitchClass(target.key, 5)) ||
+      crossesManualPhraseBoundary(context.rules, openedAt.tick, target.tick)) return false;
+
+  // A same-register reattack retains the existing obligation. Do not let a
+  // different octave, another note, or a rest inherit that obligation's proof.
+  for (let tick = openedAt.tick; tick < target.tick;) {
+    const slice = context.rules.sliceAt(tick);
+    const note = slice?.notes[payload.voiceId];
+    if (!slice || !note || note.nonChordToneRole || slice.key.id !== source.key.id ||
+        !spelledPitchEquals(note.pitch, opened.pitch)) return false;
+    tick = slice.endTick;
+  }
+  return true;
+}
+
 export function innerLeadingToneDescendsToFifth(
   environment: ObligationEnvironment<LeadingTonePayload>,
 ) {
@@ -333,13 +367,16 @@ export function innerLeadingToneDescendsToFifth(
   if (
     !source || !from || !to || !leading || !landing ||
     !context.transitionFromPrevious?.contiguous || !context.transitionFromPrevious.sameKey ||
-    context.rules.phraseAt(source.tick)?.id !== context.rules.phraseAt(target.tick)?.id ||
     !supportsTendencyResolutionRules(context, from) || !supportsTendencyResolutionRules(context, to)
   ) return false;
 
   const interval = writtenInterval(leading.pitch, landing.pitch);
   if (interval.diatonicSteps !== -2 || interval.semitones !== -4) return false;
 
+  if (obligationFollowsWrittenLeadingTone(environment, source, leading, landing) &&
+      resolvesDominantSixthSubstitution(source, context.rules, true)) return true;
+
+  if (context.rules.phraseAt(source.tick)?.id !== context.rules.phraseAt(target.tick)?.id) return false;
   const fromInterpretation = context.rules.harmony.primaryInterpretation(from);
   const toInterpretation = context.rules.harmony.primaryInterpretation(to);
   const fromKey = fromInterpretation.status === "resolved"

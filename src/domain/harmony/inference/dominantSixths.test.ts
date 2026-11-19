@@ -28,6 +28,16 @@ bars 1..2 {
   B: | G2/4 G2/4 | C3/2 |
 }`;
 
+const toCompleteTonicOverHeldDominant = `satb 1
+key C major
+meter 2/4
+bars 1..2 {
+  S: | G5/4 E5/4 | C5/2 |
+  A: | B4/2 | G4/2 |
+  T: | F4/2 | E4/2 |
+  B: | G2/2 | C3/2 |
+}`;
+
 const appliedToFifth = `satb 1
 key C major
 meter 2/4
@@ -121,12 +131,50 @@ describe("原位属七的六度替代五音", () => {
   });
 
   it.each([
+    ["同一属七的实际低音持续", toCompleteTonicOverHeldDominant],
+    ["前一拍为实际含五音的普通属七", toCompleteTonicOverHeldDominant.replace("G5/4 E5/4", "D5/4 E5/4")],
+    ["同属音上的低音换八度重新起奏", toCompleteTonicOverHeldDominant.replace("G2/2 | C3/2", "G2/4 G3/4 | C3/2")],
+  ])("内声导音下行大三度到完整主和弦五音，%s 时识别替代六音", (_description, score) => {
+    expectDominant(inferAtBeat(score, 1), "tonic", "G");
+  });
+
+  it.each([
     ["六度与题面调式不符", toFifth.replace("E5/4", "Eb5/4"), 0],
     ["小调六度改写为同响的升五", toFifth.replace("key C major", "key C minor").replace("E5/4", "D#5/4"), 0],
     ["相同主三和弦但导音换声部", toTonic.replace("F4/4 | E4/2", "F4/4 | C5/2").replace("B3/2 | C4/2", "B3/2 | E4/2"), 1],
     ["同音高低音从上一和弦延入", toTonic.replace("G2/4 G2/4", "G2/2"), 1],
+    ["持续属音的前一拍没有属七及保持的七音", toCompleteTonicOverHeldDominant.replace("F4/2 | E4/2", "E4/4 F4/4 | E4/2"), 1],
+    ["持续属音前一拍的女高实写降五音", toCompleteTonicOverHeldDominant.replace("G5/4 E5/4", "Db5/4 E5/4"), 1],
+    ["导音落到低八度的主和弦五音", toCompleteTonicOverHeldDominant.replace("B4/2 | G4/2", "B4/2 | G3/2"), 1],
+    ["属七音跳到主和弦五音", toCompleteTonicOverHeldDominant.replace("F4/2 | E4/2", "F4/2 | G3/2"), 1],
   ])("%s 时保留原有候选行为", (_description, score, beat) => {
     expect(hasSubstitution(inferAtBeat(score, beat))).toBe(false);
+  });
+
+  it("普通省五重复根的原位属七保持自身候选和证据", () => {
+    const score = toCompleteTonicOverHeldDominant.replace("G5/4 E5/4", "G5/2");
+    const region = inferAtBeat(score, 0);
+    expect(region.selected).toMatchObject({
+      functionalBaseId: "D", identity: { structure: { quality: "dominant7", extensions: [] } },
+    });
+    expect(hasSubstitution(region)).toBe(false);
+  });
+
+  it("连续属七合并后只把替代证据记在实际六音的起奏上", () => {
+    const { project } = compileScoreText(toCompleteTonicOverHeldDominant);
+    const observations = buildChordInferenceObservations(project);
+    const sixth = observations[1].activeNotes.soprano!;
+    const merged = regionAt(inferChords(project).regions, 0);
+    const evidence = merged.selected?.evidence.filter(item => item.code === "dominant-sixth-substitution");
+    expect(evidence?.map(item => item.noteIds)).toEqual([[sixth.id]]);
+  });
+
+  it.each([0.5, 1, 2])("显式句界在第 %s 拍时不跨界取证", (beat) => {
+    const { project } = compileScoreText(toCompleteTonicOverHeldDominant);
+    project.structure.phraseBoundaries = [
+      { id: "manual", tick: beat * project.ppq, source: "manual", confidence: "certain" },
+    ];
+    expect(hasSubstitution(regionAt(inferChords(project).regions, project.ppq))).toBe(false);
   });
 
   it("尊重女高音已标角色", () => {

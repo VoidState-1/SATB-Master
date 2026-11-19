@@ -111,7 +111,10 @@ export function inferChords(
   const suspended = withPreparedSuspensions(observations, anticipated, options, project.ppq, phraseBoundaryTicks);
   const prolonged = withProlongedHarmony(observations, suspended, options, project.ppq, phraseBoundaryTicks);
   const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high");
-  const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence);
+  const manualPhraseTicks = project.structure.phraseBoundaries
+    .filter(boundary => boundary.source === "manual")
+    .map(boundary => boundary.tick);
+  const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence, manualPhraseTicks);
   const recovered = withDeceptiveDominants(observations, withSixths, options, project.ppq, phraseBoundaryTicks);
   const sequence = analyzeChordInferencePaths(observations, recovered);
   // Solve in musical context, but aggregate evidence and write regions only

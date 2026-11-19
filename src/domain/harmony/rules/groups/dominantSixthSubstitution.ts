@@ -1,19 +1,32 @@
 import { chordToneSpellings, type ChordQuality } from "../../../chordModel";
 import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
-import { movesToWrittenTone, resolvesDominantInnerVoice } from "../../dominantSixthMotion";
+import {
+  continuesWrittenDominantSeventh,
+  dominantSixthInnerVoices as innerVoices,
+  dominantSixthLowerVoices as lowerVoices,
+  leadingToneDescendsToTonicFifth,
+  movesToWrittenTone,
+  resolvesDominantInnerVoice,
+} from "../../dominantSixthMotion";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 
-const innerVoices = ["alto", "tenor"] as const;
-const lowerVoices = ["alto", "tenor", "bass"] as const;
+type SixthRuleContext = Pick<HarmonyRuleContext, "analysis" | "sliceAt">;
 
-function hasPlainRootPosition(slice: AnalysisSlice, degree: 1 | 5, quality: ChordQuality) {
+export function crossesManualPhraseBoundary(context: SixthRuleContext, fromTick: number, toTick: number) {
+  return context.analysis.phraseBoundaries.some(boundary =>
+    boundary.source === "manual" && fromTick < boundary.tick && boundary.tick <= toTick);
+}
+
+function hasPlainRootPosition(slice: AnalysisSlice, degree: 1 | 5, quality: ChordQuality, allowWrittenSixth = false) {
   const { chord, key } = slice;
   const bass = slice.notes.bass;
   if (!chord || !bass || !slice.completeSatb || Object.values(slice.notes).some(note => note.nonChordToneRole)) return false;
 
   const { root, structure } = chord.identity;
   if (structure.kind !== "tertian" || structure.quality !== quality ||
-      structure.extensions.length || structure.alterations.length ||
+      (structure.extensions.length && !(allowWrittenSixth && structure.extensions.length === 1 && structure.extensions[0] === 6)) ||
+      structure.alterations.length ||
       !pitchClassEquals(root, scaleDegreePitchClass(key, degree)) ||
       !pitchClassEquals(root, chord.identity.bass) || !pitchClassEquals(root, bass.pitch)) return false;
 
@@ -30,27 +43,43 @@ function hasPlainRootPosition(slice: AnalysisSlice, degree: 1 | 5, quality: Chor
       designation.primaryFunction === (degree === 5 ? "dominant" : "tonic")));
 }
 
-export function resolvesDominantSixthSubstitution(source: AnalysisSlice, following: AnalysisSlice | undefined) {
-  if (!following || source.endTick !== following.tick || source.key.id !== following.key.id ||
-      !hasPlainRootPosition(source, 5, "dominant7")) return false;
-
-  const { chord, notes, key } = source;
-  const bass = notes.bass;
-  const soprano = notes.soprano;
-  const arrival = following.notes.soprano?.pitch;
-  if (!chord || !bass || !soprano || !arrival ||
-      bass.startTick < chord.startTick || soprano.startTick < chord.startTick) return false;
-
+export function resolvesDominantSixthSubstitution(
+  source: AnalysisSlice,
+  context: SixthRuleContext,
+  allowWrittenSixth = false,
+) {
+  const { notes, key } = source;
+  const { bass, soprano } = notes;
+  if (!bass || !soprano) return false;
   const sixth = scaleDegreePitchClass(key, 3);
-  const [, leadingTone, fifth, seventh] = chordToneSpellings(chord.identity.root, "dominant7");
+  if (!pitchClassEquals(soprano.pitch, sixth)) return false;
+  const attackTick = soprano.startTick;
+  const resolutionTick = attackTick + soprano.durationTicks;
+  const following = context.sliceAt(resolutionTick);
+  const arrival = following?.notes.soprano?.pitch;
+  if (!following || following.tick !== resolutionTick || following.key.id !== key.id || !arrival ||
+      crossesManualPhraseBoundary(context, attackTick, resolutionTick)) return false;
+
+  // A chord-label split can subdivide the same note. Read the actual attack and
+  // its whole sounding voicing before treating any of those slices as a sixth.
+  for (let tick = attackTick; tick < resolutionTick;) {
+    const slice = context.sliceAt(tick);
+    if (!slice || slice.tick !== tick || slice.key.id !== key.id ||
+        !hasPlainRootPosition(slice, 5, "dominant7", allowWrittenSixth) ||
+        slice.notes.soprano?.id !== soprano.id ||
+        !lowerVoices.every(voice => slice.notes[voice]?.id === notes[voice]?.id)) return false;
+    tick = slice.endTick;
+  }
+  const newBass = bass.startTick === attackTick;
+  const [, leadingTone, fifth, seventh] = chordToneSpellings(bass.pitch, "dominant7");
   const alto = notes.alto?.pitch;
   const tenor = notes.tenor?.pitch;
-  if (!alto || !tenor || !pitchClassEquals(soprano.pitch, sixth) ||
+  if (!alto || !tenor ||
       !((pitchClassEquals(alto, leadingTone) && pitchClassEquals(tenor, seventh)) ||
         (pitchClassEquals(alto, seventh) && pitchClassEquals(tenor, leadingTone)))) return false;
 
   if (hasPlainRootPosition(following, 5, "dominant7")) {
-    return movesToWrittenTone(soprano.pitch, arrival, fifth, -1) &&
+    return newBass && movesToWrittenTone(soprano.pitch, arrival, fifth, -1) &&
       lowerVoices.every(voice => {
         const before = notes[voice];
         const after = following.notes[voice];
@@ -58,10 +87,24 @@ export function resolvesDominantSixthSubstitution(source: AnalysisSlice, followi
       });
   }
 
-  if (!hasPlainRootPosition(following, 1, key.mode) || following.chord?.startTick !== following.tick ||
+  if (!hasPlainRootPosition(following, 1, key.mode) ||
       !movesToWrittenTone(soprano.pitch, arrival, key.tonic, -2)) return false;
+
+  const tonicFifth = scaleDegreePitchClass(key, 5);
+  const descendingLeading = innerVoices.some(voice => leadingToneDescendsToTonicFifth(
+    notes[voice]?.pitch, following.notes[voice]?.pitch, leadingTone, tonicFifth,
+  ));
+  if (!newBass) {
+    const previous = context.sliceAt(attackTick - 1);
+    if (!descendingLeading || !previous || previous.endTick !== attackTick || previous.key.id !== key.id ||
+        !hasPlainRootPosition(previous, 5, "dominant7") ||
+        !continuesWrittenDominantSeventh(previous.notes, notes, bass.pitch)) return false;
+    const previousAttack = Math.max(previous.key.tick, ...Object.values(previous.notes).map(note => note.startTick));
+    if (crossesManualPhraseBoundary(context, previousAttack, attackTick)) return false;
+  }
 
   return innerVoices.every(voice => resolvesDominantInnerVoice(
     notes[voice]?.pitch, following.notes[voice]?.pitch, leadingTone, seventh, key.tonic, sixth,
+    tonicFifth,
   ));
 }
