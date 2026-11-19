@@ -17,6 +17,7 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import { chromaticPassingTransitionIds } from "./chromaticPassing";
 
 function validMelodyTransitions(
   context: HarmonyRuleContext,
@@ -168,12 +169,14 @@ function alteredIntervalRule(
   expectedQuality: "增" | "减",
 ) {
   const diagnostics: RuleDiagnostic[] = [];
+  const passing = expectedQuality === "增" ? chromaticPassingTransitionIds(context) : undefined;
   for (const transition of validMelodyTransitions(context)) {
     const named = intervalName(transition.writtenInterval);
     if (
       !named.altered ||
       named.quality !== expectedQuality ||
       Math.abs(transition.writtenInterval.semitones) === 0 ||
+      passing?.has(transition.id) ||
       (expectedQuality === "增" && preparesChromaticDominant(context, transition))
     )
       continue;
