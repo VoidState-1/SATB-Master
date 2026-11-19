@@ -4,12 +4,15 @@ import {
   chordVoicingPolicy,
   harmonySemanticsCompatibleWithIdentity,
 } from "../../../chordModel";
-import type { HarmonyAnalysis } from "../../analysis";
+import type { AnalysisNote, HarmonyAnalysis } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import { effectiveFunctionalDesignation } from "../../../functionalHarmonyCatalog";
 import {
   formatPitchClass,
+  isWrittenStep,
   pitchClassEquals,
+  scaleDegreePitchClass,
+  stepIndex,
   toMidi,
   writtenInterval,
   type SpelledPitchClass,
@@ -96,11 +99,56 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
   return diagnostics;
 }
 
+function connectsStructuralBasses(
+  context: HarmonyRuleContext,
+  chord: ChordSliceFact["chord"],
+  bass: AnalysisNote,
+) {
+  const role = bass.nonChordToneRole;
+  if ((role !== "passing" && role !== "anticipation") || context.harmony.isWrittenChordTone(bass, chord)) return false;
+  const position = context.metric.positionAt(bass.startTick);
+  if (!position || position.role === "downbeat" ||
+      context.metric.positionAt(bass.startTick + bass.durationTicks - 1)?.measureNumber !== position.measureNumber) return false;
+  const view = context.notes({ voiceId: "bass", startingAt: bass.startTick }).first(item => item.note.id === bass.id);
+  const neighbors = view && context.noteNeighborhood(view);
+  const previous = neighbors?.previous?.note;
+  const next = neighbors?.next?.note;
+  if (!previous || !next || previous.nonChordToneRole || next.nonChordToneRole ||
+      previous.startTick + previous.durationTicks !== bass.startTick ||
+      bass.startTick + bass.durationTicks !== next.startTick ||
+      bass.durationTicks > previous.durationTicks ||
+      previous.startTick < chord.startTick || next.startTick !== chord.startTick + chord.durationTicks) return false;
+  const target = context.sliceAt(next.startTick)?.chord;
+  if (!target || target.startTick !== next.startTick ||
+      !pitchClassEquals(previous.pitch, chord.identity.bass) ||
+      !pitchClassEquals(next.pitch, target.identity.bass) ||
+      !context.harmony.isWrittenChordTone(previous, chord) || !context.harmony.isWrittenChordTone(next, target)) return false;
+  if (role === "anticipation") {
+    const landing = context.metric.positionAt(next.startTick);
+    return bass.durationTicks <= next.durationTicks &&
+      position.confidence === "certain" && landing?.confidence === "certain" &&
+      (position.role === "weak-beat" || position.role === "subdivision") && landing.level > position.level &&
+      context.pitch.sameWrittenPitch(bass, next);
+  }
+  const meaning = context.harmony.primaryInterpretation(chord);
+  if (meaning.status === "ambiguous") return false;
+  const key = (meaning.status === "resolved" && meaning.value.localKey) || context.keyAt(bass.startTick);
+  if (!key) return false;
+  const degree = (stepIndex(bass.pitch.step) - stepIndex(key.tonic.step) + 7) % 7 + 1;
+  if (!pitchClassEquals(bass.pitch, scaleDegreePitchClass(key, degree))) return false;
+  const entry = writtenInterval(previous.pitch, bass.pitch);
+  const exit = writtenInterval(bass.pitch, next.pitch);
+  return isWrittenStep(entry) && isWrittenStep(exit) &&
+    entry.diatonicSteps === exit.diatonicSteps &&
+    Math.sign(entry.semitones) === entry.diatonicSteps && Math.sign(exit.semitones) === exit.diatonicSteps;
+}
+
 export function inversionBassRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   standardChordSliceFacts(context).forEach(({ slice, chord, active }) => {
     const bass = active.find((item) => item.voiceId === "bass");
     if (!bass || pitchClassEquals(bass.note.pitch, chord.identity.bass)) return;
+    if (connectsStructuralBasses(context, chord, bass.note)) return;
     diagnostics.push(
       diagnostic(
         "chord.inversion-bass",
@@ -597,13 +645,13 @@ export const CHORD_RULES = defineRuleGroup(
     catalogNumber: "D.3",
     label: "低音与转位不一致",
     description:
-      "检查男低音声部实际发音是否与当前和弦标注的转位形态相符。",
+      "检查男低音是否与标注转位相符；区分结构低音和已标注且有前后音支持的经过音、先现音。",
     rationale:
       "和弦的转位完全取决于最低声部（男低音）所承担的和弦音级：原位必须是根音，第一转位必须是三音，第二转位必须是五音，第三转位必须是七音。低音音级错误将直接导致和弦转位与功能属性的根本性错乱。",
     group: "chord",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
-    dependencyScope: "chord",
+    dependencyScope: "phrase",
     evaluate: inversionBassRule,
   }),
   defineStatelessRule({
