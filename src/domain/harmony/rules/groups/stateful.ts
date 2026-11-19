@@ -21,6 +21,7 @@ import {
 } from "../helpers/core";
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
+import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
 import {
   defineObligationRule,
   mergeDiagnosticEvidence,
@@ -806,9 +807,10 @@ export function secondaryDominantStateStep(
     const currentSpan = context.span;
     incoming.forEach((state) => {
       const payload = state.payload as SecondaryDominantState;
-      const connection = context.rules.connections({
+      const incomingConnection = context.rules.connections({
         targetSpanId: currentSpan.id,
-      }).first()?.connection;
+      }).first();
+      const connection = incomingConnection?.connection;
       const resolves = functionalTargetMatches(
         context.analysis,
         payload.sourceSpanId,
@@ -839,7 +841,11 @@ export function secondaryDominantStateStep(
           connection?.contiguous &&
           connection.sameKey &&
           connection.confidence !== "ambiguous" &&
-          connection.confidence !== "unknown"
+          connection.confidence !== "unknown" &&
+          !(incomingConnection &&
+            incomingConnection.source.span.id === payload.sourceSpanId &&
+            payload.sourceToTick === currentSpan.fromTick &&
+            isProvenLocalDeceptiveTarget(context.rules, incomingConnection))
         ) {
           diagnostics.push(
             diagnostic(
@@ -994,7 +1000,7 @@ export const STATEFUL_RULES = defineRuleGroup(
     description:
       "检查副属和弦（离调属和弦）是否准确进入了其所指向的副级目标和弦。",
     rationale:
-      "副属和弦的作用在于通过临时的“属—主”动力关系将某个副级和弦临时主调化（如 Ⅴ/Ⅱ → Ⅱ）。副属和弦必须直接进入该副级和弦（或其转位/变体），若转而进入无关和弦，则离调的预备与紧张度落空。",
+      "副属和弦的作用在于通过临时的“属—主”动力关系将某个副级和弦临时主调化（如 Ⅴ/Ⅱ → Ⅱ）。副属和弦通常进入该副级和弦或其转位。若实写的完整原位属七按声部解决到所指小调的原位 VI（重复三音），也可构成局部阻碍进行。",
     group: "function",
     defaultSeverity: "warning",
     requires: ["chords", "semantics"],
