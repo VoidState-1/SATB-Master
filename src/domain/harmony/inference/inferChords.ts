@@ -6,6 +6,7 @@ import { withAppliedDominants } from "./appliedDominants";
 import { withAnticipations } from "./anticipations";
 import { buildChordInferenceObservations } from "./observations";
 import { withDiatonicSevenths } from "./diatonicSevenths";
+import { withDeceptiveDominants } from "./deceptiveDominants";
 import { withDominantSixthSubstitutions } from "./dominantSixths";
 import { withWrittenPivotSevenths } from "./pivotSevenths";
 import { withAppliedSequences } from "./appliedSequences";
@@ -109,7 +110,8 @@ export function inferChords(
   const prolonged = withProlongedHarmony(observations, anticipated, options, project.ppq, phraseBoundaryTicks);
   const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high");
   const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence);
-  const sequence = analyzeChordInferencePaths(observations, withSixths);
+  const recovered = withDeceptiveDominants(observations, withSixths, options, project.ppq, phraseBoundaryTicks);
+  const sequence = analyzeChordInferencePaths(observations, recovered);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;
