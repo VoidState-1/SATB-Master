@@ -3,6 +3,12 @@ import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, type Sp
 import type { ChordInferenceObservation } from "./types";
 import { harmonicMajorPreparation } from "./appliedSequences";
 
+export interface LocalKeyContext {
+  readonly key: KeyReference;
+  readonly dominantIndex: number;
+  readonly tonicIndex: number;
+}
+
 function contains(tones: readonly SpelledPitchClass[], pitch: SpelledPitchClass) {
   return tones.some(tone => pitchClassEquals(tone, pitch));
 }
@@ -66,7 +72,7 @@ function homeTonicMode(item: ChordInferenceObservation) {
  * already identified cadence. Common diatonic chords alone do not choose a key. */
 function preparationStart(
   observations: readonly ChordInferenceObservation[], landing: number, dominant: number,
-  key: KeyReference, existing: ReadonlyMap<number, KeyReference>,
+  key: KeyReference, existing: ReadonlyMap<number, LocalKeyContext>,
 ) {
   const tonic = observations[landing];
   const targetScale = scale(key), homeScale = scale(tonic.key);
@@ -112,7 +118,7 @@ export function inferLocalKeys(
   observations: readonly ChordInferenceObservation[],
   phraseEnds: ReadonlySet<number>,
 ) {
-  const keys = new Map<number, KeyReference>();
+  const keys = new Map<number, LocalKeyContext>();
   for (let i = 1; i < observations.length; i++) {
     const arrival = observations[i], prev = observations[i - 1];
     if (!arrival.bass || !prev.bass || arrival.key !== prev.key ||
@@ -139,7 +145,8 @@ export function inferLocalKeys(
       if (!cadence) continue;
       const start = preparationStart(observations, i, cadence.dominant.index, cadence.key, keys);
       if (start !== undefined) {
-        for (let k = start; k <= end; k++) keys.set(k, cadence.key);
+        const context = { key: cadence.key, dominantIndex: cadence.dominant.index, tonicIndex: j };
+        for (let k = start; k <= end; k++) keys.set(k, context);
         i = end;
       }
       break;

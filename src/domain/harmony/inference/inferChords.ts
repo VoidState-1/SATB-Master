@@ -8,6 +8,7 @@ import { buildChordInferenceObservations } from "./observations";
 import { withDiatonicSevenths } from "./diatonicSevenths";
 import { withDeceptiveDominants } from "./deceptiveDominants";
 import { withDominantSixthSubstitutions } from "./dominantSixths";
+import { withNeapolitanPivotDominants } from "./neapolitanPivotDominants";
 import { withWrittenPivotSevenths } from "./pivotSevenths";
 import { withAppliedSequences } from "./appliedSequences";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
@@ -80,7 +81,7 @@ export function inferChords(
   );
   const localKeys = inferLocalKeys(fullScore, terminalTicks);
   const observations = fullScore.map(item => {
-    const localKey = localKeys.get(item.index);
+    const localKey = localKeys.get(item.index)?.key;
     return localKey ? { ...item, key: { ...item.key, ...localKey }, localKey } : item;
   });
   const candidateSets: Array<ReturnType<typeof buildChordInferenceCandidates>> = [];
@@ -116,7 +117,11 @@ export function inferChords(
     .map(boundary => boundary.tick);
   const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence, manualPhraseTicks);
   const recovered = withDeceptiveDominants(observations, withSixths, options, project.ppq, phraseBoundaryTicks);
-  const sequence = analyzeChordInferencePaths(observations, recovered);
+  const pivotBoundaries = [...new Set([...terminalTicks, ...phraseBoundaryTicks])];
+  const withNeapolitanPivots = withNeapolitanPivotDominants(
+    observations, recovered, options, localKeys, pivotBoundaries,
+  );
+  const sequence = analyzeChordInferencePaths(observations, withNeapolitanPivots);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;
