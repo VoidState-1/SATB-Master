@@ -202,7 +202,10 @@ export interface HarmonyDiagnostic {
 export type RuleDiagnostic = Omit<
   HarmonyDiagnostic,
   "id" | "severity" | "exceptionContexts"
->;
+> & {
+  /** 在产生声部对诊断的同一连接上观测到的进行事实。 */
+  pairMotion?: { voiceExchange: boolean; bassStepUp: boolean };
+};
 
 export type RuleSkipReason =
   | "no-chords"

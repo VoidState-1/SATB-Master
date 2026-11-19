@@ -99,11 +99,17 @@ function contextsFor(
     contexts.push("same-harmony");
   if (intersects(facts.arpeggiationTransitionIds, transitions.melody))
     contexts.push("arpeggiation");
-  if (intersects(facts.voiceExchangeTransitionIds, transitions.slice))
+  if (
+    diagnostic.pairMotion?.voiceExchange ??
+    intersects(facts.voiceExchangeTransitionIds, transitions.slice)
+  )
     contexts.push("voice-exchange");
   if (intersects(facts.innerVoiceTransitionIds, transitions.slice))
     contexts.push("inner-voices");
-  if (intersects(facts.bassStepUpTransitionIds, transitions.slice))
+  if (
+    diagnostic.pairMotion?.bassStepUp ??
+    intersects(facts.bassStepUpTransitionIds, transitions.slice)
+  )
     contexts.push("bass-step-up");
   if (diagnostic.noteIds.some((id) => facts.nonchordToneNoteIds.includes(id)))
     contexts.push("nonchord-tone");

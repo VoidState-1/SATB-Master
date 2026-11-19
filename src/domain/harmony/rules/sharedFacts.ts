@@ -29,6 +29,7 @@ export interface VoicePairTransitionFact {
   sameDirection: boolean;
   outerVoicesOnly: boolean;
   includesInnerVoice: boolean;
+  voiceExchange: boolean;
   bassMotion: BassMotion;
 }
 
@@ -69,6 +70,24 @@ export function bassMotionFact(transition: SliceTransition): BassMotion {
   if (interval.diatonicSteps === -1 && interval.semitones < 0)
     return "step-down";
   return "other";
+}
+
+function voicesExchangeAt(
+  transition: SliceTransition,
+  left: VoiceId,
+  right: VoiceId,
+) {
+  const previousLeft = transition.previous.notes[left];
+  const previousRight = transition.previous.notes[right];
+  const currentLeft = transition.current.notes[left];
+  const currentRight = transition.current.notes[right];
+  return Boolean(
+    previousLeft && previousRight && currentLeft && currentRight &&
+    previousLeft.id !== currentLeft.id &&
+    previousRight.id !== currentRight.id &&
+    pitchClassEquals(previousLeft.pitch, currentRight.pitch) &&
+    pitchClassEquals(previousRight.pitch, currentLeft.pitch)
+  );
 }
 
 /**
@@ -119,6 +138,7 @@ export function voicePairTransitionFacts(
             upperMotion !== "stationary" && upperMotion === lowerMotion,
           outerVoicesOnly,
           includesInnerVoice: !outerVoicesOnly,
+          voiceExchange: voicesExchangeAt(transition, upperId, lowerId),
           bassMotion: bassMotionFact(transition),
         }),
       );
@@ -195,22 +215,11 @@ export function buildHarmonyContextFacts(
     .map((transition) => transition.id);
   const voiceExchangeTransitionIds = analysis.sliceTransitions
     .filter((transition) => {
-      const changed = transition.changedVoiceIds.filter(
-        (voiceId) =>
-          transition.previous.notes[voiceId] &&
-          transition.current.notes[voiceId],
-      );
+      const changed = transition.changedVoiceIds;
       return changed.some((left, leftIndex) =>
-        changed.slice(leftIndex + 1).some((right) => {
-          const previousLeft = transition.previous.notes[left]!;
-          const previousRight = transition.previous.notes[right]!;
-          const currentLeft = transition.current.notes[left]!;
-          const currentRight = transition.current.notes[right]!;
-          return (
-            pitchClassEquals(previousLeft.pitch, currentRight.pitch) &&
-            pitchClassEquals(previousRight.pitch, currentLeft.pitch)
-          );
-        }),
+        changed.slice(leftIndex + 1).some((right) =>
+          voicesExchangeAt(transition, left, right),
+        ),
       );
     })
     .map((transition) => transition.id);

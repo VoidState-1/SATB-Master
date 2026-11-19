@@ -249,6 +249,10 @@ function evaluateVoicePairRule(
           policy.title,
           policy.message,
           {
+            pairMotion: {
+              voiceExchange: fact.voiceExchange,
+              bassStepUp: fact.bassMotion === "step-up",
+            },
             causeRefs: [
               `${policy.id}|${transition.id}|voices:${upperId},${lowerId}`,
             ],
@@ -345,12 +349,14 @@ export function voiceOverlapRule(context: HarmonyRuleContext) {
       const [upperId, lowerId] = fact.voiceIds;
       const adjacent =
         VOICE_ORDER.indexOf(lowerId) === VOICE_ORDER.indexOf(upperId) + 1;
+      const previousUpper = toMidi(fact.previousNotes[0].pitch);
+      const previousLower = toMidi(fact.previousNotes[1].pitch);
+      // 起点已经交叉时，保持或恢复音域不会构成一次新的横向超越。
       return (
         adjacent &&
-        (toMidi(fact.currentNotes[0].pitch) <
-          toMidi(fact.previousNotes[1].pitch) ||
-          toMidi(fact.currentNotes[1].pitch) >
-            toMidi(fact.previousNotes[0].pitch))
+        previousUpper >= previousLower &&
+        (toMidi(fact.currentNotes[0].pitch) < previousLower ||
+          toMidi(fact.currentNotes[1].pitch) > previousUpper)
       );
     },
   });

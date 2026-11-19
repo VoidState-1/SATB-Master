@@ -42,6 +42,7 @@ export function diagnostic(
     params?: Record<string, string | number | boolean>;
     evidence?: DiagnosticEvidence[];
     confidence?: number;
+    pairMotion?: RuleDiagnostic["pairMotion"];
     causeRefs?: string[];
     coverageRefs?: string[];
     subjects?: DiagnosticSubjects;
@@ -62,6 +63,7 @@ export function diagnostic(
     params: options.params ?? {},
     evidence: options.evidence ?? [],
     confidence: options.confidence ?? 1,
+    ...(options.pairMotion && { pairMotion: options.pairMotion }),
     causeRefs: options.causeRefs,
     coverageRefs: options.coverageRefs,
     subjects: options.subjects,
