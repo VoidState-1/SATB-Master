@@ -1,4 +1,4 @@
-import type { AnalysisNote, AnalysisSlice } from "../../analysis";
+import type { AnalysisNote, AnalysisSlice, SliceTransition } from "../../analysis";
 import type { RuleConfig, RuleDiagnostic } from "../../runtime";
 import {
   chordIdentityToneSpellings,
@@ -20,6 +20,7 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import { isCadentialContraryOctave } from "./cadentialContraryOctaves";
 
 function chromaticHarmonyLicenses(
   context: HarmonyRuleContext,
@@ -214,7 +215,7 @@ interface VoicePairRulePolicy {
   id: VoicePairRuleId;
   title: string;
   message: string;
-  matches(fact: VoicePairTransitionFact): boolean;
+  matches(fact: VoicePairTransitionFact, transition: SliceTransition): boolean;
 }
 
 function isPerfectOctave(interval: VoicePairTransitionFact["currentInterval"]) {
@@ -235,7 +236,7 @@ function evaluateVoicePairRule(
   const diagnostics: RuleDiagnostic[] = [];
   for (const transition of context.sliceTransitions()) {
     for (const fact of context.voiceLeading.voicePairs(transition)) {
-      if (!policy.matches(fact)) continue;
+      if (!policy.matches(fact, transition)) continue;
       const [upperId, lowerId] = fact.voiceIds;
       const [previousUpper, previousLower] = fact.previousNotes;
       const [currentUpper, currentLower] = fact.currentNotes;
@@ -299,10 +300,11 @@ export function parallelOctavesRule(context: HarmonyRuleContext) {
     id: "voice-leading.parallel-octaves",
     title: "平行或反向八度、同度",
     message: "两个声部同向或反向移动，并连续形成纯八度或同度（含复音程）。",
-    matches: (fact) =>
+    matches: (fact, transition) =>
       bothVoicesMove(fact) &&
       isPerfectOctave(fact.previousInterval) &&
-      isPerfectOctave(fact.currentInterval),
+      isPerfectOctave(fact.currentInterval) &&
+      !(fact.outerVoicesOnly && !fact.sameDirection && isCadentialContraryOctave(context, transition)),
   });
 }
 
@@ -494,11 +496,11 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     description:
       "检查任意两个声部是否同向或反向进行并连续构成纯八度或同度（含纯十五度等复音程）；持续音或重复同音不计入。",
     rationale:
-      "纯八度与同度的声音高度融合。两个声部同向或反向连续形成八度、同度及其复音程，都会削弱声部独立性，因此一并检查。斜向进行及两个声部均重复同音时不按连续八度处理。",
+      "纯八度与同度的连续进行会削弱声部独立性。斯波索宾第十六章第三节允许结束终止中，不完全原位属七到主和弦的特定外声部反行。仅在实奏和声、内声部解决和实际收束均得到支持时适用。",
     group: "voiceLeading",
     defaultSeverity: "error",
     requires: ["written-pitches"],
-    dependencyScope: "slice",
+    dependencyScope: "project",
     evaluate: parallelOctavesRule,
   }),
   defineStatelessRule({
