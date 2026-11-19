@@ -28,6 +28,7 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { leadingToneForFunction } from "../services/harmony";
+import { resolvesDominantSixthSubstitution } from "./dominantSixthSubstitution";
 
 interface ChordSliceFact {
   slice: HarmonyAnalysis["slices"][number];
@@ -76,6 +77,8 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
         ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
       );
       if (outside.length === 0) return;
+      if (outside.length === 1 && outside[0].voiceId === "soprano" &&
+          resolvesDominantSixthSubstitution(slice, context.sliceAt(slice.endTick))) return;
       diagnostics.push(
         diagnostic(
           "chord.unclassified-nonchord-tone",

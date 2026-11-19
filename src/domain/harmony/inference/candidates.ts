@@ -62,8 +62,8 @@ function scoreFor(
   identity: ChordIdentity,
   fit: ReturnType<typeof fitChordObservation>,
   functionalTierValue: ChordInferenceScore["functionalTier"],
+  toneFit = fitRatio(observation, identity, fit),
 ): ChordInferenceScore {
-  const toneFit = fitRatio(observation, identity, fit);
   const bassFit = fit.bassMatchesInversion ? 1 : 0;
   const spellingFit =
     fit.chordToneNoteIds.length === 0
@@ -301,6 +301,40 @@ export function fitProlongedHarmony(
     evidence: [...evidenceFor(fit, true), {
       kind: "sequence-context", code: "prolonged-harmony", noteIds: [movingId],
     }],
+  };
+}
+
+export function fitDominantSixthSubstitution(
+  observation: ChordInferenceObservation,
+  reading: ChordInferenceCandidate,
+  resolution: "fifth" | "tonic",
+): ChordInferenceCandidate | undefined {
+  const soprano = observation.activeNotes.soprano;
+  const { identity } = reading;
+  if (!soprano || !observation.bass || !pitchClassEquals(observation.bass.pitch, identity.root)) return;
+  const literalFit = fitChordObservation(observation, identity, { allowNonChordToneCandidates: true });
+  if (literalFit.hardRejected || !literalFit.spellingConsistent || literalFit.omittedChordDegrees.length ||
+      literalFit.nonChordToneNoteIds.length !== 1 || literalFit.nonChordToneNoteIds[0] !== soprano.id) return;
+
+  const fit = {
+    ...literalFit,
+    chordToneNoteIds: literalFit.matchedNoteIds,
+    nonChordToneNoteIds: Object.freeze([]),
+    nonChordToneAssignments: Object.freeze({}),
+    extraPitchClasses: Object.freeze([]),
+  };
+  const score = scoreFor(observation, identity, fit, reading.score.functionalTier, 1);
+  return {
+    ...reading,
+    id: `${observation.index}:dominant-sixth-substitution:${reading.id}`,
+    observationIndex: observation.index,
+    fit,
+    score,
+    confidence: confidenceFor(score, fit),
+    evidence: [...evidenceFor(literalFit, true).filter(evidence => evidence.kind !== "extra-tone"),
+      { kind: "sequence-context", code: "dominant-sixth-substitution",
+        noteIds: [soprano.id], details: { resolution } },
+    ],
   };
 }
 

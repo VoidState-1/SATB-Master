@@ -5,6 +5,7 @@ import {
 import { withAppliedDominants } from "./appliedDominants";
 import { buildChordInferenceObservations } from "./observations";
 import { withDiatonicSevenths } from "./diatonicSevenths";
+import { withDominantSixthSubstitutions } from "./dominantSixths";
 import { withWrittenPivotSevenths } from "./pivotSevenths";
 import { withAppliedSequences } from "./appliedSequences";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
@@ -61,6 +62,8 @@ export function inferChords(
   }
   const fullScore = buildChordInferenceObservations(project);
   const minimumConfidence = options.minConfidence ?? "low";
+  const meetsMinimumConfidence = (candidate: ReturnType<typeof buildChordInferenceCandidates>[number]) =>
+    confidenceRank(candidate.confidence) >= confidenceRank(minimumConfidence);
   // Phrase boundaries are normally written after chord inference. Precompute
   // the note/rhythm-only structure here so an inferred middle-phrase cadence
   // can still unlock the terminal tonic's permitted fifth omission.
@@ -90,10 +93,7 @@ export function inferChords(
       ...options,
       allowCadentialTonicOmission:
         terminalTicks.has(observation.toTick) && followsDominant,
-    }).filter(
-      (candidate) =>
-        confidenceRank(candidate.confidence) >= confidenceRank(minimumConfidence),
-    );
+    }).filter(meetsMinimumConfidence);
     candidateSets.push(candidates);
   });
   const pivots = withWrittenPivotSevenths(observations, candidateSets, options);
@@ -103,7 +103,8 @@ export function inferChords(
   const applied = withAppliedDominants(observations, sequences, options);
   const prolonged = withProlongedHarmony(observations, applied, options, project.ppq);
   const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high");
-  const sequence = analyzeChordInferencePaths(observations, classified);
+  const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence);
+  const sequence = analyzeChordInferencePaths(observations, withSixths);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;
