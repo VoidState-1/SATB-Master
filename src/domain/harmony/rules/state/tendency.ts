@@ -25,6 +25,7 @@ import type {
 } from "./obligation";
 import { hasExactPitch, noteEvidence } from "../helpers/core";
 import type { SpanView } from "../context/views";
+import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
 
 export type VoiceObligationPayload = {
   readonly [key: string]: JsonValue;
@@ -325,6 +326,7 @@ function obligationFollowsWrittenLeadingTone(
   source: AnalysisSlice,
   leading: AnalysisNote,
   landing: AnalysisNote,
+  destination: SpelledPitchClass,
 ) {
   const { context, obligation } = environment;
   const { payload, openedAt, openedBy } = obligation;
@@ -338,7 +340,7 @@ function obligationFollowsWrittenLeadingTone(
       source.key.mode !== payload.sourceKeyMode ||
       !pitchClassEquals(target.key.tonic, { step: payload.targetStep, alter: payload.targetAlter }) ||
       target.key.mode !== payload.targetMode ||
-      !pitchClassEquals(landing.pitch, scaleDegreePitchClass(target.key, 5)) ||
+      !pitchClassEquals(landing.pitch, destination) ||
       crossesManualPhraseBoundary(context.rules, openedAt.tick, target.tick)) return false;
 
   // A same-register reattack retains the existing obligation. Do not let a
@@ -373,7 +375,7 @@ export function innerLeadingToneDescendsToFifth(
   const interval = writtenInterval(leading.pitch, landing.pitch);
   if (interval.diatonicSteps !== -2 || interval.semitones !== -4) return false;
 
-  if (obligationFollowsWrittenLeadingTone(environment, source, leading, landing) &&
+  if (obligationFollowsWrittenLeadingTone(environment, source, leading, landing, scaleDegreePitchClass(target.key, 5)) &&
       resolvesDominantSixthSubstitution(source, context.rules, true)) return true;
 
   if (context.rules.phraseAt(source.tick)?.id !== context.rules.phraseAt(target.tick)?.id) return false;
@@ -400,6 +402,15 @@ export function innerLeadingToneDescendsToFifth(
     completeRootPositionChord(context, source) && completeRootPositionChord(context, target) &&
     pitchClassEquals(landing.pitch, scaleDegreePitchClass(toKey, 5))
   );
+}
+
+export function leadingToneDescendsInMajorDeceptiveMotion(environment: ObligationEnvironment<LeadingTonePayload>) {
+  const { context, obligation: { payload } } = environment;
+  const { previous, slice } = context;
+  const leading = previous?.notes[payload.voiceId];
+  const landing = slice.notes[payload.voiceId];
+  return Boolean(previous && leading && landing && hasMajorDeceptiveLeadingToneMotion(context, payload.voiceId) &&
+    obligationFollowsWrittenLeadingTone(environment, previous, leading, landing, scaleDegreePitchClass(slice.key, 6)));
 }
 
 function resolvesDownward<Payload extends VoiceObligationPayload>(

@@ -37,6 +37,7 @@ import {
   dominantNinthResolves,
   dominantNinthSource,
   innerLeadingToneDescendsToFifth,
+  leadingToneDescendsInMajorDeceptiveMotion,
   leadingTargetUnchanged,
   leadingToneResolves,
   leadingToneSource,
@@ -561,6 +562,9 @@ function leadingToneTransition(
   if (attacked && targetUnchanged && innerLeadingToneDescendsToFifth(environment))
     return decision(environment, "resolve", "inner-leading-tone-descends-to-fifth", debugFacts);
 
+  if (attacked && targetUnchanged && leadingToneDescendsInMajorDeceptiveMotion(environment))
+    return decision(environment, "resolve", "major-deceptive-leading-tone-descends", debugFacts);
+
   if (
     targetUnchanged &&
     sameLeadingContext &&
@@ -958,9 +962,9 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "E.1",
     label: "导音未解决",
     description:
-      "检查调式导音（Ⅶ级）在属功能进入主功能时是否在同一声部向上半音级进解决至主音。",
+      "检查调式导音（Ⅶ级）在和声转换时是否在同一声部按其倾向解决。",
     rationale:
-      "导音位于主音下方半音，对主音具有极其强烈的上行吸引力。在外声部（女高音与男低音）中的导音必须严格上行半音解决至主音（7→1）；唯有在内声部（中音或次中音）且主和弦为完全三和弦时，方可例外进行三度下行跳进至五音（7→5）。",
+      "导音通常上行半音到主音（7→1）。内声部可在特定的原位属到完整主三和弦中下行至五音。大调原位属到原位Ⅵ级的内声导音，或大调属六到原位Ⅵ级的低音导音，在满足实际声部进行与重复音配置时可下行大二度（7→6）。",
     group: "resolution",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
