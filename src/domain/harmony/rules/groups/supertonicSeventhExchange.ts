@@ -1,8 +1,9 @@
 import { sameChordIdentityWithoutBass, type AnalysisSlice } from "../../analysis";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval } from "../../../pitch";
+import { pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
 import type { VoiceId } from "../../../project/types";
 import type { RuleStepContext } from "../../runtime";
 import { crossesManualPhraseBoundary } from "./dominantSixthSubstitution";
+import { writtenSeventhHandoff } from "../state/writtenSeventhHandoff";
 
 function completeSupertonicSeventh(context: RuleStepContext, slice: AnalysisSlice) {
   const { chord, key, notes } = slice;
@@ -34,20 +35,16 @@ export function exchangesSupertonicSeventhWithRoot(
 ) {
   const { previous, slice } = context;
   const departure = previous?.notes[voice], arrival = slice.notes[voice];
-  if (!previous?.chord || !slice.chord || !departure || !arrival || previous.key.id !== slice.key.id ||
-      arrival.startTick !== slice.tick || departure.startTick + departure.durationTicks !== slice.tick ||
+  if (!previous?.chord || !slice.chord || !departure || !arrival ||
       toMidi(departure.pitch) !== seventhMidi || !sameChordIdentityWithoutBass(previous.chord.identity, slice.chord.identity) ||
-      !pitchClassEquals(arrival.pitch, slice.chord.identity.root)) return false;
-  const upward = writtenInterval(departure.pitch, arrival.pitch);
-  if (upward.diatonicSteps !== 1 || upward.semitones !== 2 ||
+      !pitchClassEquals(arrival.pitch, slice.chord.identity.root) ||
       !completeSupertonicSeventh(context, previous) || !completeSupertonicSeventh(context, slice) ||
       crossesManualPhraseBoundary(context.rules, openedTick, slice.tick)) return false;
 
   return receivers.some(receiver => {
-    const root = previous.notes[receiver], seventh = slice.notes[receiver];
-    if (!root || !seventh || root.startTick + root.durationTicks !== slice.tick ||
-        !pitchClassEquals(root.pitch, arrival.pitch) || !pitchClassEquals(seventh.pitch, departure.pitch)) return false;
-    const downward = writtenInterval(root.pitch, seventh.pitch);
-    return downward.diatonicSteps === -1 && downward.semitones === -2;
+    const handoff = writtenSeventhHandoff(context, voice, receiver, departure.pitch);
+    return handoff && pitchClassEquals(handoff.partner.pitch, arrival.pitch) &&
+      handoff.outgoing.diatonicSteps === 1 && handoff.outgoing.semitones === 2 &&
+      handoff.incoming.diatonicSteps === -1 && handoff.incoming.semitones === -2;
   });
 }

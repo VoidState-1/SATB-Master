@@ -12,7 +12,8 @@ import type {
 } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass } from "../../analysis";
-import { formatPitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { formatPitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { writtenSeventhHandoff } from "../state/writtenSeventhHandoff";
 import {
   chordEvidence,
   chordLabel,
@@ -229,6 +230,12 @@ function seventhDiagnostic(
   } else if (decision.reason === "supertonic-seventh-exchanges-with-root") {
     title = "下属七和弦的七音与根音互换";
     message = "Ⅱ级七和弦重新排列时，七音上行到根音，同时原根音下行接走七音。此处应避免两音互换。";
+  } else if (decision.reason === "chord-seventh-upper-root-exchange") {
+    title = "属七和弦换位时根音与七音互换";
+    message = "两个上声部直接互换了根音和七音。此处宜在原声部保持七音。";
+  } else if (decision.reason === "chord-seventh-upper-tritone-transfer") {
+    title = "属七和弦换位时七音移至根音";
+    message = "原七音移至根音，接手的声部又从三音下行增四度至七音。此处宜在原声部保持七音。";
   }
   return diagnostic(
     "resolution.chord-seventh",
@@ -729,6 +736,46 @@ function bassSeventhRisesToDominantRoot(environment: ObligationEnvironment<Seven
       departure.startTick < boundary.tick && boundary.tick <= slice.tick);
 }
 
+// Spasobin §15.5 and companion ch. 15, exercise IV: ②⑤ and ⑥ have different receiving motions.
+function upperSeventhTransferViolation(environment: ObligationEnvironment<SeventhPayload>, receiver: VoiceId): ObligationDecision | undefined {
+  const { context, obligation } = environment;
+  const voice = obligation.payload.voiceId;
+  if (voice === "bass" || receiver === "bass" || !subjectAttacked(environment)) return;
+  const { previous, slice, rules } = context;
+  const identity = previous?.chord?.identity;
+  const to = slice.chord;
+  if (!identity || !to || identity.structure.kind !== "tertian" || identity.structure.quality !== "dominant7" ||
+      identity.structure.extensions.length || identity.structure.alterations.length ||
+      !sameChordIdentityWithoutBass(identity, to.identity)) return;
+  const reading = rules.harmony.primaryInterpretation(to);
+  if (reading.status === "resolved" && reading.value.appliedTarget) return;
+  const key = reading.status === "resolved" ? reading.value.localKey ?? slice.key : slice.key;
+  const tones = chordIdentityToneSpellings(identity);
+  if (!pitchClassEquals(identity.root, scaleDegreePitchClass(key, 5)) ||
+      !previous.notes.bass || !slice.notes.bass ||
+      !pitchClassEquals(previous.notes.bass.pitch, identity.bass) || !pitchClassEquals(slice.notes.bass.pitch, to.identity.bass) ||
+      !soundsDominantSeventh(previous, tones) || !soundsDominantSeventh(slice, tones)) return;
+
+  const handoff = writtenSeventhHandoff(context, voice, receiver, tones[3]);
+  if (!handoff) return;
+  const { departure: oldSeventh, landing: newRoot, partner, received: newSeventh, outgoing, incoming } = handoff;
+  if (toMidi(oldSeventh.pitch) !== obligation.payload.seventhMidi || !pitchClassEquals(newRoot.pitch, identity.root)) return;
+  const rises = outgoing.diatonicSteps === 1 && outgoing.semitones === 2;
+  const dropsSeventh = outgoing.diatonicSteps === -6 && outgoing.semitones === -10;
+  if (!rises && !dropsSeventh) return;
+  let reason: string;
+  if (rises && spelledPitchEquals(newRoot.pitch, partner.pitch) && spelledPitchEquals(newSeventh.pitch, oldSeventh.pitch))
+    reason = "chord-seventh-upper-root-exchange";
+  else if (pitchClassEquals(partner.pitch, tones[1]) && incoming.diatonicSteps === -3 && incoming.semitones === -6)
+    reason = "chord-seventh-upper-tritone-transfer";
+  else return;
+
+  const violation = decision(environment, "violate", reason, { receivingVoice: receiver });
+  return { ...violation, evidence: [
+    ...(violation.evidence ?? []), noteEvidence(partner, "接手声部前音"), noteEvidence(newSeventh, "接手的七音"),
+  ] };
+}
+
 function seventhTransition(
   environment: ObligationEnvironment<SeventhPayload>,
 ): ObligationDecision | undefined {
@@ -749,6 +796,10 @@ function seventhTransition(
     const { context, obligation: { payload, openedAt } } = environment;
     if (exchangesSupertonicSeventhWithRoot(context, payload.voiceId, payload.seventhMidi, openedAt.tick, receivers))
       return decision(environment, "violate", "supertonic-seventh-exchanges-with-root");
+    if (receivers.length === 1) {
+      const violation = upperSeventhTransferViolation(environment, receivers[0]);
+      if (violation) return violation;
+    }
     return decision(environment, "cancel", "chord-seventh-transferred");
   }
 
