@@ -1,8 +1,10 @@
 import {
   chordIdentityToneSpellings,
   chordIdentityToneSpellingForDegree,
+  identityContainsWrittenPitchClass,
 } from "../../../chordModel";
 import type { VoiceId } from "../../../project/types";
+import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisSlice } from "../../analysis";
 import {
   leadingTonePitchClass,
@@ -93,12 +95,20 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
   id: "source.leading-tone-attacks",
   requires: ["written-pitches"],
   collect({ context, moment }) {
-    if (!supportsTendencyResolutionRules(context, context.slice.chord))
-      return [];
+    const { slice, previous, transitionFromPrevious } = context;
+    const chord = slice.chord;
+    if (!supportsTendencyResolutionRules(context, chord)) return [];
     const { leadingTone, targetTonic, targetMode } = leadingToneExpectation(context);
-    return moment.attackedVoiceIds.flatMap((voiceId) => {
-      const note = context.slice.notes[voiceId];
+    if (chord && !identityContainsWrittenPitchClass(chord.identity, leadingTone)) return [];
+
+    const previousChord = previous?.chord;
+    const canStartOnHeldNote = chord && previousChord && transitionFromPrevious?.contiguous &&
+      transitionFromPrevious.sameKey && !identityContainsWrittenPitchClass(previousChord.identity, leadingTone);
+    const voices = canStartOnHeldNote ? VOICE_ORDER : moment.attackedVoiceIds;
+    return voices.flatMap((voiceId) => {
+      const note = slice.notes[voiceId];
       if (!note || !pitchClassEquals(note.pitch, leadingTone)) return [];
+      if (!moment.attackedVoiceIds.includes(voiceId) && previous?.notes[voiceId]?.id !== note.id) return [];
       return [
         {
           partitionKey: `voice:${voiceId}|target:${targetTonic.step}:${targetTonic.alter}`,

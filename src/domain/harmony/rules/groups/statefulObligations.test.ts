@@ -435,6 +435,41 @@ describe("倾向音义务决策原因", () => {
     expect(reasons).not.toContain("leading-tone-moved-elsewhere");
   });
 
+  it.each([
+    ["下属和弦上的非构成音", tertianRegion("subdominant", 0, { step: "F", alter: 0 }, "major"), false],
+    ["属和弦三音", V(), true],
+    ["没有和弦覆盖", undefined, true],
+  ] as const)("同样下行到 G4 时，区分%s的导音义务", (_label, sourceChord, reports) => {
+    const project = projectFor(sourceChord ? [sourceChord, I()] : [I()], "soprano", [
+      pitch("B", 0, 4), pitch("G", 0, 4),
+    ]);
+    const { diagnostics } = runObligation("resolution.leading-tone", project);
+    expect(diagnostics).toEqual(reports ? [expect.objectContaining({
+      tick: PPQ, voiceIds: ["soprano"],
+    })] : []);
+  });
+
+  it.each([
+    ["正确上行到主音", pitch("C", 0, 5), false],
+    ["错误下行到五音", pitch("G", 0, 4), true],
+  ] as const)("持续音成为属和弦三音后%s", (_label, landing, reports) => {
+    const tonic = tertianRegion("tonic-before", 0, { step: "C", alter: 0 }, "major");
+    const dominant = tertianRegion("dominant", 1, { step: "G", alter: 0 }, "major");
+    const target = tertianRegion("tonic-after", 2, { step: "C", alter: 0 }, "major");
+    const project = projectFor([tonic, dominant, target], "soprano", [pitch("B", 0, 4), landing]);
+    const [held, next] = project.satbTracks.find(track => track.id === "soprano")!.notes;
+    held.durationTicks = 2 * PPQ;
+    next.startTick = 2 * PPQ;
+
+    const { diagnostics, trace } = runObligation("resolution.leading-tone", project);
+    expect(trace.filter(entry => entry.reason === "obligation-opened")).toEqual([
+      expect.objectContaining({ tick: PPQ }),
+    ]);
+    expect(diagnostics).toEqual(reports ? [expect.objectContaining({
+      tick: 2 * PPQ, voiceIds: ["soprano"],
+    })] : []);
+  });
+
   it.each([V, V7])("原位属和弦接完整主和弦时，允许内声部导音下行三度至五音", (dominant) => {
     const project = projectForVoices([dominant(), I()], {
       soprano: [pitch("D", 0, 5), pitch("C", 0, 5)],
