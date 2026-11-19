@@ -1,5 +1,6 @@
 import {
   buildHarmonyAnalysis,
+  computeAnalysisInvalidationRanges,
   type AnalysisInvalidationRange,
   type AnalysisSlice,
   type HarmonyAnalysis,
@@ -658,7 +659,7 @@ export function runRulesSynchronously(
 
 export class RuleScheduler {
   private runToken = 0;
-  private previousSnapshot?: ProjectSnapshot;
+  private completedRuleSnapshot?: ProjectSnapshot;
   private cachedAnalysis?: HarmonyAnalysis;
   private cachedAnalysisSignature?: string;
   private previousRuleSignatures = new Map<string, string>();
@@ -682,6 +683,7 @@ export class RuleScheduler {
       satbTracks: project.satbTracks,
       chordTrack: project.chordTrack,
       auxiliaryTracks: project.auxiliaryTracks,
+      structure: project.structure,
     });
     if (this.cachedAnalysis && this.cachedAnalysisSignature === signature) {
       return Object.freeze({
@@ -693,9 +695,8 @@ export class RuleScheduler {
     const analysis = buildHarmonyAnalysis(
       project,
       revision,
-      this.previousSnapshot,
+      this.cachedAnalysis?.project,
     );
-    this.previousSnapshot = analysis.project;
     this.cachedAnalysis = analysis;
     this.cachedAnalysisSignature = signature;
     return analysis;
@@ -710,7 +711,11 @@ export class RuleScheduler {
     const rules = createHarmonyRuleContext(analysis);
     const diagnostics: HarmonyDiagnostic[] = [];
     const skippedRules: SkippedRule[] = [];
-    const canReuseRuleResults = analysis.invalidationRanges.length === 0;
+    // 上次准备的分析可能已取消；规则缓存对应的是上次完成检查的快照。
+    const canReuseRuleResults = analysis.invalidationRanges.length === 0 && (
+      this.completedRuleSnapshot === analysis.project ||
+      computeAnalysisInvalidationRanges(this.completedRuleSnapshot, analysis.project).length === 0
+    );
     const nextRuleSignatures = new Map<string, string>();
     const nextRuleDiagnostics = new Map<string, HarmonyDiagnostic[]>();
     const nextRuleSkips = new Map<string, SkippedRule[]>();
@@ -798,6 +803,7 @@ export class RuleScheduler {
       nextRuleSkips.set(definition.id, [...requirements, ...collected.skipped]);
     }
 
+    this.completedRuleSnapshot = analysis.project;
     this.previousRuleSignatures = nextRuleSignatures;
     this.previousRuleDiagnostics = nextRuleDiagnostics;
     this.previousRuleSkips = nextRuleSkips;
