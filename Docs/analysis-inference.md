@@ -55,8 +55,8 @@
 
 终止式从“和弦级 `cadenceType`”迁移为工程级范围标注 `chordTrack.cadenceAnnotations`（见 [data-model.md](./data-model.md) 与 [functional-harmony.md](./functional-harmony.md)）。检测入口 [`detectCadences(analysis)`](../src/domain/harmony/cadence/detect.ts) 读取 `phraseSegments` 与 `harmonySpans`，对每个乐句末端产生 `CadenceCandidate`：
 
-- `kind`：`full`（完全）、`half`（半）、`supplementary`（补充/变格）、`deceptive`（阻碍）。
-- `form`：`authentic` / `plagal`；`completion`：`perfect` / `imperfect`（仅当两端和弦均为原位、低音为 5 -> 1、且女高音落在主音时为完全）。
+- `kind`：`full`（全终止）、`half`（半终止）、`supplementary`（补充终止）、`deceptive`（阻碍终止）；`form` 区分正格（`authentic`）与变格（`plagal`）。变格不等同于补充：句末独立的 IV/iv → I/i 与正格收束后的变格尾声分别判断。
+- `completion` 描述完满性（`perfect` / `imperfect`），不是终止种类。正格全终止的完满判断核对原位属主、5 → 1 的实际低音及女高主音。独立变格候选只在两端转位与低音、落主时外声部起奏均有支持，并有不完满证据时给出 `full/plagal/imperfect`；不据此推断所有 S → T 的完成度。
 - 证据包括 `phrase-boundary`、`dominant-to-tonic`、`predominant-to-tonic`、`dominant-to-alternative`、`ends-on-dominant`、`cadential64-chain`、`bass-formula` 等。
 - 同一乐句存在竞争候选且分数接近时，降级为 `ambiguous` 并附带 `alternatives`。
 

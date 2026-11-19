@@ -1,5 +1,6 @@
 import {
   chordIdentityInversion,
+  chordIdentityToneSpellings,
   chordStructureQuality,
   harmonySemanticsConfidence,
   primaryHarmonyInterpretation,
@@ -380,6 +381,76 @@ function authenticCadence(
   });
 }
 
+function isImperfectPlagalClosing(
+  source: CadenceSpanFacts,
+  target: CadenceSpanFacts,
+  lastSourceSlice: AnalysisSlice | undefined,
+) {
+  const sourceChord = source.chord;
+  const targetChord = target.chord;
+  const isTriad = ({ identity: { structure } }: AnalysisChord) =>
+    structure.kind === "tertian" &&
+    (structure.quality === "major" || structure.quality === "minor") &&
+    structure.extensions.length === 0 && structure.alterations.length === 0;
+  if (!sourceChord || !targetChord || !isTriad(sourceChord) || !isTriad(targetChord) ||
+      source.degree !== 4 ||
+      !pitchClassEquals(sourceChord.identity.root, scaleDegreePitchClass(source.key, 4)) ||
+      !pitchClassEquals(targetChord.identity.root, target.key.tonic) ||
+      !writtenBassMatches(source) || !writtenBassMatches(target) || !isRootPosition(target)) return false;
+
+  const inversion = chordIdentityInversion(sourceChord.identity);
+  if (inversion !== 0 && inversion !== 1) return false;
+  const arrival = target.boundarySlice;
+  const soprano = arrival?.notes.soprano;
+  const precedingSoprano = lastSourceSlice?.notes.soprano;
+  const precedingBass = lastSourceSlice?.notes.bass;
+  if (!soprano || !precedingSoprano || !precedingBass ||
+      !pitchClassEquals(precedingBass.pitch, sourceChord.identity.bass) ||
+      soprano.startTick !== target.span.fromTick ||
+      arrival?.notes.bass?.startTick !== target.span.fromTick ||
+      pitchClassEquals(soprano.pitch, precedingSoprano.pitch)) return false;
+
+  const [root, third, fifth] = chordIdentityToneSpellings(targetChord.identity);
+  return pitchClassEquals(soprano.pitch, third) || pitchClassEquals(soprano.pitch, fifth) ||
+    (inversion === 1 && pitchClassEquals(soprano.pitch, root));
+}
+
+function hasAuthenticTailAnchor(
+  analysis: Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById" | "slices" | "phraseSegments">,
+  subdominant: CadenceSpanFacts,
+  measureFor: (tick: number) => ReturnType<typeof measureAtTick>,
+) {
+  const spans = analysis.harmonySpans;
+  const sourceIndex = spans.findIndex(span => span.id === subdominant.span.id);
+  const sourceSpan = spans[sourceIndex];
+  const hasSilence = (span: HarmonySpan) => span.sliceIndices.some(sliceIndex =>
+    Object.keys(analysis.slices[sliceIndex].notes).length === 0);
+  if (!sourceSpan || hasSilence(sourceSpan)) return false;
+
+  let following = factsFor(analysis, sourceSpan);
+  for (let index = sourceIndex - 1; index >= 0; index--) {
+    const span = spans[index];
+    if (span.toTick !== following.span.fromTick || hasSilence(span)) return false;
+    const preceding = factsFor(analysis, span);
+    if (!connectionIsValid(preceding, following)) return false;
+
+    if (isFifthDegreeDominant(preceding) && following.isTonic) {
+      if (following.span.toTick === sourceSpan.fromTick) return true;
+      const onset = following.span.fromTick;
+      const end = following.span.toTick;
+      const measure = measureFor(onset);
+      const sustainedTonic = measure?.startTick === onset && end >= measure.endTick;
+      const closesPhrase = analysis.phraseSegments.some(phrase =>
+        phrase.confidence !== "ambiguous" && onset < phrase.toTick && phrase.toTick <= end);
+      return (sustainedTonic || closesPhrase) && isRootPosition(following) &&
+        Boolean(writtenBassMatches(preceding) && writtenBassMatches(following));
+    }
+    if (!preceding.isTonic && !(preceding.isSubdominant && preceding.degree === 4)) return false;
+    following = preceding;
+  }
+  return false;
+}
+
 export function detectCadences(
   analysis: Pick<
     HarmonyAnalysis,
@@ -467,6 +538,16 @@ export function detectCadences(
             refs: [firstTonic.span.id, previous.span.id, terminal.span.id],
           }));
         }
+      }
+      const lastSourceSlice = analysis.slices[previous.span.sliceIndices.at(-1)!];
+      if (isImperfectPlagalClosing(previous, terminal, lastSourceSlice) &&
+          !hasAuthenticTailAnchor(analysis, previous, measureFor)) {
+        allCandidates.push(candidate(phrase, "full", [previous, terminal], [
+          phraseEvidence,
+          { code: "predominant-to-tonic", value: "句末独立变格收束 S -> T" },
+          { code: "stable-ending", value: "末端主功能稳定" },
+        ], { form: "plagal", completion: "imperfect", confidenceCap: "probable" }));
+        continue;
       }
       allCandidates.push(
         candidate(
