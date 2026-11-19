@@ -22,6 +22,7 @@ export interface CadenceEvidence {
     | "dominant-to-alternative"
     | "ends-on-dominant"
     | "cadential64-chain"
+    | "dominant-neighbor-prolongation"
     | "bass-formula"
     | "metric-support"
     | "soprano-tonic"

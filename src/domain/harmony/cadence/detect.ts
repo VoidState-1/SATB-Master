@@ -11,6 +11,8 @@ import {
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
 import { buildMeasures, measureAtTick } from "../../time";
+import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
+import { dominantNeighborEvidence } from "./dominantNeighbors";
 import type {
   AnalysisChord,
   AnalysisSlice,
@@ -321,14 +323,33 @@ function spansForPhrase(
   });
 }
 
-function dominantApproach(facts: readonly CadenceSpanFacts[], dominantIndex: number) {
+interface DominantApproach {
+  readonly path: readonly CadenceSpanFacts[];
+  readonly evidence: readonly CadenceEvidence[];
+}
+
+function dominantApproach(
+  facts: readonly CadenceSpanFacts[],
+  dominantIndex: number,
+  evidenceForGap?: (left: CadenceSpanFacts, right: CadenceSpanFacts) => CadenceEvidence | undefined,
+): DominantApproach {
   let start = dominantIndex;
-  while (start > 0 && isFifthDegreeDominant(facts[start]) && isRootPosition(facts[start - 1]) &&
-      isFifthDegreeDominant(facts[start - 1]) &&
-      connectionIsValid(facts[start - 1], facts[start])) start--;
+  const evidence: CadenceEvidence[] = [];
+  while (start > 0) {
+    const left = facts[start - 1], right = facts[start];
+    if (!isRootPosition(left) || !isFifthDegreeDominant(left) || !isFifthDegreeDominant(right)) break;
+    if (!connectionIsValid(left, right)) {
+      if (left.span.toTick >= right.span.fromTick || !sameKey(left.key, right.key) ||
+          left.interpretationStatus !== "resolved" || right.interpretationStatus !== "resolved") break;
+      const gap = evidenceForGap?.(left, right);
+      if (!gap) break;
+      evidence.unshift(gap);
+    }
+    start--;
+  }
   const preparation = facts[start - 1];
   if (preparation?.isCadential64 && connectionIsValid(preparation, facts[start])) start--;
-  return facts.slice(start, dominantIndex + 1);
+  return { path: facts.slice(start, dominantIndex + 1), evidence };
 }
 
 function isRootPosition(facts: CadenceSpanFacts) {
@@ -340,36 +361,38 @@ function fullApproach(
   dominantIndex: number,
   tonic: CadenceSpanFacts,
   measure: ReturnType<typeof measureAtTick>,
+  approach: DominantApproach,
 ) {
-  const approach = dominantApproach(facts, dominantIndex);
-  const first = approach[0];
-  const subdominant = facts[dominantIndex - approach.length];
+  if (approach.evidence.length) return approach;
+  const first = approach.path[0];
+  const subdominant = facts[dominantIndex - approach.path.length];
   if (measure && subdominant?.isSubdominant && subdominant.degree === 4 &&
       isRootPosition(subdominant) && writtenBassMatches(subdominant) &&
       isFifthDegreeDominant(first) && connectionIsValid(subdominant, first) &&
       subdominant.span.fromTick === measure.startTick && tonic.span.fromTick === measure.endTick &&
       subdominant.span.toTick - subdominant.span.fromTick > tonic.span.fromTick - first.span.fromTick) {
-    return [subdominant, ...approach];
+    return { ...approach, path: [subdominant, ...approach.path] };
   }
   return approach;
 }
 
 function authenticCadence(
   phrase: PhraseSegment,
-  approach: readonly CadenceSpanFacts[],
+  approach: DominantApproach,
   tonic: CadenceSpanFacts,
   landingEvidence: CadenceEvidence,
 ) {
-  const dominant = approach[approach.length - 1];
+  const dominant = approach.path.at(-1)!;
   const completion = completionFor(dominant, tonic);
-  const path = [...approach, tonic];
+  const path = [...approach.path, tonic];
   const bassFormula = hasBassFormula(dominant, tonic, 5, 1);
   const evidence: CadenceEvidence[] = [
     landingEvidence,
+    ...approach.evidence,
     { code: "dominant-to-tonic", value: "当前调性 D -> T" },
   ];
-  if (approach[0].isCadential64) evidence.push({ code: "cadential64-chain", value: "K46 -> D -> T" });
-  if (approach[0].isSubdominant) evidence.push({ code: "predominant-to-dominant", value: "强拍下属功能准备随后属、主的完全终止" });
+  if (approach.path[0].isCadential64) evidence.push({ code: "cadential64-chain", value: "K46 -> D -> T" });
+  if (approach.path[0].isSubdominant) evidence.push({ code: "predominant-to-dominant", value: "强拍下属功能准备随后属、主的完全终止" });
   if (bassFormula) evidence.push({ code: "bass-formula", value: "低音 5 -> 1" });
   evidence.push({ code: "stable-ending", value: "末端主功能稳定" });
   return candidate(phrase, "full", path, evidence, {
@@ -460,6 +483,10 @@ export function detectCadences(
   const allCandidates: CadenceCandidate[] = [];
   let measures: ReturnType<typeof buildMeasures> | undefined;
   const measureFor = (tick: number) => measureAtTick(measures ??= buildMeasures(analysis.project), tick);
+  let metricTimeline: ReturnType<typeof buildMetricTimeline> | undefined;
+  const metricAt = (tick: number) => metricPositionAt(metricTimeline ??= buildMetricTimeline(analysis.project), tick);
+  const gapEvidence = (left: CadenceSpanFacts, right: CadenceSpanFacts) =>
+    dominantNeighborEvidence(left, right, analysis.slices, metricAt);
   for (const phrase of analysis.phraseSegments) {
     if (phrase.confidence === "ambiguous") continue;
     const facts = spansForPhrase(analysis, phrase)
@@ -496,7 +523,11 @@ export function detectCadences(
       previous.isDominant &&
       terminal.isTonic
     ) {
-      const approach = fullApproach(facts, facts.length - 2, terminal, measureFor(previous.span.fromTick));
+      const dominantIndex = facts.length - 2;
+      const approach = fullApproach(
+        facts, dominantIndex, terminal, measureFor(previous.span.fromTick),
+        dominantApproach(facts, dominantIndex, gapEvidence),
+      );
       allCandidates.push(authenticCadence(phrase, approach, terminal, phraseEvidence));
     }
 
@@ -520,7 +551,9 @@ export function detectCadences(
         const onset = firstTonic.span.fromTick;
         const measure = measureFor(onset);
         const soprano = firstTonic.boundarySlice?.notes.soprano;
-        const preparation = dominantApproach(facts, facts.length - 4)[0];
+        const dominantIndex = facts.length - 4;
+        const dominantPath = dominantApproach(facts, dominantIndex, gapEvidence);
+        const preparation = dominantPath.path[0];
         const preparedPedal = preparation.isCadential64 && previous.span.semantics?.cadenceRole === "pedal64" &&
           previous.chord && pitchClassEquals(previous.chord.identity.bass, firstTonic.key.tonic);
         if (
@@ -531,7 +564,9 @@ export function detectCadences(
               .every(slice => slice.notes.soprano?.pitch.octave === soprano.pitch.octave &&
                 pitchClassEquals(slice.notes.soprano.pitch, soprano.pitch)))
         ) {
-          const approach = fullApproach(facts, facts.length - 4, firstTonic, measureFor(dominant.span.fromTick));
+          const approach = fullApproach(
+            facts, dominantIndex, firstTonic, measureFor(dominant.span.fromTick), dominantPath,
+          );
           allCandidates.push(authenticCadence(phrase, approach, firstTonic, {
             code: "metric-support",
             value: "小节强拍落主，正格收束后紧接句末补充变格",
@@ -600,13 +635,13 @@ export function detectCadences(
         (isFifthDegreeDominant(terminal) && writtenBassMatches(terminal) &&
           (isRootPosition(terminal) || phrase.endBoundary?.source === "manual")))
     ) {
-      const path = dominantApproach(facts, facts.length - 1);
+      const approach = dominantApproach(facts, facts.length - 1, gapEvidence);
       allCandidates.push(
         candidate(
           phrase,
           "half",
-          path,
-          [phraseEvidence, { code: "ends-on-dominant", value: "乐句末端为属功能" }],
+          approach.path,
+          [phraseEvidence, ...approach.evidence, { code: "ends-on-dominant", value: "乐句末端为属功能" }],
           { form: isFifthDegreeDominant(terminal) ? "authentic" : undefined },
         ),
       );
