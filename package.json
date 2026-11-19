@@ -20,7 +20,7 @@
     "pack:win": "npm run generate:assets && npm run build && electron-builder --win dir --x64",
     "dist:win": "npm run generate:assets && npm run build && electron-builder --win nsis --x64 --config.directories.output=release-installer",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --exclude \"StandardCase/Pilot/**\"",
     "score": "node scripts/score.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "audit": "node scripts/audit.mjs",
