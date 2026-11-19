@@ -24,6 +24,7 @@ import {
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
 import { leadingNeighborFrame, ornamentsSameLeadingHarmony } from "../state/leadingToneNeighbor";
+import { readDoubleDominantSeventhLanding } from "../state/doubleDominantSeventh";
 import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
 import { exchangesSupertonicSeventhWithRoot } from "./supertonicSeventhExchange";
 import {
@@ -588,6 +589,17 @@ function leadingToneTransition(
       "leading-tone-resolved",
       debugFacts,
     );
+
+  if (attacked && targetUnchanged && currentNote) {
+    const { payload } = environment.obligation;
+    const proof = readDoubleDominantSeventhLanding(environment.context.rules, currentNote.startTick);
+    if (proof && proof.leading.voiceId === payload.voiceId && proof.leadingArrival.id === currentNote.id &&
+        toMidi(proof.leading.note.pitch) === payload.leadingMidi &&
+        proof.leading.note.pitch.step === payload.leadingStep && proof.leading.note.pitch.alter === payload.leadingAlter &&
+        proof.dominantRoot.step === payload.targetStep && proof.dominantRoot.alter === payload.targetAlter) {
+      return decision(environment, "resolve", "double-dominant-leading-tone-to-dominant-seventh", debugFacts);
+    }
+  }
 
   if (attacked && targetUnchanged && innerLeadingToneDescendsToFifth(environment))
     return decision(environment, "resolve", "inner-leading-tone-descends-to-fifth", debugFacts);

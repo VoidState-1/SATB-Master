@@ -19,6 +19,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { chromaticPassingTransitionIds } from "./chromaticPassing";
 import { isRespeltDoubleDominantSeventh } from "./chromaticDoubleDominant";
+import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { recognizesAugmentedSixthPreparation } from "./chromaticAugmentedSixth";
 
 function validMelodyTransitions(
@@ -168,6 +169,21 @@ function preparesChromaticDominant(context: HarmonyRuleContext, transition: Melo
     toMidi(following.pitch) === toMidi(current.pitch) + 1);
 }
 
+function lowerDoubleDominantLeadingTone(context: HarmonyRuleContext, transition: MelodyTransition) {
+  if (!transition.sameKey || transition.writtenInterval.diatonicSteps !== 0 ||
+      transition.writtenInterval.semitones !== -1) return false;
+  const proof = readDoubleDominantSeventhLanding(context, transition.current.startTick);
+  return proof?.leading.voiceId === transition.voiceId && proof.leading.note.id === transition.previous.id &&
+    proof.leadingArrival.id === transition.current.id;
+}
+
+function preparesDoubleDominantSeventhBass(context: HarmonyRuleContext, transition: MelodyTransition) {
+  return transition.voiceId === "bass" && transition.sameKey &&
+    transition.writtenInterval.diatonicSteps === 0 && transition.writtenInterval.semitones === -1 &&
+    isDoubleDominantSeventhBassPreparation(context, transition.previous, transition.current);
+}
+
+
 function alteredIntervalRule(
   context: HarmonyRuleContext,
   ruleId: "melody.augmented-interval" | "melody.diminished-interval",
@@ -182,7 +198,10 @@ function alteredIntervalRule(
       named.quality !== expectedQuality ||
       Math.abs(transition.writtenInterval.semitones) === 0 ||
       passing?.has(transition.id) ||
-      (expectedQuality === "增" && (preparesChromaticDominant(context, transition) ||
+      (expectedQuality === "增" && (
+        lowerDoubleDominantLeadingTone(context, transition) ||
+        preparesDoubleDominantSeventhBass(context, transition) ||
+        preparesChromaticDominant(context, transition) ||
         isRespeltDoubleDominantSeventh(context, transition) ||
         recognizesAugmentedSixthPreparation(context, transition)))
     )
