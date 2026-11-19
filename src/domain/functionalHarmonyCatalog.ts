@@ -9,6 +9,7 @@ import {
   resolveChordIdentity,
   semanticsFromChordDraft,
   type ChordDraft,
+  type AugmentedSixthVariant,
   type ChordIdentity,
   type ChordQuality,
   type FunctionalDesignation,
@@ -42,7 +43,8 @@ export type FunctionalBaseId =
   | "N6"
   | "It+6"
   | "Fr+6"
-  | "Ger+6";
+  | "Ger+6"
+  | "DD++43";
 
 export interface FunctionalBaseDefinition {
   id: FunctionalBaseId;
@@ -60,6 +62,18 @@ export interface FunctionalBaseDefinition {
   augmentedSixthVariant?: ChordDraft["augmentedSixthVariant"];
   fixedTarget?: FunctionalTarget;
 }
+
+const AUGMENTED_SIXTH_DEFINITIONS = [
+  { variant: "italian", id: "It+6", title: "意大利增六和弦", specialRole: "italian6" },
+  { variant: "french", id: "Fr+6", title: "法国增六和弦", specialRole: "french6" },
+  { variant: "german", id: "Ger+6", title: "德国增六和弦", specialRole: "german6" },
+  { variant: "doubleAugmented43", id: "DD++43", title: "重属倍增三四和弦", specialRole: "doubleAugmented43" },
+] as const satisfies readonly {
+  variant: AugmentedSixthVariant;
+  id: FunctionalBaseId;
+  title: string;
+  specialRole: NonNullable<FunctionalDesignation["specialRole"]>;
+}[];
 
 function primary(family: FunctionalFamily): FunctionalDesignation {
   return {
@@ -304,26 +318,11 @@ export const FUNCTIONAL_BASE_DEFINITIONS: readonly FunctionalBaseDefinition[] =
       },
       quality: () => "major",
     },
-    ...(["italian", "french", "german"] as const).map(
-      (variant): FunctionalBaseDefinition => ({
-        id:
-          variant === "italian"
-            ? "It+6"
-            : variant === "french"
-              ? "Fr+6"
-              : "Ger+6",
-        label:
-          variant === "italian"
-            ? "It+6"
-            : variant === "french"
-              ? "Fr+6"
-              : "Ger+6",
-        title:
-          variant === "italian"
-            ? "意大利增六和弦"
-            : variant === "french"
-              ? "法国增六和弦"
-              : "德国增六和弦",
+    ...AUGMENTED_SIXTH_DEFINITIONS.map(
+      ({ variant, id, title, specialRole }): FunctionalBaseDefinition => ({
+        id,
+        label: id,
+        title,
         scope: "C",
         degree: 6,
         degreeAlteration: -1,
@@ -334,12 +333,7 @@ export const FUNCTIONAL_BASE_DEFINITIONS: readonly FunctionalBaseDefinition[] =
           notationSystem: "spasobin",
           kind: "augmented-sixth",
           primaryFunction: "subdominant",
-          specialRole:
-            variant === "italian"
-              ? "italian6"
-              : variant === "french"
-                ? "french6"
-                : "german6",
+          specialRole,
         },
         quality: () => "major",
         augmentedSixthVariant: variant,
@@ -364,6 +358,10 @@ export const FUNCTIONAL_TARGET_OPTIONS: ReadonlyArray<{
 
 export function functionalDefinition(id: FunctionalBaseId) {
   return DEFINITION_BY_ID.get(id)!;
+}
+
+export function functionalDefinitionSupportsMode(definition: FunctionalBaseDefinition, mode: KeyMode) {
+  return definition.id !== "DD++43" || mode === "major";
 }
 
 export function functionalScopeForForm(
@@ -532,11 +530,7 @@ export function functionalBaseIdFromDraft(
   keyMode?: KeyMode,
 ): FunctionalBaseId | undefined {
   if (draft.augmentedSixthVariant)
-    return draft.augmentedSixthVariant === "italian"
-      ? "It+6"
-      : draft.augmentedSixthVariant === "french"
-        ? "Fr+6"
-        : "Ger+6";
+    return AUGMENTED_SIXTH_DEFINITIONS.find(item => item.variant === draft.augmentedSixthVariant)?.id;
   switch (draft.designation?.kind) {
     case "cadential64":
       return "K46";
@@ -589,14 +583,8 @@ export function inferredFunctionalDefinition(
     quality: quality ?? "major",
     inversion: 0,
     designation: primary.designation,
-    augmentedSixthVariant:
-      primary.designation?.specialRole === "italian6"
-        ? "italian"
-        : primary.designation?.specialRole === "french6"
-          ? "french"
-          : primary.designation?.specialRole === "german6"
-            ? "german"
-            : undefined,
+    augmentedSixthVariant: AUGMENTED_SIXTH_DEFINITIONS
+      .find(item => item.specialRole === primary.designation?.specialRole)?.variant,
     source: primary.source,
     confidence: primary.confidence,
   } satisfies ChordDraft;
@@ -679,6 +667,7 @@ export function compatibleFunctionalInterpretations(
     for (const tonic of keyTonicOptions(mode)) {
       const localKey = { tonic, mode };
       for (const definition of FUNCTIONAL_BASE_DEFINITIONS) {
+        if (!functionalDefinitionSupportsMode(definition, mode)) continue;
         for (const form of definition.forms) {
           if (
             (definition.fixedInversion !== undefined &&

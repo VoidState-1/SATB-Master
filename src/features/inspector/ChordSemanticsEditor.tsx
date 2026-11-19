@@ -3,7 +3,6 @@ import {
   resolveChordIdentity,
 } from "../../domain/chordModel";
 import {
-  FUNCTIONAL_BASE_DEFINITIONS,
   FUNCTIONAL_TARGET_OPTIONS,
   inversionFigures,
 } from "../../domain/functionalHarmonyCatalog";
@@ -33,6 +32,7 @@ export function ChordSemanticsEditor({
   const {
     baseId,
     baseDefinition: definition,
+    availableDefinitions,
     form,
     maximumInversion,
     secondaryCandidates,
@@ -58,7 +58,7 @@ export function ChordSemanticsEditor({
           }
         >
           {!baseId ? <option value="">未指定</option> : null}
-          {FUNCTIONAL_BASE_DEFINITIONS.map((item) => (
+          {availableDefinitions.map((item) => (
             <option key={item.id} value={item.id}>
               {item.label} · {item.title}
             </option>
@@ -81,7 +81,7 @@ export function ChordSemanticsEditor({
         >
           {(definition?.forms ?? [form]).map((item) => (
             <option key={item} value={item}>
-              {item === "triad"
+              {baseId === "DD++43" ? "四音变和弦" : item === "triad"
                 ? "三和弦"
                 : item === "seventh"
                   ? "七和弦"
@@ -103,7 +103,7 @@ export function ChordSemanticsEditor({
             )
           }
         >
-          <option value="0">原位</option>
+          <option value="0">{baseId === "DD++43" ? "降六级低音（固定）" : "原位"}</option>
           {maximumInversion >= 1 ? <option value="1">第一转位</option> : null}
           {maximumInversion >= 2 ? <option value="2">第二转位</option> : null}
           {maximumInversion === 3 ? <option value="3">第三转位</option> : null}

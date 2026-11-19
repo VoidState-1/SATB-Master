@@ -16,6 +16,10 @@ import type {
 import { formatPosition } from "../../domain/time";
 import type { ProjectDocument } from "../../domain/project";
 
+function isExternalRuleUnavailable(item: HarmonyCheckResult["skippedRules"][number]) {
+  return item.ruleId.startsWith("external:") && item.reason === "insufficient-context";
+}
+
 export interface DiagnosticsPanelProps {
   project: ProjectDocument;
   result: HarmonyCheckResult;
@@ -54,7 +58,7 @@ export function DiagnosticsSummary({
         {errors} 个错误 · {warnings} 个警告 · {suggestions} 个建议
         {ignoredCount > 0 ? ` · ${ignoredCount} 条已忽略` : ""}
       </span>
-      {result.diagnostics.length === 0 ? (
+      {result.diagnostics.length === 0 && !result.skippedRules.some(isExternalRuleUnavailable) ? (
         <span className="diagnostic-clear">
           <CheckCircle2 /> 当前范围未发现问题
         </span>
@@ -92,6 +96,7 @@ export function DiagnosticsPanel({
   const ignoredCount = result.diagnostics.filter((item) =>
     ignoredDiagnosticIds.has(item.id),
   ).length;
+  const unavailable = result.skippedRules.filter(isExternalRuleUnavailable);
 
   return (
     <section
@@ -107,6 +112,11 @@ export function DiagnosticsPanel({
         </header>
       ) : null}
       <div className="diagnostic-list">
+        {unavailable.length > 0 ? (
+          <ul aria-label="外置规则输入不足">
+            {unavailable.map((item) => <li key={item.ruleId}>{item.message}</li>)}
+          </ul>
+        ) : null}
         {result.diagnostics.map((item) => {
           const ignored = ignoredDiagnosticIds.has(item.id);
           return (

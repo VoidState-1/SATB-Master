@@ -23,7 +23,7 @@ export type ChordQuality =
 
 export type ChordExtension = 6 | 7 | 9 | 11 | 13;
 export type ChordToneDegree = 1 | 3 | 5 | 7 | 9 | 11 | 13;
-export type AugmentedSixthVariant = "italian" | "french" | "german";
+export type AugmentedSixthVariant = "italian" | "french" | "german" | "doubleAugmented43";
 
 export interface ChordToneAlteration {
   degree: 5 | 9 | 11 | 13;
@@ -97,7 +97,7 @@ export interface FunctionalDesignation {
   kind: FunctionalDesignationKind;
   primaryFunction?: FunctionalFamily;
   secondaryFunction?: FunctionalFamily;
-  specialRole?: "neapolitan" | "italian6" | "french6" | "german6";
+  specialRole?: "neapolitan" | "italian6" | "french6" | "german6" | "doubleAugmented43";
 }
 
 export interface HarmonyInterpretation {
@@ -371,7 +371,7 @@ function augmentedSixthToneSpellings(
         : [
             { semitones: 0, steps: 0 },
             { semitones: 4, steps: 2 },
-            { semitones: 7, steps: 4 },
+            { semitones: 7, steps: variant === "doubleAugmented43" ? 3 : 4 },
             { semitones: 10, steps: 5 },
           ];
   return specifications.map((item) =>
@@ -624,6 +624,8 @@ export function harmonySemanticsCompatibleWithIdentity(
 ) {
   const signatures = new Set<string>();
   for (const interpretation of semantics.interpretations) {
+    if (identity.structure.kind === "augmented-sixth" && identity.structure.variant === "doubleAugmented43" &&
+        (interpretation.localKey ?? projectKey).mode !== "major") return false;
     const single: HarmonySemantics = {
       ...semantics,
       interpretations: [interpretation],

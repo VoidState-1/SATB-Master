@@ -106,6 +106,7 @@ SATB_RULE.register({
 | `group` | 内置 11 个分组或 `custom` | 设置页分类 |
 | `defaultSeverity` | `error` / `warning` / `suggestion` | 首次挂载默认值 |
 | `dependencyScope` | `note` / `slice` / `chord` / `phrase` / `project` | 依赖范围 |
+| `supportsDoubleAugmented43` | `true` 或省略 | 本条规则理解实写 `DD++43`；可在同一包里逐条声明 |
 | `configVersion` | 1 到 1,000,000 的整数 | 配置结构版本，不是包版本 |
 | `options` | 最多 32 项封闭 schema | 自动生成设置控件 |
 | `supportedExceptionContexts` | 已知 context 列表 | 规则承认的特例证据 |
@@ -186,6 +187,10 @@ cadence / modulation / ambiguous-semantics / insufficient-context
 宿主不解释 `payload`，也不提供中央“解决义务”枚举。创建、保留、满足和删除状态均由所属规则决定。单规则最多 512 个状态；单个 payload 序列化后最大 16 KiB；`ownerRuleId`、时间和对象引用会由宿主校验。
 
 ## 6. 可见上下文
+
+理解实写 `DD++43` 的规则可在自己的 manifest 项声明 `supportsDoubleAugmented43: true`。普通和弦字段提供真实 `identity.structure.variant` 和 `designation.specialRole`（均为 `doubleAugmented43`），包括切片、转换及和声区段。状态规则通过原有 `step.slice`、`step.span` 和 `step.analysis` 读取。
+
+旧规则在无此形态的工程沿用完整 v3 输入。含该形态的工程仍会运行旧 `note` 范围规则，提供原始 SATB 音符，并在只供这些规则使用的输入中略去不支持的和弦、重建派生分析。声明 `note` 的规则应仅依赖单音信息。其余未声明支持的规则本次标为 `insufficient-context`，诊断面板会显示曲中缺口的位置。即使声明了局部范围，`evaluate(context)` 和状态规则的 `step.analysis` 也能查看全曲，因而暂停该条规则的整次运行。支持新形态的规则以及内置规则照常运行。
 
 API v3 直接公开裁剪后的完整 V3 和声语义，不再生成旧 `FunctionalClass`、单解释 projection 或 `chordProgressions`：
 

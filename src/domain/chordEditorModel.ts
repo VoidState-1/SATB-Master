@@ -19,6 +19,7 @@ import {
   compatibleFunctionalInterpretations,
   functionalBaseIdFromDraft,
   functionalDefinition,
+  functionalDefinitionSupportsMode,
   type CompatibleFunctionalInterpretation,
   type FunctionalBaseDefinition,
   type FunctionalBaseId,
@@ -89,6 +90,7 @@ export interface ChordEditorModel {
   readonly draft: ChordDraft;
   readonly baseId?: FunctionalBaseId;
   readonly baseDefinition?: FunctionalBaseDefinition;
+  readonly availableDefinitions: readonly FunctionalBaseDefinition[];
   readonly form: FunctionalChordForm;
   readonly maximumInversion: ChordDraft["inversion"];
   readonly canApplyTarget: boolean;
@@ -107,6 +109,7 @@ export function createChordEditorModel(
   const baseId = functionalBaseIdFromDraft(draft, keyEvent.mode);
   const baseDefinition = baseId ? functionalDefinition(baseId) : undefined;
   const identity = resolveChordIdentity(draft, keyEvent);
+  const mode = draft.localKey?.mode ?? keyEvent.mode;
   const primary = primaryHarmonyInterpretation(semanticsFromChordDraft(draft));
   const fallback = primary.localKey ?? fallbackKey(keyEvent);
   const compatibleCandidates = compatibleFunctionalInterpretations(identity);
@@ -134,6 +137,7 @@ export function createChordEditorModel(
     draft,
     baseId,
     baseDefinition,
+    availableDefinitions: FUNCTIONAL_BASE_DEFINITIONS.filter(definition => functionalDefinitionSupportsMode(definition, mode)),
     form: chordFormFromDraft(draft),
     maximumInversion: maximumInversionForDraft(draft),
     canApplyTarget: baseId === "D" || baseId === "DVII",
@@ -158,12 +162,11 @@ export function applyChordEditorAction(
   const model = createChordEditorModel(draft, keyEvent);
   const mode = draft.localKey?.mode ?? keyEvent.mode;
   switch (action.type) {
-    case "select-functional-definition":
-      return applyFunctionalDefinition(
-        draft,
-        functionalDefinition(action.id),
-        mode,
-      );
+    case "select-functional-definition": {
+      const definition = functionalDefinition(action.id);
+      return functionalDefinitionSupportsMode(definition, mode)
+        ? applyFunctionalDefinition(draft, definition, mode) : draft;
+    }
     case "select-functional-form":
       return model.baseDefinition
         ? applyFunctionalForm(

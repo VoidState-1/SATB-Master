@@ -26,6 +26,7 @@ import type {
   ExternalRuleWorkerResponse,
 } from "../domain/harmony/external/protocol";
 import type { ProjectDocument } from "../domain/project";
+import { formatPosition } from "../domain/time";
 import { loadExternalRulePackageSource } from "./externalRuleLibrary";
 
 let requestId = 0;
@@ -117,12 +118,13 @@ export async function inspectExternalRuleCandidate(
 function completeExternalRun(options: {
   diagnostics: HarmonyDiagnostic[];
   failures: ExternalRuleFailure[];
+  unavailable?: HarmonyCheckResult["skippedRules"];
   revision: number;
   superseded: boolean;
 }): ExternalRuleRunResult {
   const completed = completeHarmonyResult({
     diagnostics: options.diagnostics,
-    skippedRules: skippedRulesForFailures(options.failures),
+    skippedRules: [...skippedRulesForFailures(options.failures), ...(options.unavailable ?? [])],
     revision: options.revision,
     superseded: options.superseded,
   });
@@ -140,6 +142,16 @@ function manifestsEqual(
   right: ExternalRuleManifest,
 ) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function usesDoubleAugmented43(chord: ProjectDocument["chordTrack"]["regions"][number]) {
+  const { structure } = chord.identity;
+  if (structure.kind === "augmented-sixth" && structure.variant === "doubleAugmented43")
+    return true;
+  const hasRole = (interpretation: NonNullable<typeof chord.semantics>["interpretations"][number]) =>
+    interpretation.designation?.specialRole === "doubleAugmented43";
+  return chord.semantics?.interpretations.some(hasRole) ||
+    chord.semantics?.alternatives?.some(hasRole);
 }
 
 export class ExternalRuleRuntime {
@@ -178,7 +190,7 @@ export class ExternalRuleRuntime {
       ]),
     );
     const failures: ExternalRuleFailure[] = [];
-    const entries: Extract<
+    let entries: Extract<
       ExternalRuleWorkerRequest,
       { type: "run" }
     >["entries"] = [];
@@ -268,6 +280,42 @@ export class ExternalRuleRuntime {
       options.analysis ?? buildHarmonyAnalysis(project, revision);
     if (analysis.revision !== revision)
       throw new Error("外置规则收到的分析 revision 与运行请求不一致");
+    const unsupported = project.chordTrack.regions.filter(usesDoubleAugmented43);
+    const unavailable: HarmonyCheckResult["skippedRules"] = [];
+    let legacyNoteAnalysis: HarmonyAnalysis | undefined;
+    if (unsupported.length > 0) {
+      const locations = unsupported.map((chord) => {
+        const start = formatPosition(project, chord.startTick);
+        const end = formatPosition(project, chord.startTick + chord.durationTicks);
+        return `${start}–${end}`;
+      }).join("、");
+      // v3 的 evaluate 和 process 都能读到全曲。局部 scope 也无法保证规则能在缺失片段旁继续判定。
+      entries = entries.filter((entry) => {
+        if (entry.rule.supportsDoubleAugmented43 || entry.rule.dependencyScope === "note")
+          return true;
+        const packageId = entry.package.manifest.packageId;
+        unavailable.push({
+          ruleId: `external:${packageId}:${entry.package.contentHash}:${entry.rule.id}`,
+          reason: "insufficient-context",
+          partial: false,
+          message: `外置规则「${entry.rule.label}」（${packageId}）输入不足。DD++43 位于 ${locations}，该规则需要完整和声输入，本次未运行。`,
+        });
+        return false;
+      });
+      if (entries.length === 0)
+        return completeExternalRun({ diagnostics: [], failures, unavailable, revision, superseded: false });
+      if (entries.some((entry) => !entry.rule.supportsDoubleAugmented43)) {
+        const excludedIds = new Set(unsupported.map((chord) => chord.id));
+        const noteProject = {
+          ...project,
+          chordTrack: {
+            ...project.chordTrack,
+            regions: project.chordTrack.regions.filter((chord) => !excludedIds.has(chord.id)),
+          },
+        };
+        legacyNoteAnalysis = buildHarmonyAnalysis(noteProject, revision);
+      }
+    }
     const worker = createRuleWorker();
     this.activeWorker = worker;
     try {
@@ -277,6 +325,7 @@ export class ExternalRuleRuntime {
           id: ++requestId,
           type: "run",
           context: buildExternalRuleContext(analysis, project),
+          legacyNoteContext: legacyNoteAnalysis && buildExternalRuleContext(legacyNoteAnalysis),
           entries,
         },
         signal,
@@ -316,6 +365,7 @@ export class ExternalRuleRuntime {
       return completeExternalRun({
         diagnostics,
         failures,
+        unavailable,
         revision,
         superseded: Boolean(signal?.aborted),
       });
@@ -344,6 +394,7 @@ export class ExternalRuleRuntime {
       return completeExternalRun({
         diagnostics: [],
         failures,
+        unavailable,
         revision,
         superseded: false,
       });

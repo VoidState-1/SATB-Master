@@ -7,7 +7,6 @@ import {
 } from "../../../domain/chordModel";
 import { formatChord } from "../../../domain/chords";
 import {
-  FUNCTIONAL_BASE_DEFINITIONS,
   FUNCTIONAL_TARGET_OPTIONS,
   functionalScopeForForm,
   inversionFigures,
@@ -68,6 +67,7 @@ export function ChordPalette({
   const {
     baseId,
     baseDefinition,
+    availableDefinitions,
     form,
     maximumInversion: inversionLimit,
     canApplyTarget,
@@ -330,7 +330,7 @@ export function ChordPalette({
           <div className="chord-palette-columns is-functional">
             <section className="chord-palette-column functional-base">
               <h3>功能</h3>
-              {FUNCTIONAL_BASE_DEFINITIONS.map((definition) => (
+              {availableDefinitions.map((definition) => (
                 <button
                   key={definition.id}
                   type="button"
@@ -365,7 +365,7 @@ export function ChordPalette({
                     )
                   }
                 >
-                  {FORM_LABELS[option]}
+                  {baseId === "DD++43" ? "四音变和弦" : FORM_LABELS[option]}
                 </button>
               ))}
             </section>
@@ -394,7 +394,7 @@ export function ChordPalette({
                     )
                   }
                 >
-                  {option.label}
+                  {baseId === "DD++43" && option.value === 0 ? "降六级低音（固定）" : option.label}
                 </button>
               ))}
             </section>

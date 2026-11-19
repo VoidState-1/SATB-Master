@@ -1,4 +1,4 @@
-import { applyFunctionalDefinition, applyFunctionalForm, applyFunctionalTarget, FUNCTIONAL_BASE_DEFINITIONS } from "../functionalHarmonyCatalog";
+import { applyFunctionalDefinition, applyFunctionalForm, applyFunctionalTarget, functionalDefinitionSupportsMode, FUNCTIONAL_BASE_DEFINITIONS } from "../functionalHarmonyCatalog";
 import { functionalTargetForDegree, type ChordDraft, type ChordQuality, type ScaleDegree } from "../chordModel";
 import type { KeyMode } from "../pitch";
 import { fail, type SourceLocation } from "./types";
@@ -13,6 +13,7 @@ export function chordDraft(symbol: string, mode: KeyMode, location?: SourceLocat
     .find((item) => baseSymbol.startsWith(item.id) && /^(?:|6|64|46|6\/4|7|65|6\/5|43|4\/3|42|4\/2|2|9)$/.test(baseSymbol.slice(item.id.length)));
   let figures: string;
   if (definition) {
+    if (!functionalDefinitionSupportsMode(definition, mode)) fail(`和弦 ${definition.id} 需要大调语境`, location);
     draft = applyFunctionalDefinition(draft, definition, mode);
     figures = baseSymbol.slice(definition.id.length);
     const form = figures === "9" ? "ninth" : /^(7|65|6\/5|43|4\/3|42|4\/2|2)$/.test(figures) ? "seventh" : "triad";

@@ -51,7 +51,9 @@ async function handleRequest(
       const evaluation = await evaluateExternalRuleSource({
         source: entry.source,
         ruleId: entry.rule.id,
-        context: request.context,
+        context: entry.rule.supportsDoubleAugmented43
+          ? request.context
+          : request.legacyNoteContext ?? request.context,
         config: entry.config,
       });
       evaluations.push({

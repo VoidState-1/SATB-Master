@@ -17,6 +17,7 @@ import {
 } from "../harmony/rules/configSchema";
 import {
   isSupportedKeySignature,
+  pitchClassEquals,
   toMidi,
   type SpelledPitch,
   type SpelledPitchClass,
@@ -322,7 +323,7 @@ function validateFunctionalDesignation(
     (value.secondaryFunction === undefined ||
       functionalFamilies.has(value.secondaryFunction as FunctionalFamily)) &&
     (value.specialRole === undefined ||
-      ["neapolitan", "italian6", "french6", "german6"].includes(
+      ["neapolitan", "italian6", "french6", "german6", "doubleAugmented43"].includes(
         value.specialRole as string,
       ))
   );
@@ -409,9 +410,9 @@ function validateChordIdentity(value: unknown): value is ChordIdentity {
   )
     return false;
   if (value.structure.kind === "augmented-sixth")
-    return ["italian", "french", "german"].includes(
-      value.structure.variant as string,
-    );
+    return value.structure.variant === "doubleAugmented43"
+      ? pitchClassEquals(value.root, value.bass)
+      : ["italian", "french", "german"].includes(value.structure.variant as string);
   if (value.structure.kind !== "tertian") return false;
   return (
     chordQualities.has(value.structure.quality as ChordQuality) &&

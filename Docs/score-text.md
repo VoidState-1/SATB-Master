@@ -118,7 +118,7 @@ annotations {
 
 和弦使用 `at` 加 `duration`，或者 `range`。`duration=4` 和 `duration=1/4` 均表示四分音符；范围可跨小节。
 
-支持功能记法 T、t、S、s、D、d、SII、DTIII、TSVI、DVII、DD、DDVII、K46、N6、It+6、Fr+6、Ger+6，以及 I、ii6、V7、I64、viio7、V7/II 等级数记法。转位可使用 `64` 或 `6/4`、`65` 或 `6/5` 等。功能记法沿用目录的大小调含义与可用结构，T 与 t 分别表示大、小主和弦。
+支持功能记法 T、t、S、s、D、d、SII、DTIII、TSVI、DVII、DD、DDVII、K46、N6、It+6、Fr+6、Ger+6、DD++43，以及 I、ii6、V7、I64、viio7、V7/II 等级数记法。转位可使用 `64` 或 `6/4`、`65` 或 `6/5` 等。功能记法沿用目录的大小调含义与可用结构，T 与 t 分别表示大、小主和弦。DD++43 表示大调中有实写升二级和固定降六级低音的重属倍增三四和弦，也可通过和弦标注的 `localKey` 指定局部大调。
 
 和弦用途 `role` 可为 `passing64`、`pedal64`、`cadential64`、`deceptive`。局部调性写为 `localKey="G major"`；`confidence` 支持 `certain`、`probable`、`ambiguous`、`unknown`，默认 `certain`，表示调用者明确声明的输入。
 

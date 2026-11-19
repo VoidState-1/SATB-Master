@@ -524,12 +524,9 @@ export function augmentedSixthVoicingRule(context: HarmonyRuleContext) {
             .length,
       );
       if (counts.every((count, index) => count === expected[index])) return;
-      const variantLabel =
-        chord.identity.structure.variant === "italian"
-          ? "It+6"
-          : chord.identity.structure.variant === "french"
-            ? "Fr+6"
-            : "Ger+6";
+      const variantLabel = {
+        italian: "It+6", french: "Fr+6", german: "Ger+6", doubleAugmented43: "DD++43",
+      }[chord.identity.structure.variant];
       diagnostics.push(
         diagnostic(
           "chord.augmented-sixth-voicing",

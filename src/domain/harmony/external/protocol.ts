@@ -20,6 +20,7 @@ export type ExternalRuleWorkerRequest =
       id: number;
       type: "run";
       context: ExternalRuleContext;
+      legacyNoteContext?: ExternalRuleContext;
       entries: Array<{
         package: InstalledExternalRulePackage;
         source: string;

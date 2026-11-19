@@ -189,7 +189,8 @@ function functionalNameSingle(
   const quality = chordStructureQuality(identity);
   const definition = inferredFunctionalDefinition(semantics, quality, keyMode);
   if (!definition) return "?";
-  if (["K46", "N6", "It+6", "Fr+6", "Ger+6"].includes(definition.id))
+  if (definition.augmentedSixthVariant === "doubleAugmented43") return "?";
+  if (definition.id === "K46" || definition.id === "N6" || definition.augmentedSixthVariant)
     return definition.label;
 
   const draft = chordDraftFromIdentity(identity, semantics);
@@ -217,7 +218,9 @@ export function formatChordIdentity(
   semantics?: HarmonySemantics,
   keyMode?: KeyEvent["mode"],
 ): FormattedChordName {
-  const roman = semantics
+  const writtenLabel = identity.structure.kind === "augmented-sixth" && identity.structure.variant === "doubleAugmented43"
+    ? functionalDefinition("DD++43").label : undefined;
+  const roman = writtenLabel ?? (semantics
     ? semantics.interpretations
         .map((interpretation) =>
           romanNameSingle(
@@ -226,9 +229,9 @@ export function formatChordIdentity(
           ),
         )
         .join(" = ")
-    : "?";
+    : "?");
   const absolute = absoluteName(identity);
-  const functional = semantics
+  const functional = writtenLabel ?? (semantics
     ? semantics.interpretations
         .map((interpretation) =>
           functionalNameSingle(
@@ -238,7 +241,7 @@ export function formatChordIdentity(
           ),
         )
         .join(" = ")
-    : "?";
+    : "?");
   const summary = semanticSummary(semantics);
   return {
     functional,

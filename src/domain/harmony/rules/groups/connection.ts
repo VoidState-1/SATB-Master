@@ -19,6 +19,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { ConnectionView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { isAuxiliaryFrenchSixthReturn } from "./auxiliaryAugmentedSixth";
+import { isMajorTonicSixFour, resolvesDoubleAugmentedFourThree } from "../../doubleAugmentedFourThree";
 
 // Spasobin §30, example 460. The fifth can descend a semitone before
 // the two augmented-sixth endpoints resolve from the French sixth.
@@ -130,13 +131,27 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
       highDelta === 1 &&
       pitchClassEquals(targetHigh.pitch, dominantPitch),
     );
-    if ((isDominant || isCadential64) && lowResolves && highResolves)
+    const isDoubleAugmented43 = sourceChord.identity.structure.kind === "augmented-sixth" &&
+      sourceChord.identity.structure.variant === "doubleAugmented43";
+    const actualTargetKey = targetInterpretation?.localKey ?? targetSlice.key;
+    const isDoubleAugmentedTarget = isDoubleAugmented43 &&
+      targetResolution.status !== "ambiguous" &&
+      sourceResolution.status !== "ambiguous" && actualTargetKey.mode === sourceKey.mode &&
+      pitchClassEquals(actualTargetKey.tonic, sourceKey.tonic) &&
+      isMajorTonicSixFour(targetChord.identity, sourceKey);
+    if (isDoubleAugmentedTarget &&
+        pitchClassEquals(sourceChord.identity.root, low.note.pitch) &&
+        pitchClassEquals(sourceChord.identity.bass, sourceSlice.notes.bass!.pitch) &&
+        !context.analysis.phraseBoundaries.some(mark =>
+          mark.source === "manual" && sourceSlice.tick < mark.tick && mark.tick <= targetSlice.tick) &&
+        resolvesDoubleAugmentedFourThree(sourceSlice.notes, targetSlice.notes, sourceKey)) continue;
+    if (!isDoubleAugmented43 && (isDominant || isCadential64) && lowResolves && highResolves)
       continue;
     if (isGermanToFrenchContinuation(context, candidate, sourceKey)) continue;
     if (!isDominant && !isCadential64 &&
         isAuxiliaryFrenchSixthReturn(context, candidate, sourceKey)) continue;
 
-    const problems = [
+    const problems = isDoubleAugmented43 ? ["重属倍增三四须以实写升二级、升四级的上行半音及降六级的下行半音解决到大调主四六"] : [
       ...(!isDominant && !isCadential64 ? ["目标不是明确的属功能或 K46"] : []),
       ...(!lowResolves ? ["增六低端未下行半音到属音"] : []),
       ...(!highResolves ? ["增六高端未上行半音到属音"] : []),
@@ -156,7 +171,7 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
         {
           chordIds: [sourceChord.id, targetChord.id],
           params: {
-            target: isCadential64 ? "K46" : isDominant ? "D" : "other",
+          target: isCadential64 || isDoubleAugmentedTarget ? "K46" : isDominant ? "D" : "other",
             lowDelta: lowDelta ?? 99,
             highDelta: highDelta ?? 99,
           },

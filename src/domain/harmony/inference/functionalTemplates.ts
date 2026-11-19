@@ -40,7 +40,8 @@ export function buildFunctionalTemplates(
 ): readonly FunctionalChordTemplate[] {
   return Object.freeze(
     FUNCTIONAL_BASE_DEFINITIONS.filter((definition) =>
-      key.mode === "minor" || (definition.id !== "dtIII" && definition.id !== "dVII"),
+      definition.id !== "DD++43" &&
+      (key.mode === "minor" || (definition.id !== "dtIII" && definition.id !== "dVII")),
     ).flatMap((definition) =>
       definition.forms.flatMap((form) =>
         inversionsFor(definition, form).map((expectedInversion) => ({
@@ -109,7 +110,8 @@ export function functionalTier(baseId: FunctionalBaseId): 0 | 1 | 2 {
     baseId === "N6" ||
     baseId === "It+6" ||
     baseId === "Fr+6" ||
-    baseId === "Ger+6"
+    baseId === "Ger+6" ||
+    baseId === "DD++43"
   )
     return 2;
   return 0;

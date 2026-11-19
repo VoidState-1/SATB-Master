@@ -105,6 +105,7 @@ export interface ExternalRuleManifestRule {
   group: ExternalRuleGroupId;
   defaultSeverity: ExternalRuleSeverity;
   dependencyScope: RuleDependencyScope;
+  supportsDoubleAugmented43?: true;
   configVersion: number;
   options: readonly ExternalRuleOptionDefinition[];
   supportedExceptionContexts: readonly RuleExceptionContext[];
@@ -368,6 +369,8 @@ export function parseExternalRuleManifest(value: unknown): ExternalRuleManifest 
       throw new Error(`规则“${id}”的默认严重程度无效`);
     if (!RULE_DEPENDENCY_SCOPES.includes(dependencyScope))
       throw new Error(`规则“${id}”的依赖范围无效`);
+    if (entry.supportsDoubleAugmented43 !== undefined && entry.supportsDoubleAugmented43 !== true)
+      throw new Error(`规则“${id}”的 supportsDoubleAugmented43 必须为 true 或省略`);
     if (
       !Number.isInteger(entry.configVersion) ||
       (entry.configVersion as number) < 1 ||
@@ -388,6 +391,7 @@ export function parseExternalRuleManifest(value: unknown): ExternalRuleManifest 
       group,
       defaultSeverity,
       dependencyScope,
+      ...(entry.supportsDoubleAugmented43 === true ? { supportsDoubleAugmented43: true } : {}),
       configVersion: entry.configVersion as number,
       options: parseRuleOptions(entry.options, id),
       supportedExceptionContexts,
