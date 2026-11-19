@@ -8,20 +8,20 @@ import {
   toMidi,
   writtenInterval,
 } from "../../../pitch";
-import type { RuleStepContext } from "../../runtime";
+import type { AnalysisSlice } from "../../analysis";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { crossesManualPhraseBoundary } from "../groups/dominantSixthSubstitution";
 import type { ObligationEnvironment } from "./obligation";
 import type { LeadingTonePayload } from "./tendency";
 
 const degrees = [1, 2, 3, 4, 5, 6, 7] as const;
 
-function writtenSlot(context: RuleStepContext, start: number, end: number) {
-  const first = context.rules.sliceAt(start);
+function writtenSlot(context: HarmonyRuleContext, key: AnalysisSlice["key"], start: number, end: number) {
+  const first = context.sliceAt(start);
   const chord = first?.chord;
   if (!first?.completeSatb || first.tick !== start || !first.notes.bass || !chord || chord.startTick !== start ||
       chord.startTick + chord.durationTicks !== end) return undefined;
-  const meaning = context.rules.harmony.primaryInterpretation(chord);
-  const key = context.slice.key;
+  const meaning = context.harmony.primaryInterpretation(chord);
   if (meaning.status !== "resolved" || meaning.value.appliedTarget ||
       chord.semantics?.cadenceRole || chord.semantics?.pedalContext ||
       (meaning.value.localKey && (meaning.value.localKey.mode !== key.mode ||
@@ -35,7 +35,7 @@ function writtenSlot(context: RuleStepContext, start: number, end: number) {
       !tones.every(tone => scale.some(pitch => pitchClassEquals(tone, pitch))) ||
       !tones.every(tone => Object.values(first.notes).some(note => pitchClassEquals(note.pitch, tone)))) return undefined;
 
-  const frames = [...context.rules.slices({ overlapping: { fromTick: start, toTick: end } })];
+  const frames = [...context.slices({ overlapping: { fromTick: start, toTick: end } })];
   if (frames.at(-1)?.endTick !== end || frames.some(frame => {
     const bassNote = frame.notes.bass;
     if (frame.chord?.id !== chord.id || frame.key.id !== key.id || !frame.completeSatb ||
@@ -69,6 +69,44 @@ function shiftsBy(left: NonNullable<ReturnType<typeof writtenSlot>>, right: NonN
  * seam between motifs does not inherit that relation. Check the narrower
  * case where the middle motif lands on a triad rooted on the ambient VII.
  */
+export function diatonicSequenceAtMiddleArrival(source: AnalysisSlice, context: HarmonyRuleContext, departureTick?: number) {
+  const { key, chord: middleArrival } = source;
+  const middleHead = context.sliceAt(source.tick - 1)?.chord;
+  if (!middleArrival || !middleHead || source.tick !== middleArrival.startTick ||
+      !pitchClassEquals(middleArrival.identity.root, leadingTonePitchClass(key))) return undefined;
+
+  const arrivalOffset = source.tick - middleHead.startTick;
+  const nextStart = source.tick + middleArrival.durationTicks;
+  const nextArrival = nextStart + arrivalOffset;
+  if (arrivalOffset <= 0 || (departureTick !== undefined && departureTick !== nextStart && departureTick !== nextArrival))
+    return undefined;
+
+  const period = nextStart - middleHead.startTick;
+  const firstStart = middleHead.startTick - period;
+  const end = nextStart + period;
+  if (firstStart < 0 || crossesManualPhraseBoundary(context, firstStart, end - 1)) return undefined;
+
+  const firstHead = writtenSlot(context, key, firstStart, firstStart + arrivalOffset);
+  const firstArrival = writtenSlot(context, key, firstStart + arrivalOffset, middleHead.startTick);
+  const midHead = writtenSlot(context, key, middleHead.startTick, source.tick);
+  const midArrival = writtenSlot(context, key, source.tick, nextStart);
+  const lastHead = writtenSlot(context, key, nextStart, nextArrival);
+  const lastArrival = writtenSlot(context, key, nextArrival, end);
+  if (!firstHead || !firstArrival || !midHead || !midArrival || !lastHead || !lastArrival ||
+      midArrival.size !== 3 || pitchClassEquals(lastHead.root, key.tonic) ||
+      pitchClassEquals(lastArrival.root, key.tonic)) return undefined;
+
+  // A seventh/triad (or triad/triad) model with an ascending written
+  // fourth between roots. A diatonic copy may make that fourth augmented.
+  const rootMotion = writtenInterval({ ...firstHead.root, octave: 4 }, { ...firstArrival.root, octave: 4 });
+  if ((rootMotion.diatonicSteps + 7) % 7 !== 3) return undefined;
+  const steps = writtenInterval(firstHead.firstBass, midHead.firstBass).diatonicSteps;
+  if (Math.abs(steps) !== 1 || !shiftsBy(firstHead, midHead, steps) || !shiftsBy(midHead, lastHead, steps) ||
+      !shiftsBy(firstArrival, midArrival, steps) || !shiftsBy(midArrival, lastArrival, steps)) return undefined;
+
+  return { nextStart, lastHead, lastArrival };
+}
+
 export function leavesDiatonicSequenceLeadingTone(environment: ObligationEnvironment<LeadingTonePayload>) {
   const { context, obligation } = environment;
   const { slice, rules } = context;
@@ -79,39 +117,12 @@ export function leavesDiatonicSequenceLeadingTone(environment: ObligationEnviron
 
   const source = rules.sliceAt(openedAt.tick);
   const leading = source?.notes[voiceId];
-  const middleArrival = source?.chord;
-  const middleHead = rules.sliceAt(openedAt.tick - 1)?.chord;
-  if (!source || !leading || !middleArrival || !middleHead ||
-      source.tick !== middleArrival.startTick || !pitchClassEquals(leading.pitch, middleArrival.identity.root) ||
+  if (source?.tick !== openedAt.tick || !leading ||
       !pitchClassEquals(leading.pitch, leadingTonePitchClass(key))) return false;
 
-  const arrivalOffset = source.tick - middleHead.startTick;
-  const nextStart = source.tick + middleArrival.durationTicks;
-  const nextArrival = nextStart + arrivalOffset;
-  if (arrivalOffset <= 0 || (slice.tick !== nextStart && slice.tick !== nextArrival)) return false;
-
-  const period = nextStart - middleHead.startTick;
-  const firstStart = middleHead.startTick - period;
-  const end = nextStart + period;
-  if (firstStart < 0 || crossesManualPhraseBoundary(context.rules, firstStart, end - 1)) return false;
-
-  const firstHead = writtenSlot(context, firstStart, firstStart + arrivalOffset);
-  const firstArrival = writtenSlot(context, firstStart + arrivalOffset, middleHead.startTick);
-  const midHead = writtenSlot(context, middleHead.startTick, source.tick);
-  const midArrival = writtenSlot(context, source.tick, nextStart);
-  const lastHead = writtenSlot(context, nextStart, nextArrival);
-  const lastArrival = writtenSlot(context, nextArrival, end);
-  if (!firstHead || !firstArrival || !midHead || !midArrival || !lastHead || !lastArrival ||
-      midArrival.size !== 3 || pitchClassEquals(lastHead.root, key.tonic) ||
-      pitchClassEquals(lastArrival.root, key.tonic)) return false;
-
-  // A seventh/triad (or triad/triad) model with an ascending written
-  // fourth between roots. A diatonic copy may make that fourth augmented.
-  const rootMotion = writtenInterval({ ...firstHead.root, octave: 4 }, { ...firstArrival.root, octave: 4 });
-  if ((rootMotion.diatonicSteps + 7) % 7 !== 3) return false;
-  const steps = writtenInterval(firstHead.firstBass, midHead.firstBass).diatonicSteps;
-  if (Math.abs(steps) !== 1 || !shiftsBy(firstHead, midHead, steps) || !shiftsBy(midHead, lastHead, steps) ||
-      !shiftsBy(firstArrival, midArrival, steps) || !shiftsBy(midArrival, lastArrival, steps)) return false;
+  const sequence = diatonicSequenceAtMiddleArrival(source, rules, slice.tick);
+  if (!sequence) return false;
+  const { nextStart, lastHead, lastArrival } = sequence;
 
   if (slice.tick === nextStart) return true;
 

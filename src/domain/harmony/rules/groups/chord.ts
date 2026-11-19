@@ -29,6 +29,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { leadingToneForFunction } from "../services/harmony";
+import { diatonicSequenceAtMiddleArrival } from "../state/diatonicSequenceLeadingTone";
 import { resolvesDominantSixthSubstitution } from "./dominantSixthSubstitution";
 import { heldSuspensionsAt } from "./heldSuspensions";
 
@@ -254,9 +255,15 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
   return diagnostics;
 }
 
+interface RepeatedChordToneTarget {
+  tone: SpelledPitchClass;
+  applied?: boolean;
+}
+
 interface RepeatedChordTonePolicy {
   id: "chord.doubled-leading-tone" | "chord.doubled-seventh";
-  target(fact: ChordSliceFact): { tone: SpelledPitchClass; applied?: boolean } | undefined;
+  target(fact: ChordSliceFact): RepeatedChordToneTarget | undefined;
+  allowsRepetition?(fact: ChordSliceFact, target: RepeatedChordToneTarget): boolean;
   title: string;
   message(chord: ChordSliceFact["chord"], target: SpelledPitchClass): string;
 }
@@ -281,7 +288,7 @@ function evaluateRepeatedChordToneRule(
     if (!target) return;
     const { tone, applied } = target;
     const repeated = fact.active.filter(({ note }) => pitchClassEquals(note.pitch, tone));
-    if (repeated.length <= 1) return;
+    if (repeated.length <= 1 || policy.allowsRepetition?.(fact, target)) return;
     diagnostics.push(
       diagnostic(
         policy.id,
@@ -312,6 +319,13 @@ export function doubledLeadingToneRule(context: HarmonyRuleContext) {
       const resolution = context.harmony.primaryInterpretation(chord);
       const interpretation = resolution.status === "resolved" ? resolution.value : undefined;
       return leadingToneForFunction(slice.key, interpretation);
+    },
+    allowsRepetition: ({ slice, chord }, { tone, applied }) => {
+      const { structure, root, bass } = chord.identity;
+      // Chapter 26 §8, example 26–378: the repeated root is copied from the sequence model.
+      return !applied && structure.kind === "tertian" && structure.quality === "diminished" &&
+        pitchClassEquals(root, tone) && pitchClassEquals(root, bass) &&
+        Boolean(diatonicSequenceAtMiddleArrival(slice, context));
     },
     title: "重复导音",
     message: (_chord, target) =>

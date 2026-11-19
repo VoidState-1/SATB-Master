@@ -37,6 +37,10 @@ function leadingWarnings(project: ReturnType<typeof example>) {
 
 const seamWarnings = [[4 * PPQ, "bass"], [5 * PPQ, "alto"]];
 
+function doubledLeadingTones(project: ReturnType<typeof example>) {
+  return checkHarmony(project).diagnostics.filter(item => item.ruleId === "chord.doubled-leading-tone");
+}
+
 describe("第 26 章调内模进中的导音义务", () => {
   it("放行第二组尾的旧义务，以及在第三组头同音重奏后才离开的声部", () => {
     expect(leadingWarnings(example())).toEqual([]);
@@ -76,5 +80,41 @@ describe("第 26 章调内模进中的导音义务", () => {
 
   it("模进后真正的 V→I 女高 B3 错到 E4，仍报告其导音", () => {
     expect(leadingWarnings(example({ lastSoprano: "E4/2" }))).toEqual([[8 * PPQ, "soprano"]]);
+  });
+});
+
+describe("调内模进复制的减三和弦重复根音", () => {
+  const repeatedRoot = expect.objectContaining({ tick: 3 * PPQ, severity: "error", voiceIds: ["alto", "bass"] });
+
+  it("四声部确实依次移位时可复制七级和弦的重复根音", () => {
+    expect(doubledLeadingTones(example())).toEqual([]);
+  });
+
+  it.each<Example>([{ thirdTenor: "E3/4 E3/4" }, { initialSoprano: "F5/4 E5/4" }])(
+    "有一组节奏或音区不匹配时仍报重复导音", variation => {
+      expect(doubledLeadingTones(example(variation))).toContainEqual(repeatedRoot);
+    },
+  );
+
+  it("穿过换句的音组不作为重复依据", () => {
+    const project = example();
+    project.structure.phraseBoundaries.push({ id: "cut", tick: 4 * PPQ, source: "manual", confidence: "certain" });
+    expect(doubledLeadingTones(project)).toContainEqual(repeatedRoot);
+  });
+
+  it("属六和弦中的两个导音仍报错", () => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 2/4
+bars 1..1 {
+ S: | D5/4 E5/4 |
+ A: | B4/4 C5/4 |
+ T: | G4/2 |
+ B: | B2/4 C3/4 |
+ H: | V6/4 I/4 |
+}`).project;
+    expect(doubledLeadingTones(project)).toContainEqual(expect.objectContaining({
+      tick: 0, severity: "error", voiceIds: ["alto", "bass"],
+    }));
   });
 });
