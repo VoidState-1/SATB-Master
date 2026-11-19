@@ -18,7 +18,7 @@ import type {
 } from "../analysis";
 import { isCadential64Span } from "../rules/connector";
 import type { PhraseSegment } from "../phrase";
-import { clipHarmonySpan } from "./spanRange";
+import { clipHarmonySpan, sliceWithinSpan } from "./spanRange";
 import type {
   CadenceCandidate,
   CadenceConfidence,
@@ -65,9 +65,8 @@ function boundarySlice(
   analysis: Pick<HarmonyAnalysis, "slices">,
   span: HarmonySpan,
 ) {
-  return span.sliceIndices
-    .map((index) => analysis.slices[index])
-    .find(Boolean);
+  const first = analysis.slices[span.sliceIndices[0]];
+  return first && sliceWithinSpan(first, span);
 }
 
 function familyOf(
@@ -313,8 +312,10 @@ function spansForPhrase(
   return analysis.harmonySpans.flatMap((span) => {
     const part = clipHarmonySpan(span, analysis.slices, phrase.fromTick, phrase.toTick);
     if (!part) return [];
-    if (part.toTick < span.toTick && phrase.endBoundary?.source !== "manual" &&
-        analysis.slices[part.sliceIndices.at(-1)! + 1]?.attackVoiceIds.length !== 4) return [];
+    if (part.toTick < span.toTick && phrase.endBoundary?.source !== "manual") {
+      const following = analysis.slices[part.sliceIndices.at(-1)! + 1];
+      if (following?.tick !== part.toTick || following.attackVoiceIds.length !== 4) return [];
+    }
     return [part];
   });
 }

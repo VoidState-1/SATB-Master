@@ -1,6 +1,6 @@
 import type { NonChordToneRole, VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
-import { clipHarmonySpan } from "../../cadence/spanRange";
+import { clipHarmonySpan, sliceWithinSpan } from "../../cadence/spanRange";
 import type {
   AnalysisSlice,
   HarmonyAnalysis,
@@ -128,7 +128,7 @@ export function createHarmonyRuleIndexes(
       const span = clipHarmonySpan(view.span, analysis.slices, fromTick, toTick);
       if (!span) return [];
       if (span === view.span) return [view];
-      const slices = span.sliceIndices.map(index => analysis.slices[index]);
+      const slices = span.sliceIndices.map(index => sliceWithinSpan(analysis.slices[index], span));
       return [Object.freeze({ span, slices: Object.freeze(slices), firstSlice: slices[0], lastSlice: slices[slices.length - 1],
         chords: Object.freeze(view.chords.filter(chord => span.regionIds.includes(chord.id))) })];
     });

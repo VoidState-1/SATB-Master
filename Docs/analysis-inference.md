@@ -62,6 +62,8 @@
 
 候选不是标注。用户通过 `editing.ts` 的终止式命令（`add/update/removeCadenceAnnotation`）把候选或人工判断写为 `CadenceAnnotation`，并绑定 `phraseId` 与 `fromTick/toTick`。分析快照同时暴露 `cadenceCandidates`（未写回的候选）与 `cadenceAnnotations`（已写回的标注），并提供 `cadenceAtTick` 索引供规则与 UI 查询。
 
+人工句界可以落在持续音内部。终止候选和已保存终止的规则视图都按实际半开区间裁剪；持续中的音不会因此重新起奏，全局规则切片也不被分割。
+
 ## 5. 自动和弦推导
 
 [`inferChords(project, options)`](../src/domain/harmony/inference/inferChords.ts) 面向尚未标注和弦的 SATB 工程，输出 `ChordInferenceResult`。流程：

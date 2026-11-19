@@ -210,6 +210,47 @@ bars 1..2 {
     expect(validateProject(afterDeletion)).toBe(true);
   });
 
+  it("持续属和弦中的人工句界保留前后句的实际覆盖，不制造新的起奏", () => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 2/4
+bars 1..2 {
+  S: | D5/2 | D5/4 C5/4 |
+  A: | G4/2 | G4/4 G4/4 |
+  T: | B3/2 | B3/4 E4/4 |
+  B: | G2/2 | G2/4 C3/4 |
+  H: | D/2 | D/4 T/4 |
+}`).project;
+    const split = PPQ * 1.5;
+    const initial = buildHarmonyAnalysis(project);
+    expect(initial.cadenceCandidates).toMatchObject([{ kind: "full", fromTick: 0, toTick: 4 * PPQ }]);
+    project.structure.phraseBoundaries = [{ id: "split", tick: split, source: "manual", confidence: "certain" }];
+    const analysis = buildHarmonyAnalysis(project);
+    expect(analysis.cadenceCandidates).toMatchObject([
+      { kind: "half", fromTick: 0, toTick: split },
+      { kind: "full", fromTick: split, toTick: 4 * PPQ },
+    ]);
+    expect(analysis.slices).toEqual(initial.slices);
+    const [half, full] = createHarmonyRuleIndexes(analysis).cadenceViews;
+    expect(half.spans.at(-1)?.lastSlice).toMatchObject({ tick: 0, endTick: split });
+    expect(full.spans[0].firstSlice).toMatchObject({ tick: split, endTick: 2 * PPQ, attackVoiceIds: [] });
+    const annotated = addCadenceAnnotation(project, {
+      id: "accepted", phraseId: half.phraseId, fromTick: 0, toTick: split,
+      kind: "half", source: "accepted-candidate", confidence: "certain", locked: false,
+    });
+    expect(annotated.error).toBeUndefined();
+    const saved = createHarmonyRuleIndexes(buildHarmonyAnalysis(annotated.project)).cadenceViews
+      .find(view => view.annotation?.id === "accepted");
+    expect(saved?.spans.at(-1)?.lastSlice.endTick).toBe(split);
+    project.structure.phraseBoundaries = [{ id: "estimate", tick: split, source: "inferred",
+      confidence: "probable", inferenceFingerprint: phraseInferenceFingerprint(project) }];
+    const estimated = buildHarmonyAnalysis(project);
+    expect(estimated.phraseSegments).toHaveLength(2);
+    expect(estimated.cadenceCandidates.some(item => item.kind === "half")).toBe(false);
+    project.structure.phraseBoundaries = [{ id: "old", tick: split, source: "inferred", confidence: "certain", stale: true }];
+    expect(buildHarmonyAnalysis(project).cadenceCandidates).toEqual(initial.cadenceCandidates);
+  });
+
   it("连续属色彩及其终止四六进入范围，强拍延长的下属可作为完全终止的起点", () => {
     const score = `satb 1
 key C major
