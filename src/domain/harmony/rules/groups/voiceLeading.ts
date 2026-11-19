@@ -1,4 +1,4 @@
-import type { AnalysisNote, AnalysisSlice, SliceTransition } from "../../analysis";
+import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { RuleConfig, RuleDiagnostic } from "../../runtime";
 import {
   chordIdentityToneSpellings,
@@ -20,7 +20,6 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { isMozartFifth } from "./mozartFifths";
 
 function chromaticHarmonyLicenses(
   context: HarmonyRuleContext,
@@ -215,7 +214,7 @@ interface VoicePairRulePolicy {
   id: VoicePairRuleId;
   title: string;
   message: string;
-  matches(fact: VoicePairTransitionFact, transition: SliceTransition): boolean;
+  matches(fact: VoicePairTransitionFact): boolean;
 }
 
 function isPerfectOctave(interval: VoicePairTransitionFact["currentInterval"]) {
@@ -236,7 +235,7 @@ function evaluateVoicePairRule(
   const diagnostics: RuleDiagnostic[] = [];
   for (const transition of context.sliceTransitions()) {
     for (const fact of context.voiceLeading.voicePairs(transition)) {
-      if (!policy.matches(fact, transition)) continue;
+      if (!policy.matches(fact)) continue;
       const [upperId, lowerId] = fact.voiceIds;
       const [previousUpper, previousLower] = fact.previousNotes;
       const [currentUpper, currentLower] = fact.currentNotes;
@@ -288,11 +287,10 @@ export function parallelFifthsRule(context: HarmonyRuleContext) {
     id: "voice-leading.parallel-fifths",
     title: "平行或反向纯五度",
     message: "两个声部同向或反向移动，并连续形成纯五度（含复音程）。",
-    matches: (fact, transition) =>
+    matches: (fact) =>
       bothVoicesMove(fact) &&
       isPerfectFifth(fact.previousInterval) &&
-      isPerfectFifth(fact.currentInterval) &&
-      !isMozartFifth(context, transition, fact),
+      isPerfectFifth(fact.currentInterval),
   });
 }
 
@@ -482,7 +480,7 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     description:
       "检查任意两个声部是否同向或反向进行并连续构成纯五度（含纯十二度等复音程）；持续音或重复同音不计入。",
     rationale:
-      "纯五度的声学共鸣高度融合，连续进行容易削弱声部独立性。斯波索宾第 30 章允许完整德增六解决到原位属三和弦时，低音与一个内声部平行下行半音。",
+      "纯五度的声学共鸣高度融合。两个声部同向或反向连续形成纯五度及其复音程，都会削弱声部独立性，因此一并检查。斜向进行及两个声部均重复同音时不按连续五度处理。",
     group: "voiceLeading",
     defaultSeverity: "error",
     requires: ["written-pitches"],
