@@ -1,6 +1,7 @@
 import { chordIdentityEquals, chordIdentityInversion, chordIdentityToneSpellingForDegree, primaryHarmonyInterpretation, type HarmonySemantics } from "../../chordModel";
 import { isWrittenStep, pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
 import { fitCadentialRevoicing } from "./candidates";
+import { isCanonicalTonicFifthOmission } from "./fit";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation } from "./types";
 
@@ -168,6 +169,38 @@ function realizesWrittenSixFourResolution(
   });
 }
 
+// A tripled-root tonic can establish the pedal before a complete IV64–I return.
+function omittedPedalAnchor(
+  observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[],
+  start: number, end: number, middle: ChordInferenceCandidate, right: ChordInferenceCandidate | undefined,
+  boundaries: readonly number[],
+) {
+  if (!right || !(right.functionalBaseId === "T" || right.functionalBaseId === "t") ||
+      !(middle.functionalBaseId === "S" || middle.functionalBaseId === "s") ||
+      chordIdentityInversion(right.identity) !== 0 || start === 0) return;
+  const before = observations[start - 1], after = observations[end + 1];
+  if (boundaries.some(tick => before.fromTick < tick && tick <= after.fromTick)) return;
+  const pedal = before.bass;
+  if (!pedal || !observations.slice(start - 1, end + 2).every(item =>
+      completeWithActualBass(item) && item.bass?.id === pedal.id &&
+      item.key.id === before.key.id && sameKey(item, before))) return;
+  // Spasobin §13.6: from the incomplete tonic one voice descends a third
+  // into IV64. Another upper tonic supplies its doubled pedal.
+  const middleThird = chordIdentityToneSpellingForDegree(middle.identity, 3);
+  const during = observations[start];
+  const descendsThird = middleThird && observationNotes(before).some(({ voiceId, note }) => {
+    const next = during.activeNotes[voiceId];
+    return next && pitchClassEquals(note.pitch, right.identity.root) &&
+      pitchClassEquals(next.pitch, middleThird) && writtenInterval(note.pitch, next.pitch).diatonicSteps === -2;
+  });
+  if (!descendsThird || !observations.slice(start, end + 1).every(item =>
+      observationNotes(item).filter(({ note }) => pitchClassEquals(note.pitch, pedal.pitch)).length === 2 &&
+      item.metric?.confidence === "certain" && before.metric && item.metric.level < before.metric.level)) return;
+  return sets[start - 1].find(candidate => candidate.functionalBaseId === right.functionalBaseId &&
+    chordIdentityEquals(candidate.identity, right.identity) && candidate.fit.spellingConsistent &&
+    isCanonicalTonicFifthOmission(before, candidate.identity));
+}
+
 /** Recognize a complete weak six-four between two presentations of the same harmony. */
 export function classifySixFours(
   observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[], acceptMedium = true,
@@ -182,7 +215,8 @@ export function classifySixFours(
     while (end + 1 < sets.length && triads[end + 1] && sameKey(observations[end], observations[end + 1]) &&
            chordIdentityEquals(middle.identity, triads[end + 1]!.identity) &&
            observations[end].bass?.pitch.octave === observations[end + 1].bass?.pitch.octave) end++;
-    const left = triads[start - 1], right = triads[end + 1];
+    const right = triads[end + 1];
+    const left = triads[start - 1] ?? omittedPedalAnchor(observations, sets, start, end, middle, right, phraseBoundaries);
     const role = left && right && roleBetween(left, middle, right, observations[start - 1], observations[start], observations[end + 1]);
     if (role) {
       for (let i = start; i <= end; i++) {
