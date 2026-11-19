@@ -13,6 +13,7 @@ import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../
 import { buildMeasures, measureAtTick } from "../../time";
 import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
+import { dominantLandingGapEvidence } from "./dominantLandingGap";
 import type {
   AnalysisChord,
   AnalysisSlice,
@@ -398,7 +399,8 @@ function authenticCadence(
   return candidate(phrase, "full", path, evidence, {
     form: "authentic",
     completion,
-    confidenceCap: completion && bassFormula && tonic.span.toTick === phrase.toTick
+    confidenceCap: completion && bassFormula && tonic.span.toTick === phrase.toTick &&
+      !approach.evidence.some(item => item.code === "dominant-before-tonic-gap")
       ? undefined
       : "probable",
   });
@@ -505,10 +507,15 @@ export function detectCadences(
     const previous = facts.at(-2);
     const previousPrevious = facts.at(-3);
     const phraseEvidence = evidenceForPhrase(phrase);
+    const landingGap = previous && terminal.isTonic && isFifthDegreeDominant(previous) &&
+      previous.interpretationStatus === "resolved" && sameKey(previous.key, terminal.key) &&
+      previous.span.toTick < terminal.span.fromTick &&
+      dominantLandingGapEvidence(previous, terminal, analysis.slices, metricAt, analysis.project.ppq);
+    const connectsToTerminal = previous && (connectionIsValid(previous, terminal) || landingGap);
     // A single applied label can be tonicization. A local V–I needs the
     // bass formula, or an independently established same-key preparation.
     if (!sameKey(terminal.key, keyAtTick(analysis, terminal.span.fromTick))) {
-      if (!previous || !isFifthDegreeDominant(previous) || !terminal.isTonic || !connectionIsValid(previous, terminal)) continue;
+      if (!previous || !isFifthDegreeDominant(previous) || !terminal.isTonic || !connectsToTerminal) continue;
       const rootPositionClosure = isRootPosition(previous) && isRootPosition(terminal) && hasBassFormula(previous, terminal, 5, 1);
       const establishedInvertedClosure = previousPrevious && connectionIsValid(previousPrevious, previous) &&
         (previousPrevious.isSubdominant || (previousPrevious.isTonic && facts.at(-4)?.isDominant &&
@@ -519,7 +526,7 @@ export function detectCadences(
 
     if (
       previous &&
-      connectionIsValid(previous, terminal) &&
+      connectsToTerminal &&
       previous.isDominant &&
       terminal.isTonic
     ) {
@@ -528,7 +535,8 @@ export function detectCadences(
         facts, dominantIndex, terminal, measureFor(previous.span.fromTick),
         dominantApproach(facts, dominantIndex, gapEvidence),
       );
-      allCandidates.push(authenticCadence(phrase, approach, terminal, phraseEvidence));
+      const supported = landingGap ? { ...approach, evidence: [...approach.evidence, landingGap] } : approach;
+      allCandidates.push(authenticCadence(phrase, supported, terminal, phraseEvidence));
     }
 
     if (
