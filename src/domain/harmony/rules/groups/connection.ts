@@ -5,6 +5,8 @@ import {
   pitchClassEquals,
   scaleDegreePitchClass,
   toMidi,
+  writtenInterval,
+  type KeyLike,
 } from "../../../pitch";
 import {
   activeNotes,
@@ -14,8 +16,51 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import type { ConnectionView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { isAuxiliaryFrenchSixthReturn } from "./auxiliaryAugmentedSixth";
+
+// Spasobin §30, example 460. The fifth can descend a semitone before
+// the two augmented-sixth endpoints resolve from the French sixth.
+function isGermanToFrenchContinuation(
+  context: HarmonyRuleContext, link: ConnectionView, key: KeyLike,
+) {
+  const { sourceBoundary: before, targetBoundary: after } = link;
+  const german = before.chord?.identity;
+  const french = after.chord?.identity;
+  if (german?.structure.kind !== "augmented-sixth" || german.structure.variant !== "german" ||
+      french?.structure.kind !== "augmented-sixth" || french.structure.variant !== "french" ||
+      before.endTick !== after.tick || before.key.id !== after.key.id ||
+      context.phraseAt(before.tick)?.id !== context.phraseAt(after.tick)?.id) return false;
+
+  const low = scaleDegreePitchClass({ ...key, mode: "minor" }, 6);
+  if (![german.root, german.bass, french.root, french.bass, before.notes.bass!.pitch]
+      .every(pitch => pitchClassEquals(pitch, low))) return false;
+  const reading = context.harmony.primaryInterpretation(after.chord!);
+  const sourceReading = context.harmony.primaryInterpretation(before.chord!);
+  if (reading.status === "ambiguous" || sourceReading.status === "ambiguous") return false;
+  const targetKey = (reading.status === "resolved" && reading.value.localKey) || after.key;
+  if (!pitchClassEquals(targetKey.tonic, key.tonic) || targetKey.mode !== key.mode) return false;
+
+  const tones = chordIdentityToneSpellings(german);
+  const notes = activeNotes(before);
+  if (!tones.every(tone => notes.some(({ note }) => pitchClassEquals(tone, note.pitch)))) return false;
+  const frenchFourth = chordIdentityToneSpellings(french)[2];
+  const retained = notes.every(({ voiceId, note }) => {
+    const next = after.notes[voiceId]!;
+    if (note.nonChordToneRole || next.nonChordToneRole) return false;
+    if (!pitchClassEquals(note.pitch, tones[2])) return context.pitch.sameWrittenPitch(note, next);
+    const descent = writtenInterval(note.pitch, next.pitch);
+    return descent.diatonicSteps === -1 && descent.semitones === -1 &&
+      pitchClassEquals(next.pitch, frenchFourth);
+  });
+  if (!retained) return false;
+  // Leave the final resolution to the ordinary check on the outgoing
+  // connection. An incomplete phrase provides no subsequent connection.
+  const next = context.spanNeighborhood(link.target).outgoing;
+  return !!next?.connection.contiguous && next.connection.sameKey && next.targetBoundary.completeSatb &&
+    next.sourceBoundary.endTick === next.targetBoundary.tick;
+}
 
 export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
@@ -87,6 +132,7 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
     );
     if ((isDominant || isCadential64) && lowResolves && highResolves)
       continue;
+    if (isGermanToFrenchContinuation(context, candidate, sourceKey)) continue;
     if (!isDominant && !isCadential64 &&
         isAuxiliaryFrenchSixthReturn(context, candidate, sourceKey)) continue;
 
