@@ -26,6 +26,7 @@ import type {
 import { hasExactPitch, noteEvidence } from "../helpers/core";
 import type { SpanView } from "../context/views";
 import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
+import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneNeighbor";
 
 export type VoiceObligationPayload = {
   readonly [key: string]: JsonValue;
@@ -114,6 +115,11 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
       const note = slice.notes[voiceId];
       if (!note || !pitchClassEquals(note.pitch, leadingTone)) return [];
       if (!moment.attackedVoiceIds.includes(voiceId) && previous?.notes[voiceId]?.id !== note.id) return [];
+      if (moment.attackedVoiceIds.includes(voiceId)) {
+        const frame = leadingNeighborFrame(context.rules, voiceId, note);
+        if (frame && (ornamentsSameLeadingHarmony(context.rules, frame) ||
+            accentedOrnamentOverWrittenTriad(context.rules, frame))) return [];
+      }
       return [
         {
           partitionKey: `voice:${voiceId}|target:${targetTonic.step}:${targetTonic.alter}`,

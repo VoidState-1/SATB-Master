@@ -1,9 +1,8 @@
-import { chordIdentityEquals, chordIdentityToneSpellings } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../../pitch";
-import { VOICE_ORDER } from "../../project/voice";
+import { chordIdentityEquals } from "../../chordModel";
+import { pitchClassEquals } from "../../pitch";
 import type { MetricPosition } from "../../rhythm/metric";
 import type { AnalysisSlice } from "../analysis";
-import { hasCompleteWrittenTertianVoicing } from "../writtenTertian";
+import { writtenNeighborsOverHeldBass } from "../writtenNeighbors";
 import type { CadenceEvidence, CadenceSpanFacts } from "./types";
 
 /** Spasobin §§40.1–2, 40.4. Recognize two returning upper neighbors within one stationary dominant. */
@@ -30,31 +29,9 @@ export function dominantNeighborEvidence(
   const metric = metricAt(middle.tick);
   if (metric?.confidence !== "certain" || metric.level >= 2) return;
 
-  const tones = chordIdentityToneSpellings(identity);
-  const contains = (pitch: (typeof tones)[number]) => tones.some(tone => pitchClassEquals(tone, pitch));
-  const bass = middle.notes.bass!;
-  if (!pitchClassEquals(bass.pitch, identity.root) ||
-      !tones.every(tone => VOICE_ORDER.some(voice => pitchClassEquals(before.notes[voice]!.pitch, tone)))) return;
-
-  const neighbors: string[] = [];
-  for (const voice of VOICE_ORDER) {
-    const first = before.notes[voice]!;
-    const neighbor = middle.notes[voice]!;
-    const last = after.notes[voice]!;
-    if (first.nonChordToneRole || last.nonChordToneRole || !contains(first.pitch) ||
-        !spelledPitchEquals(first.pitch, last.pitch) ||
-        toMidi(first.pitch) < toMidi(bass.pitch) || toMidi(neighbor.pitch) < toMidi(bass.pitch)) return;
-    if (first.id === neighbor.id && neighbor.id === last.id) continue;
-    if (voice === "bass" || (neighbor.nonChordToneRole && neighbor.nonChordToneRole !== "neighbor") ||
-        contains(neighbor.pitch) || neighbor.startTick !== middle.tick || last.startTick !== after.tick ||
-        first.startTick + first.durationTicks !== middle.tick ||
-        neighbor.startTick + neighbor.durationTicks !== after.tick ||
-        neighbor.durationTicks > Math.min(first.durationTicks, last.durationTicks)) return;
-    const step = writtenInterval(first.pitch, neighbor.pitch);
-    if (!isWrittenStep(step) || Math.sign(step.semitones) !== step.diatonicSteps) return;
-    neighbors.push(neighbor.id);
-  }
-  if (neighbors.length !== 2 || hasCompleteWrittenTertianVoicing(VOICE_ORDER.map(voice => middle.notes[voice]!.pitch))) return;
+  if (!pitchClassEquals(middle.notes.bass!.pitch, identity.root)) return;
+  const neighbors = writtenNeighborsOverHeldBass(identity, before, middle, after);
+  if (neighbors?.length !== 2) return;
 
   return {
     code: "dominant-neighbor-prolongation",

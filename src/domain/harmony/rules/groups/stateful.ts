@@ -22,6 +22,7 @@ import {
 } from "../helpers/core";
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
+import { leadingNeighborFrame, ornamentsSameLeadingHarmony } from "../state/leadingToneNeighbor";
 import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
 import { exchangesSupertonicSeventhWithRoot } from "./supertonicSeventhExchange";
 import {
@@ -565,6 +566,19 @@ function leadingToneTransition(
       ? { currentSpanId: currentSpanId(environment) }
       : {}),
   } satisfies Record<string, JsonValue>;
+
+  if (attacked && targetUnchanged && currentNote) {
+    const { context, obligation: { payload } } = environment;
+    const frame = leadingNeighborFrame(context.rules, payload.voiceId, currentNote);
+    if (frame && frame.preparation.pitch.step === payload.leadingStep &&
+        frame.preparation.pitch.alter === payload.leadingAlter &&
+        toMidi(frame.preparation.pitch) === payload.leadingMidi &&
+        ornamentsSameLeadingHarmony(context.rules, frame)) {
+      return decision(environment, "continue", "leading-tone-neighbor-return", {
+        ...debugFacts, returnNoteId: frame.arrival.id,
+      });
+    }
+  }
 
   if (attacked && targetUnchanged && leadingToneResolves(environment))
     return decision(
