@@ -155,7 +155,9 @@ export function applyChordInference(
           candidate.notes.some((note) => note.id === noteId),
         );
         const note = track?.notes.find((candidate) => candidate.id === noteId);
-        if (!track || !note) continue;
+        // A clipped inference region can still carry evidence from a held note.
+        if (!track || !note ||
+            note.startTick < result.range.fromTick || note.startTick >= result.range.toTick) continue;
         if (noteIsLockedForInference(next, track, note)) {
           addWarning(warnings, {
             code: "locked-note",
