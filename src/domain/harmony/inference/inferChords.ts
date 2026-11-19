@@ -111,15 +111,15 @@ export function inferChords(
   const anticipated = withAnticipations(observations, applied, options, project.ppq, phraseBoundaryTicks);
   const suspended = withPreparedSuspensions(observations, anticipated, options, project.ppq, phraseBoundaryTicks);
   const prolonged = withProlongedHarmony(observations, suspended, options, project.ppq, phraseBoundaryTicks);
-  const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high");
+  const currentPhraseTicks = [...new Set([...terminalTicks, ...phraseBoundaryTicks])];
+  const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high", currentPhraseTicks);
   const manualPhraseTicks = project.structure.phraseBoundaries
     .filter(boundary => boundary.source === "manual")
     .map(boundary => boundary.tick);
   const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence, manualPhraseTicks);
   const recovered = withDeceptiveDominants(observations, withSixths, options, project.ppq, phraseBoundaryTicks);
-  const pivotBoundaries = [...new Set([...terminalTicks, ...phraseBoundaryTicks])];
   const withNeapolitanPivots = withNeapolitanPivotDominants(
-    observations, recovered, options, localKeys, pivotBoundaries,
+    observations, recovered, options, localKeys, currentPhraseTicks,
   );
   const sequence = analyzeChordInferencePaths(observations, withNeapolitanPivots);
   // Solve in musical context, but aggregate evidence and write regions only

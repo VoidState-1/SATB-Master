@@ -42,5 +42,62 @@ describe("依据相邻和弦与实际低音判断四六用途", () => {
     expect(first).toMatchObject({ fromTick: 0, toTick: 1920, status: "resolved", selected: { functionalBaseId: "K46" } });
     expect(first.selected?.evidence.map(e => e.code)).toContain("cadential64-revoicing");
   });
+
+  const octaveExchange = `satb 1
+key C major
+meter 2/4
+bars 1..1 {
+  S: | E5/4 E5/8 D5/8 |
+  A: | G4/4 G4/8 F4/8 |
+  T: | C4/4 C4/8 B3/8 |
+  B: | G3/4 G2/4 |
+}`;
+
+  it("在原声部实写的 4–3、6–5 下行前合并属低音八度换位", () => {
+    const { project } = compileScoreText(octaveExchange);
+    const first = inferChords(project).regions[0];
+    expect(first).toMatchObject({ fromTick: 0, toTick: 1440, status: "resolved",
+      selected: { functionalBaseId: "K46" }, alternatives: [] });
+  });
+
+  it.each([
+    ["后继改变低音与和弦", octaveExchange.replace("D5/8", "C5/8").replace("B3/8", "A3/8")
+      .replace("G2/4", "G2/8 F2/8"), undefined],
+    ["缺一条下行时不以单纯属接续统一全段", octaveExchange.replace("G4/4 G4/8 F4/8", "G4/4 G4/8 D4/8")
+      .replace("D5/8", "G5/8"), undefined],
+    ["解决低音跳过两个八度", octaveExchange.replace("G2/4", "G2/8 G0/8"), undefined],
+    ["已有句界位于首个持续切片中", octaveExchange, 480],
+  ] as const)("不把早先的四六一起确认为 K46（%s）", (_name, score, cut) => {
+    const { project } = compileScoreText(score);
+    if (cut !== undefined) project.structure.phraseBoundaries = [{
+      id: "cut", source: "manual", tick: cut, confidence: "certain",
+    }];
+    expect(inferChords(project).regions[0].status).toBe("ambiguous");
+  });
+
+  const neighbor = `satb 1
+key C minor
+meter 3/4
+bars 1..2 {
+  S: | C4/2 B3/4 | C4/2. |
+  A: | G3/2 G3/4 | G3/2. |
+  T: | Eb3/8 D3/8 Eb3/4 F3/4 | Eb3/2. |
+  B: | G2/2 G2/4 | C3/2. |
+}`;
+
+  it("已证的内声邻音可留在同一个完整 K46–D7–t 中", () => {
+    const { project } = compileScoreText(neighbor);
+    const first = inferChords(project).regions[0];
+    expect(first).toMatchObject({ toTick: 1920, status: "resolved", selected: { functionalBaseId: "K46" } });
+    expect(first.selected?.fit.nonChordToneAssignments).toHaveProperty("note-T-480", "neighbor");
+  });
+
+  it("夹层未经邻音机制验证，或属主之间有句界时保留竞争", () => {
+    const unproven = compileScoreText(neighbor.replace("G3/2 G3/4", "G3/8 G3/8 G3/4 G3/4")).project;
+    expect(inferChords(unproven).regions[0].status).toBe("ambiguous");
+    const split = compileScoreText(neighbor).project;
+    split.structure.phraseBoundaries = [{ id: "cut", source: "manual", tick: 2880, confidence: "certain" }];
+    expect(inferChords(split).regions[0].status).toBe("ambiguous");
+  });
 });
 

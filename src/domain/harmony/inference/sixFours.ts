@@ -1,6 +1,7 @@
 import { chordIdentityEquals, chordIdentityInversion, chordIdentityToneSpellingForDegree, primaryHarmonyInterpretation, type HarmonySemantics } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, writtenInterval } from "../../pitch";
+import { isWrittenStep, pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
 import { fitCadentialRevoicing } from "./candidates";
+import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation } from "./types";
 
 type CandidateSet = readonly ChordInferenceCandidate[];
@@ -52,9 +53,11 @@ function resolvesToDominant(
 
 function dominantContinuesToTonic(
   observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[], start: number,
+  phraseEnd?: number,
 ) {
   const key = observations[start];
-  for (let i = start; i < sets.length && sameKey(key, observations[i]); i++) {
+  for (let i = start; i < sets.length && sameKey(key, observations[i]) &&
+      (phraseEnd === undefined || observations[i].key.id === key.key.id && observations[i].toTick <= phraseEnd); i++) {
     if (sets[i].some(rootDominant)) continue;
     return i > start && sets[i].some(c => (c.functionalBaseId === "T" || c.functionalBaseId === "t") &&
       chordIdentityInversion(c.identity) !== 2 && c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length);
@@ -80,9 +83,95 @@ function roleBetween(
       Math.sign(into.diatonicSteps) === Math.sign(out.diatonicSteps)) return "passing64";
 }
 
+function exactReading(candidate: ChordInferenceCandidate) {
+  return candidate.fit.spellingConsistent && candidate.fit.omittedChordDegrees.length === 0 &&
+    candidate.fit.nonChordToneNoteIds.length === 0;
+}
+
+function completeWithActualBass(observation: ChordInferenceObservation) {
+  const bass = observation.bass;
+  return observation.completeSatb && bass && observationNotes(observation).every(
+    ({ note }) => toMidi(note.pitch) >= toMidi(bass.pitch),
+  );
+}
+
+function tonicSixFourPair(candidates: CandidateSet) {
+  const tonic = candidates.find(c => (c.functionalBaseId === "T" || c.functionalBaseId === "t") &&
+    chordIdentityInversion(c.identity) === 2);
+  const cadential = tonic && candidates.find(c => c.functionalBaseId === "K46" &&
+    chordIdentityEquals(c.identity, tonic.identity));
+  if (!tonic || !cadential) return;
+  if (exactReading(tonic) && exactReading(cadential)) return { tonic, cadential, neighbor: false };
+  // Only a single upper neighbor independently proved by the prolongation stage may bridge literal statements.
+  if ([tonic, cadential].every(c => c.fit.spellingConsistent && c.fit.nonChordToneNoteIds.length === 1 &&
+      c.evidence.some(e => e.kind === "inferred-nonchord-tone" && e.code === "neighbor"))) {
+    return { tonic, cadential, neighbor: true };
+  }
+}
+
+function confirmContinuedCadentialSixFours(
+  observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[],
+  classified: CandidateSet[], phraseBoundaries: readonly number[],
+) {
+  const pairs = sets.map(tonicSixFourPair);
+  for (let start = 0; start + 1 < pairs.length; start++) {
+    const opening = pairs[start], first = observations[start];
+    if (!opening || opening.neighbor || !completeWithActualBass(first)) continue;
+    let end = start;
+    let bridgedNeighbor = false;
+    while (end + 1 < pairs.length) {
+      const next = pairs[end + 1], after = observations[end + 1], before = observations[end];
+      if (!next || !chordIdentityEquals(opening.tonic.identity, next.tonic.identity) ||
+          after.key.id !== first.key.id || !sameKey(first, after) ||
+          before.toTick !== after.fromTick || !completeWithActualBass(after) ||
+          Math.abs(toMidi(before.bass!.pitch) - toMidi(after.bass!.pitch)) > 12) break;
+      end++;
+      bridgedNeighbor ||= next.neighbor;
+    }
+    const last = observations[end], arrival = observations[end + 1], arrivals = sets[end + 1];
+    const phraseEnd = phraseBoundaries.reduce((endTick, tick) =>
+      tick > first.fromTick ? Math.min(endTick, tick) : endTick, Number.POSITIVE_INFINITY);
+    if (end > start && !pairs[end]!.neighbor && arrival && completeWithActualBass(arrival) &&
+        first.key.id === arrival.key.id && sameKey(first, arrival) &&
+        last.toTick === arrival.fromTick && arrival.toTick <= phraseEnd &&
+        Math.abs(toMidi(last.bass!.pitch) - toMidi(arrival.bass!.pitch)) <= 12) {
+      const dominant = arrivals.find(c => exactReading(c) && rootDominant(c));
+      const fullClose = dominant && dominantContinuesToTonic(observations, sets, end + 1, phraseEnd);
+      const confirmed = dominant && (fullClose || !bridgedNeighbor &&
+        realizesWrittenSixFourResolution(opening.tonic, dominant, last, arrival)) &&
+        resolvesToDominant(first, last, arrival, [dominant], !!fullClose);
+      for (let index = start; confirmed && index <= end; index++) {
+        const pair = pairs[index]!;
+        if (!classified[index].includes(pair.tonic) || !classified[index].includes(pair.cadential)) continue;
+        classified[index] = classified[index].filter(c => c !== pair.tonic).map(c => c === pair.cadential
+          ? { ...c, evidence: [...c.evidence, { kind: "sequence-context", code: "cadential64-resolution" }] }
+          : c);
+      }
+    }
+    start = end;
+  }
+}
+
+function realizesWrittenSixFourResolution(
+  tonic: ChordInferenceCandidate, dominant: ChordInferenceCandidate,
+  before: ChordInferenceObservation, after: ChordInferenceObservation,
+) {
+  return ([[1, 3], [3, 5]] as const).every(([fromDegree, toDegree]) => {
+    const from = chordIdentityToneSpellingForDegree(tonic.identity, fromDegree);
+    const to = chordIdentityToneSpellingForDegree(dominant.identity, toDegree);
+    return from && to && observationNotes(before).some(({ voiceId, note }) => {
+      const next = after.activeNotes[voiceId];
+      if (voiceId === "bass" || !next || !pitchClassEquals(note.pitch, from) || !pitchClassEquals(next.pitch, to)) return false;
+      const interval = writtenInterval(note.pitch, next.pitch);
+      return interval.diatonicSteps === -1 && isWrittenStep(interval);
+    });
+  });
+}
+
 /** Recognize a complete weak six-four between two presentations of the same harmony. */
 export function classifySixFours(
   observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[], acceptMedium = true,
+  phraseBoundaries: readonly number[] = [],
 ) {
   const triads = sets.map(primaryTriad);
   const classified = sets.slice();
@@ -133,6 +222,7 @@ export function classifySixFours(
     }
     start = end;
   }
+  confirmContinuedCadentialSixFours(observations, sets, classified, phraseBoundaries);
   return classified;
 }
 
