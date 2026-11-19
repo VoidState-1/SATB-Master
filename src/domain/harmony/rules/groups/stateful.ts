@@ -43,6 +43,7 @@ import {
   dominantNinthSource,
   innerLeadingToneDescendsToFifth,
   leadingToneDescendsInMajorDeceptiveMotion,
+  leadingToneDescendsFromMediant,
   leadingTargetUnchanged,
   leadingToneResolves,
   leadingToneSource,
@@ -606,6 +607,9 @@ function leadingToneTransition(
 
   if (attacked && targetUnchanged && leadingToneDescendsInMajorDeceptiveMotion(environment))
     return decision(environment, "resolve", "major-deceptive-leading-tone-descends", debugFacts);
+
+  if (attacked && targetUnchanged && leadingToneDescendsFromMediant(environment))
+    return decision(environment, "resolve", "major-mediant-melody-descends", debugFacts);
 
   if (
     targetUnchanged &&

@@ -15,6 +15,7 @@ import {
   spelledPitchEquals,
   toMidi,
   writtenInterval,
+  type KeyLike,
   type SpelledPitchClass,
 } from "../../../pitch";
 import type { JsonValue, RuleStepContext } from "../../runtime";
@@ -26,6 +27,7 @@ import type {
 import { hasExactPitch, noteEvidence } from "../helpers/core";
 import type { SpanView } from "../context/views";
 import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
+import { majorMediantToSubdominant } from "../groups/majorMediant";
 import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneNeighbor";
 
 export type VoiceObligationPayload = {
@@ -333,6 +335,7 @@ function obligationFollowsWrittenLeadingTone(
   leading: AnalysisNote,
   landing: AnalysisNote,
   destination: SpelledPitchClass,
+  resolutionKey: KeyLike = environment.context.slice.key,
 ) {
   const { context, obligation } = environment;
   const { payload, openedAt, openedBy } = obligation;
@@ -344,8 +347,8 @@ function obligationFollowsWrittenLeadingTone(
       toMidi(leading.pitch) !== payload.leadingMidi || landing.startTick !== target.tick ||
       !pitchClassEquals(source.key.tonic, { step: payload.sourceKeyStep, alter: payload.sourceKeyAlter }) ||
       source.key.mode !== payload.sourceKeyMode ||
-      !pitchClassEquals(target.key.tonic, { step: payload.targetStep, alter: payload.targetAlter }) ||
-      target.key.mode !== payload.targetMode ||
+      !pitchClassEquals(resolutionKey.tonic, { step: payload.targetStep, alter: payload.targetAlter }) ||
+      resolutionKey.mode !== payload.targetMode ||
       !pitchClassEquals(landing.pitch, destination) ||
       crossesManualPhraseBoundary(context.rules, openedAt.tick, target.tick)) return false;
 
@@ -417,6 +420,20 @@ export function leadingToneDescendsInMajorDeceptiveMotion(environment: Obligatio
   const landing = slice.notes[payload.voiceId];
   return Boolean(previous && leading && landing && hasMajorDeceptiveLeadingToneMotion(context, payload.voiceId) &&
     obligationFollowsWrittenLeadingTone(environment, previous, leading, landing, scaleDegreePitchClass(slice.key, 6)));
+}
+
+export function leadingToneDescendsFromMediant(environment: ObligationEnvironment<LeadingTonePayload>) {
+  const { context, obligation: { payload, openedAt } } = environment;
+  const before = context.previous, after = context.slice;
+  if (payload.voiceId !== "soprano" || !before?.chord || context.rules.sliceAt(openedAt.tick)?.chord?.id !== before.chord.id) return false;
+  const key = majorMediantToSubdominant(context.rules, before, after);
+  const leading = before.notes.soprano, landing = after.notes.soprano;
+  if (!key || !leading || !landing || !pitchClassEquals(leading.pitch, scaleDegreePitchClass(key, 7)) ||
+      Object.values(before.notes).some(note => toMidi(note.pitch) > toMidi(leading.pitch)) ||
+      Object.values(after.notes).some(note => toMidi(note.pitch) > toMidi(landing.pitch))) return false;
+  const descent = writtenInterval(leading.pitch, landing.pitch);
+  return descent.diatonicSteps === -1 && descent.semitones === -2 &&
+    obligationFollowsWrittenLeadingTone(environment, before, leading, landing, scaleDegreePitchClass(key, 6), key);
 }
 
 function resolvesDownward<Payload extends VoiceObligationPayload>(
