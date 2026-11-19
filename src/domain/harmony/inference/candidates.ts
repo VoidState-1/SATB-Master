@@ -304,6 +304,33 @@ export function fitProlongedHarmony(
   };
 }
 
+export function fitAnticipation(
+  anchor: ChordInferenceCandidate,
+  observation: ChordInferenceObservation,
+  anticipated: readonly string[],
+): ChordInferenceCandidate | undefined {
+  const { hardRejected, ...literal } = fitChordObservation(observation, anchor.identity);
+  if (!literal.spellingConsistent || literal.nonChordToneNoteIds.length !== anticipated.length ||
+      !anticipated.every(id => literal.nonChordToneNoteIds.includes(id))) return;
+  if (hardRejected && !["bass-mismatch", "unexplained-extra-tone", "omitted-chord-tone", "too-many-omitted-chord-tones"].includes(hardRejected)) return;
+
+  const fit = {
+    ...literal,
+    nonChordToneAssignments: Object.freeze(Object.fromEntries(
+      anticipated.map(id => [id, "anticipation" as const]),
+    )),
+  };
+  return {
+    ...anchor,
+    id: `${observation.index}:anticipation:${anchor.id}`,
+    observationIndex: observation.index,
+    fit,
+    score: scoreFor(observation, anchor.identity, fit, anchor.score.functionalTier),
+    confidence: "medium",
+    evidence: [...evidenceFor(literal, true), { kind: "inferred-nonchord-tone", code: "anticipation", noteIds: anticipated }],
+  };
+}
+
 export function fitDominantSixthSubstitution(
   observation: ChordInferenceObservation,
   reading: ChordInferenceCandidate,

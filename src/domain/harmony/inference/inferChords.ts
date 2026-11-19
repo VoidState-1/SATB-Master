@@ -3,6 +3,7 @@ import {
   withLoweredSupertonics,
 } from "./candidates";
 import { withAppliedDominants } from "./appliedDominants";
+import { withAnticipations } from "./anticipations";
 import { buildChordInferenceObservations } from "./observations";
 import { withDiatonicSevenths } from "./diatonicSevenths";
 import { withDominantSixthSubstitutions } from "./dominantSixths";
@@ -13,7 +14,7 @@ import { analyzeChordInferencePaths } from "./sequence";
 import { classifySixFours } from "./sixFours";
 import { withProlongedHarmony } from "./prolongation";
 import { inferLocalKeys } from "./localKeys";
-import { inferPhrases } from "../phrase";
+import { inferPhrases, isCurrentPhraseBoundary } from "../phrase";
 import type {
   ChordInferenceObservation,
   ChordInferenceOptions,
@@ -101,7 +102,11 @@ export function inferChords(
   const predominants = withLoweredSupertonics(observations, diatonic);
   const sequences = withAppliedSequences(observations, predominants, options);
   const applied = withAppliedDominants(observations, sequences, options);
-  const prolonged = withProlongedHarmony(observations, applied, options, project.ppq);
+  const phraseBoundaryTicks = project.structure.phraseBoundaries
+    .filter(boundary => isCurrentPhraseBoundary(project, boundary))
+    .map(boundary => boundary.tick);
+  const anticipated = withAnticipations(observations, applied, options, project.ppq, phraseBoundaryTicks);
+  const prolonged = withProlongedHarmony(observations, anticipated, options, project.ppq);
   const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high");
   const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence);
   const sequence = analyzeChordInferencePaths(observations, withSixths);
