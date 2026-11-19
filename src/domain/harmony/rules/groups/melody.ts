@@ -34,7 +34,7 @@ type NamedInterval = ReturnType<typeof intervalName>;
 
 interface MelodyTransitionRulePolicy {
   id: "melody.leap-over-octave" | "melody.large-leap" | "melody.tritone";
-  matches(interval: number, named: NamedInterval): boolean;
+  matches(interval: number, named: NamedInterval, voiceId: MelodyTransition["voiceId"]): boolean;
   title: string;
   message(
     analysis: HarmonyAnalysis,
@@ -53,7 +53,7 @@ function evaluateMelodyTransitionRule(
   for (const transition of validMelodyTransitions(context)) {
     const interval = Math.abs(transition.writtenInterval.semitones);
     const writtenName = intervalName(transition.writtenInterval);
-    if (!policy.matches(interval, writtenName)) continue;
+    if (!policy.matches(interval, writtenName, transition.voiceId)) continue;
     diagnostics.push(
       diagnostic(
         policy.id,
@@ -93,7 +93,10 @@ const LEAP_OVER_OCTAVE_POLICY: MelodyTransitionRulePolicy = {
 
 const LARGE_LEAP_POLICY: MelodyTransitionRulePolicy = {
   id: "melody.large-leap",
-  matches: (interval) => interval > 7 && interval <= 12,
+  // Spasobin, ch. 6 §4, treats a written bass octave as ordinary bass writing.
+  matches: (interval, named, voiceId) =>
+    interval > 7 && interval <= 12 &&
+    !(voiceId === "bass" && named.number === 8 && named.quality === "纯"),
   title: "较大旋律跳进",
   message: (analysis, transition) =>
     `${voiceName(analysis, transition.voiceId)}出现大于纯五度的跳进，需检查前后旋律方向。`,
@@ -359,9 +362,9 @@ export const MELODY_RULES = defineRuleGroup(
     catalogNumber: "B.2",
     label: "较大旋律跳进",
     description:
-      "检查不同和弦之间同一声部是否出现了大于纯五度的较大跳进。",
+      "检查同一声部大于纯五度且不超过八度的跳进，低音的书写纯八度按常规写法处理。",
     rationale:
-      "在和弦连接中，声部进行应尽可能平稳（级进、三度或四五度小跳）。除低音声部或同和弦转换的旋律跳进外，大于纯五度的大跳（如六度、八度跳进）破坏平稳进行原则，需谨慎使用并在随后进行反向级进补偿。",
+      "在和弦连接中，较大的旋律跳进需要结合前后方向与和弦转换检查。斯波索宾第六章第四节把低音纯八度列为正常的低音写法，可在这一位置转换和弦排列。其他大跳仍提示检查旋律方向。",
     group: "melody",
     defaultSeverity: "suggestion",
     requires: ["written-pitches"],
