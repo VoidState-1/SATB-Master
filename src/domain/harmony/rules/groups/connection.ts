@@ -15,6 +15,7 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import { isAuxiliaryFrenchSixthReturn } from "./auxiliaryAugmentedSixth";
 
 export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
@@ -86,6 +87,8 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
     );
     if ((isDominant || isCadential64) && lowResolves && highResolves)
       continue;
+    if (!isDominant && !isCadential64 &&
+        isAuxiliaryFrenchSixthReturn(context, candidate, sourceKey)) continue;
 
     const problems = [
       ...(!isDominant && !isCadential64 ? ["目标不是明确的属功能或 K46"] : []),
@@ -212,9 +215,9 @@ export const CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "E.5",
     label: "增六音程未反向解决",
     description:
-      "检查增六和弦中的特征增六度音程是否两端反向半音级进扩张解决到纯八度。",
+      "检查增六和弦是否反向半音解决到属音，或形成句末法增六向原位小主和弦的辅助性回归。",
     rationale:
-      "增六和弦由降Ⅵ级低音与升Ⅳ级高音构成增六度。根据增音程向外扩张的声学与调式倾向，降Ⅵ级必须向下半音进行至属音（Ⅴ级），升Ⅳ级必须向上半音进行至属音（Ⅴ级），两者反向展开并在外声部汇聚于纯八度属音上。",
+      "增六和弦通常由降Ⅵ级下行、升Ⅳ级上行半音汇聚于属音。斯波索宾第30章亦允许经辅助性增六返回主和弦作为补充终止，此时须由前后主和弦与实际声部进行共同确认。",
     group: "resolution",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
