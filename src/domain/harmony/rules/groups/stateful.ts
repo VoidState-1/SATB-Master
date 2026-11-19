@@ -12,7 +12,7 @@ import type {
 } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass } from "../../analysis";
-import { formatPitchClass, pitchClassEquals, toMidi } from "../../../pitch";
+import { formatPitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import {
   chordEvidence,
   chordLabel,
@@ -225,8 +225,10 @@ function seventhDiagnostic(
     current.startTick + current.durationTicks,
     [payload.voiceId],
     [source, current],
-    "七音未级进下行解决",
-    `书写七音 ${formatPitchClass(tones[3])} 通常应以半音或全音级进下行解决。`,
+    decision.reason === "chord-seventh-bass-rises-to-root" ? "属七和弦换位时低音七音上行" : "七音未级进下行解决",
+    decision.reason === "chord-seventh-bass-rises-to-root"
+      ? "属二和弦换为同一属七和弦原位时，低音七音不可级进上行到根音。"
+      : `书写七音 ${formatPitchClass(tones[3])} 通常应以半音或全音级进下行解决。`,
     {
       chordIds: [chord.id, targetChord.id],
       params: {
@@ -676,10 +678,43 @@ function seventhTransferVoiceIds(
   });
 }
 
-function seventhTransferred(
-  environment: ObligationEnvironment<SeventhPayload>,
-) {
-  return seventhTransferVoiceIds(environment).length > 0;
+function soundsDominantSeventh(slice: RuleStepContext["slice"], tones: readonly SpelledPitchClass[]) {
+  const bass = slice.notes.bass;
+  if (!bass) return false;
+  const notes = Object.values(slice.notes);
+  return notes.every(note => note && !note.nonChordToneRole && toMidi(note.pitch) >= toMidi(bass.pitch) &&
+    tones.some(tone => pitchClassEquals(tone, note.pitch))) &&
+    [tones[0], tones[1], tones[3]].every(tone => notes.some(note => note && pitchClassEquals(tone, note.pitch)));
+}
+
+// §15.5: the bass seventh may not step up to the root during D2 → D7 revoicing.
+function bassSeventhRisesToDominantRoot(environment: ObligationEnvironment<SeventhPayload>) {
+  const { context, obligation } = environment;
+  const { previous, slice, rules } = context;
+  const departure = previous?.notes.bass;
+  const landing = slice.notes.bass;
+  const from = previous?.chord?.identity;
+  const chord = slice.chord;
+  if (obligation.payload.voiceId !== "bass" || !subjectAttacked(environment) ||
+      !departure || !landing || !from || !chord || departure.nonChordToneRole || landing.nonChordToneRole ||
+      previous.key.id !== slice.key.id || departure.startTick + departure.durationTicks !== landing.startTick ||
+      toMidi(departure.pitch) !== obligation.payload.seventhMidi ||
+      from.structure.kind !== "tertian" || from.structure.quality !== "dominant7" ||
+      from.structure.extensions.length || from.structure.alterations.length ||
+      !sameChordIdentityWithoutBass(from, chord.identity)) return false;
+
+  const reading = rules.harmony.primaryInterpretation(chord);
+  if (reading.status === "resolved" && reading.value.appliedTarget) return false;
+  const key = reading.status === "resolved" ? reading.value.localKey ?? slice.key : slice.key;
+  const motion = writtenInterval(departure.pitch, landing.pitch);
+  const tones = chordIdentityToneSpellings(from);
+  return pitchClassEquals(from.root, scaleDegreePitchClass(key, 5)) &&
+    pitchClassEquals(from.bass, departure.pitch) && pitchClassEquals(departure.pitch, tones[3]) &&
+    pitchClassEquals(chord.identity.root, chord.identity.bass) && pitchClassEquals(landing.pitch, chord.identity.root) &&
+    motion.diatonicSteps === 1 && motion.semitones === 2 &&
+    soundsDominantSeventh(previous, tones) && soundsDominantSeventh(slice, tones) &&
+    !context.analysis.phraseBoundaries.some(boundary => boundary.source === "manual" &&
+      departure.startTick < boundary.tick && boundary.tick <= slice.tick);
 }
 
 function seventhTransition(
@@ -695,8 +730,11 @@ function seventhTransition(
   )
     return decision(environment, "cancel", "chord-seventh-context-ended");
 
-  if (sameSeventhContext(environment) && seventhTransferred(environment))
+  if (sameSeventhContext(environment) && seventhTransferVoiceIds(environment).length) {
+    if (bassSeventhRisesToDominantRoot(environment))
+      return decision(environment, "violate", "chord-seventh-bass-rises-to-root");
     return decision(environment, "cancel", "chord-seventh-transferred");
+  }
 
   if (sameOpenedSpan(environment))
     return decision(environment, "continue", "chord-seventh-same-harmony");
