@@ -5,6 +5,7 @@ import {
 import { withAppliedDominants } from "./appliedDominants";
 import { buildChordInferenceObservations } from "./observations";
 import { withDiatonicSevenths } from "./diatonicSevenths";
+import { withWrittenPivotSevenths } from "./pivotSevenths";
 import { withAppliedSequences } from "./appliedSequences";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
 import { analyzeChordInferencePaths } from "./sequence";
@@ -95,7 +96,8 @@ export function inferChords(
     );
     candidateSets.push(candidates);
   });
-  const diatonic = withDiatonicSevenths(observations, candidateSets, options);
+  const pivots = withWrittenPivotSevenths(observations, candidateSets, options);
+  const diatonic = withDiatonicSevenths(observations, pivots, options);
   const predominants = withLoweredSupertonics(observations, diatonic);
   const sequences = withAppliedSequences(observations, predominants, options);
   const applied = withAppliedDominants(observations, sequences, options);
