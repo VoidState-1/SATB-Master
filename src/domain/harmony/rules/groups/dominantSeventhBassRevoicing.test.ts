@@ -62,8 +62,16 @@ describe("属二和弦换位中的低音七音", () => {
     expect(warnings(project)).toEqual([]);
   });
 
-  it("上声部七音到根音不进入严格低音分支", () => {
-    expect(warnings(passage("C major", ["D7", "D2"], ["F5 G5", "G4 B4", "B3 D4", "G3 F3"]))).toEqual([]);
+  it("低音由根音下行接七音时，只提示原七音所在的女高", () => {
+    const project = passage("C major", ["D7", "D2"], ["F5 G5", "G4 B4", "B3 D4", "G3 F3"]);
+    expect(warnings(project)).toEqual([expect.objectContaining({
+      tick: project.ppq, severity: "warning", voiceIds: ["soprano"], title: "属七和弦换位时根音与七音互换",
+    })]);
+  });
+
+  it("原七音下行至五音、低音下行接七音时保持静默", () => {
+    const project = passage("F major", ["D7", "D2"], ["Bb4 G4", "C4 E4", "E3 C4", "C3 Bb2"]);
+    expect(warnings(project)).toEqual([]);
   });
 
   it.each([

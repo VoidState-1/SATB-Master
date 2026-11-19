@@ -232,7 +232,7 @@ function seventhDiagnostic(
     message = "Ⅱ级七和弦重新排列时，七音上行到根音，同时原根音下行接走七音。此处应避免两音互换。";
   } else if (decision.reason === "chord-seventh-upper-root-exchange") {
     title = "属七和弦换位时根音与七音互换";
-    message = "两个上声部直接互换了根音和七音。此处宜在原声部保持七音。";
+    message = "原七音上行到根音，原根音下行接走七音。此处宜在原声部保持七音。";
   } else if (decision.reason === "chord-seventh-upper-tritone-transfer") {
     title = "属七和弦换位时七音移至根音";
     message = "原七音移至根音，接手的声部又从三音下行增四度至七音。此处宜在原声部保持七音。";
@@ -740,7 +740,7 @@ function bassSeventhRisesToDominantRoot(environment: ObligationEnvironment<Seven
 function upperSeventhTransferViolation(environment: ObligationEnvironment<SeventhPayload>, receiver: VoiceId): ObligationDecision | undefined {
   const { context, obligation } = environment;
   const voice = obligation.payload.voiceId;
-  if (voice === "bass" || receiver === "bass" || !subjectAttacked(environment)) return;
+  if (voice === "bass" || !subjectAttacked(environment)) return;
   const { previous, slice, rules } = context;
   const identity = previous?.chord?.identity;
   const to = slice.chord;
@@ -764,9 +764,13 @@ function upperSeventhTransferViolation(environment: ObligationEnvironment<Sevent
   const dropsSeventh = outgoing.diatonicSteps === -6 && outgoing.semitones === -10;
   if (!rises && !dropsSeventh) return;
   let reason: string;
-  if (rises && spelledPitchEquals(newRoot.pitch, partner.pitch) && spelledPitchEquals(newSeventh.pitch, oldSeventh.pitch))
+  const swapsWithBass = receiver === "bass" && pitchClassEquals(partner.pitch, identity.root) &&
+    incoming.diatonicSteps === -1 && incoming.semitones === -2;
+  const swapsUpperVoices = receiver !== "bass" && spelledPitchEquals(newRoot.pitch, partner.pitch) &&
+    spelledPitchEquals(newSeventh.pitch, oldSeventh.pitch);
+  if (rises && (swapsWithBass || swapsUpperVoices))
     reason = "chord-seventh-upper-root-exchange";
-  else if (pitchClassEquals(partner.pitch, tones[1]) && incoming.diatonicSteps === -3 && incoming.semitones === -6)
+  else if (receiver !== "bass" && pitchClassEquals(partner.pitch, tones[1]) && incoming.diatonicSteps === -3 && incoming.semitones === -6)
     reason = "chord-seventh-upper-tritone-transfer";
   else return;
 
