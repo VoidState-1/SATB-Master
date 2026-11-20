@@ -25,10 +25,10 @@ import {
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
-import { structuralTriadVoicing, triadUpperOrnaments } from "../helpers/structuralTriadVoicing";
+import { structuralTriadVoicing, triadOrnaments } from "../helpers/structuralTriadVoicing";
 import { continuesCompleteSeventh } from "../helpers/seventhRevoicing";
 import { beforeMelodicMinorPassingBass } from "../helpers/melodicMinorPassingBass";
-import { hasPairedOuterNeighborBass } from "../helpers/pairedOuterNeighborBass";
+import { pairedOuterNeighbors } from "../helpers/pairedOuterNeighborBass";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
@@ -90,7 +90,7 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
       if (unresolved.length === 1 && unresolved[0].voiceId === "soprano" &&
           resolvesDominantSixthSubstitution(slice, context)) return;
       if (preparedCadentialPair(context, slice, unresolved)) return;
-      const ornaments = triadUpperOrnaments(context, slice);
+      const ornaments = triadOrnaments(context, slice);
       const confirmed = heldSuspensionsAt(context, slice);
       const respelt = respeltDoubleDominantMember(context, slice);
       const outside = unresolved.filter(({ note }) =>
@@ -171,7 +171,7 @@ export function inversionBassRule(context: HarmonyRuleContext) {
     if (!bass || pitchClassEquals(bass.note.pitch, chord.identity.bass)) return;
     const written = context.analysis.writtenProlongations.get(slice.tick);
     if (connectsStructuralBasses(context, chord, bass.note) || beforeMelodicMinorPassingBass(context, slice) ||
-        hasPairedOuterNeighborBass(context, slice)) return;
+        pairedOuterNeighbors(context, slice)) return;
     diagnostics.push(
       diagnostic(
         "chord.inversion-bass",

@@ -4,6 +4,7 @@ import type { AnalysisSlice } from "../../analysis";
 import { decoratedPassingSixFourMotion } from "../../decoratedPassingSixFourMotion";
 import { upperPassingMotion } from "../../upperPassingMotion";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { pairedOuterNeighbors } from "./pairedOuterNeighborBass";
 import { triadTailOrnaments } from "./triadTailOrnaments";
 import { beforeMelodicMinorPassingBass } from "./melodicMinorPassingBass";
 import { soundsCompleteWrittenChord } from "../../writtenVoicing";
@@ -58,12 +59,13 @@ export function decoratedPassingVoicing(context: HarmonyRuleContext, ornament: A
   return motion && { noteIds: [motion.note.id], departure: left };
 }
 
-export function triadUpperOrnaments(context: HarmonyRuleContext, slice: AnalysisSlice) {
-  return upperPassingVoicing(context, slice) ?? decoratedPassingVoicing(context, slice) ?? triadTailOrnaments(context, slice);
+export function triadOrnaments(context: HarmonyRuleContext, slice: AnalysisSlice) {
+  return upperPassingVoicing(context, slice) ?? decoratedPassingVoicing(context, slice) ??
+    triadTailOrnaments(context, slice) ?? pairedOuterNeighbors(context, slice);
 }
 
 export function structuralTriadVoicing(context: HarmonyRuleContext, end: AnalysisSlice) {
   if (end.attackVoiceIds.length === 1 && end.attackVoiceIds[0] === "bass" &&
       end.notes.bass?.nonChordToneRole === "passing") return beforeMelodicMinorPassingBass(context, end) ?? end;
-  return triadUpperOrnaments(context, end)?.departure ?? end;
+  return triadOrnaments(context, end)?.departure ?? end;
 }

@@ -1,5 +1,5 @@
 import { chordIdentityEquals, chordIdentityToneSpellings, primaryHarmonyInterpretation } from "../../../chordModel";
-import { pitchClassEquals, spelledPitchEquals, toMidi } from "../../../pitch";
+import { keyEquals, pitchClassEquals, spelledPitchEquals, toMidi } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisChord, AnalysisSlice } from "../../analysis";
 import { sameFunctionalReading } from "../../functionalReading";
@@ -34,30 +34,30 @@ function orderedNotes(slice: AnalysisSlice) {
 
 /** Spasobin §40.5: on a held harmony the outer voices can decorate the
  * same inversion with synchronous, written neighbors. */
-export function hasPairedOuterNeighborBass(context: HarmonyRuleContext, slice: AnalysisSlice) {
+export function pairedOuterNeighbors(context: HarmonyRuleContext, slice: AnalysisSlice) {
   const bass = slice.notes.bass, soprano = slice.notes.soprano;
   const chord = slice.chord;
   if (!bass || !soprano || !chord || !simpleLabel(chord) ||
       chord.identity.structure.kind !== "tertian" ||
       chord.identity.structure.extensions.length || chord.identity.structure.alterations.length ||
-      !["major", "minor"].includes(chord.identity.structure.quality)) return false;
+      !["major", "minor"].includes(chord.identity.structure.quality)) return;
 
   const start = bass.startTick, end = start + bass.durationTicks;
   if (soprano.startTick !== start || soprano.durationTicks !== bass.durationTicks ||
-      bass.durationTicks > context.analysis.project.ppq) return false;
+      bass.durationTicks > context.analysis.project.ppq) return;
   const tones = chordIdentityToneSpellings(chord.identity);
-  if (tones.some(tone => pitchClassEquals(tone, bass.pitch) || pitchClassEquals(tone, soprano.pitch))) return false;
+  if (tones.some(tone => pitchClassEquals(tone, bass.pitch) || pitchClassEquals(tone, soprano.pitch))) return;
   const position = context.metric.positionAt(start);
   const strongest = context.metric.strongestBetween(start, end);
   if (position?.confidence !== "certain" ||
       (strongest && strongest.level > position.level) ||
       (position.role !== "weak-beat" && position.role !== "subdivision") ||
-      context.metric.positionAt(end - 1)?.measureNumber !== position.measureNumber) return false;
+      context.metric.positionAt(end - 1)?.measureNumber !== position.measureNumber) return;
 
   const before = context.sliceAt(start - 1), after = context.sliceAt(end);
   if (!before || !after || !sameLabel(chord, before.chord) || !sameLabel(chord, after.chord) ||
-      after.key.id !== before.key.id || context.analysis.phraseBoundaries.some(
-        boundary => before.tick < boundary.tick && boundary.tick <= end)) return false;
+      !keyEquals(after.key, before.key) || context.analysis.phraseBoundaries.some(
+        boundary => before.tick < boundary.tick && boundary.tick <= end)) return;
 
   const first = orderedNotes(before), middle = orderedNotes(slice), last = orderedNotes(after);
   if (!first || !middle || !last ||
@@ -65,12 +65,13 @@ export function hasPairedOuterNeighborBass(context: HarmonyRuleContext, slice: A
       !soundsCompleteWrittenChord(chord.identity, last, last[3]) ||
       !returnsByWrittenStep(first[3], bass, last[3]) ||
       !returnsByWrittenStep(first[0], soprano, last[0]) ||
-      hasCompleteWrittenTertianVoicing(middle.map(note => note.pitch))) return false;
-  if (!supportsPairedNeighborMotion(first[3].pitch, first[0].pitch, bass.pitch, soprano.pitch)) return false;
-  if (![1, 2].every(i => spelledPitchEquals(first[i].pitch, last[i].pitch))) return false;
-  return context.slices({ overlapping: { fromTick: start, toTick: end } }).all(frame =>
-    frame.key.id === before.key.id && sameLabel(chord, frame.chord) &&
+      hasCompleteWrittenTertianVoicing(middle.map(note => note.pitch))) return;
+  if (!supportsPairedNeighborMotion(first[3].pitch, first[0].pitch, bass.pitch, soprano.pitch)) return;
+  if (![1, 2].every(i => spelledPitchEquals(first[i].pitch, last[i].pitch))) return;
+  const completeWindow = context.slices({ overlapping: { fromTick: start, toTick: end } }).all(frame =>
+    keyEquals(frame.key, before.key) && sameLabel(chord, frame.chord) &&
     frame.notes.bass?.id === bass.id && frame.notes.soprano?.id === soprano.id &&
     frame.notes.alto?.id === first[1].id && frame.notes.tenor?.id === first[2].id,
   );
+  if (completeWindow) return { noteIds: [bass.id, soprano.id], departure: before };
 }
