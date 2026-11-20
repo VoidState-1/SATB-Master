@@ -18,6 +18,22 @@ function fits(observation: ChordInferenceObservation, tones: readonly SpelledPit
   return observation.completeSatb && Object.values(observation.activeNotes).every(note => contains(tones, note.pitch));
 }
 
+// A repeated bass pitch can support a fresh harmony. Only use it as duration
+// evidence if the tonic still stands at the end of the first measure.
+function tonicDisplacedDuringHold(
+  observations: readonly ChordInferenceObservation[], tonic: number, end: number, measureEnd: number, key: KeyReference,
+) {
+  const tones = chordToneSpellings(key.tonic, key.mode);
+  let displaced = false;
+  for (let i = tonic + 1; i <= end && observations[i].fromTick < measureEnd; i++) {
+    const item = observations[i];
+    if (fits(item, tones)) displaced = false;
+    else if (item.attackVoiceIds.length === 4 && soundingBass(item) &&
+        item.soundingPitchClasses.filter(pitch => !contains(tones, pitch)).length >= 2) displaced = true;
+  }
+  return displaced;
+}
+
 function hasBass(item: ChordInferenceObservation, pitch: SpelledPitchClass) {
   return !!item.bass && pitchClassEquals(item.bass.pitch, pitch);
 }
@@ -182,7 +198,8 @@ export function inferLocalKeys(
     const held = arrival.measureDurationTicks &&
       (arrival.metric?.role === "downbeat" || arrival.metric?.role === "secondary-accent") &&
       observations[end].toTick - arrival.fromTick >= arrival.measureDurationTicks;
-    if (!phraseEnds.has(observations[end].toTick) && !rest && !held) continue;
+    const closesPhrase = phraseEnds.has(observations[end].toTick) || rest;
+    if (!closesPhrase && !held) continue;
 
     // A surface note can precede the stable sonority at the same bass. Find
     // a written dominant and tonic within one beat of the actual bass change.
@@ -192,6 +209,9 @@ export function inferLocalKeys(
     for (let j = i; j <= end && (j === i || withinBeat(arrival, observations[j])); j++) {
       const cadence = closingKey(observations[j], dominants);
       if (!cadence) continue;
+      if (!closesPhrase && arrival.measureDurationTicks && tonicDisplacedDuringHold(
+        observations, j, end, arrival.fromTick + arrival.measureDurationTicks, cadence.key,
+      )) continue;
       const start = preparationStart(observations, i, cadence.dominant.index, cadence.key, keys);
       if (start !== undefined) {
         const context = { key: cadence.key, dominantIndex: cadence.dominant.index, tonicIndex: j };
