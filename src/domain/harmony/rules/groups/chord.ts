@@ -25,7 +25,7 @@ import {
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
-import { structuralTriadVoicing } from "../helpers/passingTriadVoicing";
+import { structuralTriadVoicing, upperPassingVoicing } from "../helpers/passingTriadVoicing";
 import { continuesCompleteSeventh } from "../helpers/seventhRevoicing";
 import { beforeMelodicMinorPassingBass } from "../helpers/melodicMinorPassingBass";
 import { hasPairedOuterNeighborBass } from "../helpers/pairedOuterNeighborBass";
@@ -86,6 +86,7 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
         ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
       );
       if (unresolved.length === 0) return;
+      if (unresolved.length === 1 && upperPassingVoicing(context, slice)?.noteId === unresolved[0].note.id) return;
       if (unresolved.length === 1 && unresolved[0].voiceId === "soprano" &&
           resolvesDominantSixthSubstitution(slice, context)) return;
       if (preparedCadentialPair(context, slice, unresolved)) return;
