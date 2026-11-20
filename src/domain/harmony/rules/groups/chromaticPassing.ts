@@ -5,6 +5,7 @@ import { sameChordIdentityWithoutBass, type AnalysisNote, type AnalysisSlice, ty
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import { soundsCompleteWrittenChord } from "../../writtenNeighbors";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { hasInsertedChromaticResolution } from "./insertedChromaticResolution";
 import { hasExactPitch } from "../helpers/core";
 import { hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../helpers/writtenResolution";
 
@@ -355,6 +356,10 @@ export function chromaticPassingMotions(context: HarmonyRuleContext) {
       if (held) {
         supported.add(first.id);
         if (held.seventhEntry) supported.add(held.seventhEntry);
+        continue;
+      }
+      if (hasInsertedChromaticResolution(context, first, second)) {
+        supported.add(first.id);
         continue;
       }
       const spelling = readChromaticPassingSpelling(context, first, second);
