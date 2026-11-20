@@ -4,6 +4,7 @@ import {
   type SpelledPitchClass,
 } from "../../../pitch";
 import type { AnalysisSlice, SliceTransition } from "../../analysis";
+import { soundsDeclaredChord } from "../../writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { VoicePairTransitionFact } from "../sharedFacts";
@@ -68,14 +69,33 @@ function overlapsByOctaveFromUnison(fact: VoicePairTransitionFact, tick: number)
   return overlap.diatonicSteps >= 7 && overlap.semitones >= 12;
 }
 
-/** Use the sounding voicings on a large overlap when each excludes the other. */
+function hasExclusiveMembers(left: readonly SpelledPitchClass[], right: readonly SpelledPitchClass[]) {
+  return left.some(pitch => !contains(right, pitch)) && right.some(pitch => !contains(left, pitch));
+}
+
+function declaredMembers(slice: AnalysisSlice, context: HarmonyRuleContext) {
+  const chord = slice.chord;
+  if (!chord || chord.semantics?.pedalContext || !soundsDeclaredChord(slice) ||
+      context.harmony.primaryInterpretation(chord).status !== "resolved") return;
+  return chordIdentityToneSpellings(chord.identity);
+}
+
+/** Check the two voicings that actually produced the overlap. */
 export function overlapSameHarmony(
   context: HarmonyRuleContext, transition: SliceTransition, fact: VoicePairTransitionFact,
 ): boolean | undefined {
   if (sameHarmonyOnTransition(transition, context.harmony)) return true;
   const { previous, current } = transition;
-  if (!transition.contiguous || !transition.sameKey || !overlapsByOctaveFromUnison(fact, current.tick) ||
-      context.boundaryAt(current.tick)?.source === "manual") return;
+  if (!transition.contiguous || !transition.sameKey || context.boundaryAt(current.tick)?.source === "manual") return;
+
+  // For two separately voiced parts, a complete change at this attack rules
+  // out a revoicing exemption inherited from an adjacent attack of a held note.
+  if (fact.previousInterval.semitones > 0 && fact.currentInterval.semitones > 0) {
+    const before = declaredMembers(previous, context);
+    const after = declaredMembers(current, context);
+    if (before && after && hasExclusiveMembers(before, after)) return false;
+  }
+  if (!overlapsByOctaveFromUnison(fact, current.tick)) return;
   const source = writtenHarmony(previous, context);
   const target = writtenHarmony(current, context);
   if (!source || !target || (!source.complete && !target.complete) ||

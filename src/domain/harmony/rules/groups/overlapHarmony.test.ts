@@ -221,3 +221,20 @@ bars 1..1 {
   expect(atSecondBeat(project, true)).toEqual([warning]);
   expect(atSecondBeat(project)).toEqual([]);
 });
+
+it.each(["E5/4 D5/4", "D5/2"])("两个实写和弦之间的超越不借用前一和弦的换位 %s", alto => {
+  const { project } = compileScoreText(`satb 1
+key C major
+meter 3/4
+bars 1..2 {
+  S: | F5/2 A5/4 | G5/2. |
+  A: | ${alto} F#5/4 | F#5/4 E5/2 |
+  T: | A4/2 B4/4 | B4/2. |
+  B: | D4/2 D#4/4 | E4/2. |
+  H: | ii/2 V65/III/4 | iii/2. |
+}`);
+  const match = expect.objectContaining({
+    ruleId: rule, tick: 2 * project.ppq, voiceIds: expect.arrayContaining(["soprano", "alto"]),
+  });
+  expect(checkHarmony(project).diagnostics).toContainEqual(match);
+});
