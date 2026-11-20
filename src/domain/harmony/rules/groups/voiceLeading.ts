@@ -21,6 +21,7 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { isCadentialContraryOctave } from "./cadentialContraryOctaves";
+import { sameHarmonyOnTransition } from "../helpers/motionHarmony";
 
 function chromaticHarmonyLicenses(
   context: HarmonyRuleContext,
@@ -250,6 +251,8 @@ function evaluateVoicePairRule(
           policy.title,
           policy.message,
           {
+            motionSameHarmony: policy.id === "voice-leading.hidden-fifth"
+              ? sameHarmonyOnTransition(transition, context.harmony) : undefined,
             pairMotion: {
               voiceExchange: fact.voiceExchange,
               bassStepUp: fact.bassMotion === "step-up",
