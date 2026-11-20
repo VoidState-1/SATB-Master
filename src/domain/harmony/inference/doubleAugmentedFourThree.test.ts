@@ -77,19 +77,95 @@ describe("实写升二的重属倍增三四", () => {
   });
 
   it.each([
-    ["升二音错八度", { soprano: "D#5/4 E4/4" }],
-    ["升四音未到属音", { alto: "F#4/4 F4/4" }],
+    ["升二音错八度", { soprano: "D#5/4 E6/4" }],
     ["降六音未下行半音", { bass: "Ab2/4 G3/4" }],
-    ["主音换八度", { tenor: "C4/4 C3/4" }],
-    ["名义低音高于实奏其他声部", { bass: "Ab5/4 G5/4" }],
-    ["低音先到属音而升二仍保持", {
+    ["共同主音换八度", { tenor: "C4/4 C3/4", bass: "Ab2/4 G2/4" }],
+    ["改到原位属七而非主四六", { soprano: "D#5/4 F5/4", tenor: "C4/4 B3/4" }],
+    ["低音先到属音，两上声部后到同一主四六", {
       soprano: "D#5/4. E5/8", alto: "F#4/4. G4/8", tenor: "C4/2", bass: "Ab2/4 G2/4",
     }],
-    ["回原位主三和弦", { bass: "Ab2/4 C3/4" }],
-    ["书面是小调", { key: "C minor", soprano: "D#5/4 Eb5/4" }],
-  ])("%s 时保留原检查路径", (_description, voicing) => {
+  ])("%s 时和声实音仍能确定书写身份", (_description, voicing) => {
+    expect(opening(projectFor(voicing))?.selected?.functionalBaseId).toBe("DD++43");
+  });
+
+  it("明确的原位属七后继仍触发真正的解决错误", () => {
+    const project = projectFor({ soprano: "D#5/4 F5/4", tenor: "C4/4 B3/4" });
+    const result = applyHarmonyInference(project, {chordInference: inferChords(project)},
+      { mode: "replace-unlocked", writeNonChordToneRoles: true }).project;
+    expect(firstRuleIds(result, "resolution.augmented-sixth", project.ppq)).toHaveLength(1);
+  });
+
+  it("主音连持、相邻两个实写原位主和弦时，辅助回主仍用独立书写身份", () => {
+    const project = compileScoreText(`satb 1
+key D major
+meter 3/4
+bars 1..1 {
+ S: | D5/2. |
+ A: | F#4/4 E#4/4 F#4/4 |
+ T: | A3/4 G#3/4 A3/4 |
+ B: | D3/4 Bb2/4 D3/4 |
+}`).project;
+    const inference = inferChords(project);
+    expect(inference.regions.find(region => region.fromTick === project.ppq)?.selected?.functionalBaseId)
+      .toBe("DD++43");
+    const result = applyHarmonyInference(project, { chordInference: inference },
+      { mode: "replace-unlocked", writeNonChordToneRoles: true }).project;
+    expect(firstRuleIds(result, "resolution.augmented-sixth", 2 * project.ppq)).toHaveLength(1);
+  });
+
+  it.each([
+    ["没有可证的后继功能", { alto: "F#4/4 F4/4" }],
+    ["没有可证的前置原位主功能", { bass: "Ab2/4 C3/4" }],
+    ["名义低音高于实奏其他声部", { bass: "Ab5/4 G5/4" }],
+    ["书面是小调且无独立大调证据", { key: "C minor", soprano: "D#5/4 Eb5/4" }],
+    ["升二级误写作降三级", { soprano: "Eb5/4 E5/4" }],
+    ["升四级改成等音降五级", { alto: "Gb4/4 G4/4" }],
+  ])("%s 时不认作倍增三四", (_description, voicing) => {
     const region = opening(projectFor(voicing));
-    expect([region?.selected, ...(region?.alternatives ?? [])].map(item => item?.functionalBaseId)).not.toContain("DD++43");
+    expect([region?.selected, ...(region?.alternatives ?? [])].map(item => item?.functionalBaseId))
+      .not.toContain("DD++43");
+  });
+
+  it.each(["key", "phrase"])("功能落点不能跨手动 %s 边界", (boundary) => {
+    const project = projectFor();
+    if (boundary === "key") {
+      project.keyEvents.push({ id: "other", tick: project.ppq,
+        tonic: { step: "G", alter: 0 }, mode: "major" });
+    } else {
+      project.structure.phraseBoundaries.push({
+        id: "phrase", tick: project.ppq, source: "manual", confidence: "certain",
+      });
+    }
+    expect(opening(project)?.selected?.functionalBaseId).not.toBe("DD++43");
+  });
+
+  it("同一调号内有独立新调准备时，不借新调主和弦证明旧调重属", () => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 2/4
+bars 1..4 {
+ S: | E5/4 D5/4 | D#5/4 D5/4 | D5/4 C5/4 | B4/2 |
+ A: | C5/4 A4/4 | F#4/4 G4/4 | G4/4 F#4/4 | G4/2 |
+ T: | G3/4 D4/4 | C4/4 B3/4 | B3/4 A3/4 | D4/2 |
+ B: | C3/4 F#2/4 | Ab2/4 G2/4 | D3/4 D3/4 | G2/2 |
+}`).project;
+    const regionAt = (beat: number) => inferChords(project).regions.find(
+      region => region.fromTick <= beat * project.ppq && beat * project.ppq < region.toTick,
+    );
+    expect(regionAt(3)?.selected?.semantics?.interpretations[0].localKey?.tonic.step).toBe("G");
+    expect(regionAt(2)?.selected?.functionalBaseId).not.toBe("DD++43");
+  });
+
+  it("推导与填空应用保留手工给定和弦", () => {
+    const project = projectFor({ harmony: "Ger+6/4 K46/4" });
+    const given = structuredClone(project.chordTrack.regions);
+    const inference = inferChords(project);
+    expect(inference.regions[0].selected?.functionalBaseId).toBe("DD++43");
+    expect(project.chordTrack.regions).toEqual(given);
+    expect(applyHarmonyInference(project, { chordInference: inference }, {
+      mode: "fill-gaps",
+    }).project.chordTrack.regions).toEqual(given);
+    expect(firstRuleIds(project, "chord.augmented-sixth-voicing")).toHaveLength(1);
   });
 
   it("显式倍增三四不能仅凭增六两端正确解决到普通属和弦", () => {
