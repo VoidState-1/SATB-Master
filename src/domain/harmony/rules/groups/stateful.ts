@@ -28,6 +28,7 @@ import {
 import { transfersLeadingToneInWrittenDominant } from "../state/writtenLeadingToneTransfer";
 import { leavesDiatonicSequenceLeadingTone } from "../state/diatonicSequenceLeadingTone";
 import { tenorLeapsToTonicThird } from "../state/tenorThirdLeap";
+import { leadingToneReachesTonicThroughNinth } from "../state/leadingToneTonicNinth";
 import {
   chordEvidence,
   diagnostic,
@@ -212,6 +213,13 @@ function leadingToneTransition(
       "leading-tone-resolved",
       debugFacts,
     );
+
+  if (attacked && targetUnchanged) {
+    const resolution = leadingToneReachesTonicThroughNinth(environment);
+    if (resolution) return decision(environment, "continue", "leading-tone-tonic-ninth", {
+      ...debugFacts, resolutionNoteId: resolution.id,
+    });
+  }
 
   if (attacked && targetUnchanged && currentNote) {
     const proof = readDoubleDominantSeventhLanding(environment.context.rules, currentNote.startTick);
