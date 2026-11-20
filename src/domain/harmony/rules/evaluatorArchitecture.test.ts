@@ -12,19 +12,19 @@ const stateSources = import.meta.glob("./state/*.ts", {
   import: "default",
 }) as Record<string, string>;
 
-const currentDocumentation = import.meta.glob("../../../../../Docs/*.md", {
+const currentDocumentation = import.meta.glob("/Docs/*.md", {
   eager: true,
   query: "?raw",
   import: "default",
 }) as Record<string, string>;
 
-const applicationSources = import.meta.glob("../../../../**/*.{ts,tsx}", {
+const applicationSources = import.meta.glob("/src/**/*.{ts,tsx}", {
   eager: true,
   query: "?raw",
   import: "default",
 }) as Record<string, string>;
 
-const electronSources = import.meta.glob("../../../../../electron/*.{ts,cts}", {
+const electronSources = import.meta.glob("/electron/*.{ts,cts}", {
   eager: true,
   query: "?raw",
   import: "default",
@@ -111,6 +111,7 @@ describe("规则 evaluator 架构", () => {
   });
 
   it("当前架构文档不再引用已删除的声明式源码目录", () => {
+    expect(currentDocumentation).toHaveProperty(["/Docs/harmony-engine.md"]);
     for (const [filename, source] of Object.entries(currentDocumentation)) {
       expect(source, filename).not.toMatch(
         /src\/domain\/harmony\/rules\/(?:declarative|facts)/,
@@ -127,6 +128,8 @@ describe("规则 evaluator 架构", () => {
   });
 
   it("桌面 IPC 只通过共享 typed wrapper 注册和调用通道", () => {
+    expect(electronSources).toHaveProperty(["/electron/main.ts"]);
+    expect(electronSources).toHaveProperty(["/electron/preload.cts"]);
     for (const [filename, source] of Object.entries(electronSources)) {
       if (filename.endsWith("/typed-ipc.ts")) continue;
       expect(source, filename).not.toMatch(/ipcMain\.handle\s*\(/);
