@@ -41,7 +41,7 @@ describe("完整七和弦陈述后的弱位换音", () => {
     const applied = applyHarmonyInference(score, inference, { mode: "fill-gaps", writeNonChordToneRoles: true });
     expect(applied.writtenNonChordToneRoleCount).toBe(0);
     expect(applied.project.satbTracks).toEqual(score.satbTracks);
-    expect(checkHarmony(applied.project).diagnostics).toContainEqual(expect.objectContaining({
+    expect(checkHarmony(applied.project).diagnostics).not.toContainEqual(expect.objectContaining({
       ruleId: "chord.incomplete-members", tick: PPQ, severity: "warning", params: { missing: "C" },
     }));
     expect(region(score, 2 * PPQ)?.selected?.identity).toMatchObject({ root: { step: "B", alter: -1 }, bass: { step: "D" } });

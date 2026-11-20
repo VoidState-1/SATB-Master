@@ -26,6 +26,7 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import { structuralTriadVoicing } from "../helpers/passingTriadVoicing";
+import { continuesCompleteSeventh } from "../helpers/seventhRevoicing";
 import { beforeMelodicMinorPassingBass } from "../helpers/melodicMinorPassingBass";
 import { hasPairedOuterNeighborBass } from "../helpers/pairedOuterNeighborBass";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -203,6 +204,9 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
           },
         );
       if (missing.length === 0 || structuralTriadVoicing(context, slice) !== slice) return;
+      const fifth = chordIdentityToneSpellingForDegree(chord.identity, 5);
+      if (missing.length === 1 && fifth && pitchClassEquals(missing[0], fifth) &&
+          continuesCompleteSeventh(context, slice)) return;
       const interpretation = context.harmony.primaryInterpretation(chord);
       const functionalDesignation =
         interpretation.status === "resolved"
