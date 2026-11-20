@@ -27,6 +27,7 @@ import {
 } from "./halfDiminishedChain";
 import { transfersLeadingToneInWrittenDominant } from "../state/writtenLeadingToneTransfer";
 import { leavesDiatonicSequenceLeadingTone } from "../state/diatonicSequenceLeadingTone";
+import { tenorLeapsToTonicThird } from "../state/tenorThirdLeap";
 import {
   chordEvidence,
   diagnostic,
@@ -233,6 +234,9 @@ function leadingToneTransition(
 
   if (attacked && targetUnchanged && innerLeadingToneDescendsToFifth(environment))
     return decision(environment, "resolve", "inner-leading-tone-descends-to-fifth", debugFacts);
+
+  if (attacked && targetUnchanged && tenorLeapsToTonicThird(environment))
+    return decision(environment, "resolve", "tenor-leaps-to-tonic-third", debugFacts);
 
   if (attacked && targetUnchanged && leadingToneDescendsInMajorDeceptiveMotion(environment))
     return decision(environment, "resolve", "major-deceptive-leading-tone-descends", debugFacts);
