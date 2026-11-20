@@ -38,6 +38,8 @@ import {
   type HarmonyContextFacts,
 } from "./rules/sharedFacts";
 
+import { readSliceProlongations, type WrittenProlongation } from "./writtenProlongation";
+
 export { sameChordIdentityWithoutBass } from "./segments";
 
 /** 递归深层只读类型映射，用于保证分析快照不可变 */
@@ -169,6 +171,7 @@ export interface HarmonyAnalysis {
   readonly melodyTransitions: readonly MelodyTransition[];
   readonly sliceTransitions: readonly SliceTransition[];
   readonly connections: readonly HarmonyConnectionAssessment[];
+  readonly writtenProlongations: ReadonlyMap<number, WrittenProlongation>;
   readonly targetChains: readonly FunctionalTargetChainFact[];
   readonly contextFacts: HarmonyContextFacts;
   readonly notesByVoice: Readonly<Record<VoiceId, readonly AnalysisNote[]>>;
@@ -502,6 +505,7 @@ export function buildHarmonyAnalysis(
   );
   const sliceTransitions = buildSliceTransitions(slices, sliceSpanIds);
   const melodyTransitions = buildMelodyTransitions(inputs, notesByVoice);
+  const writtenProlongations = readSliceProlongations(slices, phraseAnalysis.boundaries.map(boundary => boundary.tick));
   const connections = buildHarmonyConnections({
     project: snapshot,
     harmonySpans,
@@ -554,6 +558,7 @@ export function buildHarmonyAnalysis(
     melodyTransitions,
     sliceTransitions,
     connections,
+    writtenProlongations,
     targetChains,
     contextFacts,
     notesByVoice: Object.freeze(notesByVoice),

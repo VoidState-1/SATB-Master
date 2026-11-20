@@ -10,6 +10,7 @@ import type {
   AnalysisNote,
   AnalysisSlice,
   HarmonySpan,
+  HarmonyAnalysis,
 } from "../../analysis";
 import { leadingTonePitchClass, scaleDegreePitchClass, type KeyLike } from "../../../pitch";
 import { chordMemberFacts } from "../sharedFacts";
@@ -61,7 +62,7 @@ function semanticsOf(subject: HarmonySpan | AnalysisChord) {
   return subject.semantics;
 }
 
-export function createHarmonyAnalysisService(): HarmonyAnalysisService {
+export function createHarmonyAnalysisService(analysis?: Pick<HarmonyAnalysis, "writtenProlongations">): HarmonyAnalysisService {
   const service: HarmonyAnalysisService = {
     isWrittenChordTone(note, chord) {
       return Boolean(chord && identityContainsWrittenPitchClass(chord.identity, note.pitch));
@@ -70,7 +71,9 @@ export function createHarmonyAnalysisService(): HarmonyAnalysisService {
       return Boolean(chord && identityContainsPitchClass(chord.identity, note.pitch));
     },
     chordMembersAt(slice) {
-      return slice.chord ? chordMemberFacts(slice, slice.chord) : [];
+      if (slice.chord) return chordMemberFacts(slice, slice.chord);
+      const fact = analysis?.writtenProlongations.get(slice.tick);
+      return fact ? chordMemberFacts(slice, { identity: fact.surfaceIdentity }) : [];
     },
     primaryInterpretation(subject) {
       const semantics = semanticsOf(subject);

@@ -290,7 +290,7 @@ export function createHarmonyRuleContext(
     },
     pitch: createPitchAnalysisService(),
     metric: createMetricAnalysisService(analysis.metricTimeline),
-    harmony: createHarmonyAnalysisService(),
+    harmony: createHarmonyAnalysisService(analysis),
     voiceLeading: createVoiceLeadingService(),
     diagnostics: createDiagnosticFactory(analysis, indexes),
   };

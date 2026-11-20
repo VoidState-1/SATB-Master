@@ -36,12 +36,15 @@ export function soundsDeclaredChord(slice: Pick<AnalysisSlice, "chord" | "comple
 
 const writtenQualities = Object.keys(QUALITY_INTERVALS) as ChordQuality[];
 
-/** A bare slice can supply a literal triad or seventh without a functional label. */
 export function readCompleteWrittenChord(slice: AnalysisSlice): ChordIdentity | undefined {
+  if (slice.chord) return soundsDeclaredChord(slice) ? slice.chord.identity : undefined;
+  return readSoundingTertianIdentity(slice);
+}
+
+/** Recover a complete triad or seventh from the written pitches, even if a label disagrees. */
+export function readSoundingTertianIdentity(slice: Pick<AnalysisSlice, "completeSatb" | "notes">): ChordIdentity | undefined {
   const bass = slice.notes.bass;
   if (!slice.completeSatb || !bass) return;
-  if (slice.chord) return soundsDeclaredChord(slice) ? slice.chord.identity : undefined;
-
   const notes = Object.values(slice.notes);
   for (const { pitch: root } of notes) {
     for (const quality of writtenQualities) {

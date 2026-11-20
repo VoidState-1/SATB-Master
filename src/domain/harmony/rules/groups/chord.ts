@@ -169,6 +169,7 @@ export function inversionBassRule(context: HarmonyRuleContext) {
   standardChordSliceFacts(context).forEach(({ slice, chord, active }) => {
     const bass = active.find((item) => item.voiceId === "bass");
     if (!bass || pitchClassEquals(bass.note.pitch, chord.identity.bass)) return;
+    const written = context.analysis.writtenProlongations.get(slice.tick);
     if (connectsStructuralBasses(context, chord, bass.note) || beforeMelodicMinorPassingBass(context, slice) ||
         hasPairedOuterNeighborBass(context, slice)) return;
     diagnostics.push(
@@ -182,7 +183,13 @@ export function inversionBassRule(context: HarmonyRuleContext) {
         `${chordLabel(chord)} 要求低音写作 ${formatPitchClass(chord.identity.bass)}，当前为 ${formatPitchClass(bass.note.pitch)}。`,
         {
           chordIds: [chord.id],
-          evidence: [chordEvidence(chord), noteEvidence(bass.note, "男低音")],
+          evidence: [
+            chordEvidence(chord), noteEvidence(bass.note, "男低音"),
+            ...(written ? [{
+              kind: "chord" as const, label: "实写辅助减七",
+              value: `${formatPitchClass(written.surfaceIdentity.root)}°7/${formatPitchClass(written.bass.pitch)}`,
+            }] : []),
+          ],
         },
       ),
     );

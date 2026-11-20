@@ -149,7 +149,7 @@ export function voicePairTransitionFacts(
 
 export function chordMemberFacts(
   slice: AnalysisSlice,
-  chord: AnalysisChord,
+  chord: Pick<AnalysisChord, "identity">,
 ): readonly ChordMemberFact[] {
   const tones = chordIdentityToneSpellings(chord.identity);
   return Object.freeze(
