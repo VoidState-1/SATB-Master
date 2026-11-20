@@ -22,7 +22,7 @@ import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
 import { isRespeltDoubleDominantSeventh } from "./chromaticDoubleDominant";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
-import { recognizesAugmentedSixthPreparation } from "./chromaticAugmentedSixth";
+import { recognizesAugmentedSixthPreparation, resolvesGermanSixthDiminishedThird } from "./chromaticAugmentedSixth";
 import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
 import { sameHarmonyAtMelodicAttack } from "../helpers/motionHarmony";
 
@@ -209,6 +209,7 @@ function alteredIntervalRule(
       passing?.has(transition.id) ||
       chain?.has(transition.current.id) ||
       isMinorSixthChordBassLine(context, transition) ||
+      (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
       (expectedQuality === "增" && (
         lowerDoubleDominantLeadingTone(context, transition) ||
         preparesDoubleDominantSeventhBass(context, transition) ||
