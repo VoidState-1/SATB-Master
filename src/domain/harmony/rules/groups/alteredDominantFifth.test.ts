@@ -56,3 +56,40 @@ describe("属和弦变五音的半音准备（第46章）", () => {
     expect(warnsAtChange(score, "tenor")).toBe(true);
   });
 });
+
+describe("连续两个属和弦引入外调的增三和弦", () => {
+  const progression = `satb 1
+key F# minor
+meter 3/4
+bars 1..1 {
+ S: | B4/4 B#4/4 C#5/4 |
+ A: | F#4/4 E4/4 A4/4 |
+ T: | D#4/4 E4/4 E4/4 |
+ B: | B2/4 G#2/4 A2/4 |
+}`;
+
+  function hasWarning(text: string) {
+    const { project } = compileScoreText(text);
+    return checkHarmony(project, undefined, {}, {
+      [rule]: { "same-harmony": "strict", arpeggiation: "strict" },
+    }).diagnostics.some(item => item.ruleId === rule && item.tick === project.ppq && item.voiceIds.includes("soprano"));
+  }
+
+  it.each([
+    ["属三和弦", progression],
+    ["先行属七和弦的七音同声部下行", progression.replace("B2/4 G#2/4", "A2/4 G#2/4")],
+    ["移调后的局部 C 大调", progression.replace("F# minor", "A minor")
+      .replace("B4/4 B#4/4 C#5/4", "D5/4 D#5/4 E5/4")
+      .replace("F#4/4 E4/4 A4/4", "A4/4 G4/4 C5/4")
+      .replace("D#4/4 E4/4 E4/4", "F#4/4 G4/4 G4/4")
+      .replace("B2/4 G#2/4 A2/4", "D3/4 B2/4 C3/4")],
+  ])("%s 的两个导音和升五音各自解决", (_label, text) => expect(hasWarning(text)).toBe(false));
+
+  it.each([
+    ["先行和弦成为小三和弦", progression.replace("D#4/4", "D4/4")],
+    ["另一个声部到达根音，先行导音越八度", progression.replace("D#4/4 E4/4", "D#4/4 E5/4")],
+    ["增和弦三音越八度落主音", progression.replace("G#2/4 A2/4", "G#2/4 A3/4")],
+    ["先行属七的七音未在原音区解决", progression.replace("B2/4 G#2/4 A2/4", "A2/4 G#3/4 A3/4")],
+    ["中间和弦标注与实奏冲突", progression + "\nannotations {\n chord other range=[1:2,1:3) symbol=IV\n}"],
+  ])("%s 时保留增一度", (_label, text) => expect(hasWarning(text)).toBe(true));
+});

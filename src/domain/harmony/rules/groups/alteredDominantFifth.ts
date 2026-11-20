@@ -1,10 +1,43 @@
-import { chordToneSpellings } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../../pitch";
+import { chordIdentityToneSpellings, chordToneSpellings } from "../../../chordModel";
+import { pitchClassEquals, scaleDegreePitchClass, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
-import type { MelodyTransition } from "../../analysis";
+import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { hasWrittenVoicing } from "../helpers/writtenResolution";
+import { hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../helpers/writtenResolution";
+
+function resolvesMember(
+  source: AnalysisSlice, target: AnalysisSlice, member: SpelledPitchClass,
+  destination: SpelledPitchClass, direction: 1 | -1,
+) {
+  return VOICE_ORDER.some(voice => pitchClassEquals(source.notes[voice]!.pitch, member) &&
+    resolvesInVoice(source, target, voice, destination, direction));
+}
+
+function labelFitsAlteredDominant(slice: AnalysisSlice, root: SpelledPitchClass) {
+  if (!slice.chord) return true;
+  const { identity } = slice.chord;
+  return pitchClassEquals(identity.root, root) && !!slice.notes.bass &&
+    pitchClassEquals(identity.bass, slice.notes.bass.pitch) &&
+    hasWrittenVoicing(slice, chordIdentityToneSpellings(identity));
+}
+
+/** A secondary dominant can be identified from the two successive leading
+ * tones. Each must resolve in the part that sounds it, first to the root of
+ * the altered dominant and then to the local tonic. */
+function hasSuccessiveDominantResolutions(
+  before: AnalysisSlice, altered: AnalysisSlice, arrival: AnalysisSlice,
+  preparatoryRoot: SpelledPitchClass, root: SpelledPitchClass, tonic: SpelledPitchClass,
+) {
+  const [, preparatoryThird, , preparatorySeventh] = chordToneSpellings(preparatoryRoot, "dominant7");
+  const dominantThird = chordToneSpellings(root, "major")[1];
+  const hasSeventh = matchesWrittenChord(before, preparatoryRoot, "dominant7");
+  if ((!hasSeventh && !matchesWrittenChord(before, preparatoryRoot, "major")) ||
+      !matchesWrittenChord(arrival, tonic, "major")) return false;
+  return resolvesMember(before, altered, preparatoryThird, root, 1) &&
+    resolvesMember(altered, arrival, dominantThird, tonic, 1) &&
+    (!hasSeventh || resolvesMember(before, altered, preparatorySeventh, dominantThird, -1));
+}
 
 /** Spasobin §46. A natural scale degree II becomes the altered fifth of V.
  * Its direction and its actual destination distinguish this motion from an
@@ -41,13 +74,19 @@ export function preparesAlteredDominantFifth(context: HarmonyRuleContext, motion
   const altered = [dominant, third, current.pitch];
   const alteredSeventh = [...altered, seventh];
   let heardDominantSeventh = hasWrittenVoicing(before, chordToneSpellings(root, "dominant7"));
-  for (const slice of context.slices({ overlapping: { fromTick: start, toTick: end } })) {
+  const alteredSlices = context.slices({ overlapping: { fromTick: start, toTick: end } }).toArray();
+  for (const slice of alteredSlices) {
     if (slice.key.id !== before.key.id) return false;
     if (hasWrittenVoicing(slice, alteredSeventh)) heardDominantSeventh = true;
     else if (!hasWrittenVoicing(slice, altered)) return false;
   }
-  // A major triad becoming augmented can also be a tonic decorated on its
-  // way to IV. Away from the printed tonic, require the dominant seventh.
-  return heardDominantSeventh || (pitchClassEquals(tonic, arrival.key.tonic) &&
-    (!raisesFifth || arrival.key.mode === "major"));
+  if (heardDominantSeventh || (pitchClassEquals(tonic, arrival.key.tonic) &&
+      (!raisesFifth || arrival.key.mode === "major"))) return true;
+
+  // A raised fifth alone permits a tonic–subdominant reading. Away from
+  // the printed tonic, seek the preceding dominant as independent evidence.
+  const alteredOnset = alteredSlices[0];
+  return raisesFifth && !!alteredOnset && !pitchClassEquals(root, before.key.tonic) &&
+    alteredSlices.every(slice => labelFitsAlteredDominant(slice, root)) &&
+    hasSuccessiveDominantResolutions(before, alteredOnset, arrival, previous.pitch, root, tonic);
 }
