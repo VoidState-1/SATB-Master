@@ -1,10 +1,9 @@
 import {
-  chordIdentityToneSpellings,
   chordIdentityToneSpellingForDegree,
   chordVoicingPolicy,
   harmonySemanticsCompatibleWithIdentity,
 } from "../../../chordModel";
-import type { AnalysisNote, HarmonyAnalysis } from "../../analysis";
+import type { AnalysisNote } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import { effectiveFunctionalDesignation } from "../../../functionalHarmonyCatalog";
 import {
@@ -18,13 +17,13 @@ import {
   type SpelledPitchClass,
 } from "../../../pitch";
 import {
-  activeNotes,
   chordEvidence,
   chordLabel,
   diagnostic,
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
+import { chordSliceFacts, type ChordSliceFact } from "../helpers/chordSliceFacts";
 import { structuralTriadVoicing, triadOrnaments } from "../helpers/structuralTriadVoicing";
 import { continuesCompleteSeventh } from "../helpers/seventhRevoicing";
 import { beforeMelodicMinorPassingBass } from "../helpers/melodicMinorPassingBass";
@@ -40,48 +39,9 @@ import { heldSuspensionsAt } from "./heldSuspensions";
 import { preparedCadentialPair } from "./preparedCadentialPair";
 import { respeltDoubleDominantMember } from "./chromaticDoubleDominant";
 
-interface ChordSliceFact {
-  slice: HarmonyAnalysis["slices"][number];
-  chord: NonNullable<HarmonyAnalysis["slices"][number]["chord"]>;
-  active: ReturnType<typeof activeNotes>;
-  tones: ReturnType<typeof chordIdentityToneSpellings>;
-  stableComplete: boolean;
-}
-
-function chordSliceFacts(context: HarmonyRuleContext) {
-  return context
-    .slices()
-    .selectMany((slice): ChordSliceFact[] => {
-      if (!slice.chord) return [];
-      return [
-        {
-          slice,
-          chord: slice.chord,
-          active: activeNotes(slice),
-          tones: chordIdentityToneSpellings(slice.chord.identity),
-          stableComplete:
-            slice.completeSatb &&
-            !context.sliceTransitions({ fromSliceIndex: slice.index }).first()
-              ?.sameHarmony,
-        },
-      ];
-    })
-    .toArray();
-}
-
-function standardChordSliceFacts(context: HarmonyRuleContext) {
-  return chordSliceFacts(context).filter(
-    ({ chord }) =>
-      chord.identity.structure.kind === "tertian" &&
-      !chord.identity.structure.extensions.some(
-        (extension) => extension >= 9,
-      ),
-  );
-}
-
 export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  standardChordSliceFacts(context).forEach(
+  chordSliceFacts(context).standard.forEach(
     ({ slice, chord, active, tones }) => {
       const unresolved = active.filter(
         ({ note }) => !note.nonChordToneRole && !hasExactPitch(note, tones),
@@ -166,7 +126,7 @@ function connectsStructuralBasses(
 
 export function inversionBassRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  standardChordSliceFacts(context).forEach(({ slice, chord, active }) => {
+  chordSliceFacts(context).standard.forEach(({ slice, chord, active }) => {
     const bass = active.find((item) => item.voiceId === "bass");
     if (!bass || pitchClassEquals(bass.note.pitch, chord.identity.bass)) return;
     const written = context.analysis.writtenProlongations.get(slice.tick);
@@ -206,7 +166,7 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
       : cadence.landingSpan?.firstSlice.chord;
     if (targetChord) fullCadenceTargets.add(targetChord.id);
   }
-  standardChordSliceFacts(context).forEach(
+  chordSliceFacts(context).standard.forEach(
     ({ slice, chord, active, stableComplete }) => {
       if (!stableComplete) return;
       const structural = notesWithAnticipationReplacements(context, slice, active);
@@ -309,7 +269,7 @@ function evaluateRepeatedChordToneRule(
   policy: RepeatedChordTonePolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  standardChordSliceFacts(context).forEach((fact) => {
+  chordSliceFacts(context).standard.forEach((fact) => {
     if (!fact.stableComplete) return;
     const target = policy.target(fact);
     if (!target) return;
@@ -372,7 +332,7 @@ export function doubledSeventhRule(context: HarmonyRuleContext) {
 
 export function doubledAlteredTendencyToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  chordSliceFacts(context).forEach(
+  chordSliceFacts(context).all.forEach(
     (fact) => {
       const { slice, chord, active, stableComplete } = fact;
       if (!stableComplete || chord.identity.structure.kind !== "tertian")
@@ -440,7 +400,7 @@ export function doubledAlteredTendencyToneRule(context: HarmonyRuleContext) {
 }
 
 function dominantNinthFacts(context: HarmonyRuleContext) {
-  return chordSliceFacts(context).filter(
+  return chordSliceFacts(context).all.filter(
     ({ chord, stableComplete }) =>
       stableComplete &&
       chord.identity.structure.kind === "tertian" &&
@@ -548,7 +508,7 @@ export function dominantNinthRootSpacingRule(context: HarmonyRuleContext) {
 
 export function augmentedSixthVoicingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  chordSliceFacts(context).forEach(
+  chordSliceFacts(context).all.forEach(
     ({ slice, chord, active, tones, stableComplete }) => {
       if (
         !stableComplete ||
