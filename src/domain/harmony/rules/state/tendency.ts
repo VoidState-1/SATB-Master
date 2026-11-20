@@ -7,6 +7,8 @@ import {
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
+import { readWrittenDominantSeventh } from "../../writtenDominantSeventh";
+import { resolvesInVoice } from "../../writtenResolution";
 import { crossesManualPhraseBoundary, resolvesDominantSixthSubstitution } from "../groups/dominantSixthSubstitution";
 import {
   leadingTonePitchClass,
@@ -349,6 +351,47 @@ function obligationFollowsWrittenLeadingTone(
     tick = slice.endTick;
   }
   return true;
+}
+
+function dominantSeventhAt(context: RuleStepContext, slice: AnalysisSlice) {
+  const bass = slice.notes.bass;
+  if (!slice.completeSatb || !bass || !supportsTendencyResolutionRules(context, slice.chord) ||
+      Object.values(slice.notes).some(note => toMidi(note.pitch) < toMidi(bass.pitch))) return;
+  const written = readWrittenDominantSeventh(slice.notes);
+  if (!written) return;
+  const identity = slice.chord?.identity;
+  const structure = identity?.structure;
+  if (identity && (structure?.kind !== "tertian" || structure.quality !== "dominant7" ||
+      structure.alterations.length || structure.extensions.length ||
+      !pitchClassEquals(identity.root, written.root) || !pitchClassEquals(identity.bass, bass.pitch))) return;
+  return written;
+}
+
+/** Two successive dominant sevenths can exchange their tendency-tone roles
+ * as both voices descend by semitone (Huang, keyboard exercise 1, p. 552). */
+export function leadingToneBecomesNextDominantSeventh(environment: ObligationEnvironment<LeadingTonePayload>) {
+  const { context, obligation: { payload } } = environment;
+  const source = context.previous;
+  const target = context.slice;
+  const leading = source?.notes[payload.voiceId];
+  const landing = target.notes[payload.voiceId];
+  if (!source || !leading || !landing || !context.transitionFromPrevious?.contiguous ||
+      source.key.id !== target.key.id || leading.startTick + leading.durationTicks !== target.tick) return false;
+  const motion = writtenInterval(leading.pitch, landing.pitch);
+  if (motion.semitones !== -1 || motion.diatonicSteps !== 0) return false;
+
+  const from = dominantSeventhAt(context, source);
+  const to = dominantSeventhAt(context, target);
+  if (!from || !to || !pitchClassEquals(from.target, to.root) ||
+      !pitchClassEquals(leading.pitch, from.third)) return false;
+
+  const nextTonic = { tonic: to.root, mode: payload.targetMode };
+  return obligationFollowsWrittenLeadingTone(environment, source, leading, landing, to.seventh, nextTonic) &&
+    VOICE_ORDER.some(voice => {
+      const seventh = source.notes[voice];
+      return seventh && pitchClassEquals(seventh.pitch, from.seventh) &&
+        resolvesInVoice(source, target, voice, to.third, -1);
+    });
 }
 
 export function innerLeadingToneDescendsToFifth(

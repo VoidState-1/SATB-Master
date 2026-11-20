@@ -386,6 +386,26 @@ describe("斯波索宾基础规则检查", () => {
     );
   });
 
+  it.each([
+    ["属七的七音同声部下行至下一属七三音", 76, 60, false],
+    ["下一属七三音改由另一声部进入", 72, 64, true],
+  ] as const)("连续属七的导音检查：%s", (_, sopranoArrival, tenorArrival, shouldWarn) => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    addPair(project, "soprano", [77, sopranoArrival]);
+    addPair(project, "alto", [71, 70]);
+    addPair(project, "tenor", [62, tenorArrival]);
+    addPair(project, "bass", [55, 60]);
+    project.satbTracks.find(track => track.id === "alto")!.notes[1].pitch = {
+      step: "B", alter: -1, octave: 4,
+    };
+
+    const reports = checkHarmony(project).diagnostics.filter(item =>
+      item.ruleId === "resolution.leading-tone" && item.voiceIds.includes("alto")
+    );
+    expect(reports.map(item => [item.tick, item.severity])).toEqual(shouldWarn ? [[PPQ, "warning"]] : []);
+  });
+
   it("小调自然七级不被误判为升高导音", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 2;

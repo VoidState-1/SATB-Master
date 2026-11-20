@@ -1,6 +1,7 @@
 import { chordToneSpellings, type KeyReference } from "../../chordModel";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
 import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
+import { readWrittenDominantSeventh } from "../writtenDominantSeventh";
 import { createFunctionalCandidate } from "./candidates";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
@@ -10,23 +11,6 @@ const degrees = [1, 2, 3, 4, 5, 6, 7] as const;
 function sameContext(left: ChordInferenceObservation, right: ChordInferenceObservation) {
   return left.toTick === right.fromTick && left.key.id === right.key.id &&
     left.key.mode === right.key.mode && pitchClassEquals(left.key.tonic, right.key.tonic);
-}
-
-/** A dominant seventh remains identifiable without its fifth only with
- * the canonical root-position doubling and a written third and seventh. */
-function writtenDominant(item: ChordInferenceObservation) {
-  const notes = observationNotes(item);
-  if (!item.completeSatb || !item.bass || notes.some(({ note }) => note.nonChordToneRole)) return;
-  for (const root of item.soundingPitchClasses) {
-    const tones = chordToneSpellings(root, "dominant7");
-    if (![0, 1, 3].every(i => item.soundingPitchClasses.some(p => pitchClassEquals(p, tones[i]))) ||
-        !notes.every(({ note }) => tones.some(tone => pitchClassEquals(note.pitch, tone)))) continue;
-    const inversion = tones.findIndex(tone => pitchClassEquals(item.bass!.pitch, tone));
-    if (item.soundingPitchClasses.length === 3 && (inversion !== 0 ||
-        notes.filter(({ note }) => pitchClassEquals(note.pitch, root)).length !== 2)) continue;
-    return { root, inversion: inversion as 0 | 1 | 2 | 3,
-      target: scaleDegreePitchClass({ tonic: root, mode: "major" }, 4) };
-  }
 }
 
 /** In harmonic major the lowered sixth gives iiø7 (§21.1) or the
@@ -43,7 +27,7 @@ export function harmonicMajorPreparation(item: ChordInferenceObservation, next: 
   const exactTriad = (tones: ReturnType<typeof chordToneSpellings>) =>
     tones.every(tone => next.soundingPitchClasses.some(p => pitchClassEquals(p, tone))) &&
     next.soundingPitchClasses.length === tones.length;
-  const seventh = writtenDominant(next);
+  const seventh = readWrittenDominantSeventh(next.activeNotes);
   if (seventh && pitchClassEquals(seventh.root, dominant) ||
       exactTriad(chordToneSpellings(dominant, "major")) ||
       pitchClassEquals(next.bass.pitch, dominant) && inversion !== 3 && exactTriad(chordToneSpellings(key.tonic, "major")))
@@ -58,7 +42,7 @@ export function withAppliedSequences(
   sets: readonly (readonly ChordInferenceCandidate[])[],
   options: ChordInferenceOptions,
 ) {
-  const stacks = observations.map(writtenDominant);
+  const stacks = observations.map(item => readWrittenDominantSeventh(item.activeNotes));
   const chain = new Set<number>();
   let start = 0, links = 0;
   for (let i = 0; i < stacks.length; i++) {

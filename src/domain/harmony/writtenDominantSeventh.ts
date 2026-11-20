@@ -3,6 +3,7 @@ import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi } f
 import { VOICE_ORDER } from "../project/voice";
 import type { AnalysisSlice } from "./analysis";
 import { movesToWrittenTone } from "./dominantSixthMotion";
+import { soundsCompleteWrittenMembers } from "./writtenVoicing";
 
 type WrittenFrame = Pick<AnalysisSlice, "tick" | "notes" | "completeSatb">;
 const endOf = (note: { startTick: number; durationTicks: number }) => note.startTick + note.durationTicks;
@@ -63,4 +64,27 @@ export function readReattackedDominantSeventh(
   }
 
   return { root, key: { tonic, mode }, leadingVoice, seventhVoice, repeated, settledTick: settled.tick };
+}
+
+/** A written dominant seventh can omit its fifth in root position when
+ * the root is doubled and the third and seventh both sound. */
+export function readWrittenDominantSeventh(voicing: AnalysisSlice["notes"]) {
+  const bass = voicing.bass;
+  const notes = Object.values(voicing).filter(note => note !== undefined);
+  if (!bass || notes.length !== 4) return;
+
+  for (const { pitch: { step, alter } } of notes) {
+    const root = { step, alter };
+    const tones = chordToneSpellings(root, "dominant7");
+    const [, third, , seventh] = tones;
+    const inversion = ([0, 1, 2, 3] as const).find(index => pitchClassEquals(tones[index], bass.pitch));
+    if (inversion === undefined) continue;
+    const complete = soundsCompleteWrittenMembers(tones, notes);
+    const omitsOnlyFifth = inversion === 0 &&
+      soundsCompleteWrittenMembers([root, third, seventh], notes) &&
+      notes.filter(note => pitchClassEquals(note.pitch, root)).length === 2;
+    if (complete || omitsOnlyFifth) {
+      return { root, inversion, third, seventh, target: scaleDegreePitchClass({ tonic: root, mode: "major" }, 4) };
+    }
+  }
 }
