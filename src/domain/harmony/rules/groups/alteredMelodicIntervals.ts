@@ -1,10 +1,11 @@
-import { formatSpelledPitch } from "../../../pitch";
+import { formatPitchClass, formatSpelledPitch, pitchClassEquals } from "../../../pitch";
 import type { MelodyTransition } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { diagnostic, intervalName, noteEvidence, voiceName } from "../helpers/core";
 import { isWrittenLowerNeighborMotion } from "../helpers/writtenLowerNeighborPair";
 import { hasSupportedChromaticPreparation } from "./chromaticUnison";
+import { readWrittenDominantSpelling } from "./writtenDominantSpelling";
 import { chromaticPassingMotions } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
@@ -36,6 +37,27 @@ function alteredIntervalRule(
   const chain = halfDiminishedChainArrivals(context, expectedQuality);
   for (const transition of context.melodyTransitions().where(item => item.contiguous)) {
     const named = intervalName(transition.writtenInterval);
+    if (augmented && named.quality !== "减") {
+      const spelling = readWrittenDominantSpelling(context, transition);
+      if (spelling) {
+        const notes = [transition.previous, transition.current];
+        const expected = [spelling.previous, spelling.current];
+        const incorrect = notes.flatMap((note, i) => pitchClassEquals(note.pitch, expected[i])
+          ? [] : [`${formatSpelledPitch(note.pitch)} 宜写为 ${formatPitchClass(expected[i])}`]);
+        if (incorrect.length) {
+          diagnostics.push(diagnostic(ruleId, transition.current.startTick,
+            transition.current.startTick + transition.current.durationTicks, [transition.voiceId], notes,
+            "和声性半音的拼写", incorrect.join("，") + "。",
+            {
+              melodyTransitionId: transition.id,
+              messageKey: `${ruleId}.structural-spelling`,
+              params: { intervalNumber: named.number, quality: named.quality, semitones: 1 },
+              evidence: [noteEvidence(transition.previous, "前一音"), noteEvidence(transition.current, "当前音")],
+            }));
+        }
+        continue;
+      }
+    }
     if (
       !named.altered ||
       named.quality !== expectedQuality ||
