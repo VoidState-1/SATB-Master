@@ -24,9 +24,7 @@ export function structuralTriadVoicing(context: HarmonyRuleContext, end: Analysi
   if (!motion) return end;
   const tones = chordIdentityToneSpellings(end.chord.identity);
   const arrival = chordIdentityToneSpellings(right.chord.identity);
-  const held = activeNotes(end).filter(p => p.note.id !== motion.note.id);
-  if (!tones.every(t => held.some(({ note }) => pitchClassEquals(t, note.pitch))) ||
-      !tones.some(t => pitchClassEquals(t, motion.after.pitch)) ||
+  if (!tones.some(t => pitchClassEquals(t, motion.after.pitch)) ||
       !pitchClassEquals(left.notes.bass!.pitch, end.chord.identity.bass) ||
       !pitchClassEquals(right.notes.bass!.pitch, right.chord.identity.bass) ||
       arrival.some(t => pitchClassEquals(t, motion.note.pitch)) ||

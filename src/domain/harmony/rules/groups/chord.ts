@@ -25,6 +25,7 @@ import {
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
+import { structuralTriadVoicing } from "../helpers/passingTriadVoicing";
 import { beforeMelodicMinorPassingBass } from "../helpers/melodicMinorPassingBass";
 import { hasPairedOuterNeighborBass } from "../helpers/pairedOuterNeighborBass";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -201,7 +202,7 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
             return !structural.some(({ note }) => pitchClassEquals(note.pitch, tone));
           },
         );
-      if (missing.length === 0) return;
+      if (missing.length === 0 || structuralTriadVoicing(context, slice) !== slice) return;
       const interpretation = context.harmony.primaryInterpretation(chord);
       const functionalDesignation =
         interpretation.status === "resolved"
@@ -660,7 +661,7 @@ export const CHORD_RULES = defineRuleGroup(
     group: "chord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
-    dependencyScope: "chord",
+    dependencyScope: "phrase",
     evaluate: incompleteChordMembersRule,
   }),
   defineStatelessRule({
