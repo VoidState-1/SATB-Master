@@ -36,6 +36,7 @@ import {
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
 import { leadingNeighborFrame, ornamentsSameLeadingHarmony } from "../state/leadingToneNeighbor";
+import { ornamentsPreparedSeventh } from "../state/preparedSeventh";
 import { readDoubleDominantSeventhLanding } from "../state/doubleDominantSeventh";
 import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
 import { isProvenHeldDoubleDominantContinuation } from "./heldDoubleDominantContinuation";
@@ -414,6 +415,9 @@ function seventhTransition(
 
   if (sameOpenedSpan(environment))
     return decision(environment, "continue", "chord-seventh-same-harmony");
+
+  if (ornamentsPreparedSeventh(environment))
+    return decision(environment, "continue", "chord-seventh-prepared-neighbor");
 
   if (subjectHasActiveNote(environment)) {
     if (chordSeventhResolves(environment))

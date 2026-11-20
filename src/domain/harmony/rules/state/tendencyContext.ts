@@ -7,6 +7,19 @@ import type { JsonValue, RuleStepContext } from "../../runtime";
 import type { ObligationEnvironment } from "./obligation";
 import type { LeadingTonePayload, SeventhPayload, VoiceObligationPayload } from "./tendency";
 
+export function supportsTendencyResolutionRules(
+  context: RuleStepContext,
+  chord: RuleStepContext["slice"]["chord"],
+) {
+  if (!chord) return true;
+  const resolution = context.rules.harmony.primaryInterpretation(chord);
+  return (
+    chord.identity.structure.kind === "tertian" &&
+    !chord.semantics?.pedalContext &&
+    (!chord.semantics || resolution.status === "resolved")
+  );
+}
+
 export function openedSourceNote<Payload extends JsonValue>(
   environment: ObligationEnvironment<Payload>,
 ) {

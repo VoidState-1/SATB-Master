@@ -31,10 +31,13 @@ import { hasExactPitch, noteEvidence } from "../helpers/core";
 import type { SpanView } from "../context/views";
 import { leadingToneResolutionKey } from "./leadingToneTarget";
 import { dominantNinthTone, writtenDominantNinthResolves } from "../../writtenDominantNinth";
-import { openedSourceChord, openedSourceNote } from "./tendencyContext";
+import { preparedSeventhEntries } from "./preparedSeventh";
+import { openedSourceChord, openedSourceNote, supportsTendencyResolutionRules } from "./tendencyContext";
 import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
 import { majorMediantToSubdominant } from "../groups/majorMediant";
 import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneNeighbor";
+
+export { supportsTendencyResolutionRules } from "./tendencyContext";
 
 export type VoiceObligationPayload = {
   readonly [key: string]: JsonValue;
@@ -55,6 +58,7 @@ export type LeadingTonePayload = VoiceObligationPayload & {
 
 export type SeventhPayload = VoiceObligationPayload & {
   readonly seventhMidi: number;
+  readonly preparedAtEntry?: true;
 };
 
 export type DominantNinthPayload = VoiceObligationPayload & {
@@ -66,19 +70,6 @@ export type AlteredTonePayload = VoiceObligationPayload & {
   readonly tendency: "up" | "down";
   readonly alteredMidi: number;
 };
-
-export function supportsTendencyResolutionRules(
-  context: RuleStepContext,
-  chord: RuleStepContext["slice"]["chord"],
-) {
-  if (!chord) return true;
-  const resolution = context.rules.harmony.primaryInterpretation(chord);
-  return (
-    chord.identity.structure.kind === "tertian" &&
-    !chord.semantics?.pedalContext &&
-    (!chord.semantics || resolution.status === "resolved")
-  );
-}
 
 function currentSpanRefs(context: RuleStepContext) {
   const spanId = context.rules.spanAt(context.slice.tick)?.span.id;
@@ -140,17 +131,26 @@ export const chordSeventhSource: ObligationSource<SeventhPayload> = {
   id: "source.chord-seventh-attacks",
   requires: ["written-pitches", "chords"],
   collect({ context, moment }) {
-    const chord = context.slice.chord;
+    const { slice } = context;
+    const chord = slice.chord;
     if (!chord || !supportsTendencyResolutionRules(context, chord)) return [];
     const tones = chordIdentityToneSpellings(chord.identity);
     if (tones.length < 4) return [];
-    return moment.attackedVoiceIds.flatMap((voiceId) => {
-      const note = context.slice.notes[voiceId];
-      if (!note || !pitchClassEquals(note.pitch, tones[3])) return [];
+    const prepared = preparedSeventhEntries(context);
+    const voices = prepared.length ? VOICE_ORDER : moment.attackedVoiceIds;
+    return voices.flatMap((voiceId) => {
+      const note = slice.notes[voiceId];
+      if (!note) return [];
+      const attacked = moment.attackedVoiceIds.includes(voiceId);
+      if (attacked ? !pitchClassEquals(note.pitch, tones[3]) : !prepared.includes(voiceId)) return [];
       return [
         {
           partitionKey: `voice:${voiceId}`,
-          payload: { voiceId, seventhMidi: toMidi(note.pitch) },
+          payload: {
+            voiceId,
+            seventhMidi: toMidi(note.pitch),
+            ...(!attacked && { preparedAtEntry: true as const }),
+          },
           subjectRefs: {
             voiceIds: [voiceId],
             noteIds: [note.id],
