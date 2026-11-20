@@ -35,6 +35,9 @@ import {
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
 import { leadingNeighborFrame, ornamentsSameLeadingHarmony } from "../state/leadingToneNeighbor";
+import {
+  becomesRespelledChainSeventh, leavesLeadingToneAtRespelledDiminishedPivot,
+} from "../state/leadingToneWrittenTransitions";
 import { ornamentsPreparedSeventh } from "../state/preparedSeventh";
 import { readDoubleDominantSeventhLanding } from "../state/doubleDominantSeventh";
 import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
@@ -221,6 +224,12 @@ function leadingToneTransition(
 
   if (attacked && targetUnchanged && leadingToneBecomesNextDominantSeventh(environment))
     return decision(environment, "resolve", "leading-tone-becomes-next-dominant-seventh", debugFacts);
+
+  if (attacked && targetUnchanged && becomesRespelledChainSeventh(environment))
+    return decision(environment, "resolve", "leading-tone-becomes-respelled-chain-seventh", debugFacts);
+
+  if (attacked && targetUnchanged && leavesLeadingToneAtRespelledDiminishedPivot(environment))
+    return decision(environment, "cancel", "leading-tone-respelled-at-diminished-pivot", debugFacts);
 
   if (attacked && targetUnchanged && innerLeadingToneDescendsToFifth(environment))
     return decision(environment, "resolve", "inner-leading-tone-descends-to-fifth", debugFacts);

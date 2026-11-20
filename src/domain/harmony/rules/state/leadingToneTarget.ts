@@ -1,6 +1,6 @@
 import { chordToneSpellings, type ChordIdentity } from "../../../chordModel";
 import {
-  keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals,
+  keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass,
   stepIndex, writtenInterval, type KeyLike, type SpelledPitchClass,
 } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project";
@@ -8,7 +8,7 @@ import { readWrittenDominantSeventh } from "../../writtenDominantSeventh";
 import { allowsWrittenTertianIdentity, matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
 import { readCompleteWrittenChord, soundsCompleteWrittenMembers, soundsCompleteWrittenTones } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
+import { nextWrittenVoicingChange } from "../helpers/writtenVoicingChange";
 import type { AnalysisSlice } from "../../analysis";
 import { leadingTargetDegree, type HarmonyAnalysisService } from "../services/harmony";
 
@@ -54,29 +54,6 @@ function allowsObservedTarget(rules: HarmonyRuleContext, frame: AnalysisSlice, l
     pitchClassEquals(chord.identity.root, scaleDegreePitchClass(frame.key, degree, degreeAlteration))));
 }
 
-function sameWrittenVoicing(left: AnalysisSlice, right: AnalysisSlice) {
-  return right.completeSatb && VOICE_ORDER.every(voice =>
-    spelledPitchEquals(left.notes[voice]!.pitch, right.notes[voice]!.pitch));
-}
-
-function departureFromWrittenDominant(
-  rules: HarmonyRuleContext, opened: AnalysisSlice, dominant: NonNullable<ReturnType<typeof writtenDominant>>,
-) {
-  let departure = opened;
-  while (true) {
-    const landing = rules.sliceAt(departure.endTick);
-    if (!landing || landing.tick !== departure.endTick || !keyEquals(opened.key, landing.key) ||
-        crossesManualPhraseBoundary(rules, departure.tick, landing.tick)) return;
-    // Key reminders and written reattacks can subdivide an unchanged voicing.
-    // Resolutions are measured from the events actually ending at the change.
-    if (!sameWrittenVoicing(departure, landing)) return { departure, landing };
-    const continuing = writtenDominant(landing);
-    if (!continuing || continuing.quality !== dominant.quality || !pitchClassEquals(continuing.root, dominant.root) ||
-        !allowsObservedTarget(rules, landing)) return;
-    departure = landing;
-  }
-}
-
 function readsIncompleteRootTonic(slice: AnalysisSlice, root: SpelledPitchClass, mode: KeyLike["mode"]) {
   const bass = slice.notes.bass;
   if (!slice.completeSatb || !bass || !pitchClassEquals(bass.pitch, root)) return false;
@@ -99,7 +76,11 @@ export function writtenLocalLeadingToneKey(rules: HarmonyRuleContext, slice: Ana
     return !pitchClassEquals(tone, scaleDegreePitchClass(slice.key, degree));
   });
   if (!hasChromaticMember) return;
-  const motion = departureFromWrittenDominant(rules, slice, dominant);
+  const motion = nextWrittenVoicingChange(rules, slice, frame => {
+    const continuing = writtenDominant(frame);
+    return !!continuing && continuing.quality === dominant.quality && pitchClassEquals(continuing.root, dominant.root) &&
+      allowsObservedTarget(rules, frame);
+  });
   if (!motion) return;
   const { departure, landing } = motion;
   const bass = landing.notes.bass;
