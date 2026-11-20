@@ -26,6 +26,7 @@ import { functionalTargetMatches, isCadential64Span } from "../connector";
 import { leadingNeighborFrame, ornamentsSameLeadingHarmony } from "../state/leadingToneNeighbor";
 import { readDoubleDominantSeventhLanding } from "../state/doubleDominantSeventh";
 import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
+import { isProvenHeldDoubleDominantContinuation } from "./heldDoubleDominantContinuation";
 import { exchangesSupertonicSeventhWithRoot, seventhLeapsToUnlabelledSixFour } from "./supertonicSeventhExchange";
 import {
   defineObligationRule,
@@ -997,7 +998,9 @@ export function secondaryDominantStateStep(
           !(incomingConnection &&
             incomingConnection.source.span.id === payload.sourceSpanId &&
             payload.sourceToTick === currentSpan.fromTick &&
-            isProvenLocalDeceptiveTarget(context.rules, incomingConnection))
+            (isProvenLocalDeceptiveTarget(context.rules, incomingConnection) ||
+              (payload.targetDegree === 5 &&
+                isProvenHeldDoubleDominantContinuation(context.rules, incomingConnection))))
         ) {
           diagnostics.push(
             diagnostic(
