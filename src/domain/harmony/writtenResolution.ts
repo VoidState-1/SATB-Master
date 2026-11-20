@@ -9,13 +9,21 @@ export function hasWrittenVoicing(slice: Pick<AnalysisSlice, "notes" | "complete
   return !!bass && slice.completeSatb && soundsCompleteWrittenTones(tones, Object.values(slice.notes), bass);
 }
 
-export function matchesWrittenChord(slice: AnalysisSlice, root: SpelledPitchClass, quality: ChordQuality) {
+/** An absent label permits a written reading. A named chord must agree in spelling, bass and structure. */
+export function allowsWrittenTertianIdentity(
+  slice: Pick<AnalysisSlice, "chord" | "notes">, root: SpelledPitchClass, quality: ChordQuality,
+) {
   const identity = slice.chord?.identity;
-  if (identity && (identity.structure.kind !== "tertian" || identity.structure.quality !== quality ||
-      identity.structure.extensions.length || identity.structure.alterations.length ||
-      !pitchClassEquals(identity.root, root) || !slice.notes.bass ||
-      !pitchClassEquals(identity.bass, slice.notes.bass.pitch))) return false;
-  return hasWrittenVoicing(slice, chordToneSpellings(root, quality));
+  if (!identity) return true;
+  const { structure } = identity;
+  const bass = slice.notes.bass;
+  return !!bass && pitchClassEquals(identity.bass, bass.pitch) && pitchClassEquals(identity.root, root) &&
+    structure.kind === "tertian" && structure.quality === quality &&
+    !structure.extensions.length && !structure.alterations.length;
+}
+
+export function matchesWrittenChord(slice: AnalysisSlice, root: SpelledPitchClass, quality: ChordQuality) {
+  return allowsWrittenTertianIdentity(slice, root, quality) && hasWrittenVoicing(slice, chordToneSpellings(root, quality));
 }
 
 type WrittenVoiceFrame = Pick<AnalysisSlice, "tick" | "notes">;
