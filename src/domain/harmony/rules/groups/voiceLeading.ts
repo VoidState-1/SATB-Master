@@ -23,6 +23,7 @@ import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { bassNeighborAgainstHeldUpper } from "../helpers/heldBassNeighbor";
 import { overlapSameHarmony } from "../helpers/overlapHarmony";
 import { isCadentialContraryOctave } from "./cadentialContraryOctaves";
+import { preparedSuspensionParallel } from "./preparedSuspensionParallels";
 import { sameHarmonyOnTransition } from "../helpers/motionHarmony";
 
 function chromaticHarmonyLicenses(
@@ -220,6 +221,7 @@ interface VoicePairRulePolicy {
   title: string;
   message: string;
   matches(fact: VoicePairTransitionFact, transition: SliceTransition): boolean;
+  delayedInterval?: (interval: VoicePairTransitionFact["currentInterval"]) => boolean;
   sameHarmony?(transition: SliceTransition, fact: VoicePairTransitionFact): boolean | undefined;
 }
 
@@ -241,9 +243,15 @@ function evaluateVoicePairRule(
   const diagnostics: RuleDiagnostic[] = [];
   for (const transition of context.sliceTransitions()) {
     for (const fact of context.voiceLeading.voicePairs(transition)) {
-      if (!policy.matches(fact, transition)) continue;
+      const immediate = policy.matches(fact, transition);
+      const delayed = !immediate && policy.delayedInterval?.(fact.currentInterval)
+        ? preparedSuspensionParallel(context, transition, fact, policy.delayedInterval)
+        : undefined;
+      if (!immediate && !delayed) continue;
       const [upperId, lowerId] = fact.voiceIds;
-      const [previousUpper, previousLower] = fact.previousNotes;
+      const [previousUpper, previousLower] = delayed
+        ? [delayed.held, delayed.lowerBefore]
+        : fact.previousNotes;
       const [currentUpper, currentLower] = fact.currentNotes;
       diagnostics.push(
         diagnostic(
@@ -253,13 +261,15 @@ function evaluateVoicePairRule(
           [upperId, lowerId],
           [previousUpper, previousLower, currentUpper, currentLower],
           policy.title,
-          policy.message,
+          delayed ? "两声部依次作下行级进，延留解决后重现相同的纯音程。" : policy.message,
           {
             motionSameHarmony: policy.sameHarmony?.(transition, fact),
-            pairMotion: {
-              voiceExchange: fact.voiceExchange,
-              bassStepUp: fact.bassMotion === "step-up",
-            },
+            ...(delayed ? { params: { suspensionEntryTick: delayed.entryTick } } : {
+              pairMotion: {
+                voiceExchange: fact.voiceExchange,
+                bassStepUp: fact.bassMotion === "step-up",
+              },
+            }),
             causeRefs: [
               `${policy.id}|${transition.id}|voices:${upperId},${lowerId}`,
             ],
@@ -292,6 +302,7 @@ function evaluateVoicePairRule(
 export function parallelFifthsRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.parallel-fifths",
+    delayedInterval: isPerfectFifth,
     title: "平行或反向纯五度",
     message: "两个声部同向或反向移动，并连续形成纯五度（含复音程）。",
     matches: (fact) =>
@@ -304,6 +315,7 @@ export function parallelFifthsRule(context: HarmonyRuleContext) {
 export function parallelOctavesRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.parallel-octaves",
+    delayedInterval: isPerfectOctave,
     title: "平行或反向八度、同度",
     message: "两个声部同向或反向移动，并连续形成纯八度或同度（含复音程）。",
     matches: (fact, transition) =>
@@ -488,13 +500,13 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.2",
     label: "平行或反向纯五度",
     description:
-      "检查任意两个声部是否同向或反向进行并连续构成纯五度（含纯十二度等复音程）；持续音或重复同音不计入。",
+      "检查任意两个声部是否同向或反向进行并连续构成纯五度（含纯十二度等复音程），以及有准备的延留下行解决是否掩盖同向纯五度。",
     rationale:
       "纯五度的声学共鸣高度融合。两个声部同向或反向连续形成纯五度及其复音程，都会削弱声部独立性，因此一并检查。斜向进行及两个声部均重复同音时不按连续五度处理。",
     group: "voiceLeading",
     defaultSeverity: "error",
     requires: ["written-pitches"],
-    dependencyScope: "slice",
+    dependencyScope: "project",
     evaluate: parallelFifthsRule,
   }),
   defineStatelessRule({
@@ -502,7 +514,7 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.3",
     label: "平行或反向八度、同度",
     description:
-      "检查任意两个声部是否同向或反向进行并连续构成纯八度或同度（含纯十五度等复音程）；持续音或重复同音不计入。",
+      "检查任意两个声部是否同向或反向进行并连续构成纯八度或同度（含纯十五度等复音程），以及有准备的延留下行解决是否掩盖同向八度。",
     rationale:
       "纯八度与同度的连续进行会削弱声部独立性。斯波索宾第十六章第三节允许结束终止中，不完全原位属七到主和弦的特定外声部反行。仅在实奏和声、内声部解决和实际收束均得到支持时适用。",
     group: "voiceLeading",
