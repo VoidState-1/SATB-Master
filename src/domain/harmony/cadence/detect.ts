@@ -16,7 +16,7 @@ import { dominantNeighborEvidence } from "./dominantNeighbors";
 import { detachedAuthenticEvidence, detachedSparseTonicEvidence } from "./detachedAuthentic";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
 import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
-import { closingTonicPedalEvidence } from "./tonicPedalEnding";
+import { closingTonicPedalEvidence, closingTonicRevoicingEvidence } from "./tonicPedalEnding";
 import { continuesThroughParallelTonic } from "./parallelTonicPivot";
 import { isWrittenAuxiliaryReturn } from "./auxiliaryReturn";
 import { precedingDetachedDeception } from "./detachedDeceptive";
@@ -343,12 +343,14 @@ function dominantApproach(
   facts: readonly CadenceSpanFacts[],
   dominantIndex: number,
   evidenceForGap?: (left: CadenceSpanFacts, right: CadenceSpanFacts) => CadenceEvidence | undefined,
+  canInclude?: (item: CadenceSpanFacts) => boolean,
 ): DominantApproach {
   let start = dominantIndex;
   const evidence: CadenceEvidence[] = [];
   while (start > 0) {
     const left = facts[start - 1], right = facts[start];
-    if (!isRootPosition(left) || !isFifthDegreeDominant(left) || !isFifthDegreeDominant(right)) break;
+    if (canInclude?.(left) === false || !isRootPosition(left) ||
+        !isFifthDegreeDominant(left) || !isFifthDegreeDominant(right)) break;
     if (!connectionIsValid(left, right)) {
       if (left.span.toTick >= right.span.fromTick || !sameKey(left.key, right.key) ||
           left.interpretationStatus !== "resolved" || right.interpretationStatus !== "resolved") break;
@@ -359,8 +361,27 @@ function dominantApproach(
     start--;
   }
   const preparation = facts[start - 1];
-  if (preparation?.isCadential64 && connectionIsValid(preparation, facts[start])) start--;
+  if (preparation?.isCadential64 && canInclude?.(preparation) !== false &&
+      connectionIsValid(preparation, facts[start])) start--;
   return { path: facts.slice(start, dominantIndex + 1), evidence };
+}
+
+function followsTonicRevoicingRelease(
+  slices: readonly AnalysisSlice[],
+  terminal: CadenceSpanFacts,
+  boundary: PhraseSegment["endBoundary"],
+  beatTicks: number | undefined,
+) {
+  const nextIndex = terminal.span.sliceIndices.at(-1)! + 1;
+  for (let index = nextIndex; index < slices.length; index++) {
+    const slice = slices[index];
+    if (!Object.keys(slice.notes).length) continue;
+    const rest = slice.tick - terminal.span.toTick;
+    if (rest <= 0) return false;
+    // An inferred internal ending needs more than a silent analysis subdivision.
+    return boundary?.source === "manual" || (beatTicks !== undefined && rest >= beatTicks);
+  }
+  return true;
 }
 
 function isRootPosition(facts: CadenceSpanFacts) {
@@ -606,6 +627,34 @@ export function detectCadences(
           const approach = dominantApproach(facts, facts.length - 5, gapEvidence);
           tonicPedalCandidates.push(authenticCadence(phrase, approach, pedalArrival, phraseEvidence, undefined, {
             path: [previousPrevious, previous, terminal],
+            evidence,
+          }));
+        }
+      }
+    }
+    const arrivalDominant = facts.at(-4);
+    if (arrivalDominant && previousPrevious && previous && isFifthDegreeDominant(arrivalDominant) &&
+        connectionIsValid(arrivalDominant, previousPrevious)) {
+      const beat = writtenBeatAt(previous.span.fromTick);
+      const bar = measureFor(previousPrevious.span.fromTick);
+      const sourceKeyEvent = arrivalDominant.boundarySlice?.key.id;
+      const withinKeyEvent = (item: CadenceSpanFacts) =>
+        item.span.sliceIndices.every(index => analysis.slices[index].key.id === sourceKeyEvent);
+      const beginsInsideManualCut = (item: CadenceSpanFacts) => phrase.startBoundary?.source === "manual" &&
+        item.span.fromTick === phrase.fromTick && !item.boundarySlice?.attackVoiceIds.length;
+      if (beat && bar?.startTick === previousPrevious.span.fromTick &&
+          compareMetricStrength(metricAt(previous.span.fromTick), metricAt(previousPrevious.span.fromTick)) === "weaker" &&
+          withinKeyEvent(arrivalDominant) && !beginsInsideManualCut(arrivalDominant) &&
+          followsTonicRevoicingRelease(analysis.slices, terminal, phrase.endBoundary,
+            writtenBeatAt(terminal.span.toTick - 1))) {
+        const evidence = closingTonicRevoicingEvidence(
+          arrivalDominant, previousPrevious, previous, terminal, analysis.slices, beat,
+        );
+        if (evidence) {
+          const approach = dominantApproach(facts, facts.length - 4, gapEvidence,
+            item => withinKeyEvent(item) && !beginsInsideManualCut(item));
+          tonicPedalCandidates.push(authenticCadence(phrase, approach, previousPrevious, phraseEvidence, undefined, {
+            path: [previous, terminal],
             evidence,
           }));
         }

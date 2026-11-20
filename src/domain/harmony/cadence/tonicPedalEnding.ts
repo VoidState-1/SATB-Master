@@ -6,11 +6,12 @@ import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, toMidi, written
 import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisSlice } from "../analysis";
 import { soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { hasCompleteWrittenTertianVoicing } from "../writtenTertian";
 import type { CadenceEvidence, CadenceSpanFacts } from "./types";
 
 const inner = ["alto", "tenor"] as const;
 
-function plainChord(facts: CadenceSpanFacts, root: SpelledPitchClass, quality: "minor" | "dominant7", inversion: number) {
+function plainChord(facts: CadenceSpanFacts, root: SpelledPitchClass, quality: "major" | "minor" | "dominant7", inversion: number) {
   const identity = facts.chord?.identity;
   const structure = identity?.structure;
   return identity && structure?.kind === "tertian" && structure.quality === quality &&
@@ -50,7 +51,8 @@ function resolvedSource(dominant: ChordIdentity, before: AnalysisSlice, landing:
         return pitchClassEquals(next.pitch, root) && motion.diatonicSteps === 1 && motion.semitones === 1;
       }
       return !pitchClassEquals(old.pitch, seventh) ||
-        (pitchClassEquals(next.pitch, third) && motion.diatonicSteps === -1 && motion.semitones === -2);
+        (pitchClassEquals(next.pitch, third) && motion.diatonicSteps === -1 &&
+          motion.semitones === (tonic.structure.kind === "tertian" && tonic.structure.quality === "minor" ? -2 : -1));
     });
 }
 
@@ -122,5 +124,69 @@ export function closingTonicPedalEvidence(
     value: "落主后两个外声部持续同一主音，内声经下属回主至共同释放",
     refs: [bass.id, soprano.id, ...inner.flatMap(voice =>
       [source.notes[voice]!.id, target.notes[voice]!.id, finish.notes[voice]!.id])],
+  };
+}
+
+/** Recover a resolved seventh-to-tonic landing whose held outside notes
+ * carry a short subdominant revoicing to their joint release (§48.3–6). */
+export function closingTonicRevoicingEvidence(
+  dominant: CadenceSpanFacts,
+  arrival: CadenceSpanFacts,
+  subdominant: CadenceSpanFacts,
+  terminal: CadenceSpanFacts,
+  slices: readonly AnalysisSlice[],
+  beatTicks: number,
+): CadenceEvidence | undefined {
+  const key = arrival.key;
+  const start = arrival.span.fromTick, release = terminal.span.toTick;
+  if (!arrival.isTonic || !terminal.isTonic || !subdominant.isSubdominant || subdominant.degree !== 4 ||
+      [subdominant, terminal].some(facts => facts.key.mode !== key.mode ||
+        !pitchClassEquals(facts.key.tonic, key.tonic)) ||
+      subdominant.span.toTick - subdominant.span.fromTick > beatTicks) return;
+
+  const gaps = [
+    subdominant.span.fromTick - arrival.span.toTick,
+    terminal.span.fromTick - subdominant.span.toTick,
+  ];
+  if (gaps.some(length => length < 0 || length > beatTicks)) return;
+
+  const root = key.tonic, fourth = scaleDegreePitchClass(key, 4);
+  const d = plainChord(dominant, scaleDegreePitchClass(key, 5), "dominant7", 0);
+  const t = plainChord(arrival, root, key.mode, 0);
+  const s = plainChord(subdominant, fourth, key.mode, 2);
+  const end = plainChord(terminal, root, key.mode, 0);
+  const before = slices[dominant.span.sliceIndices.at(-1)!];
+  const landing = arrival.boundarySlice;
+  const lastIndex = terminal.span.sliceIndices.at(-1)!;
+  const last = slices[lastIndex];
+  if (!d || !t || !s || !end || !before?.completeSatb || !landing?.completeSatb || !last?.completeSatb ||
+      before.endTick !== start || !resolvedSource(d, before, landing, t) ||
+      VOICE_ORDER.some(voice => {
+        const note = last.notes[voice]!;
+        return note.startTick + note.durationTicks !== release;
+      })) return;
+
+  const bass = landing.notes.bass!, soprano = landing.notes.soprano!;
+  if (!pitchClassEquals(soprano.pitch, root)) return;
+
+  const voicings = [[arrival, t, true], [subdominant, s, false], [terminal, end, false]] as const;
+  for (const slice of slices.slice(landing.index, lastIndex + 1)) {
+    if (slice.key.id !== before.key.id || !slice.completeSatb ||
+        slice.notes.bass?.id !== bass.id || slice.notes.soprano?.id !== soprano.id) return;
+    const named = voicings.find(([facts]) => facts.span.fromTick <= slice.tick && slice.tick < facts.span.toTick);
+    if (named) {
+      const [, identity, allowOmission] = named;
+      if (!writtenVoicing(slice, identity, allowOmission)) return;
+    } else {
+      const notes = VOICE_ORDER.map(voice => slice.notes[voice]!);
+      if (slice.chord || hasCompleteWrittenTertianVoicing(notes.map(note => note.pitch)) ||
+          notes.some(note => toMidi(note.pitch) < toMidi(bass.pitch) || toMidi(note.pitch) > toMidi(soprano.pitch))) return;
+    }
+  }
+
+  return {
+    code: "closing-tonic-revoicing",
+    value: "实写属七解决后，外声同次持续，内声经下属重配至主音共同释放",
+    refs: [arrival.span.id, bass.id, soprano.id],
   };
 }

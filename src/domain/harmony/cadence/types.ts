@@ -29,6 +29,7 @@ export interface CadenceEvidence {
     | "detached-deceptive-reprise"
     | "tonic-bass-suspension"
     | "closing-tonic-pedal"
+    | "closing-tonic-revoicing"
     | "articulated-interior-ending"
     | "bass-formula"
     | "metric-support"
