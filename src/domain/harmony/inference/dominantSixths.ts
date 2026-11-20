@@ -7,6 +7,8 @@ import { functionalDefinition } from "../../functionalHarmonyCatalog";
 import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals } from "../../pitch";
 import {
   continuesWrittenDominantSeventh,
+  contextualMinorDominantTonic,
+  contextualMinorSixthResolvesToFifth,
   dominantSixthInnerVoices as innerVoices,
   dominantSixthLowerVoices as lowerVoices,
   leadingToneDescendsToTonicFifth,
@@ -71,6 +73,29 @@ function fifthResolution(
     plainQuality(candidate, "dominant7") && exactReading(candidate) &&
     pitchClassEquals(candidate.identity.root, root) && pitchClassEquals(candidate.identity.bass, root),
   );
+}
+
+function contextualFifthResolution(
+  source: ChordInferenceObservation,
+  following: ChordInferenceObservation,
+  landing: ChordInferenceObservation | undefined,
+  candidates: CandidateSet,
+  manualPhraseTicks: readonly number[],
+) {
+  if (!landing || !continuesInKey(following, landing) ||
+      manualPhraseTicks.some(tick => source.fromTick < tick && tick <= landing.fromTick)) return;
+  return candidates.find(candidate => {
+    if (!exactReading(candidate)) return false;
+    const context = contextualMinorDominantTonic(candidate, source.key);
+    if (!context || (context.applied ? source.localKey || following.localKey || landing.localKey
+      : !source.localKey || !pitchClassEquals(source.key.tonic, context.tonic) || source.key.mode !== "minor")) return false;
+    return contextualMinorSixthResolvesToFifth(
+      { tick: source.fromTick, notes: source.activeNotes },
+      { tick: following.fromTick, notes: following.activeNotes },
+      { tick: landing.fromTick, notes: landing.activeNotes },
+      context.tonic, context.applied,
+    );
+  });
 }
 
 function tonicResolution(
@@ -143,16 +168,24 @@ export function withDominantSixthSubstitutions(
     const bass = source.bass;
     if (!source.completeSatb || source.soundingPitchClasses.length !== 4 ||
         soprano?.startTick !== source.fromTick || !bass ||
-        source.localKey || !following?.completeSatb || following.localKey ||
+        !following?.completeSatb ||
         !continuesInKey(source, following) ||
         manualPhraseTicks.some(tick => source.fromTick < tick && tick <= following.fromTick) ||
-        !pitchClassEquals(bass.pitch, scaleDegreePitchClass(source.key, 5)) ||
-        !pitchClassEquals(soprano.pitch, scaleDegreePitchClass(source.key, 3)) ||
         existing.some(candidate => candidate.confidence !== "low" && exactReading(candidate)) ||
         [source, following].some(item => observationNotes(item).some(({ note }) => note.nonChordToneRole))) return existing;
 
     const followingCandidates = sets[following.index];
     const newBass = bass.startTick === source.fromTick;
+    const contextual = newBass && contextualFifthResolution(
+      source, following, observations[observationIndex + 2], followingCandidates, manualPhraseTicks,
+    );
+    if (contextual) {
+      const candidate = fitDominantSixthSubstitution(source, contextual, "fifth");
+      return candidate && meetsMinimumConfidence(candidate) ? [...existing, candidate].sort(candidateComparator) : existing;
+    }
+    if (source.localKey || following.localKey ||
+        !pitchClassEquals(bass.pitch, scaleDegreePitchClass(source.key, 5)) ||
+        !pitchClassEquals(soprano.pitch, scaleDegreePitchClass(source.key, 3))) return existing;
     const anchor = newBass ? fifthResolution(source, following, followingCandidates) : undefined;
     const reading = anchor ?? tonicResolution(source, following, followingCandidates,
       !newBass && continuesHeldDominant(observations[observationIndex - 1], source, sets[observationIndex - 1], manualPhraseTicks));

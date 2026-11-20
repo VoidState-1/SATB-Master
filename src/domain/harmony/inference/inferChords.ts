@@ -123,10 +123,10 @@ export function inferChords(
   const currentPhraseTicks = [...new Set([...terminalTicks, ...phraseBoundaryTicks])];
   const doubleNeighbors = simultaneousNeighborCandidates(observations, prolonged, options, project.ppq, phraseBoundaryTicks);
   const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high", currentPhraseTicks, doubleNeighbors);
-  const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence, manualPhraseTicks);
-  const recovered = withDeceptiveDominants(observations, withSixths, options, project.ppq, phraseBoundaryTicks);
+  const recovered = withDeceptiveDominants(observations, classified, options, project.ppq, phraseBoundaryTicks);
+  const withSixths = withDominantSixthSubstitutions(observations, recovered, meetsMinimumConfidence, manualPhraseTicks);
   const withPassingSevenths = withPassingTonicSevenths(
-    observations, recovered, options, currentPhraseTicks,
+    observations, withSixths, options, currentPhraseTicks,
   );
   const withNeapolitanPivots = withNeapolitanPivotDominants(
     observations, withPassingSevenths, options, localKeys, currentPhraseTicks,

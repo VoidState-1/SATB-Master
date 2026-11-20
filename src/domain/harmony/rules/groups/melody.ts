@@ -20,6 +20,7 @@ import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { chromaticPassingTransitionIds } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
+import { resolvesContextualMinorDominantSixth } from "./dominantSixthSubstitution";
 import { isResolvedDominantSixthBass } from "./resolvedDominantSixthBass";
 import { isRespeltDoubleDominantSeventh, resolvesRaisedSecondApproach } from "./chromaticDoubleDominant";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
@@ -222,6 +223,12 @@ function alteredIntervalRule(
         recognizesAugmentedSixthPreparation(context, transition)))
     )
       continue;
+    const attack = context.sliceAt(transition.current.startTick);
+    // The following 6→5 stays within V7. That internal continuity cannot
+    // exempt a separate melodic leap into the proved start of this V7.
+    const contextualDominantOnset = attack && attack.notes.bass?.startTick === attack.tick &&
+      attack.notes.soprano?.startTick === attack.tick &&
+      resolvesContextualMinorDominantSixth(attack, context);
     diagnostics.push(
       diagnostic(
         ruleId,
@@ -232,6 +239,9 @@ function alteredIntervalRule(
         "旋律出现增减音程",
         `${voiceName(context.analysis, transition.voiceId)}的 ${formatSpelledPitch(transition.previous.pitch)} 到 ${formatSpelledPitch(transition.current.pitch)} 构成${named.label}。`,
         {
+          motionSameHarmony: contextualDominantOnset
+            ? sameHarmonyAtMelodicAttack(context, transition.current.startTick, transition.voiceId)
+            : undefined,
           messageKey: `${ruleId}.${named.quality}`,
           params: {
             intervalNumber: named.number,

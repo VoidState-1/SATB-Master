@@ -1,8 +1,10 @@
-import { chordToneSpellings, type ChordQuality } from "../../../chordModel";
+import { chordIdentityEquals, chordToneSpellings, type ChordQuality } from "../../../chordModel";
 import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import {
   continuesWrittenDominantSeventh,
+  contextualMinorDominantTonic,
+  contextualMinorSixthResolvesToFifth,
   dominantSixthInnerVoices as innerVoices,
   dominantSixthLowerVoices as lowerVoices,
   leadingToneDescendsToTonicFifth,
@@ -43,11 +45,47 @@ function hasPlainRootPosition(slice: AnalysisSlice, degree: 1 | 5, quality: Chor
       designation.primaryFunction === (degree === 5 ? "dominant" : "tonic")));
 }
 
+export function resolvesContextualMinorDominantSixth(source: AnalysisSlice, context: SixthRuleContext) {
+  const soprano = source.notes.soprano;
+  if (!soprano) return false;
+  const onset = context.sliceAt(soprano.startTick);
+  const chord = onset?.chord;
+  if (!onset || !chord) return false;
+  const fifth = context.sliceAt(soprano.startTick + soprano.durationTicks);
+  const fifthNote = fifth?.notes.soprano;
+  if (!fifth?.chord || !fifthNote || !chordIdentityEquals(chord.identity, fifth.chord.identity)) return false;
+  const landing = context.sliceAt(fifthNote.startTick + fifthNote.durationTicks);
+  if (!landing?.chord || onset.key.id !== fifth.key.id || fifth.key.id !== landing.key.id ||
+      crossesManualPhraseBoundary(context, onset.tick, landing.tick)) return false;
+
+  const opening = contextualMinorDominantTonic(chord, onset.key);
+  if (!opening || !contextualMinorSixthResolvesToFifth(onset, fifth, landing, opening.tonic, opening.applied)) return false;
+  const arrivalRoot = opening.applied ? scaleDegreePitchClass({ tonic: opening.tonic, mode: "minor" }, 6) : opening.tonic;
+  const { root, bass, structure } = landing.chord.identity;
+  if (!pitchClassEquals(root, arrivalRoot) || !pitchClassEquals(bass, arrivalRoot) ||
+      structure.kind !== "tertian" || structure.quality !== (opening.applied ? "major" : "minor") ||
+      structure.extensions.length || structure.alterations.length) return false;
+
+  for (let tick = onset.tick; tick < landing.tick;) {
+    const slice = context.sliceAt(tick);
+    const expected = tick < fifth.tick ? onset : fifth;
+    if (!slice?.chord || slice.tick !== tick || slice.key.id !== onset.key.id ||
+        !chordIdentityEquals(chord.identity, slice.chord.identity) ||
+        slice.notes.soprano?.id !== expected.notes.soprano?.id ||
+        !lowerVoices.every(voice => slice.notes[voice]?.id === onset.notes[voice]?.id)) return false;
+    const reading = contextualMinorDominantTonic(slice.chord, slice.key);
+    if (!reading || reading.applied !== opening.applied || !pitchClassEquals(reading.tonic, opening.tonic)) return false;
+    tick = slice.endTick;
+  }
+  return true;
+}
+
 export function resolvesDominantSixthSubstitution(
   source: AnalysisSlice,
   context: SixthRuleContext,
   allowWrittenSixth = false,
 ) {
+  if (resolvesContextualMinorDominantSixth(source, context)) return true;
   const { notes, key } = source;
   const { bass, soprano } = notes;
   if (!bass || !soprano) return false;
