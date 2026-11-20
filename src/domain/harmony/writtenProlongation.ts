@@ -2,11 +2,12 @@ import {
   chordIdentityEquals, type ChordIdentity,
 } from "../chordModel";
 import {
+  keyDeclarationEquals,
   pitchClassEquals, spelledPitchEquals,
 } from "../pitch";
 import { VOICE_ORDER } from "../project/voice";
 import type { VoiceId } from "../project/types";
-import type { AnalysisKey, AnalysisNote, AnalysisSlice } from "./analysis";
+import type { AnalysisNote, AnalysisSlice } from "./analysis";
 import { readSoundingTertianIdentity } from "./writtenVoicing";
 import { returnsByWrittenStep } from "./writtenNeighbors";
 
@@ -28,10 +29,6 @@ export interface WrittenProlongation {
   }[];
 }
 
-function sameKey(left: AnalysisKey, right: AnalysisKey) {
-  return left.id === right.id && left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
-
 /** Physical return and neighboring motions give a structural relation.
  * The written intermediate chord keeps its own members and bass. */
 export function readWrittenProlongation(
@@ -43,7 +40,7 @@ export function readWrittenProlongation(
   const bass = middle.notes.bass;
   if (!left?.completeSatb || !right?.completeSatb || !middle.completeSatb || !bass ||
       left.endTick !== middle.tick || middle.endTick !== right.tick ||
-      !sameKey(left.key, middle.key) || !sameKey(middle.key, right.key) ||
+      !keyDeclarationEquals(left.key, middle.key) || !keyDeclarationEquals(middle.key, right.key) ||
       boundaries.some(tick => left.tick < tick && tick <= right.tick)) return;
 
   const voices: Array<WrittenProlongation["voices"][number]> = [];

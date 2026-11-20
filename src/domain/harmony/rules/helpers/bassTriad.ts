@@ -1,5 +1,5 @@
 import { chordToneSpellings } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
 import type { AnalysisKey, AnalysisNote } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 
@@ -23,7 +23,7 @@ export function supportsBassTriad(
         const { appliedTarget, degree: labelledDegree, designation, localKey } = meaning.value;
         if (appliedTarget || (labelledDegree !== undefined && labelledDegree !== degree) ||
             (designation?.primaryFunction && designation.primaryFunction !== functionName) ||
-            (localKey && (localKey.mode !== key.mode || !pitchClassEquals(localKey.tonic, key.tonic)))) return false;
+            (localKey && !keyEquals(localKey, key))) return false;
       }
     }
 

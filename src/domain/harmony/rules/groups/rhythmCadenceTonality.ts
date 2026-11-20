@@ -5,6 +5,7 @@ import type {
 import type { HarmonySpan } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import {
+  keyEquals,
   formatPitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
@@ -18,10 +19,6 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-
-function keyEquals(left: KeyReference, right: KeyReference) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
 
 function spanInterpretation(context: HarmonyRuleContext, span: HarmonySpan) {
   const resolution = context.harmony.primaryInterpretation(span);

@@ -1,8 +1,8 @@
 import { chordIdentityToneSpellingForDegree, type ChordIdentity } from "../chordModel";
-import { pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../pitch";
+import { keyDeclarationEquals, pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../pitch";
 import { VOICE_ORDER } from "../project/voice";
 import type { MetricPosition } from "../rhythm/metric";
-import type { AnalysisKey, AnalysisNote, AnalysisSlice } from "./analysis";
+import type { AnalysisNote, AnalysisSlice } from "./analysis";
 import { soundsCompleteWrittenChord } from "./writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "./writtenTertian";
 
@@ -19,10 +19,6 @@ function orderedNotes(frame: LowerNeighborFrame) {
     if (notes.slice(index + 1).some(other => (toMidi(note.pitch) - toMidi(other.pitch)) % 12 === 0)) return;
   }
   return notes;
-}
-
-function sameKey(left: AnalysisKey, right: AnalysisKey) {
-  return left.id === right.id && left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
 function moves(from: AnalysisNote, to: AnalysisNote, steps: number, semitones: number) {
@@ -48,7 +44,7 @@ export function writtenLowerNeighborPair(
   if (!leadingTone || !pitchClassEquals(leadingTone, anchor.root)) return;
 
   const frames = [preparation, departure, upper, lower, arrival];
-  if (frames.some((frame, index) => !sameKey(frame.key, departure.key) ||
+  if (frames.some((frame, index) => !keyDeclarationEquals(frame.key, departure.key) ||
       (index > 0 && frames[index - 1].endTick !== frame.tick)) ||
       boundaries.some(tick => preparation.tick < tick && tick < arrival.endTick)) return;
   if (lower.metric?.confidence !== "certain" || lower.metric.role !== "subdivision" ||

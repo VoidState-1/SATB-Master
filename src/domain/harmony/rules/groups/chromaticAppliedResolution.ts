@@ -1,5 +1,5 @@
 import { chordIdentityToneSpellings, chordToneSpellings } from "../../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, stepIndex,
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, stepIndex,
   type SpelledPitchClass } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project";
 import type { MelodyTransition } from "../../analysis";
@@ -46,7 +46,7 @@ export function preparesWrittenAppliedSeventh(context: HarmonyRuleContext, motio
     if (interpretation.status === "ambiguous") return false;
     if (interpretation.status !== "resolved") continue;
     const { localKey, appliedTarget, designation } = interpretation.value;
-    if (localKey && (localKey.mode !== home.mode || !pitchClassEquals(localKey.tonic, home.tonic))) return false;
+    if (localKey && !keyEquals(localKey, home)) return false;
     if (slice === target && (appliedTarget || interpretation.value.degreeAlteration !== 0 ||
         interpretation.value.degree !== degree(tonic))) return false;
     if (slice === middle && designation) {

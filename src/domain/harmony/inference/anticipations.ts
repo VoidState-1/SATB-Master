@@ -1,15 +1,10 @@
 import { chordIdentityToneSpellingForDegree } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../../pitch";
+import { keyDeclarationEquals, isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../../pitch";
 import { compareMetricStrength } from "../../rhythm/metric";
 import { candidateComparator, fitAnticipation } from "./candidates";
 import { hasCompleteWrittenTertianChord } from "./fit";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
-
-function sameKey(left: ChordInferenceObservation, right: ChordInferenceObservation) {
-  return left.key.id === right.key.id && left.key.mode === right.key.mode &&
-    pitchClassEquals(left.key.tonic, right.key.tonic);
-}
 
 function exactFit(candidate: ChordInferenceCandidate) {
   return candidate.fit.spellingConsistent && candidate.fit.bassMatchesInversion &&
@@ -79,7 +74,7 @@ export function withAnticipations(
     const middle = observations[index];
     const after = observations[index + 1];
     if (!before?.completeSatb || !middle.completeSatb || !after?.completeSatb ||
-        existing.some(exactFit) || !sameKey(before, middle) || !sameKey(middle, after) ||
+        existing.some(exactFit) || !keyDeclarationEquals(before.key, middle.key) || !keyDeclarationEquals(middle.key, after.key) ||
         phraseBoundaryTicks.some(tick => before.fromTick < tick && tick <= after.fromTick) ||
         compareMetricStrength(middle.metric, before.metric) !== "weaker" ||
         compareMetricStrength(middle.metric, after.metric) !== "weaker") return existing;

@@ -5,6 +5,7 @@ import {
   type KeyReference,
 } from "../../../chordModel";
 import {
+  keyEquals,
   pitchClassEquals,
   scaleDegreePitchClass,
   spelledPitchEquals,
@@ -15,10 +16,6 @@ import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasWrittenVoicing } from "../../writtenResolution";
 import { activeNotes } from "../helpers/core";
-
-function sameKey(left: KeyReference, right: KeyReference) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
 
 export function isRespeltDoubleDominantSeventh(
   context: HarmonyRuleContext,
@@ -48,7 +45,7 @@ export function isRespeltDoubleDominantSeventh(
     ? preparationReading.value.localKey ?? preparation.key
     : preparation.key;
   if (
-    preparationReading?.status === "ambiguous" || !sameKey(preparationKey, key) ||
+    preparationReading?.status === "ambiguous" || !keyEquals(preparationKey, key) ||
     !pitchClassEquals(previous.pitch, scaleDegreePitchClass(key, 2)) ||
     !pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 2, 1))
   ) return false;
@@ -62,7 +59,7 @@ export function isRespeltDoubleDominantSeventh(
     writtenInterval(current.pitch, next.pitch).semitones !== 1 ||
     context.analysis.project.keyEvents.some(event =>
       event.tick > previous.startTick && event.tick <= landingTick &&
-      !sameKey(event, middle.key),
+      !keyEquals(event, middle.key),
     )
   ) return false;
 
@@ -117,7 +114,7 @@ export function cadentialSixFourInKey(context: HarmonyRuleContext, landing: Anal
   if (!target) return false;
   const targetReading = context.harmony.primaryInterpretation(target);
   if (targetReading.status !== "resolved" ||
-      !sameKey(targetReading.value.localKey ?? landing.key, key)) return false;
+      !keyEquals(targetReading.value.localKey ?? landing.key, key)) return false;
 
   const role = target.semantics?.cadenceRole;
   const cadential = role === "cadential64" ||
@@ -169,7 +166,7 @@ export function resolvesRaisedSecondApproach(context: HarmonyRuleContext, motion
       writtenInterval(current.pitch, arrival.pitch).semitones !== 1) return false;
 
   const preparation = context.harmony.primaryInterpretation(prep.chord);
-  if (preparation.status !== "resolved" || !sameKey(preparation.value.localKey ?? prep.key, key) ||
+  if (preparation.status !== "resolved" || !keyEquals(preparation.value.localKey ?? prep.key, key) ||
       preparation.value.appliedTarget || preparation.value.degreeAlteration !== 0 ||
       preparation.value.designation?.primaryFunction !== "subdominant") return false;
   const degree = preparation.value.degree;
@@ -194,7 +191,7 @@ export function resolvesRaisedSecondApproach(context: HarmonyRuleContext, motion
   if (!leadingPrep || !pitchClassEquals(leadingPrep.pitch, fourth) ||
       writtenInterval(leadingPrep.pitch, leadingVoice.note.pitch).semitones !== 1) return false;
   const middleKey = middle.chord ? respeltSeventhKey(context, middle) : middle.key;
-  if (!middleKey || !sameKey(middleKey, key) || (middle.chord && middle.chord.startTick !== tick)) return false;
+  if (!middleKey || !keyEquals(middleKey, key) || (middle.chord && middle.chord.startTick !== tick)) return false;
 
   const bassTick = landing.notes.bass.startTick;
   if (target.startTick !== end && target.startTick !== bassTick) return false;
@@ -239,7 +236,7 @@ function readRespeltPreparation(context: HarmonyRuleContext, middle: AnalysisSli
   if (!slice || !chord || slice.key.id !== middle.key.id) return;
   const reading = context.harmony.primaryInterpretation(chord);
   if (reading.status === "ambiguous" ||
-      (reading.status === "resolved" && !sameKey(reading.value.localKey ?? slice.key, key))) return;
+      (reading.status === "resolved" && !keyEquals(reading.value.localKey ?? slice.key, key))) return;
   return { slice, chord, reading, tones: chordIdentityToneSpellings(chord.identity) };
 }
 
@@ -259,7 +256,7 @@ function readRootDominant(
   const reading = context.harmony.primaryInterpretation(chord);
   const structure = chord.identity.structure;
   if (reading.status !== "resolved" || reading.value.appliedTarget || reading.value.degree !== 5 ||
-      !sameKey(reading.value.localKey ?? slice.key, key) || structure.kind !== "tertian" ||
+      !keyEquals(reading.value.localKey ?? slice.key, key) || structure.kind !== "tertian" ||
       structure.extensions.length || structure.alterations.length ||
       (structure.quality !== "major" && structure.quality !== "dominant7")) return;
   const tones = chordToneSpellings(dominant, structure.quality);

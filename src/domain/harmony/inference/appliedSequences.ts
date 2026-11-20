@@ -1,6 +1,6 @@
 import { chordToneSpellings, type KeyReference } from "../../chordModel";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
+import { keyDeclarationEquals, pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
 import { readWrittenDominantSeventh } from "../writtenDominantSeventh";
 import { createFunctionalCandidate } from "./candidates";
 import { observationNotes } from "./observations";
@@ -9,8 +9,7 @@ import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInference
 const degrees = [1, 2, 3, 4, 5, 6, 7] as const;
 
 function sameContext(left: ChordInferenceObservation, right: ChordInferenceObservation) {
-  return left.toTick === right.fromTick && left.key.id === right.key.id &&
-    left.key.mode === right.key.mode && pitchClassEquals(left.key.tonic, right.key.tonic);
+  return left.toTick === right.fromTick && keyDeclarationEquals(left.key, right.key);
 }
 
 /** In harmonic major the lowered sixth gives iiø7 (§21.1) or the

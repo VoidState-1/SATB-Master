@@ -1,5 +1,6 @@
 import { chordIdentityEquals, chordIdentityToneSpellings, type ChordIdentity } from "../../../chordModel";
 import {
+  keyEquals,
   isWrittenStep, pitchClassEquals,
   scaleDegreePitchClass,
   toMidi,
@@ -12,10 +13,6 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { activeNotes } from "../helpers/core";
 
 const scaleDegrees = [1, 2, 3, 4, 5, 6, 7] as const;
-
-function sameKey(left: KeyLike, right: KeyLike) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
 
 function exactlyVoiced(slice: AnalysisSlice, tones: readonly SpelledPitchClass[]) {
   const bass = slice.notes.bass;
@@ -33,7 +30,7 @@ function exactlyVoiced(slice: AnalysisSlice, tones: readonly SpelledPitchClass[]
 function hasPreparation(context: HarmonyRuleContext, before: AnalysisSlice, key: KeyLike) {
   const reading = before.chord && context.harmony.primaryInterpretation(before.chord);
   if (reading?.status === "resolved" && reading.value.localKey &&
-      !sameKey(reading.value.localKey, key)) return false;
+      !keyEquals(reading.value.localKey, key)) return false;
 
   // Check that the unaltered scale degree belonged to a sounded diatonic
   // triad. The preceding chord's label is not evidence for this pitch.
@@ -48,7 +45,7 @@ function hasLanding(context: HarmonyRuleContext, slice: AnalysisSlice, key: KeyL
   if (!chord || chord.startTick !== slice.tick || !slice.notes.bass) return false;
   const reading = context.harmony.primaryInterpretation(chord);
   if (reading.status !== "resolved" ||
-      !sameKey(reading.value.localKey ?? slice.key, key) ||
+      !keyEquals(reading.value.localKey ?? slice.key, key) ||
       reading.value.appliedTarget || reading.value.degreeAlteration !== 0) return false;
 
   const { identity, semantics } = chord;
@@ -101,9 +98,9 @@ export function recognizesAugmentedSixthPreparation(
   if (!before || !middle?.completeSatb || middle.chord || !landing?.completeSatb ||
       before.notes[voiceId]?.id !== previous.id || middle.notes[voiceId]?.id !== current.id) return false;
   const key = middle.key;
-  if (!sameKey(before.key, key) || !sameKey(landing.key, key) ||
+  if (!keyEquals(before.key, key) || !keyEquals(landing.key, key) ||
       context.analysis.project.keyEvents.some(event =>
-        event.tick > previous.startTick && event.tick <= arrival && !sameKey(event, key)) ||
+        event.tick > previous.startTick && event.tick <= arrival && !keyEquals(event, key)) ||
       context.analysis.phraseBoundaries.some(boundary =>
         !boundary.stale && boundary.tick > previous.startTick && boundary.tick <= arrival)) return false;
 
@@ -158,7 +155,7 @@ function agreesWithGermanCadence(
   if (reading.status === "ambiguous") return false;
   if (!key || reading.status !== "resolved") return true;
   const { localKey, appliedTarget } = reading.value;
-  return !appliedTarget && (!localKey || sameKey(localKey, key));
+  return !appliedTarget && (!localKey || keyEquals(localKey, key));
 }
 
 function hasFollowingRootPositionDominant(
@@ -180,7 +177,7 @@ function hasFollowingRootPositionDominant(
     if (!nextBass || !pitchClassEquals(nextBass.pitch, bass.pitch) ||
         Math.abs(toMidi(nextBass.pitch) - toMidi(bass.pitch)) > 12) return false;
     if (context.analysis.project.keyEvents.some(event =>
-      sourceTick < event.tick && event.tick <= slice.tick && !sameKey(event, landing.key)) ||
+      sourceTick < event.tick && event.tick <= slice.tick && !keyEquals(event, landing.key)) ||
       context.analysis.phraseBoundaries.some(boundary =>
         !boundary.stale && sourceTick < boundary.tick && boundary.tick <= slice.tick)) return false;
 

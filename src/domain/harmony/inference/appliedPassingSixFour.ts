@@ -1,5 +1,5 @@
 import { chordIdentityEquals, chordIdentityInversion, primaryHarmonyInterpretation } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval, type SpelledPitch } from "../../pitch";
+import { keyDeclarationEquals, isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval, type SpelledPitch } from "../../pitch";
 import { soundingBass } from "./observations";
 import type { ChordInferenceCandidate as Candidate, ChordInferenceObservation as Observation } from "./types";
 
@@ -65,8 +65,7 @@ export function withAppliedPassingSixFours(
     const left = frames[index - 1], middle = frames[index], right = frames[index + 1];
     if (!left || !right || left.toTick !== middle.fromTick || middle.toTick !== right.fromTick ||
         !weakPassingPosition(left, middle, right) ||
-        [left, right].some(frame => frame.key.id !== middle.key.id || frame.key.mode !== middle.key.mode ||
-          !pitchClassEquals(frame.key.tonic, middle.key.tonic)) ||
+        [left, right].some(frame => !keyDeclarationEquals(frame.key, middle.key)) ||
         boundaries.some(tick => left.fromTick < tick && tick <= right.fromTick)) return set;
     return set.map(candidate => {
       if (!candidate.semantics || candidate.semantics.cadenceRole || !exactTriad(candidate) ||

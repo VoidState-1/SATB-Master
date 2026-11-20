@@ -1,5 +1,5 @@
 import { chordIdentityToneSpellings, primaryHarmonyInterpretation } from "../../chordModel";
-import { pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../../pitch";
+import { keyDeclarationEquals, pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import { compareMetricStrength } from "../../rhythm/metric";
 import { fitFifthOmissionRevoicing } from "./candidates";
@@ -13,8 +13,7 @@ function completeRevoicingSide(
   boundaries: readonly number[],
 ) {
   if (!side?.completeSatb || !side.bass || side.soundingPitchClasses.length !== middle.soundingPitchClasses.length + 1 ||
-      side.key.id !== middle.key.id || side.key.mode !== middle.key.mode ||
-      !pitchClassEquals(side.key.tonic, middle.key.tonic) ||
+      !keyDeclarationEquals(side.key, middle.key) ||
       Boolean(side.localKey) !== Boolean(middle.localKey)) return undefined;
   const [before, after] = side.fromTick < middle.fromTick ? [side, middle] : [middle, side];
   const seam = after.fromTick;

@@ -1,15 +1,10 @@
 import { primaryHarmonyInterpretation } from "../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
+import { keyDeclarationEquals, pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
 import { verifyPreparedSuspensionVoicing, type PreparationSupport } from "../preparedSuspensionVoicing";
 import { fitPreparedSuspension } from "./candidates";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
 
 type CandidateSet = readonly ChordInferenceCandidate[];
-
-function sameKey(left: ChordInferenceObservation, right: ChordInferenceObservation) {
-  return left.key.id === right.key.id && left.key.mode === right.key.mode &&
-    pitchClassEquals(left.key.tonic, right.key.tonic);
-}
 
 function isExact(candidate: ChordInferenceCandidate) {
   return candidate.fit.bassMatchesInversion && candidate.fit.spellingConsistent &&
@@ -49,7 +44,7 @@ export function withPreparedSuspensions(
       metricAt: tick => metrics.get(tick),
       preparationAt: (previousIndex, singleNinth) => {
         const previous = observations[previousIndex];
-        if (!sameKey(previous, middle) ||
+        if (!keyDeclarationEquals(previous.key, middle.key) ||
             phraseBoundaryTicks.some(tick => previous.fromTick < tick && tick <= middle.fromTick)) return "blocked";
         if (singleNinth) return sets[previousIndex].some(isExact) &&
           !Object.values(previous.activeNotes).some(note => note?.nonChordToneRole) ? "confirmed" : "blocked";
@@ -58,7 +53,8 @@ export function withPreparedSuspensions(
     });
     if (!voicing ||
         phraseBoundaryTicks.some(tick => voicing.fromTick < tick && tick <= voicing.toTick) ||
-        observations.slice(index + 1, voicing.resolutionIndex + 1).some(part => !sameKey(middle, part))) return existing;
+        observations.slice(index + 1, voicing.resolutionIndex + 1).some(part =>
+          !keyDeclarationEquals(part.key, middle.key))) return existing;
 
     const resolution = observations[voicing.resolutionIndex];
     const markedVoice = [middle, resolution].some(part => voicing.singleNinth

@@ -5,7 +5,9 @@ import {
   formatSpelledPitch,
   isDiatonicPitch,
   isWrittenStep,
+  keyDeclarationEquals,
   keyDiatonicPitchClasses,
+  keyEquals,
   keySignatureFifths,
   keyTonicOptions,
   leadingTonePitchClass,
@@ -24,6 +26,21 @@ import {
 } from "./pitch";
 
 describe("书写音高", () => {
+  it("分别比较书写调性与调号声明", () => {
+    const key = { id: "first", tonic: { step: "C", alter: 1 }, mode: "major" } as const;
+    const restated = { ...key, id: "again" };
+    expect(keyEquals(key, restated)).toBe(true);
+    expect(keyDeclarationEquals(key, restated)).toBe(false);
+    expect(keyDeclarationEquals(key, { ...key })).toBe(true);
+    for (const changed of [
+      { ...key, mode: "minor" },
+      { ...key, tonic: { step: "D", alter: -1 } },
+    ] as const) {
+      expect(keyEquals(key, changed)).toBe(false);
+      expect(keyDeclarationEquals(key, changed)).toBe(false);
+    }
+  });
+
   it("保留同音异名，同时派生相同 MIDI 音高", () => {
     const cSharp = { step: "C" as const, alter: 1 as const, octave: 4 };
     const dFlat = { step: "D" as const, alter: -1 as const, octave: 4 };

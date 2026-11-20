@@ -6,7 +6,7 @@ import {
   type ChordIdentity,
   type ChordQuality,
 } from "../../chordModel";
-import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass, writtenInterval } from "../../pitch";
+import { keyEquals, pitchClassEquals, pitchClassValue, scaleDegreePitchClass, writtenInterval } from "../../pitch";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
 import { dominantNinthTone } from "../writtenDominantNinth";
 import {
@@ -533,8 +533,7 @@ export function withLoweredSupertonics(
   let leadsToDominant = false;
   for (let i = observations.length - 1; i >= 0; i--) {
     const item = observations[i], next = observations[i + 1];
-    const continuation: boolean = leadsToDominant && !!next && item.key.mode === next.key.mode &&
-      pitchClassEquals(item.key.tonic, next.key.tonic);
+    const continuation: boolean = leadsToDominant && !!next && keyEquals(item.key, next.key);
     const direct = sets[i].filter(c => c.semantics && !primaryHarmonyInterpretation(c.semantics).appliedTarget &&
       c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length);
     leadsToDominant = direct.some(c => c.functionalBaseId === "D" || c.functionalBaseId === "DVII") ||

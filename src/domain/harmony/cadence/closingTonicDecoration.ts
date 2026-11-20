@@ -1,5 +1,5 @@
 import { chordIdentityInversion, chordIdentityToneSpellings, type ChordIdentity, type ChordQuality } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval } from "../../pitch";
+import { keyEquals, isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import { compareMetricStrength, type MetricPosition } from "../../rhythm/metric";
 import type { AnalysisSlice } from "../analysis";
@@ -54,8 +54,7 @@ export function closingTonicDecorationEvidence(
   metricAt: (tick: number) => MetricPosition | undefined,
   beatTicks: number,
 ): CadenceEvidence | undefined {
-  if (!arrival.isTonic || !terminal.isTonic || terminal.key.mode !== arrival.key.mode ||
-      !pitchClassEquals(terminal.key.tonic, arrival.key.tonic)) return;
+  if (!arrival.isTonic || !terminal.isTonic || !keyEquals(terminal.key, arrival.key)) return;
   const d = ordinaryRootChord(dominant, 5, "dominant7");
   const t = ordinaryRootChord(arrival, 1, arrival.key.mode);
   const finish = ordinaryRootChord(terminal, 1, arrival.key.mode);

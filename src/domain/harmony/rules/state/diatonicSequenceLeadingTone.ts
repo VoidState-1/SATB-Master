@@ -2,6 +2,7 @@ import { chordIdentityInversion, chordIdentityToneSpellings } from "../../../cho
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
+  keyEquals,
   leadingTonePitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
@@ -26,8 +27,7 @@ function writtenSlot(context: HarmonyRuleContext, key: AnalysisSlice["key"], sta
   const meaning = context.harmony.primaryInterpretation(chord);
   if (meaning.status !== "resolved" || meaning.value.appliedTarget ||
       chord.semantics?.cadenceRole || chord.semantics?.pedalContext ||
-      (meaning.value.localKey && (meaning.value.localKey.mode !== key.mode ||
-        !pitchClassEquals(meaning.value.localKey.tonic, key.tonic)))) return undefined;
+      (meaning.value.localKey && !keyEquals(meaning.value.localKey, key))) return undefined;
 
   const { structure, bass } = chord.identity;
   if (structure.kind !== "tertian" || structure.extensions.length || structure.alterations.length) return undefined;
@@ -118,7 +118,7 @@ export function leavesDiatonicSequenceLeadingTone(environment: ObligationEnviron
   const { payload, openedAt } = obligation;
   const { voiceId, targetStep, targetAlter, targetMode } = payload;
   const key = slice.key;
-  if (key.mode !== targetMode || !pitchClassEquals(key.tonic, { step: targetStep, alter: targetAlter })) return false;
+  if (!keyEquals(key, { tonic: { step: targetStep, alter: targetAlter }, mode: targetMode })) return false;
 
   const source = rules.sliceAt(openedAt.tick);
   const leading = source?.notes[voiceId];
@@ -154,7 +154,7 @@ function naturalFrame(frame: AnalysisSlice, key: AnalysisSlice["key"], scale: re
   const reading = semantics?.interpretations[0];
   if (reading && (reading.appliedTarget || reading.designation?.specialRole ||
       (reading.designation && !["primary", "side-degree"].includes(reading.designation.kind)) ||
-      (reading.localKey && (reading.localKey.mode !== key.mode || !pitchClassEquals(reading.localKey.tonic, key.tonic))) ||
+      (reading.localKey && !keyEquals(reading.localKey, key)) ||
       !pitchClassEquals(chord!.identity.root, scaleDegreePitchClass(key, reading.degree, reading.degreeAlteration)))) return false;
 
   const structure = chord?.identity.structure;
@@ -200,7 +200,7 @@ export function resolvesCopiedSeventhFifth({ context, obligation }: ObligationEn
   const key = slice.key, voice = payload.voiceId, from = previous?.notes[voice], to = slice.notes[voice];
   if (!previous || !from || !to || previous.tick !== openedAt.tick || from.startTick !== openedAt.tick ||
       !openedBy.noteIds?.includes(from.id) || to.startTick !== slice.tick || previous.endTick !== slice.tick ||
-      key.mode !== payload.targetMode || !pitchClassEquals(key.tonic, { step: payload.targetStep, alter: payload.targetAlter }) ||
+      !keyEquals(key, { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode }) ||
       !pitchClassEquals(from.pitch, leadingTonePitchClass(key))) return false;
   const scale = degrees.map(degree => scaleDegreePitchClass(key, degree));
   if (!seventhPair(previous, slice, voice, scale)) return false;

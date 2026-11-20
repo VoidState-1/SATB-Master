@@ -4,6 +4,7 @@ import { chordIdentityToneSpellings } from "../../../chordModel";
 import { VOICE_ORDER } from "../../../project/voice";
 import { durationToTicksAt } from "../../../time";
 import {
+  keyEquals,
   formatSpelledPitch,
   pitchClassEquals,
   scaleDegreePitchClass,
@@ -86,7 +87,7 @@ function transferredLeadingToneConnection(
   const sourceKey = sourceReading.value.localKey ?? before.key;
   const leading = leadingToneForFunction(key, targetReading.value);
   if (
-    key.mode !== sourceKey.mode || !pitchClassEquals(key.tonic, sourceKey.tonic) ||
+    !keyEquals(key, sourceKey) ||
     !leading.applied || !pitchClassEquals(leading.tone, right.note.pitch)
   ) return;
 
@@ -170,8 +171,7 @@ function crossRelationCandidates(
       const rightKey = context.keyAt(right.note.startTick);
       if (!leftKey || !rightKey) continue;
       if (
-        leftKey.mode !== rightKey.mode ||
-        !pitchClassEquals(leftKey.tonic, rightKey.tonic)
+        !keyEquals(leftKey, rightKey)
       )
         continue;
       const leftSlice = context.sliceAt(left.note.startTick);

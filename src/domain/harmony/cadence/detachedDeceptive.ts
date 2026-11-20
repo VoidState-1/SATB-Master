@@ -1,5 +1,5 @@
 import { chordIdentityInversion, chordIdentityToneSpellings } from "../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import { ticksPerBeat, type MeasureInfo } from "../../time";
 import type { AnalysisSlice, HarmonyAnalysis } from "../analysis";
@@ -59,7 +59,7 @@ export function precedingDetachedDeception(
       score.project.meterEvents.some(e => openingTick < e.tick && e.tick < finalOnset.endTick) ||
       score.slices.some(s => openingTick <= s.tick && s.tick < finalOnset.endTick && s.key.id !== finalOnset.key.id)) return;
   const inKey = (f: CadenceSpanFacts) => f.interpretationStatus === "resolved" &&
-    f.key.mode === key.mode && pitchClassEquals(f.key.tonic, key.tonic) &&
+    keyEquals(f.key, key) &&
     f.span.semantics?.interpretations.length === 1 && !f.span.semantics.alternatives?.length && !f.span.semantics?.mixture &&
     !f.span.semantics?.cadenceRole && !f.span.semantics?.pedalContext;
   if (!inKey(laterPre) || !inKey(laterV) || (tonic && !inKey(tonic))) return;

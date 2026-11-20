@@ -6,6 +6,7 @@ import type {
 } from "./types";
 import { analyzeChordInferencePaths } from "./sequence";
 import { hasNoncadentialTonicProof } from "./noncadentialTonicSixFours";
+import { keyEquals } from "../../pitch";
 
 function sameMeaning(
   left: ChordInferenceCandidate | undefined,
@@ -138,9 +139,7 @@ export function buildChordInferenceRegions(
       !separateStarts?.has(observations[index].fromTick) &&
       observations[index - 1].toTick === observations[index].fromTick &&
       observations[index - 1].key.tick === observations[index].key.tick &&
-      observations[index - 1].key.mode === observations[index].key.mode &&
-      observations[index - 1].key.tonic.step === observations[index].key.tonic.step &&
-      observations[index - 1].key.tonic.alter === observations[index].key.tonic.alter &&
+      keyEquals(observations[index - 1].key, observations[index].key) &&
       hasNoncadentialTonicProof(firstSelected) === hasNoncadentialTonicProof(selectedPath[index]) &&
       sameMeaning(firstSelected, selectedPath[index])
     ) {

@@ -1,5 +1,5 @@
 import type { KeyReference } from "../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval, type SpelledPitchClass } from "../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval, type SpelledPitchClass } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import type { MetricPosition } from "../../rhythm/metric";
 import type { AnalysisNote, AnalysisSlice } from "../analysis";
@@ -8,10 +8,6 @@ import { hasCadentialWrittenVoicing } from "./writtenCadentialVoicing";
 
 type MetricAt = (tick: number) => MetricPosition | undefined;
 const upperVoices = ["soprano", "alto", "tenor"] as const;
-
-function sameCenter(a: KeyReference, b: KeyReference) {
-  return a.mode === b.mode && pitchClassEquals(a.tonic, b.tonic);
-}
 
 function soundsRootTriad(
   fact: CadenceSpanFacts, frame: AnalysisSlice, root: SpelledPitchClass, quality: "major" | "minor",
@@ -52,13 +48,13 @@ function hasWrittenModalCenter(
     const current = facts[index], next = facts[index + 1];
     const frame = current.boundarySlice;
     if (!frame || current.span.toTick !== next.span.fromTick || current.interpretationStatus !== "resolved" ||
-        !sharesWrittenKey(current, slices, writtenKey.id) || !sameCenter(current.key, writtenKey)) return false;
+        !sharesWrittenKey(current, slices, writtenKey.id) || !keyEquals(current.key, writtenKey)) return false;
     if (!strongPosition(metricAt(current.span.fromTick))) continue;
     if (current.isTonic && soundsRootTriad(current, frame, writtenKey.tonic, "major")) return false;
     const previous = facts[index - 1];
     const approach = previous && slices[previous.span.sliceIndices.at(-1)!];
     if (!approach || previous.span.toTick !== frame.tick || previous.interpretationStatus !== "resolved" ||
-        !sameCenter(previous.key, writtenKey) || !sharesWrittenKey(previous, slices, writtenKey.id) ||
+        !keyEquals(previous.key, writtenKey) || !sharesWrittenKey(previous, slices, writtenKey.id) ||
         !soundsRootTriad(current, frame, minor.tonic, "minor") ||
         !soundsRootTriad(previous, approach, dominantRoot, "minor")) continue;
     const bassFrom = approach.notes.bass!, bassTo = frame.notes.bass!;
@@ -91,10 +87,10 @@ export function dorianPlagalEnding(
   const writtenKey = after.key;
   const minor = { tonic: root, mode: "minor" } as const;
   const local = source.isSubdominant && source.degree === 4 && landing.isTonic &&
-    pitchClassEquals(source.key.tonic, root) && sameCenter(landing.key, minor);
+    pitchClassEquals(source.key.tonic, root) && keyEquals(landing.key, minor);
   const relative = writtenKey.mode === "major" && pitchClassEquals(root, scaleDegreePitchClass(writtenKey, 2)) &&
     source.degree === 5 && landing.degree === 2 &&
-    sameCenter(source.key, writtenKey) && sameCenter(landing.key, writtenKey);
+    keyEquals(source.key, writtenKey) && keyEquals(landing.key, writtenKey);
   if ((!local && !relative) || !sharesWrittenKey(source, slices, writtenKey.id) ||
       !sharesWrittenKey(landing, slices, writtenKey.id) ||
       !soundsRootTriad(source, before, scaleDegreePitchClass(minor, 4), "major") ||

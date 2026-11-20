@@ -1,5 +1,5 @@
 import type { ChordQuality } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi, type WrittenInterval } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, toMidi, type WrittenInterval } from "../../../pitch";
 import type { VoiceId } from "../../../project/types";
 import type { AnalysisSlice } from "../../analysis";
 import { movesToWrittenTone } from "../../dominantSixthMotion";
@@ -26,7 +26,7 @@ function writtenTriad(
   if (reading.status !== "resolved") return undefined;
   const { localKey, appliedTarget, designation, degreeAlteration } = reading.value;
   if (reading.value.degree !== degree || degreeAlteration !== 0 || appliedTarget ||
-      (localKey && (localKey.mode !== key.mode || !pitchClassEquals(localKey.tonic, key.tonic))) ||
+      (localKey && !keyEquals(localKey, key)) ||
       (designation && (degree === 5
         ? designation.kind !== "primary" || designation.primaryFunction !== "dominant"
         : designation.kind !== "side-degree" || designation.primaryFunction !== "tonic"))) return undefined;

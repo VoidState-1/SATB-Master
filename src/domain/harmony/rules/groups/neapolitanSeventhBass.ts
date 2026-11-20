@@ -1,5 +1,5 @@
 import { chordIdentityToneSpellings, type KeyReference } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { activeNotes } from "../helpers/core";
@@ -54,5 +54,5 @@ export function isNeapolitanSeventhBassTritone(context: HarmonyRuleContext, tran
 
   const from = seventhKey(context, source, "major7");
   const to = seventhKey(context, landing, "dominant7");
-  return !!from && !!to && from.mode === to.mode && pitchClassEquals(from.tonic, to.tonic);
+  return !!from && !!to && keyEquals(from, to);
 }

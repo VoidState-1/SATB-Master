@@ -1,5 +1,5 @@
 import { chordToneSpellings } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisSlice } from "../../analysis";
 import { movesToWrittenTone } from "../../dominantSixthMotion";
@@ -45,8 +45,7 @@ export function homeLeadingToneWasDominantFifth({ context, obligation }: Obligat
       from.startTick !== openedAt.tick || !openedBy.noteIds?.includes(from.id) || to.startTick !== slice.tick ||
       toMidi(from.pitch) !== payload.leadingMidi ||
       !pitchClassEquals(from.pitch, { step: payload.leadingStep, alter: payload.leadingAlter }) ||
-      !pitchClassEquals(slice.key.tonic, { step: payload.targetStep, alter: payload.targetAlter }) ||
-      slice.key.mode !== payload.targetMode) return false;
+      !keyEquals(slice.key, { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode })) return false;
   const outgoing = writtenInterval(from.pitch, to.pitch);
   if (outgoing.diatonicSteps !== -1 || outgoing.semitones !== -2 ||
       !structuralVoicing(slice) || !structuralVoicing(previous)) return false;

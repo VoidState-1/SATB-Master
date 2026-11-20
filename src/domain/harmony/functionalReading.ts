@@ -1,6 +1,6 @@
 import { canonicalJson } from "../canonicalJson";
 import type { HarmonyInterpretation, KeyReference } from "../chordModel";
-import { pitchClassEquals } from "../pitch";
+import { keyEquals } from "../pitch";
 
 /** Compare the stated function, independently of the annotation's id, source and confidence.
  * A caller that inherits the score key supplies its effective keys explicitly. */
@@ -11,7 +11,7 @@ export function sameFunctionalReading(
   rightKey: KeyReference | undefined = right.localKey,
 ) {
   if (leftKey && rightKey) {
-    if (leftKey.mode !== rightKey.mode || !pitchClassEquals(leftKey.tonic, rightKey.tonic)) return false;
+    if (!keyEquals(leftKey, rightKey)) return false;
   } else if (leftKey !== rightKey) {
     return false;
   }

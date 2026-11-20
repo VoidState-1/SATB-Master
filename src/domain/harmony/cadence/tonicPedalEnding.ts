@@ -2,7 +2,7 @@ import {
   chordIdentityInversion, chordIdentityToneSpellings, harmonySemanticsConfidence, primaryHarmonyInterpretation,
   type ChordIdentity,
 } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type SpelledPitchClass } from "../../pitch";
+import { keyEquals, isWrittenStep, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type SpelledPitchClass } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisSlice } from "../analysis";
 import { hasCadentialWrittenVoicing } from "./writtenCadentialVoicing";
@@ -56,7 +56,7 @@ export function closingTonicPedalEvidence(
   if (key.mode !== "minor" || !arrival.isTonic || !terminal.isTonic || subdominant.degree !== 4 ||
       !subdominant.isSubdominant || applied.span.status !== "complete" ||
       [applied, subdominant].some(item => item.span.toTick - item.span.fromTick > beatTicks) ||
-      sequence.some((item, i) => item.key.mode !== key.mode || !pitchClassEquals(item.key.tonic, key.tonic) ||
+      sequence.some((item, i) => !keyEquals(item.key, key) ||
         (i > 0 && sequence[i - 1].span.toTick !== item.span.fromTick))) return;
   const semantics = applied.span.semantics;
   if (!semantics || !["certain", "probable"].includes(harmonySemanticsConfidence(semantics))) return;
@@ -124,8 +124,7 @@ export function closingTonicRevoicingEvidence(
   const key = arrival.key;
   const start = arrival.span.fromTick, release = terminal.span.toTick;
   if (!arrival.isTonic || !terminal.isTonic || !subdominant.isSubdominant || subdominant.degree !== 4 ||
-      [subdominant, terminal].some(facts => facts.key.mode !== key.mode ||
-        !pitchClassEquals(facts.key.tonic, key.tonic)) ||
+      [subdominant, terminal].some(facts => !keyEquals(facts.key, key)) ||
       subdominant.span.toTick - subdominant.span.fromTick > beatTicks) return;
 
   const gaps = [

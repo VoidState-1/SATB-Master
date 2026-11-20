@@ -1,6 +1,6 @@
 import { chordToneSpellings } from "../../chordModel";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../pitch";
+import { keyDeclarationEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../pitch";
 import { createFunctionalCandidate } from "./candidates";
 import { observationNotes } from "./observations";
 import type {
@@ -12,8 +12,7 @@ import type {
 const inversions = [0, 1, 2, 3] as const;
 
 function continuesInKey(left: ChordInferenceObservation, right: ChordInferenceObservation) {
-  return left.toTick === right.fromTick && left.key.id === right.key.id &&
-    left.key.mode === right.key.mode && pitchClassEquals(left.key.tonic, right.key.tonic);
+  return left.toTick === right.fromTick && keyDeclarationEquals(left.key, right.key);
 }
 
 function hasRespelling(before: ChordInferenceObservation, pivot: ChordInferenceObservation) {

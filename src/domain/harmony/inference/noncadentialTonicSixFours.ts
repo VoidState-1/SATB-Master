@@ -1,5 +1,5 @@
 import { chordIdentityEquals, chordIdentityInversion, primaryHarmonyInterpretation } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, spelledPitchEquals, writtenInterval } from "../../pitch";
+import { keyDeclarationEquals, keyEquals, isWrittenStep, spelledPitchEquals, writtenInterval } from "../../pitch";
 import { soundsCompleteWrittenChord } from "../writtenVoicing";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation } from "./types";
@@ -18,13 +18,8 @@ function isLocalComplete(candidate: ChordInferenceCandidate, observation: Observ
       !fit.spellingConsistent || !fit.bassMatchesInversion ||
       fit.omittedChordDegrees.length || fit.nonChordToneNoteIds.length) return false;
   const { appliedTarget, localKey } = primaryHarmonyInterpretation(semantics);
-  return !appliedTarget && (!localKey || (localKey.mode === observation.key.mode &&
-    pitchClassEquals(localKey.tonic, observation.key.tonic))) &&
+  return !appliedTarget && (!localKey || keyEquals(localKey, observation.key)) &&
     soundsCompleteWrittenChord(candidate.identity, observationNotes(observation).map(item => item.note), observation.bass);
-}
-
-function sameKey(left: Observation, right: Observation) {
-  return left.key.id === right.key.id && left.key.mode === right.key.mode && pitchClassEquals(left.key.tonic, right.key.tonic);
 }
 
 function isTonic(candidate: ChordInferenceCandidate) {
@@ -51,7 +46,7 @@ export function chooseNoncadentialTonicSixFours(
         chordIdentityInversion(tonic.identity) !== 2 ||
         !chordIdentityEquals(tonic.identity, cadential.identity)) return current;
     const [left, middle, right] = observations.slice(index - 1, index + 2);
-    if (!sameKey(left, middle) || !sameKey(middle, right) ||
+    if (!keyDeclarationEquals(left.key, middle.key) || !keyDeclarationEquals(middle.key, right.key) ||
         left.toTick !== middle.fromTick || middle.toTick !== right.fromTick ||
         !left.bass || !middle.bass || !right.bass ||
         phraseTicks.some(tick => left.fromTick < tick && tick < right.toTick) ||

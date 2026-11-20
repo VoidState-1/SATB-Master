@@ -1,6 +1,6 @@
 import { chordToneSpellings, type KeyReference } from "../../chordModel";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { pitchClassEquals } from "../../pitch";
+import { keyDeclarationEquals, keyEquals, pitchClassEquals } from "../../pitch";
 import { diatonicMinorTarget, hasExactWrittenStack, proveLocalMinorDeceptiveDominant } from "../localDeceptiveDominant";
 import { createFunctionalCandidate } from "./candidates";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
@@ -25,8 +25,7 @@ function hasNearbyMinorTonic(
     if (!item.completeSatb || previous.toTick !== item.fromTick || item.key.id !== arrival.key.id ||
         crossesPhrase(previous.fromTick, item.fromTick) || item.fromTick - arrival.fromTick > 2 * ppq) break;
     // A tonic stack may begin the hypothesized local key. A different inferred key ends the search.
-    if (item.localKey && (item.localKey.mode !== key.mode ||
-        !pitchClassEquals(item.localKey.tonic, key.tonic))) break;
+    if (item.localKey && !keyEquals(item.localKey, key)) break;
     const bass = item.bass?.pitch;
     if (bass && (item.activeNotes.bass?.startTick === item.fromTick) &&
         (pitchClassEquals(bass, tones[0]) || pitchClassEquals(bass, tones[2])) &&
@@ -46,8 +45,7 @@ export function withDeceptiveDominants(
   return sets.map((existing, i) => {
     if (existing.length) return existing;
     const source = observations[i], arrival = observations[i + 1];
-    if (!arrival || source.key.id !== arrival.key.id || source.key.mode !== arrival.key.mode ||
-        !pitchClassEquals(source.key.tonic, arrival.key.tonic) ||
+    if (!arrival || !keyDeclarationEquals(source.key, arrival.key) ||
         arrival.metric?.role !== "downbeat" || crossesPhrase(source.fromTick, arrival.fromTick)) return existing;
 
     const proof = proveLocalMinorDeceptiveDominant(source, arrival);

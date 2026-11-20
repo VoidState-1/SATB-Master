@@ -1,5 +1,5 @@
 import { chordToneSpellings, primaryHarmonyInterpretation } from "../chordModel";
-import { isWrittenStep, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../pitch";
+import { keyEquals, isWrittenStep, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../pitch";
 import { VOICE_ORDER } from "../project/voice";
 import type { AnalysisSlice } from "./analysis";
 import { matchesWrittenChord, resolvesInVoice } from "./writtenResolution";
@@ -7,8 +7,7 @@ import { matchesWrittenChord, resolvesInVoice } from "./writtenResolution";
 function inWrittenKey(slice: AnalysisSlice, key: AnalysisSlice["key"]) {
   const reading = slice.chord?.semantics && primaryHarmonyInterpretation(slice.chord.semantics);
   const local = reading?.localKey ?? slice.key;
-  return slice.key.id === key.id && !reading?.appliedTarget && local.mode === key.mode &&
-    pitchClassEquals(local.tonic, key.tonic);
+  return slice.key.id === key.id && !reading?.appliedTarget && keyEquals(local, key);
 }
 
 /** Spasobin §22.3, example 22-303: the leading-tone seventh in third

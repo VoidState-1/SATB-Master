@@ -9,7 +9,7 @@ import {
 } from "../../chordModel";
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import type { HarmonyAnalysis, HarmonySpan } from "../analysis";
-import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
 
 export type HarmonyConnectionRelation =
   | "same-harmony"
@@ -67,10 +67,6 @@ function localKeyOf(
   fallback: KeyReference,
 ) {
   return interpretation?.localKey ?? fallback;
-}
-
-function sameKey(left: KeyReference, right: KeyReference) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
 function designationOf(
@@ -182,7 +178,7 @@ export function functionalTargetMatches(
     projectKeyAtSpan(analysis, currentSpan),
   );
   return (
-    sameKey(sourceKey, currentKey) &&
+    keyEquals(sourceKey, currentKey) &&
     targetMatches(
       target,
       currentSpan,
@@ -210,7 +206,7 @@ function assessConnection(
     currentInterpretation,
     projectKeyAtSpan(analysis, current),
   );
-  const keyMatches = sameKey(previousKey, currentKey);
+  const keyMatches = keyEquals(previousKey, currentKey);
   const contiguous = previous.toTick === current.fromTick;
   const confidence = combinedConfidence(previous, current);
 

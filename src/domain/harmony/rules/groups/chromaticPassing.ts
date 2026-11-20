@@ -1,5 +1,5 @@
 import { chordIdentityEquals, chordIdentityToneSpellings, chordToneSpellings, type ChordIdentity, type KeyReference } from "../../../chordModel";
-import { enharmonicSpellings, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { keyEquals, enharmonicSpellings, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import { VOICE_ORDER, type VoiceId } from "../../../project";
 import { sameChordIdentityWithoutBass, type AnalysisNote, type AnalysisSlice, type MelodyTransition } from "../../analysis";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
@@ -69,7 +69,7 @@ function isRaisedTonicThirdPassing(
       context.metric.compare(context.metric.positionAt(right.startTick), position) !== "stronger") return false;
   if (context.analysis.project.keyEvents.some(event =>
     left.startTick < event.tick && event.tick <= right.startTick &&
-    (event.mode !== from.key.mode || !pitchClassEquals(event.tonic, from.key.tonic))) ||
+    (!keyEquals(event, from.key))) ||
     context.analysis.phraseBoundaries.some(boundary =>
       !boundary.stale && left.startTick < boundary.tick && boundary.tick <= right.startTick)) return false;
 
@@ -92,13 +92,9 @@ function isRaisedTonicThirdPassing(
     if (reading.status === "ambiguous") return false;
     if (reading.status !== "resolved") return true;
     const { localKey: labelledKey, appliedTarget } = reading.value;
-    return (!labelledKey || (labelledKey.mode === key.mode && pitchClassEquals(labelledKey.tonic, key.tonic))) &&
+    return (!labelledKey || keyEquals(labelledKey, key)) &&
       (!appliedTarget || appliedTarget.degree === 4);
   });
-}
-
-function sameKey(left: KeyReference, right: KeyReference) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
 function continuousContext(context: HarmonyRuleContext, fromTick: number, to: AnalysisSlice) {
@@ -131,7 +127,7 @@ function keyOfCadentialBackbone(context: HarmonyRuleContext, slice: AnalysisSlic
       !continuousContext(context, slice.tick, tonic)) return;
   const key = resolvedDegree(context, tonic, 1);
   const domKey = resolvedDegree(context, dominant, 5);
-  if (!key || !domKey || key.mode !== "major" || !sameKey(key, domKey) ||
+  if (!key || !domKey || key.mode !== "major" || !keyEquals(key, domKey) ||
       !pitchClassEquals(root, scaleDegreePitchClass(key, 5)) ||
       !matchesWrittenChord(dominant, root, "dominant7")) return;
 
@@ -153,7 +149,7 @@ function compatibleBackbone(
 ) {
   if (!slice.chord) return true;
   const labelled = localKey(context, slice);
-  return (slice.chord.semantics?.interpretations.length ?? 0) <= 1 && !!labelled && sameKey(labelled, key) &&
+  return (slice.chord.semantics?.interpretations.length ?? 0) <= 1 && !!labelled && keyEquals(labelled, key) &&
     chordIdentityEquals(slice.chord.identity, harmony);
 }
 
@@ -199,7 +195,7 @@ function loweredThirdPreparingDominant(
     const reading = context.harmony.primaryInterpretation(before.chord);
     if (before.chord.semantics?.interpretations.length !== 1 || reading.status !== "resolved" ||
         reading.value.degree !== 6 || reading.value.degreeAlteration !== 0 || reading.value.appliedTarget ||
-        !sameKey(reading.value.localKey ?? before.key, key)) return;
+        !keyEquals(reading.value.localKey ?? before.key, key)) return;
   }
   // §41.3, ex. 41-617: lowered III takes the written seventh of DDVII7.
   return approach.id;
@@ -219,7 +215,7 @@ function preparesNinthOnDominant(
     const reading = context.harmony.primaryInterpretation(preparation.chord);
     if (reading.status !== "resolved" || preparation.chord.semantics?.interpretations.length !== 1) return;
     const { degree, degreeAlteration, designation, appliedTarget, localKey } = reading.value;
-    if (degree !== 7 || degreeAlteration !== 0 || !sameKey(localKey ?? preparation.key, key) ||
+    if (degree !== 7 || degreeAlteration !== 0 || !keyEquals(localKey ?? preparation.key, key) ||
         (designation?.kind !== "double-dominant-leading-tone" && designation?.kind !== "applied-leading-tone") ||
         appliedTarget?.degree !== 5 || appliedTarget.primaryFunction !== "dominant" || appliedTarget.secondaryFunction) return;
   }
@@ -324,7 +320,7 @@ export function readHeldChromaticPassing(
   const anchor = frames[anchorIndex];
   const key = localKey(context, anchor);
   const landingKey = localKey(context, to);
-  if (!key || !landingKey || !sameKey(key, landingKey) || !continuousContext(context, anchor.tick, to) ||
+  if (!key || !landingKey || !keyEquals(key, landingKey) || !continuousContext(context, anchor.tick, to) ||
       !pitchClassEquals(from.notes.bass!.pitch, harmony.bass)) return;
 
   const tones = chordIdentityToneSpellings(harmony);
@@ -370,7 +366,7 @@ function readChromaticPassingSpelling(context: HarmonyRuleContext, first: Melody
   const key = localKey(context, from);
   const landingKey = localKey(context, to);
   const middleKey = via.chord ? localKey(context, via) : key;
-  if (!key || ![middleKey, landingKey].every(k => k && k.mode === key.mode && pitchClassEquals(k.tonic, key.tonic))) return;
+  if (!key || ![middleKey, landingKey].every(k => k && keyEquals(k, key))) return;
   if (![left, right].every(note => isDiatonicIn(key, note))) return;
   const usual = usualChromaticSpelling(key, middle.pitch, direction > 0);
   if (usual && isRaisedTonicThirdPassing(context, first, second, from, to, key)) return "usual";

@@ -1,5 +1,5 @@
 import { chordToneSpellings, type KeyReference } from "../../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -11,11 +11,11 @@ function agreesWithDegree(rules: HarmonyRuleContext, slice: AnalysisSlice, key: 
   if (reading.status !== "resolved") return reading.status !== "ambiguous";
   const { degree, degreeAlteration, appliedTarget, localKey } = reading.value;
   return !appliedTarget && degreeAlteration === 0 && degree === expected &&
-    (!localKey || (localKey.mode === key.mode && pitchClassEquals(localKey.tonic, key.tonic)));
+    (!localKey || keyEquals(localKey, key));
 }
 
 function confirmsMajorTarget(rules: HarmonyRuleContext, arrival: AnalysisSlice, key: KeyReference) {
-  if (arrival.key.mode === key.mode && pitchClassEquals(arrival.key.tonic, key.tonic)) return true;
+  if (keyEquals(arrival.key, key)) return true;
   // For a new local key require an independent, literal V7–I or V7–I6
   // after the six-four, with both tendency tones resolved in their voices.
   const dominant = rules.sliceAt(arrival.endTick);

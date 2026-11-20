@@ -1,14 +1,10 @@
 import { chordToneSpellings, type ChordQuality, type KeyReference } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import type { AnalysisNote, AnalysisSlice, MelodyTransition } from "../../analysis";
 import { hasWrittenVoicing } from "../../writtenResolution";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { ConnectionView } from "../context/views";
-
-function sameKey(left: KeyReference, right: KeyReference) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
 
 function hasWrittenChord(
   slice: AnalysisSlice, root: SpelledPitchClass, bass: SpelledPitchClass, quality: ChordQuality,
@@ -35,14 +31,14 @@ function isHeldDoubleDominantFrame(
   requireLabel: boolean,
 ) {
   const root = scaleDegreePitchClass(key, 2);
-  if (!slice.chord) return !requireLabel && sameKey(slice.key, key) && (
+  if (!slice.chord) return !requireLabel && keyEquals(slice.key, key) && (
     hasWrittenChord(slice, leadingTone, leadingTone, "diminished7") ||
     hasWrittenChord(slice, root, leadingTone, "major") || hasWrittenChord(slice, root, leadingTone, "dominant7")
   );
   const reading = rules.harmony.primaryInterpretation(slice.chord);
   if (reading.status !== "resolved") return false;
   const { degree, degreeAlteration, appliedTarget, designation, localKey } = reading.value;
-  if (!sameKey(localKey ?? slice.key, key) || degreeAlteration !== 0 || designation?.primaryFunction !== "dominant" ||
+  if (!keyEquals(localKey ?? slice.key, key) || degreeAlteration !== 0 || designation?.primaryFunction !== "dominant" ||
       appliedTarget?.degree !== 5 || appliedTarget.primaryFunction !== "dominant" ||
       appliedTarget.secondaryFunction) return false;
   const kind = designation.kind;
@@ -62,7 +58,7 @@ function hasRootPositionDominant(
         { degree: 5, primaryFunction: "dominant" }))) return false;
   const reading = rules.harmony.primaryInterpretation(slice.chord);
   if (reading.status !== "resolved" || reading.value.appliedTarget ||
-      !sameKey(reading.value.localKey ?? slice.key, key)) return false;
+      !keyEquals(reading.value.localKey ?? slice.key, key)) return false;
   if (!connection && (reading.value.degree !== 5 || reading.value.degreeAlteration !== 0 ||
       reading.value.designation?.primaryFunction !== "dominant")) return false;
   const dominant = scaleDegreePitchClass(key, 5);
@@ -115,7 +111,7 @@ function resolvesHeldLeadingBass(
     if (!connection && !arrival.chord) {
       // Sparse analysis: accept a single complete tonic six-four over the
       // arriving V, only if this same bass continues into the named dominant.
-      if (!sameKey(arrival.key, key) || !hasWrittenChord(arrival, key.tonic, arrivalBass.pitch, key.mode) ||
+      if (!keyEquals(arrival.key, key) || !hasWrittenChord(arrival, key.tonic, arrivalBass.pitch, key.mode) ||
           !boundedByOneMeasure(rules, arrivalTick, arrival.endTick) ||
           rules.sliceAt(arrival.endTick)?.notes.bass?.id !== arrivalBass.id) return false;
       endTick = arrival.endTick;
@@ -127,7 +123,7 @@ function resolvesHeldLeadingBass(
       if (role && role !== "cadential64") return false;
       const reading = rules.harmony.primaryInterpretation(sixFour.span);
       if (reading.status !== "resolved" || reading.value.appliedTarget || reading.value.degree !== 1 ||
-          !sameKey(reading.value.localKey ?? arrival.key, key)) return false;
+          !keyEquals(reading.value.localKey ?? arrival.key, key)) return false;
       if (!sixFour.slices.every(slice => !!slice.chord && hasWrittenChord(slice, key.tonic, arrivalBass.pitch, key.mode) &&
           !!slice.notes.bass && spelledPitchEquals(slice.notes.bass.pitch, arrivalBass.pitch))) return false;
       endTick = sixFour.span.toTick;
@@ -138,7 +134,7 @@ function resolvesHeldLeadingBass(
         !hasRootPositionDominant(rules, connection, dominant, key)) return false;
   }
   return !rules.analysis.project.keyEvents.some(event =>
-    bass.startTick < event.tick && event.tick <= endTick && !sameKey(event, sourceBoundary.key)) &&
+    bass.startTick < event.tick && event.tick <= endTick && !keyEquals(event, sourceBoundary.key)) &&
     !rules.analysis.phraseBoundaries.some(boundary =>
       !boundary.stale && bass.startTick < boundary.tick && boundary.tick <= endTick);
 }
@@ -166,10 +162,10 @@ export function subdominantSeventhBassEntry(rules: HarmonyRuleContext, motion: M
   // satisfy the ordinary chromatic preparation shortcut.
   if (from.chord) {
     const prep = rules.harmony.primaryInterpretation(from.chord);
-    if (!hasWrittenChord(from, fourth, fourth, "dominant7") || prep.status !== "resolved" || !sameKey(prep.value.localKey ?? from.key, key) ||
+    if (!hasWrittenChord(from, fourth, fourth, "dominant7") || prep.status !== "resolved" || !keyEquals(prep.value.localKey ?? from.key, key) ||
         prep.value.appliedTarget || prep.value.degree !== 4 || prep.value.degreeAlteration !== 0 ||
         prep.value.designation?.primaryFunction !== "subdominant") return false;
-  } else if (!sameKey(from.key, key)) return false;
+  } else if (!keyEquals(from.key, key)) return false;
   if (from.key.id !== into.key.id || rules.analysis.phraseBoundaries.some(b => !b.stale && previous.startTick < b.tick && b.tick <= current.startTick))
     return false;
   return resolvesHeldLeadingBass(rules, current, key, into);

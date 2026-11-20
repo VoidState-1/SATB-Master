@@ -1,4 +1,4 @@
-import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, stepIndex, toMidi, writtenInterval } from "../pitch";
+import { keyDeclarationEquals, isWrittenStep, pitchClassEquals, scaleDegreePitchClass, stepIndex, toMidi, writtenInterval } from "../pitch";
 import { VOICE_ORDER } from "../project/voice";
 import { compareMetricStrength, type MetricPosition } from "../rhythm/metric";
 import type { AnalysisSlice } from "./analysis";
@@ -25,8 +25,7 @@ export function upperPassingMotion(
       compareMetricStrength(right.metric, middle.metric) === "weaker") return;
   for (const frame of [left, middle, right]) {
     const bass = frame.activeNotes.bass;
-    if (!bass || frame.key.id !== middle.key.id || frame.key.mode !== middle.key.mode ||
-        !pitchClassEquals(frame.key.tonic, middle.key.tonic)) return;
+    if (!bass || !keyDeclarationEquals(frame.key, middle.key)) return;
     for (const voice of VOICE_ORDER) {
       const note = frame.activeNotes[voice];
       if (!note || toMidi(note.pitch) < toMidi(bass.pitch)) return;

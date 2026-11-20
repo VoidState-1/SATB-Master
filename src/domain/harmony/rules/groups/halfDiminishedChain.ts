@@ -1,5 +1,5 @@
 import { chordToneSpellings } from "../../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, spelledPitchEquals, stepIndex, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, spelledPitchEquals, stepIndex, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
 import type { VoiceId } from "../../../project/types";
 import type { AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -70,8 +70,7 @@ export function leadingRootContinuesInHalfDiminishedChain(
 ) {
   const first = context.sliceAt(arrival.tick - 1);
   const source = first?.notes[voice];
-  if (!first || first.tick !== openedAt || !source || targetKey.mode !== "major" || first.key.mode !== targetKey.mode ||
-      !pitchClassEquals(first.key.tonic, targetKey.tonic) ||
+  if (!first || first.tick !== openedAt || !source || targetKey.mode !== "major" || !keyEquals(first.key, targetKey) ||
       !pitchClassEquals(source.pitch, leadingTonePitchClass(targetKey))) return false;
   const head = readHalfDiminishedSlot(first);
   if (!head || !pitchClassEquals(head.root, source.pitch)) return false;
@@ -89,7 +88,7 @@ export function leadingRootContinuesInHalfDiminishedChain(
       if (frame === first && (reading.value.degree !== 7 || reading.value.degreeAlteration !== 0 ||
           (reading.value.designation && reading.value.designation.primaryFunction !== "dominant"))) return false;
       const key = reading.value.localKey ?? frame.key;
-      if (key.mode !== targetKey.mode || !pitchClassEquals(key.tonic, targetKey.tonic)) return false;
+      if (!keyEquals(key, targetKey)) return false;
     }
     if (frame === first) continue;
     const next = readHalfDiminishedSlot(frame);

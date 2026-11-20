@@ -1,5 +1,5 @@
 import { chordToneSpellings } from "../../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import { movesToWrittenTone } from "../../dominantSixthMotion";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -32,8 +32,7 @@ export function beforeMelodicMinorPassingBass(context: HarmonyRuleContext, middl
     const reading = context.harmony.primaryInterpretation(frame.chord!);
     if (reading.status === "ambiguous" || (reading.status === "resolved" &&
         (reading.value.degree !== degree || reading.value.degreeAlteration !== 0 || reading.value.appliedTarget ||
-         (reading.value.localKey && (reading.value.localKey.mode !== key.mode ||
-           !pitchClassEquals(reading.value.localKey.tonic, key.tonic)))))) return;
+         (reading.value.localKey && !keyEquals(reading.value.localKey, key))))) return;
   }
 
   const dominant = scaleDegreePitchClass(key, 5);

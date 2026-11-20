@@ -1,5 +1,5 @@
-import { chordToneSpellings, type KeyReference } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval } from "../../../pitch";
+import { chordToneSpellings } from "../../../chordModel";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisSlice } from "../../analysis";
 import { hasExactWrittenStack } from "../../localDeceptiveDominant";
@@ -14,10 +14,6 @@ function plainRootPosition(slice: AnalysisSlice, root: ReturnType<typeof scaleDe
     !identity.structure.extensions.length && !identity.structure.alterations.length &&
     pitchClassEquals(identity.root, root) && pitchClassEquals(identity.bass, root) &&
     !!slice.notes.bass && pitchClassEquals(slice.notes.bass.pitch, root);
-}
-
-function sameKey(left: KeyReference, right: KeyReference) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
 /** Spasobin §20.6, example 20-276: a written, resolved root V7–VI
@@ -38,7 +34,7 @@ export function hasDeceptiveSixthThirdDoubling(context: HarmonyRuleContext, chec
   const d = sourceReading.value, vi = targetReading.value;
   const key = d.localKey ?? before.key;
   if (d.appliedTarget || vi.appliedTarget || d.degree !== 5 || vi.degree !== 6 ||
-      d.degreeAlteration !== 0 || vi.degreeAlteration !== 0 || !sameKey(key, vi.localKey ?? after.key)) return false;
+      d.degreeAlteration !== 0 || vi.degreeAlteration !== 0 || !keyEquals(key, vi.localKey ?? after.key)) return false;
 
   const dominant = scaleDegreePitchClass(key, 5), sixth = scaleDegreePitchClass(key, 6);
   const quality = key.mode === "major" ? "minor" : "major";

@@ -1,5 +1,5 @@
 import { chordIdentityToneSpellings, chordToneSpellings } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import { dominantSixthInnerVoices, movesToWrittenTone, resolvesDominantInnerVoice } from "../../dominantSixthMotion";
@@ -29,7 +29,7 @@ function resolvesWrittenDominantSixth(
     const previousKey = primaryKey(context, source, 5);
     const identity = source.chord.identity;
     const shape = identity.structure;
-    if (!previousKey || previousKey.mode !== key.mode || !pitchClassEquals(previousKey.tonic, key.tonic) ||
+    if (!previousKey || !keyEquals(previousKey, key) ||
         shape.kind !== "tertian" || shape.quality !== "dominant7" || shape.alterations.length ||
         shape.extensions.some(extension => extension !== 6) ||
         !pitchClassEquals(identity.root, root) || !pitchClassEquals(identity.bass, root)) return false;
@@ -84,8 +84,7 @@ export function landsOnIncompleteTonic(context: HarmonyRuleContext, landing: Ana
   if (key.mode === "major" && resolvesRaisedFifthToDoubledThird(source, landing, key.tonic)) return true;
   if (resolvesWrittenDominantSixth(context, source, landing, key)) return true;
   const previousKey = primaryKey(context, source, 5);
-  if (!source.chord || !previousKey || previousKey.mode !== key.mode ||
-      !pitchClassEquals(previousKey.tonic, key.tonic)) return false;
+  if (!source.chord || !previousKey || !keyEquals(previousKey, key)) return false;
   const dominant = source.chord.identity;
   if (dominant.structure.kind !== "tertian" || dominant.structure.quality !== "dominant7" ||
       dominant.structure.extensions.length || dominant.structure.alterations.length ||

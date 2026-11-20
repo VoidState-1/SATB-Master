@@ -1,5 +1,5 @@
 import { chordIdentityEquals } from "../../../chordModel";
-import { pitchClassEquals } from "../../../pitch";
+import { keyEquals } from "../../../pitch";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import { writtenLowerNeighborPair, type LowerNeighborFrame } from "../../writtenLowerNeighborPair";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -14,7 +14,7 @@ function agreeOnAnchorContext(context: HarmonyRuleContext, departure: AnalysisSl
   const later = right.status === "resolved" ? right.value : undefined;
   const leftKey = earlier?.localKey ?? departure.key;
   const rightKey = later?.localKey ?? arrival.key;
-  if (leftKey.mode !== rightKey.mode || !pitchClassEquals(leftKey.tonic, rightKey.tonic)) return false;
+  if (!keyEquals(leftKey, rightKey)) return false;
   if (!earlier || !later) return true;
   return earlier.degree === later.degree && earlier.degreeAlteration === later.degreeAlteration &&
     earlier.appliedTarget?.degree === later.appliedTarget?.degree &&

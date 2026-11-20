@@ -1,5 +1,6 @@
 import { chordIdentityToneSpellings, chordToneSpellings } from "../../../chordModel";
 import {
+  keyEquals,
   pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, toMidi, writtenInterval,
   type SpelledPitchClass,
 } from "../../../pitch";
@@ -99,7 +100,7 @@ export function overlapSameHarmony(
   const source = writtenHarmony(previous, context);
   const target = writtenHarmony(current, context);
   if (!source || !target || (!source.complete && !target.complete) ||
-      source.key.mode !== target.key.mode || !pitchClassEquals(source.key.tonic, target.key.tonic)) return;
+      !keyEquals(source.key, target.key)) return;
   if (source.pitches.some(pitch => !contains(target.tones, pitch)) &&
       target.pitches.some(pitch => !contains(source.tones, pitch))) return false;
 }

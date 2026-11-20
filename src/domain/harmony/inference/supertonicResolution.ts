@@ -1,5 +1,5 @@
 import { chordIdentityEquals, semanticsFromChordDraft, type KeyReference, type ScaleDegree } from "../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, stepIndex, type Alteration } from "../../pitch";
+import { keyDeclarationEquals, pitchClassEquals, scaleDegreePitchClass, stepIndex, type Alteration } from "../../pitch";
 import { createAbsoluteCandidate } from "./candidates";
 import { adjacentTonicAnchor, writtenThirdInversion } from "./thirdInversionAnchors";
 import type { ChordInferenceCandidate as Candidate, ChordInferenceObservation as Observation, ChordInferenceOptions } from "./types";
@@ -11,8 +11,7 @@ function needsIdentity(set: CandidateSet) {
 }
 
 function sameContext(source: Observation, end: Observation) {
-  return source.key.id === end.key.id && source.key.mode === end.key.mode &&
-    pitchClassEquals(source.key.tonic, end.key.tonic);
+  return keyDeclarationEquals(source.key, end.key);
 }
 
 function literalDominant(item: Observation, key: KeyReference, options: ChordInferenceOptions, inversion: 2 | 3) {

@@ -1,5 +1,5 @@
 import { functionalTargetForDegree } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, type SpelledPitchClass } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, type SpelledPitchClass } from "../../../pitch";
 import type { AnalysisChord, AnalysisSlice } from "../../analysis";
 import { diatonicMinorTarget, proveLocalMinorDeceptiveDominant } from "../../localDeceptiveDominant";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -48,6 +48,6 @@ export function isProvenLocalDeceptiveTarget(
   const arrivalKey = arrival.localKey ?? after.key;
   return declaredTarget.primaryFunction === expected.primaryFunction &&
     declaredTarget.secondaryFunction === expected.secondaryFunction &&
-    homeKey.mode === arrivalKey.mode && pitchClassEquals(homeKey.tonic, arrivalKey.tonic) &&
+    keyEquals(homeKey, arrivalKey) &&
     pitchClassEquals(scaleDegreePitchClass(arrivalKey, arrival.degree, arrival.degreeAlteration), proof.sixth);
 }

@@ -1,5 +1,5 @@
 import { supportsBassTriad } from "../helpers/bassTriad";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
 import type { MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 
@@ -26,7 +26,7 @@ export function isMinorSixthChordBassLine(context: HarmonyRuleContext, transitio
 
   if (context.analysis.project.keyEvents.some(event =>
     previous.startTick < event.tick && event.tick <= next.startTick &&
-    (event.mode !== key.mode || !pitchClassEquals(event.tonic, key.tonic))) ||
+    (!keyEquals(event, key))) ||
     context.analysis.phraseBoundaries.some(boundary =>
       !boundary.stale && previous.startTick < boundary.tick && boundary.tick <= next.startTick)) return false;
 

@@ -1,4 +1,4 @@
-import { pitchClassEquals, scaleDegreePitchClass } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { activeNotes } from "../helpers/core";
@@ -30,7 +30,7 @@ export function preparedCadentialPair(
   const source = context.harmony.primaryInterpretation(chord);
   if (source.status !== "resolved") return false;
   const sourceKey = source.value.localKey ?? before.key;
-  if (sourceKey.mode !== key.mode || !pitchClassEquals(sourceKey.tonic, key.tonic)) return false;
+  if (!keyEquals(sourceKey, key)) return false;
 
   const release = outside[0].note.startTick + outside[0].note.durationTicks;
   if (context.analysis.phraseBoundaries.some(mark =>

@@ -1,4 +1,4 @@
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
 import type { MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { supportsBassTriad } from "../helpers/bassTriad";
@@ -21,7 +21,7 @@ export function isResolvedDominantSixthBass(context: HarmonyRuleContext, motion:
 
   if (context.analysis.phraseBoundaries.some(b => !b.stale && previous.startTick < b.tick && b.tick <= end) ||
       context.analysis.project.keyEvents.some(e => previous.startTick < e.tick && e.tick <= end &&
-        (e.mode !== key.mode || !pitchClassEquals(e.tonic, key.tonic)))) return false;
+        (!keyEquals(e, key)))) return false;
 
   const bassOnly = context.analysis.project.satbTracks.every(track => track.voice === "bass" || !track.notes.length);
   if (bassOnly && !context.slices({ overlapping: { fromTick: tick - 1, toTick: end + 1 } }).all(slice => {

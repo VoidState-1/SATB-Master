@@ -1,6 +1,6 @@
-import { chordToneSpellings, type KeyReference } from "../../chordModel";
+import { chordToneSpellings } from "../../chordModel";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval } from "../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval } from "../../pitch";
 import { createFunctionalCandidate } from "./candidates";
 import type { LocalKeyContext } from "./localKeys";
 import { observationNotes } from "./observations";
@@ -9,10 +9,6 @@ import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInference
 type Observation = ChordInferenceObservation;
 type CandidateSet = readonly ChordInferenceCandidate[];
 const inversions = [0, 1, 2, 3] as const;
-
-function sameKey(a: KeyReference, b: KeyReference) {
-  return a.mode === b.mode && pitchClassEquals(a.tonic, b.tonic);
-}
 
 function exact(candidate: ChordInferenceCandidate) {
   return candidate.fit.spellingConsistent && !candidate.fit.omittedChordDegrees.length &&
@@ -72,7 +68,7 @@ export function withLeadingSeventhIntoConfirmedKey(
         phraseBoundaries.some(tick => source.fromTick < tick && tick <= observations[proof.tonicIndex].fromTick))
       return existing;
     const key = proof.key;
-    if (sameKey(source.key, key) || (arrival.localKey && !sameKey(arrival.localKey, key)) ||
+    if (keyEquals(source.key, key) || (arrival.localKey && !keyEquals(arrival.localKey, key)) ||
         !pitchClassEquals(bass.pitch, scaleDegreePitchClass(key, 5))) return existing;
 
     const dominantNotes = observationNotes(dominantOnset).filter(({ note }) => !note.nonChordToneRole);

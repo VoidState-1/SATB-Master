@@ -1,5 +1,5 @@
 import { chordIdentityEquals } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, spelledPitchEquals, writtenInterval } from "../../pitch";
+import { keyDeclarationEquals, isWrittenStep, spelledPitchEquals, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import { compareMetricStrength } from "../../rhythm/metric";
 import { fitProlongedHarmony } from "./candidates";
@@ -56,8 +56,7 @@ export function withProlongedHarmony(
     if (middle.metric.measureNumber !== after.metric.measureNumber && after.metric.beatPosition !== 0) continue;
     if (before.toTick !== middle.fromTick || middle.toTick !== after.fromTick ||
         phraseBoundaryTicks.some(tick => before.fromTick < tick && tick <= after.fromTick) ||
-        ![before, after].every(o => middle.key.id === o.key.id && middle.key.mode === o.key.mode &&
-          pitchClassEquals(middle.key.tonic, o.key.tonic))) continue;
+        ![before, after].every(o => keyDeclarationEquals(middle.key, o.key))) continue;
     const motion = movingNote(before, middle, after);
     if (!motion) continue;
     // Spasobin §40.1, ex. 40-600. Assign the role only when the other

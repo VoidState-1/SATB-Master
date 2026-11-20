@@ -1,5 +1,5 @@
 import { chordIdentityToneSpellings, type FunctionalDesignation, type HarmonyInterpretation, type KeyReference } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, type SpelledPitchClass } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, type SpelledPitchClass } from "../../../pitch";
 import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass, type AnalysisSlice, type SliceTransition } from "../../analysis";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
@@ -56,7 +56,7 @@ function explicitUsesAgree(previous: AnalysisSlice, current: AnalysisSlice, harm
   const rightMeaning = rightResolution?.status === "resolved" ? rightResolution.value : undefined;
   const leftKey = leftMeaning?.localKey ?? previous.key;
   const rightKey = rightMeaning?.localKey ?? current.key;
-  if (leftKey.mode !== rightKey.mode || !pitchClassEquals(leftKey.tonic, rightKey.tonic)) return false;
+  if (!keyEquals(leftKey, rightKey)) return false;
   const leftTarget = leftMeaning?.appliedTarget;
   const rightTarget = rightMeaning?.appliedTarget;
   if (leftTarget?.degree !== rightTarget?.degree ||

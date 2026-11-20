@@ -1,5 +1,5 @@
 import { primaryHarmonyInterpretation, type ChordQuality, type ScaleDegree } from "../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../pitch";
+import { keyDeclarationEquals, keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../pitch";
 import { compareMetricStrength } from "../../rhythm/metric";
 import { readReattackedTonicNinth } from "../writtenDominantSeventh";
 import { candidateComparator, createFunctionalCandidate, fitPreparedSuspension } from "./candidates";
@@ -72,8 +72,7 @@ export function withAppliedDominants(
     const source = observations[i], arrival = observations[i + 1];
     const nextTarget = continuedTarget;
     continuedTarget = undefined;
-    if (!source.completeSatb || !arrival.completeSatb || source.key.mode !== arrival.key.mode ||
-        !pitchClassEquals(source.key.tonic, arrival.key.tonic)) continue;
+    if (!source.completeSatb || !arrival.completeSatb || !keyEquals(source.key, arrival.key)) continue;
     const scale = Array.from({ length: 7 }, (_, index) => scaleDegreePitchClass(source.key, index + 1));
     if (source.key.mode === "minor") scale.push(leadingTonePitchClass(source.key));
     if (source.soundingPitchClasses.every(p => scale.some(tone => pitchClassEquals(p, tone)))) continue;
@@ -111,8 +110,7 @@ export function withReattackedTonicNinths(
   const result = sets.slice();
   for (let i = 0; i + 2 < observations.length; i++) {
     const [source, onset, settled] = [observations[i], observations[i + 1], observations[i + 2]];
-    if ([onset, settled].some(part => part.key.id !== source.key.id || part.key.mode !== source.key.mode ||
-        !pitchClassEquals(part.key.tonic, source.key.tonic)) ||
+    if ([onset, settled].some(part => !keyDeclarationEquals(part.key, source.key)) ||
         phraseBoundaryTicks.some(tick => source.fromTick < tick && tick <= settled.fromTick) ||
         !onset.metric || !settled.metric || onset.metric.level < 2 ||
         onset.metric.measureNumber !== settled.metric.measureNumber ||

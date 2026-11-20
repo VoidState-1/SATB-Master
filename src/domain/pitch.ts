@@ -431,3 +431,10 @@ export function pitchClassEquals(
 export function keyEquals(left: KeyLike, right: KeyLike) {
   return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
+
+type KeyDeclaration = KeyLike & { readonly id: string };
+
+/** Match the same declared key event, including its written tonic and mode. */
+export function keyDeclarationEquals(left: KeyDeclaration, right: KeyDeclaration) {
+  return left.id === right.id && keyEquals(left, right);
+}

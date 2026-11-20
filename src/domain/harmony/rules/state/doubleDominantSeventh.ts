@@ -1,14 +1,10 @@
-import { chordIdentityInversion, chordToneSpellings, type KeyReference } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../../pitch";
+import { chordIdentityInversion, chordToneSpellings } from "../../../chordModel";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../../pitch";
 import { hasWrittenVoicing } from "../../writtenResolution";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { activeNotes } from "../helpers/core";
-
-function sameKey(left: KeyReference, right: KeyReference) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
 
 function plainQuality(slice: AnalysisSlice, quality: "diminished7" | "dominant7" | "major") {
   const structure = slice.chord?.identity.structure;
@@ -53,10 +49,10 @@ export function readDoubleDominantSeventhLanding(rules: HarmonyRuleContext, tick
         !pitchClassEquals(annotated.identity.bass, source.notes.bass!.pitch)) return;
     const meaning = sourceReading.value;
     const designation = meaning.designation?.kind;
-    if (!sameKey(meaning.localKey ?? source.key, key) || meaning.degree !== 7 || meaning.degreeAlteration !== 0 ||
+    if (!keyEquals(meaning.localKey ?? source.key, key) || meaning.degree !== 7 || meaning.degreeAlteration !== 0 ||
         (designation !== "applied-leading-tone" && designation !== "double-dominant-leading-tone") ||
         (meaning.appliedTarget?.degree ?? (designation === "double-dominant-leading-tone" ? 5 : undefined)) !== 5) return;
-  } else if (!sameKey(source.key, key)) return;
+  } else if (!keyEquals(source.key, key)) return;
 
   const notes = activeNotes(source);
   const leading = notes.find(({ note }) => pitchClassEquals(note.pitch, raisedFourth))!;
@@ -98,5 +94,5 @@ export function isDoubleDominantSeventhBassPreparation(
   return reading.status === "resolved" && !reading.value.appliedTarget &&
     reading.value.degree === 1 && reading.value.degreeAlteration === 0 &&
     reading.value.designation?.primaryFunction === "tonic" &&
-    sameKey(reading.value.localKey ?? preparation.key, proof.key);
+    keyEquals(reading.value.localKey ?? preparation.key, proof.key);
 }

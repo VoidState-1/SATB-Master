@@ -1,5 +1,5 @@
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { isWrittenStep, pitchClassEquals, toMidi, writtenInterval, type SpelledPitch } from "../../pitch";
+import { keyDeclarationEquals, isWrittenStep, pitchClassEquals, toMidi, writtenInterval, type SpelledPitch } from "../../pitch";
 import { compareMetricStrength } from "../../rhythm/metric";
 import { createFunctionalCandidate } from "./candidates";
 import { observationNotes } from "./observations";
@@ -8,11 +8,6 @@ import type {
   ChordInferenceObservation,
   ChordInferenceOptions,
 } from "./types";
-
-function sameWrittenKey(left: ChordInferenceObservation, right: ChordInferenceObservation) {
-  return left.key.id === right.key.id && left.key.mode === right.key.mode &&
-    pitchClassEquals(left.key.tonic, right.key.tonic);
-}
 
 function exactFit(candidate: ChordInferenceCandidate) {
   return candidate.fit.spellingConsistent && !candidate.fit.nonChordToneNoteIds.length &&
@@ -39,7 +34,7 @@ export function withPassingTonicSevenths(
     if (!before?.bass || !middle.bass || !after?.bass ||
         !before.completeSatb || !middle.completeSatb || !after.completeSatb ||
         before.toTick !== middle.fromTick || middle.toTick !== after.fromTick ||
-        !sameWrittenKey(before, middle) || !sameWrittenKey(middle, after) ||
+        !keyDeclarationEquals(before.key, middle.key) || !keyDeclarationEquals(middle.key, after.key) ||
         phraseBoundaryTicks.some(tick => before.fromTick < tick && tick <= after.fromTick) ||
         middle.soundingPitchClasses.length !== 4 ||
         compareMetricStrength(middle.metric, before.metric) !== "weaker" ||

@@ -1,5 +1,5 @@
 import { chordIdentityInversion, chordIdentityToneSpellings } from "../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval } from "../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisSlice } from "../analysis";
 import { soundsCompleteWrittenChord } from "../writtenVoicing";
@@ -16,7 +16,7 @@ export function octaveTonicEndingEvidence(
   const structure = source?.structure;
   if (!before?.completeSatb || !arrival.completeSatb || arrival.chord ||
       before.endTick !== arrival.tick || before.key.id !== arrival.key.id ||
-      dominant.key.mode !== arrival.key.mode || !pitchClassEquals(dominant.key.tonic, arrival.key.tonic) ||
+      !keyEquals(dominant.key, arrival.key) ||
       !source || structure?.kind !== "tertian" || structure.quality !== "major" ||
       structure.extensions.length || structure.alterations.length || chordIdentityInversion(source) !== 0 ||
       !pitchClassEquals(source.root, scaleDegreePitchClass(arrival.key, 5))) return;

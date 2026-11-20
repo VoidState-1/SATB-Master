@@ -1,5 +1,6 @@
 import { chordToneSpellings } from "../../../chordModel";
 import {
+  keyEquals,
   isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval,
   type KeyLike,
 } from "../../../pitch";
@@ -21,10 +22,6 @@ function primaryRootPositionKey(context: HarmonyRuleContext, slice: AnalysisSlic
       structure.quality !== (degree === 5 ? "dominant7" : key.mode) ||
       !pitchClassEquals(chord.identity.root, root) || !pitchClassEquals(chord.identity.bass, root)) return;
   return key;
-}
-
-function sameKey(left: KeyLike, right: KeyLike | undefined) {
-  return !!right && left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
 }
 
 function isPreparedSeventh(
@@ -75,7 +72,8 @@ function tonicClosesScore(context: HarmonyRuleContext, transition: SliceTransiti
   let stable = true;
   for (const slice of ending) {
     const { soprano, bass } = slice.notes;
-    const tonicLabel = !slice.chord || sameKey(key, primaryRootPositionKey(context, slice, 1));
+    const tonicKey = slice.chord ? primaryRootPositionKey(context, slice, 1) : undefined;
+    const tonicLabel = !slice.chord || (!!tonicKey && keyEquals(key, tonicKey));
     if (!slice.completeSatb || !tonicLabel || !soprano || !bass ||
         !pitchClassEquals(soprano.pitch, root) || !pitchClassEquals(bass.pitch, root)) {
       return stable && slice.tick - arrival.tick >= beatTicks &&
@@ -114,7 +112,9 @@ export function isCadentialContraryOctave(context: HarmonyRuleContext, transitio
     })) return false;
   }
   const key = primaryRootPositionKey(context, arrival, 1);
-  if (!key || !sameKey(key, primaryRootPositionKey(context, source, 5))) return false;
+  if (!key) return false;
+  const dominantKey = primaryRootPositionKey(context, source, 5);
+  if (!dominantKey || !keyEquals(key, dominantKey)) return false;
   const accent = context.metric.positionAt(arrival.tick);
   if (!accent || accent.level < 2 ||
       context.metric.compare(accent, context.metric.positionAt(source.tick)) !== "stronger") return false;

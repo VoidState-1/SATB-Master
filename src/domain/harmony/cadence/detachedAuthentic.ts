@@ -1,5 +1,5 @@
 import { chordIdentityInversion, chordIdentityToneSpellings, chordToneSpellings, type KeyReference } from "../../chordModel";
-import { pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
+import { keyEquals, pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
 import type { AnalysisSlice } from "../analysis";
 import { sameDetachedRhythm, writtenAttack } from "./detachedAttacks";
 import type { CadenceEvidence, CadenceSpanFacts } from "./types";
@@ -15,7 +15,7 @@ function hasDetachedAuthenticApproach(
 
   const pre = preparation.boundarySlice, attack = dominant.boundarySlice;
   if (!pre?.notes.bass || !attack || !arrival.notes.soprano || !pitchClassEquals(arrival.notes.soprano.pitch, key.tonic) ||
-      !pitchClassEquals(preparation.key.tonic, key.tonic) || preparation.key.mode !== key.mode ||
+      !keyEquals(preparation.key, key) ||
       !sameDetachedRhythm(pre, attack, arrival, slices, beatTicks)) return false;
 
   const [root, third, , seventh] = chordIdentityToneSpellings(dominant.chord.identity);
@@ -55,7 +55,7 @@ export function detachedSparseTonicEvidence(
   const sourceBass = dominant.boundarySlice?.notes.bass;
   if (arrival.chord || !bass || !soprano || !inner || (alto && tenor) || !sourceBass || !beatTicks ||
       arrival.endTick - arrival.tick < beatTicks ||
-      dominant.key.mode !== arrival.key.mode || !pitchClassEquals(dominant.key.tonic, arrival.key.tonic)) return;
+      !keyEquals(dominant.key, arrival.key)) return;
   const [root, third] = chordToneSpellings(arrival.key.tonic, arrival.key.mode);
   const notes = [bass, inner, soprano];
   if (!pitchClassEquals(bass.pitch, root) || !pitchClassEquals(soprano.pitch, root) || !pitchClassEquals(inner.pitch, third) ||

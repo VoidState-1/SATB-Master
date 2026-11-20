@@ -1,6 +1,6 @@
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import { readReattackedDominantSeventh } from "../../writtenDominantSeventh";
-import { pitchClassEquals, scaleDegreePitchClass, type KeyLike } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, type KeyLike } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import { eventAtTick, ticksPerBeat } from "../../../time";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -16,7 +16,7 @@ function agreesWithTonicReading(context: HarmonyRuleContext, slice: AnalysisSlic
   const base = localKey ?? slice.key;
   if (appliedTarget) return dominant && pitchClassEquals(scaleDegreePitchClass(base, appliedTarget.degree), key.tonic);
   if (dominant) return degree === 5 && degreeAlteration === 0 &&
-    pitchClassEquals(base.tonic, key.tonic) && base.mode === key.mode;
+    keyEquals(base, key);
   return pitchClassEquals(scaleDegreePitchClass(base, degree, degreeAlteration), key.tonic);
 }
 

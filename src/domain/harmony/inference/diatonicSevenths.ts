@@ -1,6 +1,6 @@
 import type { ScaleDegree } from "../../chordModel";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../pitch";
 import { createFunctionalCandidate } from "./candidates";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
@@ -25,8 +25,7 @@ function writtenDiatonicStack(observation: ChordInferenceObservation) {
 
 function sameKeyAndAdjacent(left: ChordInferenceObservation, right: ChordInferenceObservation) {
   return (left.toTick === right.fromTick || right.toTick === left.fromTick) &&
-    left.key.mode === right.key.mode &&
-    pitchClassEquals(left.key.tonic, right.key.tonic);
+    keyEquals(left.key, right.key);
 }
 
 function revoicesDiatonicStack(

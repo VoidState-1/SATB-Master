@@ -1,6 +1,7 @@
 import { chordToneSpellings, type ChordQuality } from "../../../chordModel";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
+  keyEquals,
   pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval,
   type KeyLike, type SpelledPitchClass,
 } from "../../../pitch";
@@ -25,7 +26,7 @@ function matchingWrittenChord(
   const reading = context.harmony.primaryInterpretation(chord);
   if (reading.status !== "resolved") return reading.status === "unavailable";
   const { localKey = slice.key, appliedTarget, degreeAlteration } = reading.value;
-  return localKey.mode === key.mode && pitchClassEquals(localKey.tonic, key.tonic) &&
+  return keyEquals(localKey, key) &&
     reading.value.degree === degree && degreeAlteration === 0 &&
     (degree === 5 ? appliedTarget?.degree === 4 : !appliedTarget);
 }

@@ -1,7 +1,7 @@
 import {
   chordIdentityEquals, chordToneSpellings, type ChordIdentity, type ChordQuality,
 } from "../../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type WrittenInterval } from "../../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type WrittenInterval } from "../../../pitch";
 import { movesToWrittenTone } from "../../dominantSixthMotion";
 import type { AnalysisSlice, SliceTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -59,7 +59,7 @@ function plainReading(
   if (reading.status !== "resolved" || semantics.interpretations.length !== 1 || semantics.alternatives?.length ||
       semantics.cadenceRole || semantics.mixture || semantics.pedalContext) return false;
   const { localKey, appliedTarget, designation, degree, degreeAlteration } = reading.value;
-  return !appliedTarget && (!localKey || (localKey.mode === key.mode && pitchClassEquals(localKey.tonic, key.tonic))) &&
+  return !appliedTarget && (!localKey || keyEquals(localKey, key)) &&
     (!designation || ((designation.kind === "side-degree" || designation.kind === "primary") &&
       !designation.specialRole && (!designation.primaryFunction || designation.primaryFunction === family))) &&
     pitchClassEquals(chord.identity.root, scaleDegreePitchClass(key, degree, degreeAlteration));
@@ -147,7 +147,7 @@ export function preparedSuspensionParallel(
   if (!from || !to || to.tones.some(tone => pitchClassEquals(held.pitch, tone))) return;
   const key = effectiveKey(context, current);
   const prepKey = effectiveKey(context, prepared);
-  if (!key || !prepKey || key.mode !== prepKey.mode || !pitchClassEquals(key.tonic, prepKey.tonic)) return;
+  if (!key || !prepKey || !keyEquals(key, prepKey)) return;
   const sixth = upper === "soprano" && lower === "bass" && entry.chord &&
     !chordIdentityEquals(entry.chord.identity, to.identity) &&
     submediantDuringSeventhResolution(context, prepared, entry, current, from.identity, to.identity)
@@ -156,7 +156,7 @@ export function preparedSuspensionParallel(
     if (slice.key.id !== prepared.key.id) return true;
     if (slice.index === prepared.index || !slice.chord) return false;
     const local = effectiveKey(context, slice);
-    return !local || local.mode !== key.mode || !pitchClassEquals(local.tonic, key.tonic) ||
+    return !local || !keyEquals(local, key) ||
       (slice.chord.id !== sixth?.id && !chordIdentityEquals(slice.chord.identity, to.identity));
   })) return;
 

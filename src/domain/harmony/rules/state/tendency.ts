@@ -12,6 +12,7 @@ import { resolvesInVoice } from "../../writtenResolution";
 import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { resolvesDominantSixthSubstitution } from "../groups/dominantSixthSubstitution";
 import {
+  keyEquals,
   leadingTonePitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
@@ -312,10 +313,8 @@ function obligationFollowsWrittenLeadingTone(
       !spelledPitchEquals(opened.pitch, leading.pitch) ||
       !pitchClassEquals(leading.pitch, { step: payload.leadingStep, alter: payload.leadingAlter }) ||
       toMidi(leading.pitch) !== payload.leadingMidi || landing.startTick !== target.tick ||
-      !pitchClassEquals(source.key.tonic, { step: payload.sourceKeyStep, alter: payload.sourceKeyAlter }) ||
-      source.key.mode !== payload.sourceKeyMode ||
-      !pitchClassEquals(resolutionKey.tonic, { step: payload.targetStep, alter: payload.targetAlter }) ||
-      resolutionKey.mode !== payload.targetMode ||
+      !keyEquals(source.key, { tonic: { step: payload.sourceKeyStep, alter: payload.sourceKeyAlter }, mode: payload.sourceKeyMode }) ||
+      !keyEquals(resolutionKey, { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode }) ||
       !pitchClassEquals(landing.pitch, destination) ||
       crossesManualPhraseBoundary(context.rules, openedAt.tick, target.tick)) return false;
 
@@ -405,8 +404,7 @@ export function innerLeadingToneDescendsToFifth(
   const fromStructure = from.identity.structure;
   const toStructure = to.identity.structure;
   return (
-    pitchClassEquals(fromKey.tonic, tonic) && pitchClassEquals(toKey.tonic, tonic) &&
-    fromKey.mode === toKey.mode &&
+    pitchClassEquals(fromKey.tonic, tonic) && keyEquals(fromKey, toKey) &&
     pitchClassEquals(leading.pitch, { step: payload.leadingStep, alter: payload.leadingAlter }) &&
     pitchClassEquals(from.identity.root, scaleDegreePitchClass(fromKey, 5)) &&
     pitchClassEquals(to.identity.root, tonic) &&
@@ -529,7 +527,7 @@ function passingDominantSeventhAscends(environment: ObligationEnvironment<Sevent
   const key = passingChordKey(context, target);
   if (!key || ![tonic.firstSlice, dominant.firstSlice].every(slice => {
     const earlierKey = passingChordKey(context, slice);
-    return earlierKey?.mode === key.mode && pitchClassEquals(earlierKey.tonic, key.tonic);
+    return !!earlierKey && keyEquals(earlierKey, key);
   })) return false;
   const second = scaleDegreePitchClass(key, 2);
   const third = scaleDegreePitchClass(key, 3);

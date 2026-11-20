@@ -1,5 +1,5 @@
 import { chordIdentityInversion, chordIdentityToneSpellings, type ChordIdentity } from "../chordModel";
-import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../pitch";
+import { keyDeclarationEquals, isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../pitch";
 import { VOICE_ORDER } from "../project/voice";
 import { upperPassingMotion, type UpperPassingFrame } from "./upperPassingMotion";
 import { soundsCompleteWrittenChord, soundsCompleteWrittenMembers } from "./writtenVoicing";
@@ -27,8 +27,7 @@ export function decoratedPassingSixFourMotion(
 ) {
   const key = before.key;
   const tonicQuality = key.mode === "major" ? "major" : "minor";
-  if (sixFour.toTick !== after.fromTick || after.key.id !== key.id || after.key.mode !== key.mode ||
-      !pitchClassEquals(after.key.tonic, key.tonic) ||
+  if (sixFour.toTick !== after.fromTick || !keyDeclarationEquals(after.key, key) ||
       sixFour.metric?.confidence !== "certain" || sixFour.metric.role === "downbeat" ||
       !pitchClassEquals(before.identity.root, key.tonic) || !plainTriad(before, tonicQuality, 1) ||
       !pitchClassEquals(sixFour.identity.root, scaleDegreePitchClass(key, 5)) || !plainTriad(sixFour, "major", 2) ||

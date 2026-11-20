@@ -1,5 +1,5 @@
 import { chordIdentityToneSpellings } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import { soundsCompleteWrittenMembers } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -27,7 +27,7 @@ function frenchVoicingChange(
   const targetReading = context.harmony.primaryInterpretation(target);
   if (sourceReading.status === "ambiguous" || targetReading.status === "ambiguous") return;
   const targetKey = targetReading.status === "resolved" ? targetReading.value.localKey ?? after.key : after.key;
-  if (!pitchClassEquals(targetKey.tonic, key.tonic) || targetKey.mode !== key.mode) return;
+  if (!keyEquals(targetKey, key)) return;
 
   const sourceTones = chordIdentityToneSpellings(source.identity);
   const frenchTones = chordIdentityToneSpellings(target.identity);

@@ -1,6 +1,6 @@
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
-import { pitchClassEquals } from "../../../pitch";
+import { keyEquals } from "../../../pitch";
 import type { RuleStepContext } from "../../runtime";
 
 export interface HarmonyChange {
@@ -46,8 +46,7 @@ export function analysisMoment(context: RuleStepContext): AnalysisMoment {
   const harmonyChanged = Boolean(previous) && previousSpanId !== currentSpanId;
   const keyChanged = Boolean(
     previous &&
-    (previous.key.mode !== current.key.mode ||
-      !pitchClassEquals(previous.key.tonic, current.key.tonic)),
+    (!keyEquals(previous.key, current.key)),
   );
   return Object.freeze({
     tick: current.tick,

@@ -1,5 +1,5 @@
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
+import { keyDeclarationEquals, pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import { isMajorTonicSixFour, resolvesDoubleAugmentedFourThree } from "../doubleAugmentedFourThree";
 import { candidateComparator, createFunctionalCandidate } from "./candidates";
@@ -24,8 +24,7 @@ function exact(candidate: ChordInferenceCandidate) {
 }
 
 function connects(left: Frame, right: Frame, boundaries: readonly number[]) {
-  return left.toTick === right.fromTick && left.key.id === right.key.id &&
-    left.key.mode === right.key.mode && pitchClassEquals(left.key.tonic, right.key.tonic) &&
+  return left.toTick === right.fromTick && keyDeclarationEquals(left.key, right.key) &&
     !boundaries.some(tick => left.fromTick < tick && tick <= right.fromTick);
 }
 

@@ -1,5 +1,5 @@
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { pitchClassEquals } from "../../pitch";
+import { keyEquals } from "../../pitch";
 import { resolvesRaisedFifthToDoubledThird } from "../raisedFifthResolution";
 import { candidateComparator, createFunctionalCandidate } from "./candidates";
 import { writtenFrame } from "./observations";
@@ -38,8 +38,7 @@ export function withRaisedFifthResolutions(
   const result = sets.slice();
   for (let index = 0; index + 1 < observations.length; index++) {
     const source = observations[index], landing = observations[index + 1];
-    if (source.key.mode !== "major" || landing.key.mode !== "major" ||
-        !pitchClassEquals(source.key.tonic, landing.key.tonic) ||
+    if (source.key.mode !== "major" || !keyEquals(source.key, landing.key) ||
         manualPhraseTicks.some(tick => source.fromTick < tick && tick <= landing.fromTick) ||
         !resolvesRaisedFifthToDoubledThird(writtenFrame(source), writtenFrame(landing), source.key.tonic)) continue;
 

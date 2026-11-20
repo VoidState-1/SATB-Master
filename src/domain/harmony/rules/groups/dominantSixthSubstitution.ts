@@ -1,5 +1,5 @@
 import { chordIdentityEquals, chordToneSpellings, type ChordQuality } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import {
   continuesWrittenDominantSeventh,
@@ -36,7 +36,7 @@ function hasPlainRootPosition(slice: AnalysisSlice, degree: 1 | 5, quality: Chor
   const { localKey, designation } = interpretation;
   return (interpretation.confidence === "certain" || interpretation.confidence === "probable") &&
     interpretation.degree === degree && interpretation.degreeAlteration === 0 && !interpretation.appliedTarget &&
-    (!localKey || (localKey.mode === key.mode && pitchClassEquals(localKey.tonic, key.tonic))) &&
+    (!localKey || keyEquals(localKey, key)) &&
     (!designation || (designation.kind === "primary" &&
       designation.primaryFunction === (degree === 5 ? "dominant" : "tonic")));
 }

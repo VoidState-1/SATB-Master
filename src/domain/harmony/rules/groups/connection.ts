@@ -3,6 +3,7 @@ import { chordIdentityToneSpellings } from "../../../chordModel";
 import type { RuleDiagnostic } from "../../runtime";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
+  keyEquals,
   pitchClassEquals,
   scaleDegreePitchClass,
   toMidi,
@@ -113,8 +114,7 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
     const actualTargetKey = targetInterpretation?.localKey ?? targetSlice.key;
     const isDoubleAugmentedTarget = isDoubleAugmented43 &&
       targetResolution.status !== "ambiguous" &&
-      sourceResolution.status !== "ambiguous" && actualTargetKey.mode === sourceKey.mode &&
-      pitchClassEquals(actualTargetKey.tonic, sourceKey.tonic) &&
+      sourceResolution.status !== "ambiguous" && keyEquals(actualTargetKey, sourceKey) &&
       isMajorTonicSixFour(targetChord.identity, sourceKey);
     if (isDoubleAugmentedTarget &&
         pitchClassEquals(sourceChord.identity.root, low.note.pitch) &&

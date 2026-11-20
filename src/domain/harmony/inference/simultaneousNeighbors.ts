@@ -1,5 +1,5 @@
 import { chordIdentityEquals, chordIdentityInversion, primaryHarmonyInterpretation } from "../../chordModel";
-import { pitchClassEquals, toMidi } from "../../pitch";
+import { keyDeclarationEquals, toMidi } from "../../pitch";
 import { supportsPairedNeighborMotion, writtenNeighborsOverHeldBass } from "../writtenNeighbors";
 import { fitSimultaneousNeighbors } from "./candidates";
 import { observationNotes, writtenFrame } from "./observations";
@@ -54,8 +54,7 @@ export function simultaneousNeighborCandidates(
         left.toTick !== middle.fromTick || middle.toTick !== right.fromTick ||
         boundaries.some(tick => left.fromTick < tick && tick <= right.fromTick) ||
         ![left, middle, right].every(item => item.completeSatb && orderedVoicing(item) &&
-          item.key.id === left.key.id && item.key.mode === left.key.mode &&
-          pitchClassEquals(item.key.tonic, left.key.tonic))) return [];
+          keyDeclarationEquals(item.key, left.key))) return [];
 
     return sets[index - 1].flatMap(anchor => {
       if (!supportedAnchor(anchor) || !sets[index + 1].some(next => literal(next) &&

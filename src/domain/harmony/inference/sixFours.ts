@@ -1,5 +1,5 @@
 import { chordIdentityEquals, chordIdentityInversion, chordIdentityToneSpellingForDegree, primaryHarmonyInterpretation, type HarmonySemantics } from "../../chordModel";
-import { isWrittenStep, pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
+import { keyDeclarationEquals, keyEquals, isWrittenStep, pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
 import { withAppliedPassingSixFours } from "./appliedPassingSixFour";
 import { fitCadentialRevoicing } from "./candidates";
 import { decoratedPassingSixFour } from "./decoratedPassingSixFour";
@@ -22,10 +22,6 @@ function primaryTriad(candidates: CandidateSet) {
   );
 }
 
-function sameKey(a: ChordInferenceObservation, b: ChordInferenceObservation) {
-  return a.key.mode === b.key.mode && pitchClassEquals(a.key.tonic, b.key.tonic);
-}
-
 function rootDominant(c: ChordInferenceCandidate) {
   return c.functionalBaseId === "D" && c.semantics && !primaryHarmonyInterpretation(c.semantics).appliedTarget &&
     chordIdentityInversion(c.identity) === 0 && c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length;
@@ -37,7 +33,7 @@ function resolvesToDominant(
 ) {
   if (!first.metric || !next.metric || first.metric.confidence !== "certain" || next.metric.confidence !== "certain" ||
       first.metric.level <= next.metric.level || !last.bass || !next.bass ||
-      !sameKey(first, next) || !pitchClassEquals(last.bass.pitch, next.bass.pitch)) return false;
+      !keyEquals(first.key, next.key) || !pitchClassEquals(last.bass.pitch, next.bass.pitch)) return false;
   const dominant = candidates.find(rootDominant);
   if (!dominant) return false;
   // In a closing cadence the upper parts may redistribute or leap in the
@@ -58,9 +54,13 @@ function dominantContinuesToTonic(
   observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[], start: number,
   phraseEnd?: number,
 ) {
-  const key = observations[start];
-  for (let i = start; i < sets.length && sameKey(key, observations[i]) &&
-      (phraseEnd === undefined || observations[i].key.id === key.key.id && observations[i].toTick <= phraseEnd); i++) {
+  const key = observations[start].key;
+  for (let i = start; i < sets.length; i++) {
+    const observation = observations[i];
+    const inScope = phraseEnd === undefined
+      ? keyEquals(key, observation.key)
+      : keyDeclarationEquals(key, observation.key) && observation.toTick <= phraseEnd;
+    if (!inScope) break;
     if (sets[i].some(rootDominant)) continue;
     return i > start && sets[i].some(c => (c.functionalBaseId === "T" || c.functionalBaseId === "t") &&
       chordIdentityInversion(c.identity) !== 2 && c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length);
@@ -72,7 +72,7 @@ function roleBetween(
   left: ChordInferenceCandidate, middle: ChordInferenceCandidate, right: ChordInferenceCandidate,
   before: ChordInferenceObservation, during: ChordInferenceObservation, after: ChordInferenceObservation,
 ): SixFourRole | undefined {
-  if (!before.bass || !during.bass || !after.bass || !sameKey(before, during) || !sameKey(during, after)) return;
+  if (!before.bass || !during.bass || !after.bass || !keyEquals(before.key, during.key) || !keyEquals(during.key, after.key)) return;
   if (left.functionalBaseId !== right.functionalBaseId || left.functionalBaseId === middle.functionalBaseId) return;
   if (!during.metric || during.metric.confidence !== "certain" || during.metric.role === "downbeat") return;
   const into = writtenInterval(before.bass.pitch, during.bass.pitch);
@@ -129,7 +129,7 @@ function confirmContinuedCadentialSixFours(
     while (end + 1 < pairs.length) {
       const next = pairs[end + 1], after = observations[end + 1], before = observations[end];
       if (!next || !chordIdentityEquals(opening.tonic.identity, next.tonic.identity) ||
-          after.key.id !== first.key.id || !sameKey(first, after) ||
+          !keyDeclarationEquals(after.key, first.key) ||
           before.toTick !== after.fromTick || !completeWithActualBass(after) ||
           Math.abs(toMidi(before.bass!.pitch) - toMidi(after.bass!.pitch)) > 12) break;
       end++;
@@ -146,7 +146,7 @@ function confirmContinuedCadentialSixFours(
       continue;
     }
     if (end > start && !pairs[end]!.neighbor && arrival && completeWithActualBass(arrival) &&
-        first.key.id === arrival.key.id && sameKey(first, arrival) &&
+        keyDeclarationEquals(first.key, arrival.key) &&
         last.toTick === arrival.fromTick && arrival.toTick <= phraseEnd &&
         Math.abs(toMidi(last.bass!.pitch) - toMidi(arrival.bass!.pitch)) <= 12) {
       const dominant = arrivals.find(c => exactReading(c) && rootDominant(c));
@@ -201,7 +201,7 @@ function omittedPedalAnchor(
   const pedal = before.bass;
   if (!pedal || !observations.slice(start - 1, end + 2).every(item =>
       completeWithActualBass(item) && item.bass?.id === pedal.id &&
-      item.key.id === before.key.id && sameKey(item, before))) return;
+      keyDeclarationEquals(item.key, before.key))) return;
   // Spasobin §13.6: from the incomplete tonic one voice descends a third
   // into IV64. Another upper tonic supplies its doubled pedal.
   const middleThird = chordIdentityToneSpellingForDegree(middle.identity, 3);
@@ -232,7 +232,7 @@ export function classifySixFours(
     const middle = triads[start];
     if (!middle || chordIdentityInversion(middle.identity) !== 2) continue;
     let end = start;
-    while (end + 1 < sets.length && triads[end + 1] && sameKey(observations[end], observations[end + 1]) &&
+    while (end + 1 < sets.length && triads[end + 1] && keyEquals(observations[end].key, observations[end + 1].key) &&
            chordIdentityEquals(middle.identity, triads[end + 1]!.identity) &&
            observations[end].bass?.pitch.octave === observations[end + 1].bass?.pitch.octave) end++;
     const right = triads[end + 1];
@@ -264,12 +264,12 @@ export function classifySixFours(
         continue;
       }
       const revoiced = acceptMedium && !sets[end + 1].length && end + 2 < sets.length &&
-        sameKey(observations[start], observations[end + 1]) && observations[end + 1].metric?.confidence === "certain" &&
+        keyEquals(observations[start].key, observations[end + 1].key) && observations[end + 1].metric?.confidence === "certain" &&
         observations[end + 1].metric!.level < (observations[start].metric?.level ?? 0)
         ? fitCadentialRevoicing(cadential, observations[end + 1]) : undefined;
       const target = end + (revoiced ? 2 : 1);
       const prepared = revoiced && sets[start - 1]?.some(c => ["S", "s", "SII", "N6", "It+6", "Fr+6", "Ger+6"].includes(c.functionalBaseId ?? "") &&
-        c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length) && sameKey(observations[start - 1], observations[start]);
+        c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length) && keyEquals(observations[start - 1].key, observations[start].key);
       if (!resolvesToDominant(observations[start], observations[target - 1], observations[target], sets[target],
           !!prepared || dominantContinuesToTonic(observations, sets, target))) {
         start = end;

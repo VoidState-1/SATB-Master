@@ -1,5 +1,5 @@
 import { chordIdentityEquals, chordToneSpellings, semanticsFromChordDraft } from "../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, serializePitchClass } from "../../pitch";
+import { keyDeclarationEquals, pitchClassEquals, scaleDegreePitchClass, serializePitchClass } from "../../pitch";
 import { readResolvedRootSeventhWithoutFifth } from "../writtenDominantSeventh";
 import { createAbsoluteCandidate } from "./candidates";
 import { observationNotes, writtenFrame } from "./observations";
@@ -8,8 +8,7 @@ import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInference
 type CandidateSet = readonly ChordInferenceCandidate[];
 
 function sameContext(a: ChordInferenceObservation, b: ChordInferenceObservation) {
-  return a.toTick === b.fromTick && a.key.id === b.key.id && a.key.mode === b.key.mode &&
-    pitchClassEquals(a.key.tonic, b.key.tonic);
+  return a.toTick === b.fromTick && keyDeclarationEquals(a.key, b.key);
 }
 
 /** A written minor seventh and independently resolved voices can replace an

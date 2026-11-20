@@ -1,5 +1,5 @@
 import { chordIdentityToneSpellings } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -7,10 +7,6 @@ import type { ConnectionView } from "../context/views";
 import { movesToWrittenTone } from "../../dominantSixthMotion";
 import { isGermanToFrenchVoicing } from "./augmentedSixthContinuation";
 import { activeNotes } from "../helpers/core";
-
-function sameKey(left: KeyLike, right: KeyLike) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
 
 function isRootPositionTonic(context: HarmonyRuleContext, slice: AnalysisSlice, key: KeyLike) {
   const chord = slice.chord;
@@ -23,11 +19,11 @@ function isRootPositionTonic(context: HarmonyRuleContext, slice: AnalysisSlice, 
   ) return false;
   const reading = context.harmony.primaryInterpretation(chord);
   if (reading.status === "ambiguous") return false;
-  if (reading.status === "unavailable") return sameKey(slice.key, key);
+  if (reading.status === "unavailable") return keyEquals(slice.key, key);
   const { degree, degreeAlteration, localKey, appliedTarget, designation } = reading.value;
   return degree === 1 && degreeAlteration === 0 && !appliedTarget &&
     (!designation || (designation.kind === "primary" && designation.primaryFunction === "tonic")) &&
-    sameKey(localKey ?? slice.key, key);
+    keyEquals(localKey ?? slice.key, key);
 }
 
 function sameVoicing(
@@ -36,7 +32,7 @@ function sameVoicing(
   reference: AnalysisSlice,
   includeBass = true,
 ) {
-  return sameKey(slice.key, reference.key) && slice.completeSatb &&
+  return keyEquals(slice.key, reference.key) && slice.completeSatb &&
     VOICE_ORDER.every(voiceId => {
       if (!includeBass && voiceId === "bass") return true;
       const note = slice.notes[voiceId]!;
@@ -103,7 +99,7 @@ function hasAuthenticPreparation(context: HarmonyRuleContext, tonic: AnalysisSli
       structure.alterations.length || structure.extensions.length ||
       ![identity.root, identity.bass, before.notes.bass!.pitch].every(p => pitchClassEquals(p, dominant)) ||
       reading.status !== "resolved" || reading.value.degree !== 5 || reading.value.degreeAlteration !== 0 ||
-      reading.value.appliedTarget || !sameKey(reading.value.localKey ?? before.key, key)) return false;
+      reading.value.appliedTarget || !keyEquals(reading.value.localKey ?? before.key, key)) return false;
 
   const tones = chordIdentityToneSpellings(identity);
   const written = activeNotes(before);

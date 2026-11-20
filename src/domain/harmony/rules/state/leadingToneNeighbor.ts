@@ -3,7 +3,7 @@ import {
   chordIdentityInversion,
   chordIdentityToneSpellings,
 } from "../../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, pitchClassValue, spelledPitchEquals, toMidi, writtenInterval } from "../../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, pitchClassValue, spelledPitchEquals, toMidi, writtenInterval } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { VoiceId } from "../../../project";
@@ -100,7 +100,7 @@ function ornamentsRevoicedDominantThird(rules: HarmonyRuleContext, frame: Frame)
   const { before, middle, after, preparation, voice } = frame;
   const start = writtenDominantThirdTarget(rules, before, preparation);
   const end = writtenDominantThirdTarget(rules, after, preparation);
-  if (!start || !end || start.mode !== end.mode || !pitchClassEquals(start.tonic, end.tonic) ||
+  if (!start || !end || !keyEquals(start, end) ||
       !surfaceAllowsNeighbor(rules, frame)) return false;
 
   const tones = chordIdentityToneSpellings(after.chord!.identity);

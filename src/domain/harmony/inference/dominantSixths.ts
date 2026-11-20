@@ -4,7 +4,7 @@ import {
   type ChordQuality,
 } from "../../chordModel";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals } from "../../pitch";
+import { keyDeclarationEquals, keyEquals, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals } from "../../pitch";
 import {
   continuesWrittenDominantSeventh,
   contextualMinorDominantTonic,
@@ -31,8 +31,7 @@ const rootDominantSeventh: FunctionalChordTemplate = {
 };
 
 function continuesInKey(source: ChordInferenceObservation, following: ChordInferenceObservation) {
-  return source.toTick === following.fromTick && source.key.id === following.key.id &&
-    source.key.mode === following.key.mode && pitchClassEquals(source.key.tonic, following.key.tonic);
+  return source.toTick === following.fromTick && keyDeclarationEquals(source.key, following.key);
 }
 
 function exactReading(candidate: ChordInferenceCandidate) {
@@ -88,7 +87,7 @@ function contextualFifthResolution(
     if (!exactReading(candidate)) return false;
     const context = contextualMinorDominantTonic(candidate, source.key);
     if (!context || (context.applied ? source.localKey || following.localKey || landing.localKey
-      : !source.localKey || !pitchClassEquals(source.key.tonic, context.tonic) || source.key.mode !== "minor")) return false;
+      : !source.localKey || !keyEquals(source.key, { tonic: context.tonic, mode: "minor" }))) return false;
     return contextualMinorSixthResolvesToFifth(
       writtenFrame(source),
       writtenFrame(following),

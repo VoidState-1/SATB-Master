@@ -1,5 +1,5 @@
 import { chordToneSpellings, type KeyReference } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../../pitch";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasWrittenVoicing } from "../../writtenResolution";
@@ -17,7 +17,7 @@ function subdominantSixth(
   const degree = value.degree;
   if (value.appliedTarget || value.degreeAlteration !== 0 || (degree !== 2 && degree !== 4) ||
       value.designation?.primaryFunction !== "subdominant" ||
-      localKey.mode !== key.mode || !pitchClassEquals(localKey.tonic, key.tonic)) return;
+      !keyEquals(localKey, key)) return;
   const quality = degree === 2 ? (lowered ? "diminished" : "minor") : (lowered ? "minor" : "major");
   const tones = chordToneSpellings(scaleDegreePitchClass(key, degree), quality);
   const { root, bass, structure } = slice.chord.identity;
