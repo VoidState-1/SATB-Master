@@ -10,6 +10,7 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { NoteView } from "../context/views";
+import { readHeldChromaticPassing } from "./chromaticPassing";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 type NonchordRuleId =
@@ -128,6 +129,7 @@ export function passingToneRule(context: HarmonyRuleContext) {
     const currentSlice = neighborhood.attackSlice;
     const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
     if (!previous || !next || !currentSlice.chord) continue;
+    if (readHeldChromaticPassing(context, voiceId, previous, note, next)) continue;
     const entering = writtenInterval(previous.pitch, note.pitch);
     const leaving = writtenInterval(note.pitch, next.pitch);
     const valid =

@@ -3,7 +3,7 @@ import { enharmonicSpellings, pitchClassEquals, scaleDegreePitchClass, spelledPi
 import { VOICE_ORDER, type VoiceId } from "../../../project";
 import { sameChordIdentityWithoutBass, type AnalysisNote, type AnalysisSlice, type MelodyTransition } from "../../analysis";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
-import { soundsCompleteWrittenChord, soundsDeclaredChord } from "../../writtenVoicing";
+import { readCompleteWrittenChord, soundsCompleteWrittenChord, soundsDeclaredChord } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasInsertedChromaticResolution } from "./insertedChromaticResolution";
 import { hasExactPitch } from "../helpers/core";
@@ -275,6 +275,77 @@ function readHeldTriadForDescendingPassing(
   if (hasStepwiseEntry(context, voiceId, backingStart, left, key, harmony)) return { seventhEntry: undefined };
 }
 
+function chromaticPassingDirection(left: AnalysisNote, middle: AnalysisNote, right: AnalysisNote) {
+  if (left.startTick + left.durationTicks !== middle.startTick ||
+      middle.startTick + middle.durationTicks !== right.startTick ||
+      left.nonChordToneRole || right.nonChordToneRole ||
+      (middle.nonChordToneRole && middle.nonChordToneRole !== "passing")) return;
+  const a = writtenInterval(left.pitch, middle.pitch);
+  const b = writtenInterval(middle.pitch, right.pitch);
+  if (Math.abs(a.semitones) === 1 && a.semitones === b.semitones &&
+      a.diatonicSteps + b.diatonicSteps === a.semitones &&
+      (a.diatonicSteps === 0 || b.diatonicSteps === 0)) return a.semitones;
+}
+
+/** §41.1a. A complete written chord can establish the source of a chromatic
+ * passing motion after the moving voice arpeggiates and leaves one member out. */
+export function readHeldChromaticPassing(
+  context: HarmonyRuleContext, voice: VoiceId, left: AnalysisNote, middle: AnalysisNote, right: AnalysisNote,
+) {
+  if (voice === "bass" || chromaticPassingDirection(left, middle, right) === undefined) return;
+  const position = context.metric.positionAt(middle.startTick);
+  if (position?.confidence !== "certain" || position.level >= 2 ||
+      middle.durationTicks > Math.min(left.durationTicks, right.durationTicks)) return;
+
+  const from = context.sliceAt(middle.startTick - 1);
+  const via = context.sliceAt(middle.startTick);
+  const to = context.sliceAt(right.startTick);
+  if (!from?.completeSatb || !via?.completeSatb || !to?.completeSatb ||
+      from.notes[voice]?.id !== left.id || via.notes[voice]?.id !== middle.id ||
+      to.notes[voice]?.id !== right.id ||
+      hasCompleteWrittenTertianVoicing(Object.values(via.notes).map(note => note.pitch))) return;
+  const arrival = readCompleteWrittenChord(to);
+  if (!arrival || arrival.structure.kind !== "tertian") return;
+
+  const accompaniment = VOICE_ORDER.filter(part => part !== voice);
+  const heldSince = Math.max(...accompaniment.map(part => from.notes[part]!.startTick));
+  if (heldSince >= left.startTick) return;
+  const frames = context.slices({ overlapping: { fromTick: heldSince, toTick: right.startTick } }).toArray();
+  let anchorIndex = frames.length;
+  let harmony: ChordIdentity | undefined;
+  while (anchorIndex > 0 && !harmony) {
+    const frame = frames[--anchorIndex];
+    if (frame.tick < left.startTick) harmony = readCompleteWrittenChord(frame);
+  }
+  if (!harmony || harmony.structure.kind !== "tertian" ||
+      (harmony.structure.quality !== "major" && harmony.structure.quality !== "minor") ||
+      harmony.structure.extensions.length || harmony.structure.alterations.length) return;
+
+  const anchor = frames[anchorIndex];
+  const key = localKey(context, anchor);
+  const landingKey = localKey(context, to);
+  if (!key || !landingKey || !sameKey(key, landingKey) || !continuousContext(context, anchor.tick, to) ||
+      !pitchClassEquals(from.notes.bass!.pitch, harmony.bass)) return;
+
+  const tones = chordIdentityToneSpellings(harmony);
+  const missing = tones.filter(tone => !Object.values(from.notes).some(note => pitchClassEquals(note.pitch, tone)));
+  if (missing.length !== 1 || pitchClassEquals(missing[0], harmony.root) ||
+      !isDiatonicIn(key, left) || !isDiatonicIn(key, right) ||
+      hasExactPitch(middle, tones) || hasExactPitch(middle, chordIdentityToneSpellings(arrival))) return;
+
+  const bass = from.notes.bass!;
+  const uninterrupted = frames.slice(anchorIndex).every(frame => {
+    const note = frame.notes[voice];
+    if (!frame.completeSatb || frame.key.id !== to.key.id ||
+        !accompaniment.every(part => frame.notes[part]?.id === from.notes[part]?.id) ||
+        !compatibleBackbone(context, frame, harmony, key) ||
+        !note || toMidi(note.pitch) < toMidi(bass.pitch)) return false;
+    if (frame.tick >= middle.startTick) return note.id === middle.id;
+    return !note.nonChordToneRole && hasExactPitch(note, tones);
+  });
+  if (uninterrupted) return key;
+}
+
 interface PassingSpellingCorrection {
   note: AnalysisNote;
   spelling: AnalysisNote["pitch"];
@@ -283,15 +354,13 @@ interface PassingSpellingCorrection {
 function readChromaticPassingSpelling(context: HarmonyRuleContext, first: MelodyTransition, second: MelodyTransition): "usual" | PassingSpellingCorrection | undefined {
   if (first.current.id !== second.previous.id || !first.contiguous || !second.contiguous ||
       !first.sameKey || !second.sameKey) return;
-  const a = first.writtenInterval, b = second.writtenInterval;
-  if (Math.abs(a.semitones) !== 1 || a.semitones !== b.semitones ||
-      a.diatonicSteps + b.diatonicSteps !== a.semitones ||
-      (a.diatonicSteps !== 0 && b.diatonicSteps !== 0)) return;
-  const left = first.previous;
-  const middle = first.current;
-  const right = second.current;
-  if ((middle.nonChordToneRole && middle.nonChordToneRole !== "passing") ||
-      left.nonChordToneRole || right.nonChordToneRole) return;
+  const { previous: left, current: middle } = first;
+  const { current: right } = second;
+  const direction = chromaticPassingDirection(left, middle, right);
+  if (direction === undefined) return;
+  const heldKey = readHeldChromaticPassing(context, first.voiceId, left, middle, right);
+  if (heldKey) return usualChromaticSpelling(heldKey, middle.pitch, direction > 0)
+    ? "usual" : passingSpellingCorrection(heldKey, left, middle, right, direction > 0);
   const meter = context.metric.positionAt(middle.startTick);
   if (!meter || meter.confidence === "ambiguous" || meter.role === "downbeat") return;
   const from = context.sliceAt(middle.startTick - 1);
@@ -303,7 +372,7 @@ function readChromaticPassingSpelling(context: HarmonyRuleContext, first: Melody
   const middleKey = via.chord ? localKey(context, via) : key;
   if (!key || ![middleKey, landingKey].every(k => k && k.mode === key.mode && pitchClassEquals(k.tonic, key.tonic))) return;
   if (![left, right].every(note => isDiatonicIn(key, note))) return;
-  const usual = usualChromaticSpelling(key, middle.pitch, a.semitones > 0);
+  const usual = usualChromaticSpelling(key, middle.pitch, direction > 0);
   if (usual && isRaisedTonicThirdPassing(context, first, second, from, to, key)) return "usual";
   if (!from.chord || !to.chord) return;
   if (!hasExactPitch(left, chordIdentityToneSpellings(from.chord.identity)) ||
@@ -335,9 +404,15 @@ function readChromaticPassingSpelling(context: HarmonyRuleContext, first: Melody
       hasCompleteWrittenTertianVoicing(Object.values(via.notes).map(note => note.pitch)) ||
       !slices.all(slice => otherVoices.every(voice =>
         slice.notes[voice]?.id === from.notes[voice]?.id))) return;
+  return passingSpellingCorrection(key, left, middle, right, direction > 0);
+}
+
+function passingSpellingCorrection(
+  key: KeyReference, left: AnalysisNote, middle: AnalysisNote, right: AnalysisNote, ascending: boolean,
+): PassingSpellingCorrection | undefined {
   const otherStep = middle.pitch.step === left.pitch.step ? right.pitch.step : left.pitch.step;
   const spelling = enharmonicSpellings(middle.pitch).find(pitch =>
-    pitch.step === otherStep && usualChromaticSpelling(key, pitch, a.semitones > 0));
+    pitch.step === otherStep && usualChromaticSpelling(key, pitch, ascending));
   if (spelling) return { note: middle, spelling };
 }
 

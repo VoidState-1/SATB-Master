@@ -1,4 +1,6 @@
-import { chordIdentityToneSpellings, type ChordIdentity } from "../chordModel";
+import {
+  chordIdentityToneSpellings, chordToneSpellings, QUALITY_INTERVALS, type ChordIdentity, type ChordQuality,
+} from "../chordModel";
 import { pitchClassEquals, toMidi, type SpelledPitchClass } from "../pitch";
 import type { AnalysisNote, AnalysisSlice } from "./analysis";
 
@@ -30,4 +32,26 @@ export function soundsCompleteWrittenChord(
 export function soundsDeclaredChord(slice: AnalysisSlice) {
   return !!slice.chord && slice.completeSatb && !!slice.notes.bass &&
     soundsCompleteWrittenChord(slice.chord.identity, Object.values(slice.notes), slice.notes.bass);
+}
+
+const writtenQualities = Object.keys(QUALITY_INTERVALS) as ChordQuality[];
+
+/** A bare slice can supply a literal triad or seventh without a functional label. */
+export function readCompleteWrittenChord(slice: AnalysisSlice): ChordIdentity | undefined {
+  const bass = slice.notes.bass;
+  if (!slice.completeSatb || !bass) return;
+  if (slice.chord) return soundsDeclaredChord(slice) ? slice.chord.identity : undefined;
+
+  const notes = Object.values(slice.notes);
+  for (const { pitch: root } of notes) {
+    for (const quality of writtenQualities) {
+      if (soundsCompleteWrittenTones(chordToneSpellings(root, quality), notes, bass)) {
+        return {
+          root: { step: root.step, alter: root.alter },
+          bass: { step: bass.pitch.step, alter: bass.pitch.alter },
+          structure: { kind: "tertian", quality, extensions: [], alterations: [] },
+        };
+      }
+    }
+  }
 }
