@@ -11,11 +11,14 @@ import type {
 } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass } from "../../analysis";
-import { formatPitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import {
-  currentSpanId, openedSourceChord, openedSourceNote, openedSpanId, receivingVoiceIds,
+  currentSpanId, openedSourceNote, openedSpanId, receivingVoiceIds,
   sameLeadingToneContext, sameSeventhContext, seventhTransferVoiceIds,
 } from "../state/tendencyContext";
+import {
+  alteredToneDiagnostic, dominantNinthDiagnostic, leadingToneDiagnostic, seventhDiagnostic,
+} from "../state/resolutionDiagnostics";
 import { writtenSeventhHandoff } from "../state/writtenSeventhHandoff";
 import {
   leadingRootContinuesInHalfDiminishedChain,
@@ -25,7 +28,6 @@ import { homeLeadingToneWasDominantFifth } from "../state/dominantSeventhFifth";
 import { leavesDiatonicSequenceLeadingTone, resolvesCopiedSeventhFifth } from "../state/diatonicSequenceLeadingTone";
 import {
   chordEvidence,
-  chordLabel,
   diagnostic,
   noteEvidence,
 } from "../helpers/core";
@@ -38,8 +40,6 @@ import { isProvenHeldDoubleDominantContinuation } from "./heldDoubleDominantCont
 import { exchangesSupertonicSeventhWithRoot, seventhLeapsToUnlabelledSixFour } from "./supertonicSeventhExchange";
 import {
   defineObligationRule,
-  mergeDiagnosticEvidence,
-  obligationDiagnosticContext,
   type ObligationDecision,
   type ObligationEnvironment,
 } from "../state/obligation";
@@ -96,261 +96,6 @@ function stateStep(
   outgoing: readonly RuleStateEnvelope[],
 ): RuleStepResult {
   return { diagnostics, outgoing };
-}
-
-function resolutionCauseRef(
-  context: RuleStepContext,
-  kind: "leading-tone" | "chord-seventh" | "dominant-ninth" | "altered-tone",
-  sourceSpanId: string | undefined,
-  currentSpanId: string | undefined,
-  voiceId: VoiceId,
-) {
-  const connection =
-    sourceSpanId && currentSpanId
-      ? context.rules
-          .connections({
-            sourceSpanId,
-            targetSpanId: currentSpanId,
-          })
-          .first()?.connection
-      : undefined;
-  const connectionKey =
-    connection?.connectionKey ??
-    `connection:${sourceSpanId ?? "none"}->${currentSpanId ?? "none"}`;
-  return `resolution.${kind}|${connectionKey}|voice:${voiceId}`;
-}
-
-function leadingToneDiagnostic(
-  environment: ObligationEnvironment<LeadingTonePayload>,
-  decision: ObligationDecision,
-) {
-  const payload = environment.obligation.payload;
-  const obligationContext = obligationDiagnosticContext(environment, decision);
-  const source = openedSourceNote(environment);
-  const current = environment.context.slice.notes[payload.voiceId];
-  if (!source || !current) return undefined;
-  const leadingTone = {
-    step: payload.leadingStep,
-    alter: payload.leadingAlter,
-  };
-  const targetTonic = {
-    step: payload.targetStep,
-    alter: payload.targetAlter,
-  };
-  const targetKeyName = `${formatPitchClass(targetTonic)} ${payload.targetMode}`;
-  return diagnostic(
-    "resolution.leading-tone",
-    current.startTick,
-    current.startTick + current.durationTicks,
-    [payload.voiceId],
-    [source, current],
-    "导音未上行解决",
-    `书写导音 ${formatPitchClass(leadingTone)} 通常应上行半音解决到主音。`,
-    {
-      params: {
-        key: targetKeyName,
-        leadingTone: formatPitchClass(leadingTone),
-        targetTonic: formatPitchClass(targetTonic),
-      },
-      evidence: mergeDiagnosticEvidence(
-        [
-          noteEvidence(source, "导音"),
-          noteEvidence(current, "后继音"),
-          {
-            kind: "key",
-            id: openedSourceChord(environment)?.id ?? environment.context.slice.key.id,
-            label: "局部调性",
-            value: targetKeyName,
-          },
-        ],
-        obligationContext.evidence,
-      ),
-      causeRefs: [
-        resolutionCauseRef(
-          environment.context,
-          "leading-tone",
-          openedSpanId(environment),
-          currentSpanId(environment),
-          payload.voiceId,
-        ),
-      ],
-      subjects: obligationContext.subjects,
-      trace: obligationContext.trace,
-    },
-  );
-}
-
-function seventhDiagnostic(
-  environment: ObligationEnvironment<SeventhPayload>,
-  decision: ObligationDecision,
-) {
-  const payload = environment.obligation.payload;
-  const obligationContext = obligationDiagnosticContext(environment, decision);
-  const source = openedSourceNote(environment);
-  const chord = openedSourceChord(environment);
-  const current = environment.context.slice.notes[payload.voiceId];
-  const targetChord = environment.context.slice.chord;
-  const writtenSixFour = decision.reason === "supertonic-seventh-leaps-to-six-four";
-  if (!source || !chord || !current || (!targetChord && !writtenSixFour)) return undefined;
-  const tones = chordIdentityToneSpellings(chord.identity);
-  const resolution = toMidi(current.pitch) - payload.seventhMidi;
-  let title = "七音未级进下行解决";
-  let message = `书写七音 ${formatPitchClass(tones[3])} 通常应以半音或全音级进下行解决。`;
-  if (writtenSixFour) {
-    title = "下属七和弦的七音上行三度";
-    message = "进入属低音上的主四六音组时，原声部七音上行了三度。终止四六要求保持七音，经过主四六也不能这样跳进。";
-  } else if (decision.reason === "chord-seventh-bass-rises-to-root") {
-    title = "属七和弦换位时低音七音上行";
-    message = "属二和弦换为同一属七和弦原位时，低音七音不可级进上行到根音。";
-  } else if (decision.reason === "supertonic-seventh-exchanges-with-root") {
-    title = "下属七和弦的七音与根音互换";
-    message = "Ⅱ级七和弦重新排列时，七音上行到根音，同时原根音下行接走七音。此处应避免两音互换。";
-  } else if (decision.reason === "chord-seventh-upper-root-exchange") {
-    title = "属七和弦换位时根音与七音互换";
-    message = "原七音上行到根音，原根音下行接走七音。此处宜在原声部保持七音。";
-  } else if (decision.reason === "chord-seventh-upper-tritone-transfer") {
-    title = "属七和弦换位时七音移至根音";
-    message = "原七音移至根音，接手的声部又从三音下行增四度至七音。此处宜在原声部保持七音。";
-  }
-  return diagnostic(
-    "resolution.chord-seventh",
-    current.startTick,
-    current.startTick + current.durationTicks,
-    [payload.voiceId],
-    [source, current],
-    title,
-    message,
-    {
-      chordIds: targetChord ? [chord.id, targetChord.id] : [chord.id],
-      params: {
-        resolutionSemitones: resolution,
-        ...(targetChord && { targetChord: chordLabel(targetChord) }),
-      },
-      evidence: mergeDiagnosticEvidence(
-        [
-          chordEvidence(chord),
-          noteEvidence(source, "和弦七音"),
-          ...(targetChord ? [chordEvidence(targetChord)] : Object.values(environment.context.slice.notes)
-            .map(note => noteEvidence(note, "实写四六音组"))),
-          noteEvidence(current, "后继音"),
-        ],
-        obligationContext.evidence,
-      ),
-      causeRefs: [
-        resolutionCauseRef(
-          environment.context,
-          "chord-seventh",
-          openedSpanId(environment),
-          currentSpanId(environment),
-          payload.voiceId,
-        ),
-      ],
-      subjects: obligationContext.subjects,
-      trace: obligationContext.trace,
-    },
-  );
-}
-
-function dominantNinthDiagnostic(
-  environment: ObligationEnvironment<DominantNinthPayload>,
-  decision: ObligationDecision,
-) {
-  const payload = environment.obligation.payload;
-  const obligationContext = obligationDiagnosticContext(environment, decision);
-  const source = openedSourceNote(environment);
-  const sourceChord = openedSourceChord(environment);
-  const current = environment.context.slice.notes[payload.voiceId];
-  const targetChord = environment.context.slice.chord;
-  if (!source || !sourceChord || !current || !targetChord) return undefined;
-  const sourceTones = chordIdentityToneSpellings(sourceChord.identity);
-  const resolution = toMidi(current.pitch) - payload.ninthMidi;
-  return diagnostic(
-    "resolution.dominant-ninth",
-    current.startTick,
-    current.startTick + current.durationTicks,
-    [payload.voiceId],
-    [source, current],
-    "属九音未级进下行解决",
-    `${chordLabel(sourceChord)} 的九音 ${formatPitchClass(sourceTones[4])} 应在离开属九和弦时级进下行到目标和弦音。`,
-    {
-      chordIds: [sourceChord.id, targetChord.id],
-      params: {
-        resolutionSemitones: resolution,
-        targetChord: chordLabel(targetChord),
-      },
-      evidence: mergeDiagnosticEvidence(
-        [
-          chordEvidence(sourceChord),
-          noteEvidence(source, "属九音"),
-          chordEvidence(targetChord),
-          noteEvidence(current, "后继音"),
-        ],
-        obligationContext.evidence,
-      ),
-      causeRefs: [
-        resolutionCauseRef(
-          environment.context,
-          "dominant-ninth",
-          openedSpanId(environment),
-          currentSpanId(environment),
-          payload.voiceId,
-        ),
-      ],
-      subjects: obligationContext.subjects,
-      trace: obligationContext.trace,
-    },
-  );
-}
-
-function alteredToneDiagnostic(
-  environment: ObligationEnvironment<AlteredTonePayload>,
-  decision: ObligationDecision,
-) {
-  const payload = environment.obligation.payload;
-  const obligationContext = obligationDiagnosticContext(environment, decision);
-  const source = openedSourceNote(environment);
-  const sourceChord = openedSourceChord(environment);
-  const current = environment.context.slice.notes[payload.voiceId];
-  const targetChord = environment.context.slice.chord;
-  if (!source || !sourceChord || !current || !targetChord) return undefined;
-  const actualSemitones = toMidi(current.pitch) - payload.alteredMidi;
-  return diagnostic(
-    "resolution.altered-tone",
-    current.startTick,
-    current.startTick + current.durationTicks,
-    [payload.voiceId],
-    [source, current],
-    "变化倾向音未按标注方向解决",
-    `${chordLabel(sourceChord)} 的变化构成音已标注为${payload.tendency === "up" ? "上行" : "下行"}倾向，应以半音解决到目标和弦音。`,
-    {
-      chordIds: [sourceChord.id, targetChord.id],
-      params: {
-        degree: payload.degree,
-        tendency: payload.tendency,
-        actualSemitones,
-      },
-      evidence: mergeDiagnosticEvidence(
-        [
-          chordEvidence(sourceChord),
-          noteEvidence(source, "变化倾向音"),
-          chordEvidence(targetChord),
-          noteEvidence(current, "后继音"),
-        ],
-        obligationContext.evidence,
-      ),
-      causeRefs: [
-        resolutionCauseRef(
-          environment.context,
-          "altered-tone",
-          openedSpanId(environment),
-          currentSpanId(environment),
-          payload.voiceId,
-        ),
-      ],
-      subjects: obligationContext.subjects,
-      trace: obligationContext.trace,
-    },
-  );
 }
 
 function sameOpenedSpan<Payload extends JsonValue>(
