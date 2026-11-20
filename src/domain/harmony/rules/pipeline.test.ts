@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildHarmonyAnalysis } from "../analysis";
+import { buildHarmonyAnalysis, sameHarmonyAtTicks } from "../analysis";
+import { checkHarmony } from "../registry";
 import type {
   HarmonyDiagnostic,
   RuleDefinition,
@@ -185,6 +186,29 @@ describe("共享事实与诊断仲裁", () => {
     expect(analysis.contextFacts.arpeggiationTransitionIds).toContain(
       transitionId,
     );
+  });
+
+  it.each(["tonic", "dominant", "gap"] as const)("跨短标注的旋律跳进按其间实际和声处理：%s", middle => {
+    const project = createEmptyProject();
+    project.lengthTicks = 4 * PPQ;
+    project.chordTrack.regions = [
+      region("first", 0, PPQ),
+      ...(middle === "gap" ? [] : [region("middle", PPQ, PPQ, { root: middle === "tonic" ? "C" : "G" })]),
+      region("last", 2 * PPQ, 2 * PPQ),
+    ];
+    setLine(project, "soprano", [
+      { ...note("s-c", 0, "C", 4), durationTicks: 2 * PPQ },
+      note("s-g", 2 * PPQ, "G", 4), note("s-e", 3 * PPQ, "E", 5),
+    ]);
+    const analysis = buildHarmonyAnalysis(project);
+    const transition = analysis.melodyTransitions[0];
+    expect(transition.sameHarmony).toBe(middle === "tonic");
+    expect(sameHarmonyAtTicks({ project }, 0, 2 * PPQ)).toBe(middle === "tonic");
+    expect(analysis.contextFacts.arpeggiationTransitionIds.includes(transition.id)).toBe(middle === "tonic");
+    const rule = "melody.leap-recovery";
+    const alerts = checkHarmony(project, { ...defaultHarmonyRuleSeverities(), [rule]: "warning" }, {},
+      { [rule]: { "same-harmony": "strict", arpeggiation: "strict" } }).diagnostics.filter(item => item.ruleId === rule);
+    expect(alerts.some(item => item.tick === 3 * PPQ)).toBe(middle !== "tonic");
   });
 
   it("缺少显式功能标记时按级数和结构推导有效功能", () => {

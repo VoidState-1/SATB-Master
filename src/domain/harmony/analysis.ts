@@ -23,7 +23,7 @@ import type {
 } from "./phrase";
 import { detectCadences } from "./cadence";
 import { cadenceInputs } from "./cadence/projectEvidence";
-import { keyAtTick, sameChordIdentityWithoutBass, sameKey, sameSemanticContext } from "./segments";
+import { buildHarmonySpans, buildSlices, keyAtTick, sameKey } from "./segments";
 import { reviewObservedCadenceAnnotation } from "./cadence/confirmation";
 import type { CadenceCandidate } from "./cadence";
 import type { CadenceAnnotation as ProjectCadenceAnnotation } from "../project/types";
@@ -194,7 +194,6 @@ function deepFreeze<T>(value: T): DeepReadonly<T> {
   return value as DeepReadonly<T>;
 }
 
-/** 内部辅助：查找指定 tick 处的有效调号事件 */
 /**
  * 获取指定 Tick 处的有效和弦区域
  */
@@ -209,37 +208,18 @@ export function analysisChordAtTick(
   );
 }
 
-/** 内部辅助：判断两个和弦区域在时间轴上是否连续 */
-function chordContinuity(previous: AnalysisChord, current: AnalysisChord) {
-  return (
-    previous.id === current.id ||
-    previous.startTick + previous.durationTicks === current.startTick
-  );
-}
-
 /**
  * 判断两个 Tick 处的和弦是否属于同一和声（调性、和弦实体与语义上下文均一致且连续）
  */
 export function sameHarmonyAtTicks(
-  analysis: Pick<HarmonyAnalysis, "project">,
+  analysis: Pick<HarmonyAnalysis, "project"> & Partial<Pick<HarmonyAnalysis, "harmonySpans">>,
   previousTick: number,
   currentTick: number,
 ) {
-  const previousChord = analysisChordAtTick(analysis, previousTick);
-  const currentChord = analysisChordAtTick(analysis, currentTick);
-  if (!previousChord || !currentChord) return false;
-  if (!chordContinuity(previousChord, currentChord)) return false;
-
-  const previousKey = keyAtTick(analysis.project.keyEvents, previousTick);
-  const currentKey = keyAtTick(analysis.project.keyEvents, currentTick);
-  return (
-    sameKey(previousKey, currentKey) &&
-    sameChordIdentityWithoutBass(
-      previousChord.identity,
-      currentChord.identity,
-    ) &&
-    sameSemanticContext(previousChord.semantics, currentChord.semantics)
-  );
+  const spans = analysis.harmonySpans ?? buildHarmonySpans(buildSlices(analysis.project).slices).harmonySpans;
+  const start = Math.min(previousTick, currentTick);
+  const end = Math.max(previousTick, currentTick);
+  return spans.some(span => span.fromTick <= start && end < span.toTick);
 }
 
 function buildSliceTransitions(
@@ -270,7 +250,7 @@ function buildSliceTransitions(
 }
 
 function buildMelodyTransitions(
-  analysis: Pick<HarmonyAnalysis, "project">,
+  analysis: Pick<HarmonyAnalysis, "project" | "harmonySpans">,
   notesByVoice: Record<VoiceId, AnalysisNote[]>,
 ) {
   const transitions: MelodyTransition[] = [];
@@ -512,10 +492,6 @@ export function buildHarmonyAnalysis(
   const metricTimeline = buildMetricTimeline(snapshot);
   const inputs = cadenceInputs(snapshot);
   const { phraseAnalysis, slices, notesByVoice, harmonySpans, sliceSpanIds, chordSpanIds, chordById } = inputs;
-  const analysisShell = { project: snapshot } as Pick<
-    HarmonyAnalysis,
-    "project"
-  >;
   const noteById = new Map<string, AnalysisNote>();
   const noteVoiceById = new Map<string, VoiceId>();
   VOICE_ORDER.forEach((voiceId) =>
@@ -525,7 +501,7 @@ export function buildHarmonyAnalysis(
     }),
   );
   const sliceTransitions = buildSliceTransitions(slices, sliceSpanIds);
-  const melodyTransitions = buildMelodyTransitions(analysisShell, notesByVoice);
+  const melodyTransitions = buildMelodyTransitions(inputs, notesByVoice);
   const connections = buildHarmonyConnections({
     project: snapshot,
     harmonySpans,
