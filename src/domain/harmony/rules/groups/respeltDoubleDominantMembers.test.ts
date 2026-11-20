@@ -174,9 +174,10 @@ describe("D.1/D.2: dominant preparation with a written raised second", () => {
 describe("shared continuation keeps the two entry policies", () => {
   function unlabelledProof(example: Example) {
     const context = createHarmonyRuleContext(buildHarmonyAnalysis(make({ ...example, source:"" })));
-    return context.melodyTransitions()
+    const transitions = context.melodyTransitions()
       .where(transition => preparesWrittenRespeltDoubleDominant(context, transition))
-      .select(transition => transition.voiceId).toArray().toSorted();
+      .select(transition => transition.voiceId).toArray();
+    return [...transitions].sort();
   }
 
   it("keeps the legacy preparation check scoped to the entering voice", () => {
