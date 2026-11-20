@@ -17,6 +17,7 @@ import { analyzeChordInferencePaths } from "./sequence";
 import { classifySixFours } from "./sixFours";
 import { withPreparedSuspensions } from "./preparedSuspensions";
 import { withProlongedHarmony } from "./prolongation";
+import { simultaneousNeighborCandidates } from "./simultaneousNeighbors";
 import { inferLocalKeys } from "./localKeys";
 import { inferPhrases, isCurrentPhraseBoundary } from "../phrase";
 import type {
@@ -113,7 +114,8 @@ export function inferChords(
   const suspended = withPreparedSuspensions(observations, anticipated, options, project.ppq, phraseBoundaryTicks);
   const prolonged = withProlongedHarmony(observations, suspended, options, project.ppq, phraseBoundaryTicks);
   const currentPhraseTicks = [...new Set([...terminalTicks, ...phraseBoundaryTicks])];
-  const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high", currentPhraseTicks);
+  const doubleNeighbors = simultaneousNeighborCandidates(observations, prolonged, options, project.ppq, phraseBoundaryTicks);
+  const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high", currentPhraseTicks, doubleNeighbors);
   const manualPhraseTicks = project.structure.phraseBoundaries
     .filter(boundary => boundary.source === "manual")
     .map(boundary => boundary.tick);

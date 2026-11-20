@@ -281,6 +281,38 @@ export function buildChordInferenceCandidates(
 }
 
 
+export function fitSimultaneousNeighbors(
+  anchor: ChordInferenceCandidate,
+  observation: ChordInferenceObservation,
+  noteIds: readonly string[],
+): ChordInferenceCandidate | undefined {
+  const { hardRejected, ...written } = fitChordObservation(observation, anchor.identity, {
+    allowIncompleteVoicing: true, allowNonChordToneCandidates: true,
+  });
+  // The paired, written return has proved both displaced chord members.
+  // Keep their omission in the fit without broadening ordinary voicing inference.
+  if ((hardRejected && (hardRejected !== "too-many-omitted-chord-tones" ||
+      noteIds.length !== 2 || written.omittedChordDegrees.length !== 2)) ||
+      !written.spellingConsistent || written.nonChordToneNoteIds.length !== noteIds.length ||
+      !noteIds.every(id => written.nonChordToneNoteIds.includes(id))) return;
+  const fit = {
+    ...written,
+    nonChordToneAssignments: Object.freeze(Object.fromEntries(noteIds.map(id => [id, "neighbor" as const]))),
+  };
+  return {
+    ...anchor,
+    id: `${observation.index}:simultaneous-neighbors:${anchor.id}`,
+    observationIndex: observation.index,
+    fit,
+    score: scoreFor(observation, anchor.identity, fit, anchor.score.functionalTier),
+    confidence: "medium",
+    evidence: [...evidenceFor(fit, true),
+      { kind: "sequence-context", code: "written-double-neighbor", noteIds },
+      { kind: "inferred-nonchord-tone", code: "neighbor", noteIds },
+    ],
+  };
+}
+
 export function fitProlongedHarmony(
   anchor: ChordInferenceCandidate,
   observation: ChordInferenceObservation,

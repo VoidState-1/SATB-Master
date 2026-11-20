@@ -24,9 +24,11 @@ export function soundsCompleteWrittenChord(identity: ChordIdentity, notes: reado
     tones.every(tone => notes.some(note => pitchClassEquals(tone, note.pitch)));
 }
 
+type NeighborFrame = Pick<AnalysisSlice, "tick" | "notes" | "completeSatb">;
+
 /** Return the upper neighbor notes supported by the same sounding harmony on both sides. */
 export function writtenNeighborsOverHeldBass(
-  identity: ChordIdentity, before: AnalysisSlice, middle: AnalysisSlice, after: AnalysisSlice,
+  identity: ChordIdentity, before: NeighborFrame, middle: NeighborFrame, after: NeighborFrame,
 ) {
   if (!before.completeSatb || !middle.completeSatb || !after.completeSatb) return;
   const bass = before.notes.bass!;

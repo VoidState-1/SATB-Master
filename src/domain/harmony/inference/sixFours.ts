@@ -102,17 +102,20 @@ function tonicSixFourPair(candidates: CandidateSet) {
   const cadential = tonic && candidates.find(c => c.functionalBaseId === "K46" &&
     chordIdentityEquals(c.identity, tonic.identity));
   if (!tonic || !cadential) return;
-  if (exactReading(tonic) && exactReading(cadential)) return { tonic, cadential, neighbor: false };
-  // Only a single upper neighbor independently proved by the prolongation stage may bridge literal statements.
+  if (exactReading(tonic) && exactReading(cadential)) return { tonic, cadential, neighbor: false, doubleNeighbor: false };
   if ([tonic, cadential].every(c => c.fit.spellingConsistent && c.fit.nonChordToneNoteIds.length === 1 &&
       c.evidence.some(e => e.kind === "inferred-nonchord-tone" && e.code === "neighbor"))) {
-    return { tonic, cadential, neighbor: true };
+    return { tonic, cadential, neighbor: true, doubleNeighbor: false };
+  }
+  if ([tonic, cadential].every(c => c.fit.spellingConsistent && c.fit.nonChordToneNoteIds.length === 2 &&
+      c.evidence.some(e => e.kind === "sequence-context" && e.code === "written-double-neighbor"))) {
+    return { tonic, cadential, neighbor: true, doubleNeighbor: true };
   }
 }
 
 function confirmContinuedCadentialSixFours(
   observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[],
-  classified: CandidateSet[], phraseBoundaries: readonly number[],
+  classified: CandidateSet[], phraseBoundaries: readonly number[], doubleBridgesOnly = false,
 ) {
   const pairs = sets.map(tonicSixFourPair);
   for (let start = 0; start + 1 < pairs.length; start++) {
@@ -120,6 +123,7 @@ function confirmContinuedCadentialSixFours(
     if (!opening || opening.neighbor || !completeWithActualBass(first)) continue;
     let end = start;
     let bridgedNeighbor = false;
+    let bridgedDoubleNeighbor = false;
     while (end + 1 < pairs.length) {
       const next = pairs[end + 1], after = observations[end + 1], before = observations[end];
       if (!next || !chordIdentityEquals(opening.tonic.identity, next.tonic.identity) ||
@@ -128,10 +132,17 @@ function confirmContinuedCadentialSixFours(
           Math.abs(toMidi(before.bass!.pitch) - toMidi(after.bass!.pitch)) > 12) break;
       end++;
       bridgedNeighbor ||= next.neighbor;
+      bridgedDoubleNeighbor ||= next.doubleNeighbor;
     }
     const last = observations[end], arrival = observations[end + 1], arrivals = sets[end + 1];
     const phraseEnd = phraseBoundaries.reduce((endTick, tick) =>
       tick > first.fromTick ? Math.min(endTick, tick) : endTick, Number.POSITIVE_INFINITY);
+    if (doubleBridgesOnly && (!bridgedDoubleNeighbor ||
+        ![start, end].every(index => classified[index].some(candidate => candidate.functionalBaseId === "K46" &&
+          chordIdentityEquals(candidate.identity, opening.cadential.identity))))) {
+      start = end;
+      continue;
+    }
     if (end > start && !pairs[end]!.neighbor && arrival && completeWithActualBass(arrival) &&
         first.key.id === arrival.key.id && sameKey(first, arrival) &&
         last.toTick === arrival.fromTick && arrival.toTick <= phraseEnd &&
@@ -143,6 +154,11 @@ function confirmContinuedCadentialSixFours(
         resolvesToDominant(first, last, arrival, [dominant], !!fullClose);
       for (let index = start; confirmed && index <= end; index++) {
         const pair = pairs[index]!;
+        if (pair.doubleNeighbor && !classified[index].length) {
+          classified[index] = [{ ...pair.cadential, evidence: [...pair.cadential.evidence,
+            { kind: "sequence-context", code: "cadential64-resolution" }] }];
+          continue;
+        }
         if (!classified[index].includes(pair.tonic) || !classified[index].includes(pair.cadential)) continue;
         classified[index] = classified[index].filter(c => c !== pair.tonic).map(c => c === pair.cadential
           ? { ...c, evidence: [...c.evidence, { kind: "sequence-context", code: "cadential64-resolution" }] }
@@ -205,6 +221,7 @@ function omittedPedalAnchor(
 export function classifySixFours(
   observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[], acceptMedium = true,
   phraseBoundaries: readonly number[] = [],
+  doubleNeighbors: readonly CandidateSet[] = [],
 ) {
   const triads = sets.map(primaryTriad);
   const classified = sets.slice();
@@ -257,6 +274,12 @@ export function classifySixFours(
     start = end;
   }
   confirmContinuedCadentialSixFours(observations, sets, classified, phraseBoundaries);
-  return classified;
+  if (doubleNeighbors.some(candidates => candidates.some(c => c.functionalBaseId === "K46"))) {
+    const bridges = sets.map((set, index) => doubleNeighbors[index]?.some(c => c.functionalBaseId === "K46")
+      ? doubleNeighbors[index] : set);
+    confirmContinuedCadentialSixFours(observations, bridges, classified, phraseBoundaries, true);
+  }
+  return classified.map((set, index) =>
+    set.length || !doubleNeighbors[index] ? set : doubleNeighbors[index].filter(c => c.functionalBaseId === "D"));
 }
 
