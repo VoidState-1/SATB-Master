@@ -42,3 +42,34 @@ describe("Borrowed supertonic fifth in the bass", () => {
     expect(warning(input)).toBe(true);
   });
 });
+
+function borrowedSupertonicToDominantWarning({ alto = "G4", tenor = "B3", phraseCut = false } = {}) {
+  const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..2 {
+  S: | E5/4 F5/2 F5/4 | E5/1 |
+  A: | C5/4 A4/4 Ab4/4 ${alto}/4 | G4/1 |
+  T: | G4/4 D4/4 C4/4 ${tenor}/4 | C4/1 |
+  B: | C3/4 D3/2 D3/4 | C3/1 |
+}`);
+  if (phraseCut) project.structure.phraseBoundaries = [{
+    id: "cut", source: "manual", confidence: "certain", tick: 3 * project.ppq,
+  }];
+  return checkHarmony(project).diagnostics.some(d => d.tick === 2 * project.ppq &&
+    d.ruleId === "melody.augmented-interval" && d.voiceIds.includes("alto"));
+}
+
+describe("Borrowed supertonic fifth descending into the dominant", () => {
+  it("allows ii–iiø7–V7 when the fifth and seventh both resolve downward", () => {
+    expect(borrowedSupertonicToDominantWarning()).toBe(false);
+  });
+
+  it.each([
+    ["the fifth drops an extra octave", { alto: "G3" }],
+    ["the seventh leaps up", { tenor: "B4" }],
+    ["the dominant begins a new phrase", { phraseCut: true }],
+  ] as const)("retains the spelling warning when %s", (_label, input) => {
+    expect(borrowedSupertonicToDominantWarning(input)).toBe(true);
+  });
+});

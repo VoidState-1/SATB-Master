@@ -33,21 +33,53 @@ function confirmsMajorTarget(rules: HarmonyRuleContext, arrival: AnalysisSlice, 
     resolvesInVoice(dominant, tonic, seventh, scaleDegreePitchClass(key, 3), -1);
 }
 
+// §21.1,3,4 (ex. 21-283, 285): in major, the lowered fifth and the
+// seventh of iiø7 descend in their own voices into the dominant.
+function resolvesLoweredFifthToDominant(
+  rules: HarmonyRuleContext,
+  before: AnalysisSlice,
+  middle: AnalysisSlice,
+  target: AnalysisSlice,
+  motion: MelodyTransition,
+) {
+  const key = middle.key;
+  if (key.mode !== "major" || before.key.id !== key.id || target.key.id !== key.id) return false;
+  const sixth = scaleDegreePitchClass(key, 6);
+  if (!pitchClassEquals(motion.previous.pitch, sixth) ||
+      !pitchClassEquals(motion.current.pitch, scaleDegreePitchClass(key, 6, -1)) ||
+      Object.values(before.notes).filter(note => pitchClassEquals(note.pitch, sixth)).length !== 1) return false;
+
+  const supertonic = scaleDegreePitchClass(key, 2);
+  const dominant = scaleDegreePitchClass(key, 5);
+  if ((!matchesWrittenChord(before, supertonic, "minor") && !matchesWrittenChord(before, supertonic, "minor7")) ||
+      !matchesWrittenChord(middle, supertonic, "halfDiminished7") ||
+      (!matchesWrittenChord(target, dominant, "major") && !matchesWrittenChord(target, dominant, "dominant7")) ||
+      !agreesWithDegree(rules, before, key, 2) || !agreesWithDegree(rules, middle, key, 2) ||
+      !agreesWithDegree(rules, target, key, 5) ||
+      !resolvesInVoice(middle, target, motion.voiceId, dominant, -1)) return false;
+
+  const seventh = VOICE_ORDER.find(voice => pitchClassEquals(middle.notes[voice]!.pitch, key.tonic))!;
+  return resolvesInVoice(middle, target, seventh, leadingTonePitchClass(key), -1);
+}
+
 // §21.1,3,5 (ex. 21-283, 286): vi can prepare the half-diminished
 // supertonic of harmonic major. Its seventh stays at the same written pitch
 // while the bass fifth descends to the bass of the tonic six-four.
 export function resolvesLoweredSupertonicFifth(rules: HarmonyRuleContext, motion: MelodyTransition) {
   const { voiceId, previous, current } = motion;
-  if (voiceId !== "bass") return false;
   const start = current.startTick, end = start + current.durationTicks;
   const before = rules.sliceAt(start - 1), middle = rules.sliceAt(start), target = rules.sliceAt(end);
-  const bass = target?.notes.bass;
-  if (!before || !middle || !target || !bass || before.notes.bass?.id !== previous.id ||
-      middle.notes.bass?.id !== current.id || middle.tick !== start || middle.endTick !== end ||
-      bass.startTick !== end || !motion.sameKey || before.key.id !== target.key.id ||
+  const next = target?.notes[voiceId];
+  if (!before || !middle || !target || !next || before.notes[voiceId]?.id !== previous.id ||
+      middle.notes[voiceId]?.id !== current.id || middle.tick !== start || middle.endTick !== end ||
+      next.startTick !== end || !motion.sameKey || before.key.id !== target.key.id ||
       rules.analysis.phraseBoundaries.some(b => !b.stale && previous.startTick < b.tick && b.tick <= end)) return false;
-  const step = writtenInterval(current.pitch, bass.pitch);
+  const step = writtenInterval(current.pitch, next.pitch);
   if (step.diatonicSteps !== -1 || step.semitones !== -1) return false;
+  if (resolvesLoweredFifthToDominant(rules, before, middle, target, motion)) return true;
+  if (voiceId !== "bass") return false;
+
+  const bass = next;
   const key = { tonic: scaleDegreePitchClass({ tonic: bass.pitch, mode: "major" }, 4), mode: "major" } as const;
   const sixth = scaleDegreePitchClass(key, 6);
   if (!pitchClassEquals(previous.pitch, sixth) || !pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 6, -1)) ||
