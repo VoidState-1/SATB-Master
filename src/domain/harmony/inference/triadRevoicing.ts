@@ -1,7 +1,8 @@
-import { chordIdentityToneSpellings } from "../../chordModel";
+import { chordIdentityToneSpellings, primaryHarmonyInterpretation } from "../../chordModel";
 import { pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
-import { fitTriadRevoicing } from "./candidates";
+import { compareMetricStrength } from "../../rhythm/metric";
+import { fitFifthOmissionRevoicing } from "./candidates";
 import { hasCompleteWrittenTertianChord } from "./fit";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation } from "./types";
@@ -11,7 +12,7 @@ function completeRevoicingSide(
   side: ChordInferenceObservation | undefined,
   boundaries: readonly number[],
 ) {
-  if (!side?.completeSatb || !side.bass || side.soundingPitchClasses.length !== 3 ||
+  if (!side?.completeSatb || !side.bass || side.soundingPitchClasses.length !== middle.soundingPitchClasses.length + 1 ||
       side.key.id !== middle.key.id || side.key.mode !== middle.key.mode ||
       !pitchClassEquals(side.key.tonic, middle.key.tonic) ||
       Boolean(side.localKey) !== Boolean(middle.localKey)) return undefined;
@@ -41,41 +42,56 @@ function completeRevoicingSide(
     { notes, fifth: later, replacement: earlier };
 }
 
-/** Recover a root-position triad from a written fifth in a single adjacent
- * revoicing. The incomplete slice keeps the omitted degree as sounding evidence. */
-export function withSingleVoiceTriadRevoicings(
+/** Use the written fifth in one adjacent voicing. Keep the omission in the fit. */
+export function withSingleVoiceRevoicings(
   observations: readonly ChordInferenceObservation[],
   sets: readonly (readonly ChordInferenceCandidate[])[],
   ppq: number,
   phraseBoundaryTicks: readonly number[],
+  seventhBoundaryTicks: readonly number[],
 ) {
   return sets.map((existing, index) => {
     const middle = observations[index];
+    const seventh = middle.soundingPitchClasses.length === 3;
     if (existing.length || !middle.completeSatb || !middle.bass ||
-        middle.soundingPitchClasses.length !== 2 || middle.toTick - middle.fromTick > ppq)
+        (!seventh && middle.soundingPitchClasses.length !== 2) ||
+        (seventh && hasCompleteWrittenTertianChord(middle)) || middle.toTick - middle.fromTick > ppq)
       return existing;
     const bass = toMidi(middle.bass.pitch);
     if (observationNotes(middle).some(({ note }) => note.nonChordToneRole || toMidi(note.pitch) < bass))
       return existing;
 
     const sides = [index - 1, index + 1].flatMap(neighbor => {
-      const evidence = completeRevoicingSide(middle, observations[neighbor], phraseBoundaryTicks);
-      return evidence ? [{ ...evidence, candidates: sets[neighbor] }] : [];
+      const evidence = completeRevoicingSide(middle, observations[neighbor],
+        seventh ? seventhBoundaryTicks : phraseBoundaryTicks);
+      return evidence ? [{ ...evidence, neighbor, candidates: sets[neighbor] }] : [];
     });
     const recovered = new Map<string, ChordInferenceCandidate>();
-    for (const { candidates, fifth, replacement } of sides) {
+    for (const { candidates, fifth, replacement, neighbor } of sides) {
+      // A partial seventh can continue an established chord on a weaker attack.
+      // A following full statement may contradict that reading, but cannot establish it retroactively.
+      if (seventh && (neighbor >= index ||
+          compareMetricStrength(observations[neighbor].metric, middle.metric) !== "stronger")) continue;
       for (const anchor of candidates) {
         const { root, structure } = anchor.identity;
         if (!anchor.semantics || anchor.confidence !== "high" ||
-            structure.kind !== "tertian" || (structure.quality !== "major" && structure.quality !== "minor") ||
-            structure.extensions.length || structure.alterations.length ||
-            !pitchClassEquals(root, anchor.identity.bass) || !pitchClassEquals(root, middle.bass.pitch))
+            structure.kind !== "tertian" || structure.extensions.length || structure.alterations.length)
           continue;
+        if (seventh) {
+          const kind = primaryHarmonyInterpretation(anchor.semantics).designation?.kind;
+          if ((kind !== "primary" && kind !== "side-degree") || anchor.semantics.alternatives?.length ||
+              (structure.quality !== "dominant7" && structure.quality !== "minor7" && structure.quality !== "major7") ||
+              anchor.fit.omittedChordDegrees.length || anchor.fit.nonChordToneNoteIds.length ||
+              !anchor.fit.spellingConsistent || !pitchClassEquals(anchor.identity.bass, middle.bass.pitch) ||
+              !pitchClassEquals(root, replacement.pitch)) continue;
+        } else if ((structure.quality !== "major" && structure.quality !== "minor") ||
+            !pitchClassEquals(root, anchor.identity.bass) || !pitchClassEquals(root, middle.bass.pitch)) continue;
         const tones = chordIdentityToneSpellings(anchor.identity);
         if (!pitchClassEquals(fifth.pitch, tones[2]) ||
             !sides.every(({ notes }) => notes.every(({ note }) =>
               tones.some(tone => pitchClassEquals(tone, note.pitch))))) continue;
-        const candidate = fitTriadRevoicing(anchor, middle, [fifth.id, replacement.id]);
+        const candidate = fitFifthOmissionRevoicing(anchor, middle, [fifth.id, replacement.id],
+          seventh ? "seventh" : "triad");
         if (candidate) recovered.set(JSON.stringify(candidate.semantics), candidate);
       }
     }

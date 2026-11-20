@@ -23,7 +23,7 @@ import { classifySixFours } from "./sixFours";
 import { withPreparedSuspensions } from "./preparedSuspensions";
 import { withUpperPassingTones } from "./upperPassing";
 import { withProlongedHarmony } from "./prolongation";
-import { withSingleVoiceTriadRevoicings } from "./triadRevoicing";
+import { withSingleVoiceRevoicings } from "./triadRevoicing";
 import { simultaneousNeighborCandidates } from "./simultaneousNeighbors";
 import { withWrittenLowerNeighborPairs } from "./lowerNeighborPair";
 import { inferLocalKeys } from "./localKeys";
@@ -139,7 +139,7 @@ export function inferChords(
     observations, withNeapolitanPivots, manualPhraseTicks, meetsMinimumConfidence,
   );
   const revoiced = minimumConfidence === "high" ? withAlteredDoubleDominants :
-    withSingleVoiceTriadRevoicings(observations, withAlteredDoubleDominants, project.ppq, phraseBoundaryTicks);
+    withSingleVoiceRevoicings(observations, withAlteredDoubleDominants, project.ppq, phraseBoundaryTicks, currentPhraseTicks);
   const thirdInversions = withThirdInversionResolutions(observations, revoiced, options, currentPhraseTicks);
   const leadingSevenths = withLeadingSeventhIntoConfirmedKey(
     observations, thirdInversions, options, localKeys, currentPhraseTicks,
