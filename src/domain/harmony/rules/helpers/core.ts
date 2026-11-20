@@ -43,6 +43,7 @@ export function diagnostic(
     evidence?: DiagnosticEvidence[];
     confidence?: number;
     pairMotion?: RuleDiagnostic["pairMotion"];
+    motionSameHarmony?: boolean;
     causeRefs?: string[];
     coverageRefs?: string[];
     subjects?: DiagnosticSubjects;
@@ -64,6 +65,7 @@ export function diagnostic(
     evidence: options.evidence ?? [],
     confidence: options.confidence ?? 1,
     ...(options.pairMotion && { pairMotion: options.pairMotion }),
+    ...(options.motionSameHarmony !== undefined && { motionSameHarmony: options.motionSameHarmony }),
     causeRefs: options.causeRefs,
     coverageRefs: options.coverageRefs,
     subjects: options.subjects,

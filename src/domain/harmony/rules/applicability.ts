@@ -95,7 +95,7 @@ function contextsFor(
   const spanIds = spanIdsFor(diagnostic, analysis);
   const contexts: RuleExceptionContext[] = [];
   const facts = analysis.contextFacts;
-  if (intersects(facts.sameHarmonyTransitionIds, transitions.all))
+  if (diagnostic.motionSameHarmony ?? intersects(facts.sameHarmonyTransitionIds, transitions.all))
     contexts.push("same-harmony");
   if (intersects(facts.arpeggiationTransitionIds, transitions.melody))
     contexts.push("arpeggiation");

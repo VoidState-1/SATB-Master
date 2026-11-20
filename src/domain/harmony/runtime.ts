@@ -206,6 +206,8 @@ export type RuleDiagnostic = Omit<
 > & {
   /** 在产生声部对诊断的同一连接上观测到的进行事实。 */
   pairMotion?: { voiceExchange: boolean; bassStepUp: boolean };
+  /** 同和声例外在本条诊断所指的连接上是否成立。 */
+  motionSameHarmony?: boolean;
 };
 
 export type RuleSkipReason =

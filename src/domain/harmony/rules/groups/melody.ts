@@ -24,6 +24,7 @@ import { isRespeltDoubleDominantSeventh } from "./chromaticDoubleDominant";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { recognizesAugmentedSixthPreparation } from "./chromaticAugmentedSixth";
 import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
+import { sameHarmonyAtMelodicAttack } from "../helpers/motionHarmony";
 
 function validMelodyTransitions(
   context: HarmonyRuleContext,
@@ -70,6 +71,8 @@ function evaluateMelodyTransitionRule(
         policy.message(context.analysis, transition, interval),
         {
           params: { semitones: interval },
+          motionSameHarmony: policy.id === "melody.large-leap"
+            ? sameHarmonyAtMelodicAttack(context, transition.current.startTick) : undefined,
           evidence: [
             noteEvidence(transition.previous, "前一音"),
             noteEvidence(transition.current, "当前音"),
