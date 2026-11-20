@@ -18,6 +18,7 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import { preparesAlteredDominantFifth } from "./alteredDominantFifth";
 import { preparesWrittenAppliedSeventh } from "./chromaticAppliedResolution";
 import { subdominantSeventhBassEntry } from "./heldDoubleDominantContinuation";
 import { chromaticPassingTransitionIds } from "./chromaticPassing";
@@ -226,6 +227,7 @@ function alteredIntervalRule(
       (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
       (expectedQuality === "减" && isWrittenLowerNeighborMotion(context, transition)) ||
       (expectedQuality === "增" && (
+        preparesAlteredDominantFifth(context, transition) ||
         lowersSixthInSubdominant(context, transition) ||
         lowerDoubleDominantLeadingTone(context, transition) ||
         preparesDoubleDominantSeventhBass(context, transition) ||
