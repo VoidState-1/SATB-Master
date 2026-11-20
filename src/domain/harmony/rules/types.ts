@@ -109,6 +109,8 @@ export interface HarmonyRuleDefinition {
   options: readonly RuleOptionDefinition[];
   supportedExceptionContexts: readonly RuleExceptionContext[];
   defaultExceptionPolicies: RuleExceptionPolicy;
+  /** Inherited at evaluation time, so saved exception choices still take precedence. */
+  contextualDefaultExceptionPolicies?: RuleExceptionPolicy;
 }
 
 export interface RuleInstanceSettings {

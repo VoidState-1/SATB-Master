@@ -12,6 +12,7 @@ import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { isResolvedDominantSixthBass } from "./resolvedDominantSixthBass";
 import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
 import { sameHarmonyAtMelodicAttack } from "../helpers/motionHarmony";
+import { previousSeventhInTritoneTransfer } from "./dominantSeventhTritone";
 import { augmentedIntervalRule, diminishedIntervalRule } from "./alteredMelodicIntervals";
 
 export { augmentedIntervalRule, diminishedIntervalRule };
@@ -51,33 +52,39 @@ function evaluateMelodyTransitionRule(
     if (!policy.matches(interval, writtenName, transition.voiceId)) continue;
     if (policy.id === "melody.tritone" && (isNeapolitanSeventhBassTritone(context, transition) ||
         isResolvedDominantSixthBass(context, transition))) continue;
-    diagnostics.push(
-      diagnostic(
-        policy.id,
-        transition.current.startTick,
-        transition.current.startTick + transition.current.durationTicks,
-        [transition.voiceId],
-        [transition.previous, transition.current],
-        policy.title,
-        policy.message(context.analysis, transition, interval),
-        {
-          params: { semitones: interval },
-          motionSameHarmony: policy.id === "melody.large-leap"
-            ? sameHarmonyAtMelodicAttack(context, transition.current.startTick, transition.voiceId,
-                transition.voiceId === "bass" && writtenName.number === 6 && writtenName.quality === "小")
-            : undefined,
-          evidence: [
-            noteEvidence(transition.previous, "前一音"),
-            noteEvidence(transition.current, "当前音"),
-            {
-              kind: "interval",
-              label: policy.evidenceLabel,
-              value: policy.evidenceValue(interval, writtenName),
-            },
-          ],
-        },
-      ),
+    const previousSeventh = policy.id === "melody.tritone" ? previousSeventhInTritoneTransfer(context, transition) : undefined;
+    const finding = diagnostic(
+      policy.id,
+      transition.current.startTick,
+      transition.current.startTick + transition.current.durationTicks,
+      [transition.voiceId],
+      [transition.previous, transition.current],
+      policy.title,
+      policy.message(context.analysis, transition, interval),
+      {
+        params: { semitones: interval },
+        motionSameHarmony: policy.id === "melody.large-leap"
+          ? sameHarmonyAtMelodicAttack(context, transition.current.startTick, transition.voiceId,
+              transition.voiceId === "bass" && writtenName.number === 6 && writtenName.quality === "小")
+          : undefined,
+        evidence: [
+          noteEvidence(transition.previous, "前一音"),
+          noteEvidence(transition.current, "当前音"),
+          ...(previousSeventh ? [noteEvidence(previousSeventh, "原声部的七音")] : []),
+          {
+            kind: "interval",
+            label: policy.evidenceLabel,
+            value: policy.evidenceValue(interval, writtenName),
+          },
+        ],
+      },
     );
+    if (previousSeventh) {
+      finding.motionSameHarmony = true;
+      finding.melodyTransitionId = transition.id;
+      finding.strictDefaultContext = "same-harmony";
+    }
+    diagnostics.push(finding);
   }
   return diagnostics;
 }
@@ -289,14 +296,14 @@ export const MELODY_RULES = defineRuleGroup(
     description:
       "检查单声部旋律中是否出现未妥善解决的三全音（增四度或减五度）跳进。",
     rationale:
-      "斯波索宾第 10、18 章允许下属到属六的低音下跳减五度后半音上行至主音。第 47 章另允许原位降Ⅱ七到原位属七的低音上行增四度或下行减五度。",
+      "斯波索宾第 10、18 章允许下属到属六的低音下跳减五度后半音上行至主音。第 47 章另允许原位降Ⅱ七到原位属七的低音上行增四度或下行减五度。默认的同和声豁免限于一般换位，实写属七的三音下跳增四度接手另一声部的七音时报告。",
     group: "melody",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
     dependencyScope: "note",
     coveredRuleIds: ["melody.augmented-interval", "melody.diminished-interval"],
     supportedExceptionContexts: ["same-harmony", "arpeggiation"],
-    defaultExceptionPolicies: {
+    contextualDefaultExceptionPolicies: {
       "same-harmony": "exempt",
     },
     evaluate: tritoneRule,

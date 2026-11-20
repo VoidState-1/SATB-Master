@@ -124,7 +124,10 @@ export function defineRuleCollection<
         throw new Error(`规则“${rule.id}”包含重复配置项“${option.key}”`);
       optionKeys.add(option.key);
     }
-    for (const context of Object.keys(rule.defaultExceptionPolicies)) {
+    for (const context of Object.keys({
+      ...rule.contextualDefaultExceptionPolicies,
+      ...rule.defaultExceptionPolicies,
+    })) {
       if (
         !rule.supportedExceptionContexts.includes(
           context as RuleExceptionContext,

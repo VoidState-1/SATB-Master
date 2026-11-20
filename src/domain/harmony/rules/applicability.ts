@@ -157,6 +157,7 @@ export function planRuleApplicability(
     | "dependencyScope"
     | "supportedExceptionContexts"
     | "defaultExceptionPolicies"
+    | "contextualDefaultExceptionPolicies"
   >,
   diagnostic: RuleDiagnostic,
   analysis: HarmonyAnalysis,
@@ -170,7 +171,10 @@ export function planRuleApplicability(
       ),
     ),
   ];
+  const contextualDefaults = { ...definition.contextualDefaultExceptionPolicies };
+  if (diagnostic.strictDefaultContext) delete contextualDefaults[diagnostic.strictDefaultContext];
   const effective = {
+    ...contextualDefaults,
     ...definition.defaultExceptionPolicies,
     ...overrides,
   };

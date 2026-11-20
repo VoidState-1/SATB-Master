@@ -88,6 +88,7 @@ export function BuiltinRuleDetails({
       <RuleExceptionFields
         contexts={rule.supportedExceptionContexts}
         defaults={rule.defaultExceptionPolicies}
+        contextualDefaults={rule.contextualDefaultExceptionPolicies}
         exceptions={ruleExceptions[rule.id] ?? {}}
         onChange={(policy) => onSetRuleException(rule.id, policy)}
       />

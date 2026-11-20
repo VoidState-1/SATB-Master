@@ -248,6 +248,7 @@ export function RuleTestInspector({
           <RuleExceptionFields
             contexts={definition.supportedExceptionContexts}
             defaults={definition.defaultExceptionPolicies}
+            contextualDefaults={definition.contextualDefaultExceptionPolicies}
             exceptions={testCase.execution.exceptions}
             onChange={patchExceptions}
           />

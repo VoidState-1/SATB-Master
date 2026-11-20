@@ -249,12 +249,14 @@ export function RuleOptionFields({
 export function RuleExceptionFields({
   contexts,
   defaults,
+  contextualDefaults,
   exceptions,
   disabled,
   onChange,
 }: {
   contexts: readonly RuleExceptionContext[];
   defaults: RuleExceptionPolicy;
+  contextualDefaults?: RuleExceptionPolicy;
   exceptions: RuleExceptionPolicy;
   disabled?: boolean;
   onChange(policy: RuleExceptionPolicy | undefined): void;
@@ -283,11 +285,13 @@ export function RuleExceptionFields({
           >
             <option value="default">
               规则默认（
-              {defaults[context] === "exempt"
-                ? "豁免"
-                : defaults[context] === "downgrade"
-                  ? "降一级"
-                  : "严格检查"}
+              {contextualDefaults?.[context] !== undefined
+                ? "视进行而定"
+                : defaults[context] === "exempt"
+                  ? "豁免"
+                  : defaults[context] === "downgrade"
+                    ? "降一级"
+                    : "严格检查"}
               ）
             </option>
             <option value="exempt">豁免</option>

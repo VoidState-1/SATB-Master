@@ -210,6 +210,8 @@ export type RuleDiagnostic = Omit<
   motionSameHarmony?: boolean;
   /** 确知诊断对应的旋律连接时，例外只使用本次起奏的证据。 */
   melodyTransitionId?: string;
+  /** A proved finding can call for strict handling within a contextual default. */
+  strictDefaultContext?: RuleExceptionContext;
 };
 
 export type RuleSkipReason =
