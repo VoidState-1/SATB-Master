@@ -179,3 +179,65 @@ bars 1..1 {
     expect(warnings(project, "soprano")).toEqual([]);
   });
 });
+
+describe("E.1 属低音持续时的同声部下邻音", () => {
+  function lowerNeighbor(options: Example = {}) {
+    return heldDominant({
+      soprano: "D5/4.",
+      tenor: "B3/8 A3/8 B3/8",
+      bass: "G2/4.",
+      ...options,
+    });
+  }
+
+  it.each(["C4", "E4"])("真正离属处无标签时，仍按男高落到 %s 检查解决", landing => {
+    const project = lowerNeighbor({ successor: `${landing}/4.` });
+    const departure = project.ppq * 3 / 2;
+    project.chordTrack.regions = project.chordTrack.regions.filter(region => region.startTick < departure);
+
+    const reports = checkHarmony(project).diagnostics.filter(item =>
+      item.ruleId === "resolution.leading-tone" && item.voiceIds.includes("tenor"));
+    if (landing === "C4") {
+      expect(reports).toHaveLength(0);
+    } else {
+      expect(reports).toMatchObject([{
+        tick: departure,
+        noteIds: ["note-T-0", `note-T-${departure}`],
+        trace: expect.arrayContaining([
+          { tick: project.ppq / 2, outcome: "continue", reason: "leading-tone-neighbor-return" },
+          { tick: departure, outcome: "violate", reason: "leading-tone-moved-elsewhere" },
+        ]),
+      }]);
+    }
+  });
+
+  it("同一低音、同一属七构成音恢复，但属三音由另一声部奏回时不算男高下邻返回", () => {
+    const byTenor = lowerNeighbor();
+    const byAlto = lowerNeighbor({
+      alto: "F4/4 B3/8",
+      tenor: "B3/8 A3/8 F3/8",
+    });
+    expect(warnings(byTenor, "tenor")).toEqual([]);
+    expect(warnings(byAlto, "tenor")).toContainEqual({
+      tick: byAlto.ppq / 2,
+      noteIds: ["note-T-0", `note-T-${byAlto.ppq / 2}`],
+    });
+  });
+
+  it("下邻与返回之间插入休止时保留下邻起点的告警", () => {
+    const project = lowerNeighbor({ tenor: "B3/8 A3/16 r/16 B3/8" });
+    expect(warnings(project, "tenor")).toContainEqual({
+      tick: project.ppq / 2,
+      noteIds: ["note-T-0", `note-T-${project.ppq / 2}`],
+    });
+  });
+
+  it("下邻虽在原声部返回，句界仍禁止跨句延续", () => {
+    const project = lowerNeighbor();
+    addPhraseBoundary(project, project.ppq);
+    expect(warnings(project, "tenor")).toContainEqual({
+      tick: project.ppq / 2,
+      noteIds: ["note-T-0", `note-T-${project.ppq / 2}`],
+    });
+  });
+});
