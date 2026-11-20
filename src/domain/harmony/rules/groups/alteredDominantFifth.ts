@@ -5,7 +5,7 @@ import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import { soundsDeclaredChord } from "../../writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../helpers/writtenResolution";
+import { hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
 
 function resolvesMember(
   source: AnalysisSlice, target: AnalysisSlice, member: SpelledPitchClass,

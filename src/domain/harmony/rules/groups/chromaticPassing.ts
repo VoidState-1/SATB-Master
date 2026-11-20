@@ -7,7 +7,7 @@ import { soundsCompleteWrittenChord, soundsDeclaredChord } from "../../writtenVo
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasInsertedChromaticResolution } from "./insertedChromaticResolution";
 import { hasExactPitch } from "../helpers/core";
-import { hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../helpers/writtenResolution";
+import { hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
 
 function writtenDegree(key: KeyReference, pitch: SpelledPitchClass) {
   return (stepIndex(pitch.step) - stepIndex(key.tonic.step) + 7) % 7 + 1;

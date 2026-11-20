@@ -3,7 +3,7 @@ import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, spelled
 import { VOICE_ORDER } from "../../../project";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { resolvesInVoice, matchesWrittenChord } from "../helpers/writtenResolution";
+import { resolvesInVoice, matchesWrittenChord } from "../../writtenResolution";
 
 function agreesWithDegree(rules: HarmonyRuleContext, slice: AnalysisSlice, key: KeyReference, expected: number) {
   if (!slice.chord) return true;

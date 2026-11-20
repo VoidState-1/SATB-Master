@@ -3,7 +3,7 @@ import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, stepInd
   type SpelledPitchClass } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project";
 import type { MelodyTransition } from "../../analysis";
-import { hasWrittenVoicing, resolvesInVoice, matchesWrittenChord } from "../helpers/writtenResolution";
+import { hasWrittenVoicing, resolvesInVoice, matchesWrittenChord } from "../../writtenResolution";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 

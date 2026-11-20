@@ -4,7 +4,7 @@ import { pitchClassEquals, scaleDegreePitchClass, type KeyLike } from "../../../
 import { VOICE_ORDER } from "../../../project/voice";
 import { eventAtTick, ticksPerBeat } from "../../../time";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { matchesWrittenChord } from "../helpers/writtenResolution";
+import { matchesWrittenChord } from "../../writtenResolution";
 
 function agreesWithTonicReading(context: HarmonyRuleContext, slice: AnalysisSlice, key: KeyLike, dominant: boolean) {
   const chord = slice.chord;

@@ -3,7 +3,7 @@ import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi 
 import type { AnalysisSlice } from "../../analysis";
 import { movesToWrittenTone } from "../../dominantSixthMotion";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { matchesWrittenChord, resolvesInVoice } from "./writtenResolution";
+import { matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
 
 const upper = ["soprano", "alto", "tenor"] as const;
 

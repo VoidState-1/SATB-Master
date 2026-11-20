@@ -13,7 +13,7 @@ import {
 } from "../../../pitch";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { hasWrittenVoicing } from "../helpers/writtenResolution";
+import { hasWrittenVoicing } from "../../writtenResolution";
 import { activeNotes } from "../helpers/core";
 
 function sameKey(left: KeyReference, right: KeyReference) {

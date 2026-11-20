@@ -1,8 +1,8 @@
-import { chordToneSpellings, type ChordQuality } from "../../../chordModel";
-import { pitchClassEquals, writtenInterval, type SpelledPitchClass } from "../../../pitch";
-import type { VoiceId } from "../../../project";
-import type { AnalysisSlice } from "../../analysis";
-import { soundsCompleteWrittenTones } from "../../writtenVoicing";
+import { chordToneSpellings, type ChordQuality } from "../chordModel";
+import { pitchClassEquals, writtenInterval, type SpelledPitchClass } from "../pitch";
+import type { VoiceId } from "../project";
+import type { AnalysisSlice } from "./analysis";
+import { soundsCompleteWrittenTones } from "./writtenVoicing";
 
 export function hasWrittenVoicing(slice: AnalysisSlice, tones: readonly SpelledPitchClass[]) {
   const bass = slice.notes.bass;

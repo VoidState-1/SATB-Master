@@ -1,7 +1,7 @@
 import { chordToneSpellings, type ChordQuality, type KeyReference } from "../../../chordModel";
 import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import type { AnalysisNote, AnalysisSlice, MelodyTransition } from "../../analysis";
-import { hasWrittenVoicing } from "../helpers/writtenResolution";
+import { hasWrittenVoicing } from "../../writtenResolution";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { ConnectionView } from "../context/views";

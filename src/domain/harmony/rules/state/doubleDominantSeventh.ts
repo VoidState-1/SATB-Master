@@ -1,6 +1,6 @@
 import { chordIdentityInversion, chordToneSpellings, type KeyReference } from "../../../chordModel";
 import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../../pitch";
-import { hasWrittenVoicing } from "../helpers/writtenResolution";
+import { hasWrittenVoicing } from "../../writtenResolution";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { crossesManualPhraseBoundary } from "../groups/dominantSixthSubstitution";

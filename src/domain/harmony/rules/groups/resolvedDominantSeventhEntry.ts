@@ -2,7 +2,7 @@ import { chordToneSpellings } from "../../../chordModel";
 import { pitchClassEquals, scaleDegreePitchClass } from "../../../pitch";
 import type { MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { matchesWrittenChord, resolvesInVoice } from "../helpers/writtenResolution";
+import { matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
 
 // §§14.3, 15.3. In a dominant progression an ascending diminished fifth
 // can introduce the seventh, which then descends in the same voice to the tonic third.
