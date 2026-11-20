@@ -106,8 +106,8 @@ function hasRule(project: ProjectDocument, ruleId: string) {
 }
 
 describe("完整规则目录首版实现", () => {
-  it("69 条目录规则均有可执行实现", () => {
-    expect(HARMONY_RULE_DEFINITIONS).toHaveLength(69);
+  it("70 条目录规则均有可执行实现", () => {
+    expect(HARMONY_RULE_DEFINITIONS).toHaveLength(70);
     expect(
       HARMONY_RULE_DEFINITIONS.every(
         (item) => "evaluate" in item || "process" in item,

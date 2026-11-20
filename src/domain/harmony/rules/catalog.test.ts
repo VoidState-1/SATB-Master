@@ -4,8 +4,11 @@ import { defineRuleCollection } from "./defineRule";
 import { VOICE_RULES } from "./groups/voice";
 
 describe("内置规则对象集合", () => {
-  it("包含 69 个完整规则对象并保持目录顺序", () => {
-    expect(HARMONY_RULE_DEFINITIONS).toHaveLength(69);
+  it("包含 70 个完整规则对象并保持目录顺序", () => {
+    expect(HARMONY_RULE_DEFINITIONS).toHaveLength(70);
+    expect(HARMONY_RULE_DEFINITIONS).toContainEqual(expect.objectContaining({
+      id: "resolution.altered-dominant-fifth", catalogNumber: "E.6",
+    }));
     expect(HARMONY_RULE_DEFINITIONS[0].catalogNumber).toBe("A.1");
     expect(HARMONY_RULE_DEFINITIONS.at(-1)?.catalogNumber).toBe("K.4");
     expect(

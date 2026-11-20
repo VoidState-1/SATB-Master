@@ -1,3 +1,4 @@
+import { ALTERED_DOMINANT_FIFTH_RESOLUTION_RULE } from "./alteredDominantFifthResolution";
 import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { chordIdentityToneSpellings } from "../../../chordModel";
 import type { RuleDiagnostic } from "../../runtime";
@@ -262,6 +263,7 @@ export const CONNECTION_RULES = defineRuleGroup(
     dependencyScope: "phrase",
     evaluate: augmentedSixthResolutionRule,
   }),
+  ALTERED_DOMINANT_FIFTH_RESOLUTION_RULE,
   defineStatelessRule({
     id: "function.deceptive-cadence-target",
     catalogNumber: "G.5",
