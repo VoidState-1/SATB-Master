@@ -1,9 +1,9 @@
 import { chordIdentityToneSpellings, chordToneSpellings } from "../../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, stepIndex, writtenInterval,
+import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, stepIndex,
   type SpelledPitchClass } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project";
 import type { MelodyTransition } from "../../analysis";
-import { hasWrittenVoicing, resolvesInVoice, matchesWrittenChord } from "../../writtenResolution";
+import { doublesMoveAgainstAlteration, hasWrittenVoicing, resolvesInVoice, matchesWrittenChord } from "../../writtenResolution";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 
@@ -26,16 +26,7 @@ export function preparesWrittenAppliedSeventh(context: HarmonyRuleContext, motio
       (immediatelyBefore.chord && !chordIdentityToneSpellings(immediatelyBefore.chord.identity)
         .some(t => pitchClassEquals(t, previous.pitch))) ||
       !hasCompleteWrittenTertianVoicing(VOICE_ORDER.map(v => immediatelyBefore.notes[v]!.pitch))) return false;
-  // §32.4c. If the altered degree was doubled, require the other copy
-  // to move by a written step in the opposite direction.
-  for (const other of VOICE_ORDER) {
-    const old = immediatelyBefore.notes[other]!, next = middle.notes[other];
-    if (other === voiceId || !pitchClassEquals(old.pitch, previous.pitch)) continue;
-    if (!next) return false;
-    const step = writtenInterval(old.pitch, next.pitch);
-    if (step.diatonicSteps !== -entry.semitones || Math.sign(step.semitones) !== step.diatonicSteps ||
-        Math.abs(step.semitones) > 2) return false;
-  }
+  if (!doublesMoveAgainstAlteration(immediatelyBefore, middle, voiceId, previous.pitch, entry.semitones)) return false;
 
   const home = middle.key, tonic = target.notes.bass.pitch;
   const degree = (pitch: SpelledPitchClass) => (stepIndex(pitch.step) - stepIndex(home.tonic.step) + 7) % 7 + 1;

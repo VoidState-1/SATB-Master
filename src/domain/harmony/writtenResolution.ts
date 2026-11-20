@@ -1,6 +1,6 @@
 import { chordToneSpellings, type ChordQuality } from "../chordModel";
 import { pitchClassEquals, writtenInterval, type SpelledPitchClass } from "../pitch";
-import type { VoiceId } from "../project";
+import { VOICE_ORDER, type VoiceId } from "../project";
 import type { AnalysisSlice } from "./analysis";
 import { soundsCompleteWrittenTones } from "./writtenVoicing";
 
@@ -28,4 +28,20 @@ export function resolvesInVoice(source: WrittenVoiceFrame, target: WrittenVoiceF
   const step = writtenInterval(from.pitch, to.pitch);
   return step.diatonicSteps === direction &&
     (step.semitones === direction || (direction === -1 && step.semitones === -2));
+}
+
+/** §32.4c. A doubled chromatically altered degree leaves in contrary stepwise motion. */
+export function doublesMoveAgainstAlteration(
+  before: Pick<AnalysisSlice, "notes">, after: Pick<AnalysisSlice, "notes">,
+  alteredVoice: VoiceId, unalteredTone: SpelledPitchClass, semitones: number,
+) {
+  return VOICE_ORDER.every(voice => {
+    const from = before.notes[voice];
+    if (voice === alteredVoice || !from || !pitchClassEquals(from.pitch, unalteredTone)) return true;
+    const to = after.notes[voice];
+    if (!to) return false;
+    const motion = writtenInterval(from.pitch, to.pitch);
+    return motion.diatonicSteps === -semitones && Math.sign(motion.semitones) === -semitones &&
+      Math.abs(motion.semitones) <= 2;
+  });
 }
