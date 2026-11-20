@@ -9,6 +9,7 @@ import { createHarmonyRuleContext } from "../context/createRuleContext";
 import { writtenLocalLeadingToneKey } from "./leadingToneTarget";
 
 const rule = "resolution.leading-tone";
+const bMajor = { tonic: { step: "B", alter: 0 }, mode: "major" };
 const seventh = `satb 1
 key G major
 meter 2/4
@@ -48,6 +49,11 @@ function at(project: ProjectDocument, beats = 1) {
   return checkHarmony(project).diagnostics.filter(d => d.ruleId === rule && d.tick === beats * project.ppq);
 }
 
+function observedKeyAt(project: ProjectDocument, beats = 0) {
+  const rules = createHarmonyRuleContext(buildHarmonyAnalysis(project));
+  return writtenLocalLeadingToneKey(rules, rules.sliceAt(beats * project.ppq)!);
+}
+
 function identity(root: string, bass: string, quality: ChordQuality): ChordIdentity {
   return { root: parsePitchClass(root)!, bass: parsePitchClass(bass)!,
     structure: { kind: "tertian", quality, extensions: [], alterations: [] } };
@@ -55,11 +61,15 @@ function identity(root: string, bass: string, quality: ChordQuality): ChordIdent
 
 describe("E.1 collects the third of an independently observed local dominant", () => {
   it("uses the jointly written third and seventh in an unlabelled F-sharp dominant", () => {
-    expect(at(compile(seventh))).toEqual([]);
+    const project = compile(seventh);
+    expect(observedKeyAt(project)).toEqual(bMajor);
+    expect(at(project)).toEqual([]);
   });
 
   it("uses the written inverted local dominant triad when its own leading tone resolves", () => {
-    expect(at(compile(triad))).toEqual([]);
+    const project = compile(triad);
+    expect(observedKeyAt(project)).toEqual({ tonic: { step: "F", alter: 1 }, mode: "minor" });
+    expect(at(project)).toEqual([]);
   });
 
   it("accepts matching authored absolute identities even on a locked track", () => {
@@ -70,6 +80,7 @@ describe("E.1 collects the third of an independently observed local dominant", (
     source.semantics = undefined;
     landing.semantics = undefined;
     project.chordTrack.locked = true;
+    expect(observedKeyAt(project)).toEqual(bMajor);
     expect(at(project)).toEqual([]);
   });
 
@@ -88,13 +99,18 @@ describe("E.1 collects the third of an independently observed local dominant", (
     ["the same pitch class only arrives in a different octave", triad.replace("E#3/4 F#3/4", "E#3/4 F#2/4")],
     ["the tonic is reached by another part", triad.replace("E#3/4 F#3/4", "E#3/4 C#3/4")],
     ["the destination is missing the fifth", triad.replace("A4/4", "F#4/4").replace("C#4/4 C#4/4", "C#4/4 A3/4")],
-  ])("keeps the home-key warning when %s", (_name, text) => {
-    expect(at(compile(text))).toMatchObject([{ voiceIds: ["alto"], params: { key: "A major" } }]);
+  ])("withholds local-tonic evidence when %s", (_name, text) => {
+    const project = compile(text);
+    expect(observedKeyAt(project)).toBeUndefined();
+    // G-sharp is the written C-sharp triad's fifth.
+    expect(at(project)).toEqual([]);
   });
 
   it("a tonic third in the wrong voice cannot witness a seventh resolution", () => {
     const elsewhere = held.replace("C#4/2 F#4/4", "C#4/2 D#4/4").replace("E3/2 D#3/4", "E3/2 F#2/4");
-    expect(at(compile(elsewhere), 2)).toMatchObject([{ voiceIds: ["soprano"], params: { key: "G major" } }]);
+    const project = compile(elsewhere);
+    expect(observedKeyAt(project, 1)).toBeUndefined();
+    expect(at(project, 2)).toEqual([]);
   });
 
   it("respects a given dominant identity that conflicts with the written F-sharp seventh", () => {
@@ -113,12 +129,13 @@ describe("E.1 collects the third of an independently observed local dominant", (
     expect(at(project)).toMatchObject([{ voiceIds: ["tenor"], params: { key: "B minor" } }]);
   });
 
-  it("keeps a conflicting authored landing that declares the pivot as the next key's dominant", () => {
+  it("withholds local-tonic evidence when the landing is declared the next key's dominant", () => {
     const project = compile(seventh, "r/4 D6/4");
     const landing = project.chordTrack.regions[0];
     landing.identity = identity("B:0", "D:1", "major");
     landing.semantics!.interpretations[0].localKey = { tonic: parsePitchClass("E:0")!, mode: "minor" };
-    expect(at(project)).toMatchObject([{ voiceIds: ["soprano"], params: { key: "G major" } }]);
+    expect(observedKeyAt(project)).toBeUndefined();
+    expect(at(project)).toEqual([]);
   });
 
   it("accepts the same landing when its confirmed home degree names the actual root", () => {
@@ -130,19 +147,22 @@ describe("E.1 collects the third of an independently observed local dominant", (
     meaning.degree = 3;
     delete meaning.designation;
     delete meaning.localKey;
+    expect(observedKeyAt(project)).toEqual(bMajor);
     expect(at(project)).toEqual([]);
   });
 
   it("cannot borrow a seventh marked as an ornament to justify a new key", () => {
     const project = compile(held);
     project.satbTracks.find(t => t.voice === "bass")!.notes[0].nonChordToneRole = "other";
-    expect(at(project, 2)).toMatchObject([{ voiceIds: ["soprano"], params: { key: "G major" } }]);
+    expect(observedKeyAt(project, 1)).toBeUndefined();
+    expect(at(project, 2)).toEqual([]);
   });
 
   it("does not borrow a resolution across a manual phrase boundary", () => {
     const project = compile(seventh);
     project.structure.phraseBoundaries.push({ id: "break", source: "manual", confidence: "certain", tick: project.ppq });
-    expect(at(project)).toMatchObject([{ voiceIds: ["soprano"], params: { key: "G major" } }]);
+    expect(observedKeyAt(project)).toBeUndefined();
+    expect(at(project)).toEqual([]);
   });
 
   it.each([[0.5], [1], [0.5, 1]])("survives a written-key reminder at %o", (...beats) => {
@@ -150,6 +170,7 @@ describe("E.1 collects the third of an independently observed local dominant", (
     for (const beat of beats) {
       project.keyEvents.push({ ...project.keyEvents[0], id: "reminder-" + beat, tick: beat * project.ppq });
     }
+    expect(observedKeyAt(project)).toEqual(bMajor);
     expect(at(project)).toEqual([]);
   });
 
@@ -162,8 +183,7 @@ describe("E.1 collects the third of an independently observed local dominant", (
         { ...project.keyEvents[0], id: "return", tick: project.ppq * 3 / 4 },
       );
       expect(validateProject(project)).toBe(true);
-      const rules = createHarmonyRuleContext(buildHarmonyAnalysis(project));
-      expect(writtenLocalLeadingToneKey(rules, rules.sliceAt(0)!)).toBeUndefined();
+      expect(observedKeyAt(project)).toBeUndefined();
     }
   });
 
@@ -180,24 +200,26 @@ describe("E.1 collects the third of an independently observed local dominant", (
         { tick: 1920, outcome: "violate", reason: "leading-tone-moved-elsewhere" },
       ],
     }]);
-    const rules = createHarmonyRuleContext(buildHarmonyAnalysis(project));
-    expect(writtenLocalLeadingToneKey(rules, rules.sliceAt(1200)!)).toBeUndefined();
+    expect(observedKeyAt(project, 1.25)).toBeUndefined();
   });
 
   it("cannot borrow the later dominant proof after an actual intervening pitch change", () => {
     const project = compile(seventh.replace("F#4/4 B4/4", "F#4/16 F4/16 F#4/8 B4/4"));
-    expect(at(project, 0.25)).toMatchObject([{ voiceIds: ["soprano"], params: { key: "G major" } }]);
+    expect(observedKeyAt(project)).toBeUndefined();
+    expect(observedKeyAt(project, 0.5)).toEqual(bMajor);
+    expect(at(project, 0.25)).toEqual([]);
     expect(at(project)).toEqual([]);
   });
 });
 
 describe("Written role and attained tonic", () => {
-  it("retargets the apparent home leading tone when it is the root of a local dominant triad", () => {
-    const bareTriad = seventh.replace("E3/4 D#3/4", "F#3/4 D#3/4");
-    expect(at(compile(bareTriad))).toEqual([]);
+  it("recognizes F-sharp as the root of the written local dominant triad", () => {
+    const project = compile(seventh.replace("E3/4 D#3/4", "F#3/4 D#3/4"));
+    expect(observedKeyAt(project)).toEqual(bMajor);
+    expect(at(project)).toEqual([]);
   });
 
-  it("retargets the apparent home leading tone when it is the seventh of the local dominant", () => {
+  it("recognizes B as the seventh of the written local dominant", () => {
     const lowered = `satb 1
 key C major
 meter 2/4
@@ -207,7 +229,9 @@ bars 1..1 {
  T: | C#4/2 |
  B: | B2/4 A2/4 |
 }`;
-    expect(at(compile(lowered))).toEqual([]);
+    const project = compile(lowered);
+    expect(observedKeyAt(project)).toEqual({ tonic: { step: "F", alter: 1 }, mode: "minor" });
+    expect(at(project)).toEqual([]);
   });
 
   it("reads the doubled-root dominant seventh with an omitted fifth, as in L075", () => {
@@ -237,9 +261,13 @@ bars 1..1 {
  T: | G#3/4 C#4/4 |
  B: | D#3/4 C#3/4 |
 }`;
-    expect(at(compile(incomplete))).toEqual([]);
-    const wrongThird = incomplete.replace("B#4/4 C#5/4", "B#4/4 E5/4");
-    expect(at(compile(wrongThird))).toMatchObject([{ voiceIds: ["bass"], params: { key: "E minor" } }]);
+    const resolved = compile(incomplete);
+    expect(observedKeyAt(resolved)).toEqual({ tonic: { step: "C", alter: 1 }, mode: "minor" });
+    expect(at(resolved)).toEqual([]);
+    const wrongThird = compile(incomplete.replace("B#4/4 C#5/4", "B#4/4 E5/4"));
+    expect(observedKeyAt(wrongThird)).toBeUndefined();
+    // D-sharp in the bass is the fifth of G-sharp seventh.
+    expect(at(wrongThird)).toEqual([]);
   });
 
   it("respects a mid-voicing chord declaration that conflicts with the witnessed harmony", () => {
@@ -249,6 +277,7 @@ bars 1..1 {
     const region = same.chordTrack.regions[0];
     region.identity = identity("F:1", "E:0", "dominant7");
     region.semantics = undefined;
+    expect(observedKeyAt(same)).toEqual(bMajor);
     expect(at(same)).toEqual([]);
   });
 });

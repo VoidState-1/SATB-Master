@@ -1,7 +1,6 @@
 import {
   chordIdentityToneSpellings,
   chordIdentityToneSpellingForDegree,
-  identityContainsWrittenPitchClass,
   type ChordQuality,
 } from "../../../chordModel";
 import type { VoiceId } from "../../../project/types";
@@ -31,12 +30,11 @@ import type {
 } from "./obligation";
 import { hasExactPitch, noteEvidence } from "../helpers/core";
 import type { SpanView } from "../context/views";
-import { leadingToneResolutionKey, writtenLocalLeadingToneKey } from "./leadingToneTarget";
+import { leadingToneSourceKey } from "./leadingToneTarget";
 import { dominantNinthTone, writtenDominantNinthResolves } from "../../writtenDominantNinth";
 import { preparedSeventhEntries } from "./preparedSeventh";
 import { openedSourceChord, openedSourceNote, sameSeventhContext, supportsTendencyResolutionRules } from "./tendencyContext";
 import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
-import { majorMediantToSubdominant } from "../groups/majorMediant";
 import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneNeighbor";
 
 export { supportsTendencyResolutionRules } from "./tendencyContext";
@@ -85,19 +83,25 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
     const { slice, previous, transitionFromPrevious } = context;
     const chord = slice.chord;
     if (!supportsTendencyResolutionRules(context, chord)) return [];
-    const writtenLocalKey = writtenLocalLeadingToneKey(context.rules, slice);
-    const targetKey = writtenLocalKey ?? leadingToneResolutionKey(slice, context.rules.harmony);
+    const targetKey = leadingToneSourceKey(context.rules, slice);
+    if (!targetKey) return [];
     const { tonic: targetTonic, mode: targetMode } = targetKey;
     const leadingTone = leadingTonePitchClass(targetKey);
-    if (chord && !identityContainsWrittenPitchClass(chord.identity, leadingTone)) return [];
 
-    const previousChord = previous?.chord;
-    const canStartOnHeldNote = chord && previousChord && transitionFromPrevious?.contiguous &&
-      transitionFromPrevious.sameKey && !identityContainsWrittenPitchClass(previousChord.identity, leadingTone);
-    const voices = writtenLocalKey || canStartOnHeldNote ? VOICE_ORDER : moment.attackedVoiceIds;
+    // A sustained note can acquire a tendency when the harmony changes under
+    // it (for instance the seventh of Imaj7 becomes the third of V).
+    const heldLeading = previous && transitionFromPrevious?.contiguous && transitionFromPrevious.sameKey &&
+      VOICE_ORDER.some(voice => {
+        const note = slice.notes[voice];
+        return note && previous.notes[voice]?.id === note.id && pitchClassEquals(note.pitch, leadingTone);
+      });
+    const previousTarget = heldLeading && supportsTendencyResolutionRules(context, previous.chord)
+      ? leadingToneSourceKey(context.rules, previous) : undefined;
+    const canStartHeld = heldLeading && (!previousTarget || !keyEquals(previousTarget, targetKey));
+    const voices = canStartHeld ? VOICE_ORDER : moment.attackedVoiceIds;
     return voices.flatMap((voiceId) => {
       const note = slice.notes[voiceId];
-      if (!note || !pitchClassEquals(note.pitch, leadingTone)) return [];
+      if (!note || note.nonChordToneRole || !pitchClassEquals(note.pitch, leadingTone)) return [];
       if (!moment.attackedVoiceIds.includes(voiceId) && previous?.notes[voiceId]?.id !== note.id) return [];
       if (moment.attackedVoiceIds.includes(voiceId)) {
         const frame = leadingNeighborFrame(context.rules, voiceId, note);
@@ -427,20 +431,6 @@ export function leadingToneDescendsInMajorDeceptiveMotion(environment: Obligatio
   const landing = slice.notes[payload.voiceId];
   return Boolean(previous && leading && landing && hasMajorDeceptiveLeadingToneMotion(context, payload.voiceId) &&
     obligationFollowsWrittenLeadingTone(environment, previous, leading, landing, scaleDegreePitchClass(slice.key, 6)));
-}
-
-export function leadingToneDescendsFromMediant(environment: ObligationEnvironment<LeadingTonePayload>) {
-  const { context, obligation: { payload, openedAt } } = environment;
-  const before = context.previous, after = context.slice;
-  if (payload.voiceId !== "soprano" || !before?.chord || context.rules.sliceAt(openedAt.tick)?.chord?.id !== before.chord.id) return false;
-  const key = majorMediantToSubdominant(context.rules, before, after);
-  const leading = before.notes.soprano, landing = after.notes.soprano;
-  if (!key || !leading || !landing || !pitchClassEquals(leading.pitch, scaleDegreePitchClass(key, 7)) ||
-      Object.values(before.notes).some(note => toMidi(note.pitch) > toMidi(leading.pitch)) ||
-      Object.values(after.notes).some(note => toMidi(note.pitch) > toMidi(landing.pitch))) return false;
-  const descent = writtenInterval(leading.pitch, landing.pitch);
-  return descent.diatonicSteps === -1 && descent.semitones === -2 &&
-    obligationFollowsWrittenLeadingTone(environment, before, leading, landing, scaleDegreePitchClass(key, 6), key);
 }
 
 function resolvesDownward<Payload extends VoiceObligationPayload>(

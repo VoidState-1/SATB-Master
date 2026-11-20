@@ -1,5 +1,4 @@
 import { chordIdentityInversion, chordIdentityToneSpellings } from "../../../chordModel";
-import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
   keyEquals,
@@ -9,7 +8,6 @@ import {
   spelledPitchEquals,
   toMidi,
   writtenInterval,
-  type SpelledPitchClass,
 } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -139,83 +137,4 @@ export function leavesDiatonicSequenceLeadingTone(environment: ObligationEnviron
     spelledPitchEquals(lastHeadNote.pitch, leading.pitch) &&
     !pitchClassEquals(lastHead.root, scaleDegreePitchClass(key, 5)) &&
     !pitchClassEquals(leading.pitch, leadingTonePitchClass({ tonic: lastArrival.root, mode: "major" })));
-}
-
-// The four natural seventh-chord members starting at this scale index.
-function naturalSeventh(scale: readonly SpelledPitchClass[], root: number) {
-  return [0, 2, 4, 6].map(offset => scale[(root + offset) % 7]);
-}
-
-function naturalFrame(frame: AnalysisSlice, key: AnalysisSlice["key"], scale: readonly SpelledPitchClass[]) {
-  if (!frame.completeSatb || frame.key.id !== key.id) return false;
-  const { chord } = frame, semantics = chord?.semantics;
-  if (semantics?.cadenceRole || semantics?.pedalContext || semantics?.mixture || semantics?.alternatives?.length ||
-      (semantics && semantics.interpretations.length !== 1)) return false;
-  const reading = semantics?.interpretations[0];
-  if (reading && (reading.appliedTarget || reading.designation?.specialRole ||
-      (reading.designation && !["primary", "side-degree"].includes(reading.designation.kind)) ||
-      (reading.localKey && !keyEquals(reading.localKey, key)) ||
-      !pitchClassEquals(chord!.identity.root, scaleDegreePitchClass(key, reading.degree, reading.degreeAlteration)))) return false;
-
-  const structure = chord?.identity.structure;
-  if (chord && (structure?.kind !== "tertian" || structure.extensions.length || structure.alterations.length ||
-      !pitchClassEquals(frame.notes.bass!.pitch, chord.identity.bass))) return false;
-  const members = chord ? chordIdentityToneSpellings(chord.identity) : scale;
-  let ceiling = Infinity;
-  return VOICE_ORDER.every(v => {
-    const note = frame.notes[v]!;
-    const midi = toMidi(note.pitch);
-    if (note.nonChordToneRole || midi > ceiling || !scale.some(p => pitchClassEquals(p, note.pitch)) ||
-        !members.some(p => pitchClassEquals(p, note.pitch))) return false;
-    ceiling = midi;
-    return true;
-  });
-}
-
-/** §26.9, ex. 26-381. Read the two complete sevenths in the parts. Their
- * roots and thirds stay; the fifth and seventh each descend one written step. */
-function seventhPair(head: AnalysisSlice, arrival: AnalysisSlice, voice: VoiceId, scale: readonly SpelledPitchClass[]) {
-  const fifth = head.notes[voice];
-  const index = scale.findIndex(p => fifth && pitchClassEquals(fifth.pitch, p));
-  if (index < 0) return false;
-  const source = naturalSeventh(scale, (index + 3) % 7);
-  const target = naturalSeventh(scale, (index + 6) % 7);
-  for (const [frame, tones] of [[head, source], [arrival, target]] as const) {
-    if (!tones.every(t => VOICE_ORDER.some(v => frame.notes[v] && pitchClassEquals(frame.notes[v]!.pitch, t))) ||
-        (frame.chord && !pitchClassEquals(frame.chord.identity.root, tones[0]))) return false;
-  }
-  return VOICE_ORDER.every(v => {
-    const before = head.notes[v]!.pitch, after = arrival.notes[v]!.pitch;
-    const member = source.findIndex(t => pitchClassEquals(before, t));
-    if (member < 2) return spelledPitchEquals(before, after);
-    const step = writtenInterval(before, after);
-    return pitchClassEquals(after, target[member - 2]) && step.diatonicSteps === -1 &&
-      (step.semitones === -1 || step.semitones === -2);
-  });
-}
-
-export function resolvesCopiedSeventhFifth({ context, obligation }: ObligationEnvironment<LeadingTonePayload>) {
-  const { rules, previous, slice } = context;
-  const { openedAt, openedBy, payload } = obligation;
-  const key = slice.key, voice = payload.voiceId, from = previous?.notes[voice], to = slice.notes[voice];
-  if (!previous || !from || !to || previous.tick !== openedAt.tick || from.startTick !== openedAt.tick ||
-      !openedBy.noteIds?.includes(from.id) || to.startTick !== slice.tick || previous.endTick !== slice.tick ||
-      !keyEquals(key, { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode }) ||
-      !pitchClassEquals(from.pitch, leadingTonePitchClass(key))) return false;
-  const scale = degrees.map(degree => scaleDegreePitchClass(key, degree));
-  if (!seventhPair(previous, slice, voice, scale)) return false;
-
-  // Adjacent pairs (ex. 381), or a pair plus a continuation of the same
-  // duration (keyboard 16). Compare the intervening music, including reattacks.
-  const start = previous.tick, pairLength = slice.endTick - start;
-  return [pairLength, 2 * pairLength].some(period => {
-    const modelStart = start - period;
-    if (modelStart < 0 || crossesManualPhraseBoundary(rules, modelStart, start + period - 1)) return false;
-    const frames = (l: number, h: number) => [...rules.slices({ overlapping: { fromTick: l, toTick: h } })];
-    const model = frames(modelStart, start), copy = frames(start, start + period);
-    if (model[0]?.tick !== modelStart || copy.at(-1)?.endTick !== start + period ||
-        ![...model, ...copy].every(f => naturalFrame(f, key, scale))) return false;
-    const steps = writtenInterval(model[0].notes.bass!.pitch, previous.notes.bass!.pitch).diatonicSteps;
-    return Math.abs(steps) === 1 && copiedFrames(model, copy, steps) && seventhPair(model[0], model[1], voice, scale);
-  });
 }

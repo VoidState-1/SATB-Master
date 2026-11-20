@@ -15,12 +15,16 @@ import type {
 import { leadingTonePitchClass, scaleDegreePitchClass, type KeyLike } from "../../../pitch";
 import { chordMemberFacts } from "../sharedFacts";
 
-export function leadingToneForFunction(baseKey: KeyLike, interpretation?: HarmonyInterpretation) {
-  const key = interpretation?.localKey ?? baseKey;
+export function leadingTargetDegree(interpretation?: HarmonyInterpretation) {
   const designation = interpretation?.designation?.kind;
-  const targetDegree = interpretation?.appliedTarget?.degree ?? (
+  return interpretation?.appliedTarget?.degree ?? (
     designation === "double-dominant" || designation === "double-dominant-leading-tone" ? 5 : undefined
   );
+}
+
+export function leadingToneForFunction(baseKey: KeyLike, interpretation?: HarmonyInterpretation) {
+  const key = interpretation?.localKey ?? baseKey;
+  const targetDegree = leadingTargetDegree(interpretation);
   if (!targetDegree) return { tone: leadingTonePitchClass(key), applied: false };
   return {
     tone: leadingTonePitchClass({ tonic: scaleDegreePitchClass(key, targetDegree), mode: "major" }),

@@ -215,24 +215,12 @@ bars 1..3 {
     expect(events(project, seventh)).not.toContainEqual([4800, "alto"]);
   });
 
-  it("requires the earlier complete sounding model", () => {
-    const project = compileScoreText(reattack).project;
-    project.satbTracks.find(track => track.voice === "tenor")!.notes[1].pitch.octave++;
-    expect(events(project, leading)).toContainEqual([4800, "alto"]);
-  });
-
-  it("does not use a preceding statement across a manual boundary", () => {
-    const project = compileScoreText(reattack).project;
-    project.structure.phraseBoundaries.push({ id: "cut", source: "manual", tick: 1920, confidence: "certain" });
-    expect(events(project, leading)).toContainEqual([4800, "alto"]);
-  });
-
-  it("keeps the leading and the actual seventh warnings if the alto leaps instead", () => {
+  it("reports the alto seventh and the bass leading root when the alto leaps", () => {
     // Both harmonies remain complete. Only the voice assignment at the arrival is different.
     const score = reattack.replace("| C5/4 C5/4 |", "| C5/4 F5/4 |")
       .replace("| G4/4 F4/4 |", "| G4/4 C5/4 |");
     const project = compileScoreText(score + withSeventh).project;
-    expect(events(project, leading)).toContainEqual([4800, "alto"]);
+    expect(events(project, leading).filter(([tick]) => tick === 4800)).toEqual([[4800, "bass"]]);
     expect(events(project, seventh)).toContainEqual([4800, "alto"]);
   });
 });

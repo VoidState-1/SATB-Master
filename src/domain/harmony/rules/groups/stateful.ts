@@ -25,9 +25,8 @@ import {
   leadingRootContinuesInHalfDiminishedChain,
   reattackedLeadingToneResolvesAsChainSeventh,
 } from "./halfDiminishedChain";
-import { homeLeadingToneWasDominantFifth } from "../state/dominantSeventhFifth";
 import { transfersLeadingToneInWrittenDominant } from "../state/writtenLeadingToneTransfer";
-import { leavesDiatonicSequenceLeadingTone, resolvesCopiedSeventhFifth } from "../state/diatonicSequenceLeadingTone";
+import { leavesDiatonicSequenceLeadingTone } from "../state/diatonicSequenceLeadingTone";
 import {
   chordEvidence,
   diagnostic,
@@ -56,7 +55,6 @@ import {
   innerLeadingToneDescendsToFifth,
   leadingToneBecomesNextDominantSeventh,
   leadingToneDescendsInMajorDeceptiveMotion,
-  leadingToneDescendsFromMediant,
   leadingToneResolves,
   leadingToneSource,
   supportsTendencyResolutionRules,
@@ -230,9 +228,6 @@ function leadingToneTransition(
   if (attacked && targetUnchanged && leadingToneDescendsInMajorDeceptiveMotion(environment))
     return decision(environment, "resolve", "major-deceptive-leading-tone-descends", debugFacts);
 
-  if (attacked && targetUnchanged && leadingToneDescendsFromMediant(environment))
-    return decision(environment, "resolve", "major-mediant-melody-descends", debugFacts);
-
   if (
     targetUnchanged &&
     transferVoiceIds.length > 0 &&
@@ -279,12 +274,6 @@ function leadingToneTransition(
   if (attacked && reattackedLeadingToneResolvesAsChainSeventh(
     context.rules, environment.obligation.openedAt.tick, context.slice, payload.voiceId,
   )) return decision(environment, "cancel", "leading-tone-reattack-resolves-as-chain-seventh", debugFacts);
-
-  if (attacked && homeLeadingToneWasDominantFifth(environment))
-    return decision(environment, "cancel", "home-leading-tone-was-dominant-fifth", debugFacts);
-
-  if (attacked && resolvesCopiedSeventhFifth(environment))
-    return decision(environment, "cancel", "diatonic-sequence-seventh-fifth", debugFacts);
 
   if (attacked && leavesDiatonicSequenceLeadingTone(environment))
     return decision(environment, "cancel", "leading-tone-diatonic-sequence", debugFacts);
@@ -640,7 +629,7 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "E.1",
     label: "导音未解决",
     description:
-      "检查调式导音（Ⅶ级）在和声转换时是否在同一声部按其倾向解决。",
+      "检查属和弦三音或导和弦根音在原声部的解决。和弦标记缺失时依据实写声部确认；单声部练习按调号检查。",
     rationale:
       "导音通常上行半音到主音（7→1）。内声部可在特定的原位属到完整主三和弦中下行至五音。大调原位属到原位Ⅵ级的内声导音，或大调属六到原位Ⅵ级的低音导音，在满足实际声部进行与重复音配置时可下行大二度（7→6）。根音上行纯四度的连续属七中，前三音和前七音均按实奏半音下行时，前三音可转为后七音。",
     group: "resolution",

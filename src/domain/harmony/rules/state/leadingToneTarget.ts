@@ -1,16 +1,16 @@
-import { chordToneSpellings } from "../../../chordModel";
+import { chordToneSpellings, type ChordIdentity } from "../../../chordModel";
 import {
   keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals,
-  type KeyLike, type SpelledPitchClass,
+  stepIndex, writtenInterval, type KeyLike, type SpelledPitchClass,
 } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project";
 import { readWrittenDominantSeventh } from "../../writtenDominantSeventh";
 import { allowsWrittenTertianIdentity, matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
-import { readCompleteWrittenChord, soundsCompleteWrittenTones } from "../../writtenVoicing";
+import { readCompleteWrittenChord, soundsCompleteWrittenMembers, soundsCompleteWrittenTones } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import type { AnalysisSlice } from "../../analysis";
-import type { HarmonyAnalysisService } from "../services/harmony";
+import { leadingTargetDegree, type HarmonyAnalysisService } from "../services/harmony";
 
 /** The local tonic to which a written leading tone owes its resolution.
  * An applied interpretation names its target by degree in the local key. */
@@ -18,8 +18,8 @@ export function leadingToneResolutionKey(slice: AnalysisSlice, harmony: HarmonyA
   const reading = slice.chord && harmony.primaryInterpretation(slice.chord);
   const meaning = reading?.status === "resolved" ? reading.value : undefined;
   const key = meaning?.localKey ?? slice.key;
-  if (!meaning?.appliedTarget) return key;
-  return { tonic: scaleDegreePitchClass(key, meaning.appliedTarget.degree), mode: "major" as const };
+  const degree = leadingTargetDegree(meaning);
+  return degree ? { tonic: scaleDegreePitchClass(key, degree), mode: "major" as const } : key;
 }
 
 function writtenDominant(slice: AnalysisSlice) {
@@ -84,26 +84,34 @@ function readsIncompleteRootTonic(slice: AnalysisSlice, root: SpelledPitchClass,
   return soundsCompleteWrittenTones(chordToneSpellings(root, mode).slice(0, 2), Object.values(slice.notes), bass);
 }
 
-/** §§15.2, 32.2. Identify the actual local tonic before collecting E.1.
- * A complete tonic needs one written tendency-tone resolution. An incomplete
- * tonic on its own bass needs both. A tonic six-four still leaves the
- * dominant in the bass and cannot establish this target on its own. */
+/** §§15.2, 32.2. Look for an actual local dominant–tonic connection.
+ * A diatonic major triad alone does not establish a tonicization. */
 export function writtenLocalLeadingToneKey(rules: HarmonyRuleContext, slice: AnalysisSlice): KeyLike | undefined {
-  const homeLeading = leadingTonePitchClass(slice.key);
-  if (!slice.attackVoiceIds.some(voice => pitchClassEquals(slice.notes[voice]!.pitch, homeLeading)) ||
-      !allowsObservedTarget(rules, slice)) return;
+  if (!slice.attackVoiceIds.length || !allowsObservedTarget(rules, slice)) return;
   const dominant = writtenDominant(slice);
   if (!dominant) return;
   const tonic = scaleDegreePitchClass({ tonic: dominant.root, mode: "major" }, 4);
   if (pitchClassEquals(tonic, slice.key.tonic)) return;
 
+  const tones = chordToneSpellings(dominant.root, dominant.quality);
+  const hasChromaticMember = tones.some(tone => {
+    const degree = (stepIndex(tone.step) - stepIndex(slice.key.tonic.step) + 7) % 7 + 1;
+    return !pitchClassEquals(tone, scaleDegreePitchClass(slice.key, degree));
+  });
+  if (!hasChromaticMember) return;
   const motion = departureFromWrittenDominant(rules, slice, dominant);
   if (!motion) return;
   const { departure, landing } = motion;
   const bass = landing.notes.bass;
   if (!bass || pitchClassEquals(bass.pitch, dominant.root)) return;
 
-  const [, third, , seventh] = chordToneSpellings(dominant.root, dominant.quality);
+  const [, third, , seventh] = tones;
+  const fromBass = departure.notes.bass!;
+  const bassMove = writtenInterval(fromBass.pitch, bass.pitch);
+  const authenticBass = dominant.quality === "dominant7" && pitchClassEquals(fromBass.pitch, dominant.root) &&
+    pitchClassEquals(bass.pitch, tonic) &&
+    ((bassMove.diatonicSteps === 3 && bassMove.semitones === 5) ||
+     (bassMove.diatonicSteps === -4 && bassMove.semitones === -7));
   const thirdVoice = VOICE_ORDER.find(voice => pitchClassEquals(departure.notes[voice]!.pitch, third) &&
     resolvesInVoice(departure, landing, voice, tonic, 1));
   for (const mode of ["major", "minor"] as const) {
@@ -112,7 +120,47 @@ export function writtenLocalLeadingToneKey(rules: HarmonyRuleContext, slice: Ana
     const tonicThird = chordToneSpellings(tonic, mode)[1];
     const seventhVoice = seventh && VOICE_ORDER.find(voice => pitchClassEquals(departure.notes[voice]!.pitch, seventh) &&
       resolvesInVoice(departure, landing, voice, tonicThird, -1));
-    if ((thirdVoice || seventhVoice) && matchesWrittenChord(landing, tonic, mode)) return key;
+    if ((thirdVoice || seventhVoice || authenticBass) && matchesWrittenChord(landing, tonic, mode)) return key;
     if (thirdVoice && seventhVoice && readsIncompleteRootTonic(landing, tonic, mode)) return key;
   }
+}
+
+/** E.1 belongs to the third of V or the root of vii°, relative to the
+ * actual tonic. VII can also be a stable fifth or a seventh governed by E.2. */
+function hasHarmonicLeadingTone(identity: ChordIdentity, key: KeyLike) {
+  const { root, structure } = identity;
+  if (structure.kind !== "tertian") return false;
+  const quality = structure.quality;
+  if (pitchClassEquals(root, scaleDegreePitchClass(key, 5)))
+    return quality === "major" || quality === "dominant7" || quality === "augmented";
+  return pitchClassEquals(root, leadingTonePitchClass(key)) &&
+    (quality === "diminished" || quality === "diminished7" || quality === "halfDiminished7");
+}
+
+function writtenLeadingHarmony(slice: AnalysisSlice, key: KeyLike) {
+  const notes = Object.values(slice.notes).filter(note => !note.nonChordToneRole);
+  const leading = leadingTonePitchClass(key);
+  if (notes.length < 3 || !notes.some(note => pitchClassEquals(note.pitch, leading))) return false;
+  const dominant = scaleDegreePitchClass(key, 5);
+  const dominantSeventh = chordToneSpellings(dominant, "dominant7");
+  const [root, third, , seventh] = dominantSeventh;
+  // A chordal fifth can be omitted. Only the structural notes supply
+  // evidence; a marked ornament may coexist with a complete harmony.
+  return [
+    dominantSeventh, [root, third, seventh], dominantSeventh.slice(0, 3), chordToneSpellings(dominant, "augmented"),
+    chordToneSpellings(leading, "diminished"), chordToneSpellings(leading, "diminished7"),
+    chordToneSpellings(leading, "halfDiminished7"),
+  ].some(tones => soundsCompleteWrittenMembers(tones, notes));
+}
+
+export function leadingToneSourceKey(rules: HarmonyRuleContext, slice: AnalysisSlice): KeyLike | undefined {
+  const observed = writtenLocalLeadingToneKey(rules, slice);
+  if (observed) return observed;
+  const key = leadingToneResolutionKey(slice, rules.harmony);
+  if (slice.chord) return hasHarmonicLeadingTone(slice.chord.identity, key) ? key : undefined;
+
+  // In a melody-only exercise the key signature supplies the teaching target.
+  // A rest in one or more parts of a harmonized exercise is a different case.
+  if (rules.analysis.project.satbTracks.filter(track => track.notes.length > 0).length === 1) return key;
+  if (writtenLeadingHarmony(slice, key)) return key;
 }

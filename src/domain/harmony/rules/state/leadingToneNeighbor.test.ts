@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { compileScoreText } from "../../../scoreText";
+import { buildHarmonyAnalysis } from "../../analysis";
 import { checkHarmony } from "../../registry";
+import { createHarmonyRuleContext } from "../context/createRuleContext";
+import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame } from "./leadingToneNeighbor";
 
 interface Example {
   soprano?: string;
@@ -54,6 +57,13 @@ function warnings(project: Project, voiceId: "tenor" | "soprano") {
   return checkHarmony(project).diagnostics
     .filter(item => item.ruleId === "resolution.leading-tone" && item.voiceIds.includes(voiceId))
     .map(({ tick, noteIds }) => ({ tick, noteIds }));
+}
+
+function accentedEvidence(project: Project) {
+  const rules = createHarmonyRuleContext(buildHarmonyAnalysis(project));
+  const accent = rules.sliceAt(2 * project.ppq)!;
+  const frame = leadingNeighborFrame(rules, "soprano", accent.notes.soprano!);
+  return frame && accentedOrnamentOverWrittenTriad(rules, frame);
 }
 
 function addPhraseBoundary(project: Project, tick: number) {
@@ -119,18 +129,33 @@ describe("E.1 书写导音与同一和声中的实际装饰", () => {
   });
 
   it("强拍 D#5 虽是 E 的导音拼写，三部实奏已确保 F#6，C#5 实际重复", () => {
-    expect(warnings(accented(), "soprano")).toEqual([]);
+    const project = accented();
+    expect(accentedEvidence(project)).toBe(true);
+    expect(warnings(project, "soprano")).toEqual([]);
   });
 
   it.each<[string, Example]>([
     ["中声部的冻结 B3 破坏独立三和弦", { tenor: "B3/2" }],
     ["只有回归音支持，不重复五音", { soprano: "D#5/8 C#5/4." }],
-    ["同名不同八度", { soprano: "D#5/8 C#6/8 C#6/4" }],
-    ["明确写的是另一七和弦", { harmony: "vii43/8 V6/V/4." }],
+    ["明确写的是以 D# 为根音的小七和弦", { harmony: "vii43/8 V6/V/4." }],
     ["缺失回归和弦", { harmony: "r/2" }],
     ["三和弦低音在回归处才开始", { bass: "B3/8 A#3/4." }],
-  ])("强拍装饰%s 时保留 warning", (_label, options) => {
-    expect(warnings(accented(options), "soprano")).toContainEqual(expect.objectContaining({ tick: 2400 }));
+  ])("强拍处%s 时拒绝装饰解释", (_label, options) => {
+    const project = accented(options);
+    expect(accentedEvidence(project)).toBe(false);
+    expect(warnings(project, "soprano")).toEqual([]);
+  });
+
+  it("同名不同八度构不成强拍邻音的实际折返", () => {
+    const project = accented({ soprano: "D#5/8 C#6/8 C#6/4" });
+    expect(accentedEvidence(project)).toBeUndefined();
+    expect(warnings(project, "soprano")).toEqual([]);
+  });
+
+  it("同一个 D#5 确为本调导七根音时仍检查其解决", () => {
+    const project = accented({ bass: "A3/8 A#3/4.", harmony: "viiø43/8 V6/V/4." });
+    expect(accentedEvidence(project)).toBe(false);
+    expect(warnings(project, "soprano")).toEqual([expect.objectContaining({ tick: 2400 })]);
   });
 
   it("女高实际从结构导音离开时保留原警告", () => {
@@ -150,6 +175,7 @@ bars 1..1 {
   it("强拍回归和五音复奏之间有手动句界", () => {
     const project = accented();
     addPhraseBoundary(project, 2640);
-    expect(warnings(project, "soprano")).toContainEqual(expect.objectContaining({ tick: 2400 }));
+    expect(accentedEvidence(project)).toBe(false);
+    expect(warnings(project, "soprano")).toEqual([]);
   });
 });

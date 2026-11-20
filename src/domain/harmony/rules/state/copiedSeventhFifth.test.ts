@@ -21,14 +21,8 @@ function warnings(p: ProjectDocument, beat = 3, voice: VoiceId = "bass", rule = 
     d.severity === "warning" && d.voiceIds.includes(voice));
 }
 
-const withPart = (bar: Bar, i: number, notes: string): Bar => {
-  const result: Bar = [...bar];
-  result[i] = notes;
-  return result;
-};
-
-describe("a newly attacked diatonic seventh-chord fifth in a copied motif", () => {
-  it("recognizes the independent four-part model of ex. 26-381 transposed to D", () => {
+describe("the fifth of a diatonic mediant seventh chord", () => {
+  it("stays free of E.1 in ex. 26-381 transposed to D with given, absent or inferred chords", () => {
     const p = score(model, copy);
     expect(warnings(p)).toHaveLength(0);
     p.chordTrack.regions = [];
@@ -38,11 +32,11 @@ describe("a newly attacked diatonic seventh-chord fifth in a copied motif", () =
     expect(warnings(inferred)).toHaveLength(0);
   });
 
-  it("reads the printed C-major ex. 26-381 with the seventh in the alto and common tones held", () => {
-    const p = inKey("C major",
-      ["F4/2", "C4/4 B3/4", "D3/2", "A2/4 G2/4", "SII43/4 D7/4"],
-      ["G4/2", "D4/4 C4/4", "E3/2", "B2/4 A2/4", "iii43/4 vi7/4"]);
-    expect(warnings(p)).toHaveLength(0);
+  it("does not require an earlier matching statement of the C-major motif", () => {
+    const incompleteModel: Bar = ["r/4 F4/4", "C4/4 B3/4", "D3/2", "A2/4 G2/4", "SII43/4 D7/4"];
+    const mediant: Bar = ["G4/2", "D4/4 C4/4", "E3/2", "B2/4 A2/4", "iii43/4 vi7/4"];
+    expect(warnings(inKey("C major", mediant), 1)).toHaveLength(0);
+    expect(warnings(inKey("C major", incompleteModel, mediant))).toHaveLength(0);
   });
 
   it("two fully copied pairs cannot excuse an actual dominant third and rising seventh", () => {
@@ -53,14 +47,6 @@ describe("a newly attacked diatonic seventh-chord fifth in a copied motif", () =
     expect(warnings(p, 3, "soprano", "resolution.chord-seventh")).toHaveLength(1);
     p.chordTrack.regions = [];
     expect(warnings(p)).toHaveLength(1);
-  });
-
-  it("requires the copy of the entire continuation when the two pairs are separated", () => {
-    const bridge: Bar = ["F#4/2", "D4/2", "A3/2", "D3/2", "T/2"];
-    const next: Bar = ["G4/2", "E4/2", "B3/2", "E3/2", "SII/2"];
-    expect(warnings(score(model, bridge, copy, next), 5)).toHaveLength(0);
-    expect(warnings(score(model, bridge, copy, withPart(next, 2, "B3/4 B3/4")), 5)).toHaveLength(1);
-    expect(warnings(score(model, bridge, copy), 5)).toHaveLength(1);
   });
 
   it("does not reinterpret a genuine dominant third when reattacked or tied into its new chord", () => {
@@ -83,38 +69,13 @@ describe("a newly attacked diatonic seventh-chord fifth in a copied motif", () =
     expect(warnings(p, 5, "alto", "resolution.chord-seventh")).toHaveLength(1);
   });
 
-  it("requires the actual seventh in the same voice to descend as written", () => {
-    const p = score(model, withPart(copy, 1, "E4/4 F#4/4"));
-    expect(warnings(p)).toHaveLength(1);
-    expect(warnings(p, 3, "alto", "resolution.chord-seventh")).toHaveLength(1);
-  });
-
-  it.each<[string, number, string]>([
-    ["model in a different octave", 0, "G5/2"],
-    ["interior reattack", 0, "G4/4 G4/4"],
-    ["missing source member", 2, "B3/2"],
-    ["an enharmonic substitute", 2, "Fb3/2"],
-    ["rest in the model", 0, "r/4 G4/4"],
-    ["incorrect inversion label", 4, "SII65/4 D7/4"],
-  ])("preserves the warning on %s", (_label, v, change) => {
-    expect(warnings(score(withPart(model, v, change), copy))).toHaveLength(1);
-  });
-
-  it("rejects an isolated pair and a pair at entry even if an exact model follows later", () => {
-    expect(warnings(score(copy), 1)).toHaveLength(1);
-    expect(warnings(score(copy, model), 1)).toHaveLength(1);
-  });
-
-  it("guards a phrase break, a fresh key event, a written ornament and an applied interpretation", () => {
-    for (const mutate of [
-      (p: ProjectDocument) => p.structure.phraseBoundaries.push({id: "cut", tick: 2*p.ppq, source: "manual", confidence: "certain"}),
-      (p: ProjectDocument) => p.keyEvents.push({...p.keyEvents[0], id: "new-key", tick: 2*p.ppq}),
-      (p: ProjectDocument) => { p.satbTracks[0].notes[0].nonChordToneRole = "passing"; },
-      (p: ProjectDocument) => { p.chordTrack.regions[0].semantics!.interpretations[0].appliedTarget = {degree: 5, primaryFunction: "dominant"}; },
-    ]) {
-      const p = score(model,copy);
-      mutate(p);
-      expect(warnings(p)).toHaveLength(1);
-    }
+  it("checks the alto's actual seventh independently of the bass fifth", () => {
+    const risingSeventh: Bar = [...copy];
+    risingSeventh[1] = "E4/4 F#4/4";
+    const resolved = score(model, copy);
+    const unresolved = score(model, risingSeventh);
+    expect(warnings(resolved, 3, "alto", "resolution.chord-seventh")).toHaveLength(0);
+    expect(warnings(unresolved, 3, "alto", "resolution.chord-seventh")).toHaveLength(1);
+    expect(warnings(unresolved)).toHaveLength(0);
   });
 });

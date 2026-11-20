@@ -34,7 +34,7 @@ const literal = { primaryInterpretationId: "reading", interpretations: [{
   id: "reading", degree: 3 as const, degreeAlteration: 0 as const, source: "manual" as const, confidence: "certain" as const,
 }] };
 
-describe("four written parts resolve an inverted dominant seventh", () => {
+describe("the ambient leading pitch as the fifth of a local dominant", () => {
   it.each([
     ["D2 to a minor sixth chord", relativeMinor, "tenor"],
     ["D43 to a major triad", ["G#4 A4", "E4 E4", "D4 C#4", "B2 A2"], "bass"],
@@ -47,12 +47,6 @@ describe("four written parts resolve an inverted dominant seventh", () => {
     expect(warnings(score(["B4 C5", "G4 G4", "D4 C4", "F3 Eb3"], "Eb minor"))).toHaveLength(0);
   });
 
-  it("continues the same written key through a reminder at the actual landing", () => {
-    const p = score();
-    p.keyEvents.push({ ...p.keyEvents[0], id: "new-key", tick: p.ppq });
-    expect(warnings(p)).toHaveLength(0);
-  });
-
   it("accepts a sounding identity alone and the literal root degree in the home key", () => {
     const p = annotated();
     expect(warnings(p)).toHaveLength(0);
@@ -60,39 +54,9 @@ describe("four written parts resolve an inverted dominant seventh", () => {
     expect(warnings(p)).toHaveLength(0);
   });
 
-  it("accepts a held common tone and repeated literal labels within the same sounding chord", () => {
-    const p = annotated();
-    const part = p.satbTracks.find(t => t.voice === "alto")!;
-    part.notes[0].durationTicks += part.notes[1].durationTicks;
-    part.notes.splice(1);
-    const source = p.chordTrack.regions[0];
-    source.durationTicks = p.ppq / 2;
-    p.chordTrack.regions.splice(1, 0, { ...source, id: "split", startTick: p.ppq / 2, semantics: literal });
-    expect(warnings(p)).toHaveLength(0);
-  });
-
-  it.each<[string, string[]]>([
-    ["enharmonic source", ["Ab4 A4", "E4 E4", "B3 A3", "D3 C3"]],
-    ["enharmonic landing", ["G#4 A4", "E4 E4", "B3 G##3", "D3 C3"]],
-    ["root position to a six-four", ["G#4 A4", "D4 C4", "B3 A3", "E2 E2"]],
-    ["rest in another part", ["r A4", "E4 E4", "B3 A3", "D3 C3"]],
-  ])("%s retains the written-key warning", (_name, lines) => {
-    expect(warnings(score(lines))).toHaveLength(1);
-  });
-
-  it("recognizes the complete major triad when the seventh is absent and undeclared", () => {
+  it("leaves the fifth free of E.1 even without a seventh or an independent local tonic proof", () => {
     expect(warnings(score(["G#4 A4", "E4 E4", "B3 A3", "E3 C3"]))).toHaveLength(0);
-    const p = annotated();
-    p.chordTrack.regions[0].identity.bass.step = "E";
-    p.satbTracks.find(t => t.voice === "bass")!.notes[0].pitch.step = "E";
-    expect(warnings(p)).toHaveLength(1);
-  });
-
-  it("retains E.2 for the wrongly displaced seventh when the local third resolves", () => {
-    const p = annotated();
-    p.satbTracks.find(t => t.voice === "bass")!.notes[1].pitch.octave = 2;
-    expect(warnings(p)).toHaveLength(0);
-    expect(warnings(p, "bass", 1, "resolution.chord-seventh")).toHaveLength(1);
+    expect(warnings(score(["G#4 A4", "E4 E4", "B3 G##3", "D3 C3"]))).toHaveLength(0);
   });
 
   it.each([
@@ -110,43 +74,27 @@ describe("four written parts resolve an inverted dominant seventh", () => {
     expect(warnings(p, "soprano")).toHaveLength(0);
   });
 
-  it("keeps the same-note obligation opened over a previous harmony", () => {
+  it("keeps the sustained B's E.1 from the preceding home dominant", () => {
     const p = score(["D5 G#4 A4", "G4 E4 E4", "B3 B3 A3", "G3 D3 C3"]);
     const tenor = p.satbTracks.find(t => t.voice === "tenor")!;
     tenor.notes[0].durationTicks += p.ppq;
     tenor.notes.splice(1, 1);
-    expect(warnings(p, "tenor", 2)).toHaveLength(1);
+    expect(warnings(p, "tenor", 2)).toMatchObject([{
+      params: { key: "C major", leadingTone: "B" },
+      noteIds: expect.arrayContaining([tenor.notes[0].id]),
+      trace: expect.arrayContaining([{ tick: 0, outcome: "continue", reason: "obligation-opened" }]),
+    }]);
   });
 
-  it("retains both actual seventh and fifth warnings when the written seventh goes up", () => {
+  it.each([
+    ["descends by an octave plus a step", { step: "C", alter: 0, octave: 2 }],
+    ["ascends a step", { step: "E", alter: 0, octave: 3 }],
+  ] as const)("reports E.2 when the seventh %s while leaving the fifth free of E.1", (_motion, pitch) => {
     const p = annotated();
-    p.satbTracks.find(t => t.voice === "bass")!.notes[1].pitch.step = "E";
-    expect(warnings(p)).toHaveLength(1);
+    expect(warnings(p, "bass", 1, "resolution.chord-seventh")).toHaveLength(0);
+    p.satbTracks.find(t => t.voice === "bass")!.notes[1].pitch = pitch;
     expect(warnings(p, "bass", 1, "resolution.chord-seventh")).toHaveLength(1);
-  });
-
-  it("preserves a manual boundary, an ornamental note and conflicting endpoint identity", () => {
-    const boundary = annotated();
-    boundary.structure.phraseBoundaries.push({ id: "boundary", source: "manual", confidence: "certain", tick: boundary.ppq });
-    expect(warnings(boundary)).toHaveLength(1);
-    const ornament = annotated();
-    ornament.satbTracks.find(t => t.voice === "alto")!.notes[1].nonChordToneRole = "passing";
-    expect(warnings(ornament)).toHaveLength(1);
-    const conflict = annotated();
-    conflict.chordTrack.regions[1].identity.bass.step = "A";
-    expect(warnings(conflict)).toHaveLength(1);
-  });
-
-  it("retains explicit functional and contradictory literal readings at the opening", () => {
-    for (const reading of [
-      { ...literal.interpretations[0], degree: 4 as const },
-      { ...literal.interpretations[0], localKey: { tonic: { step: "C" as const, alter: 0 as const }, mode: "major" as const } },
-      { ...literal.interpretations[0], designation: { notationSystem: "spasobin" as const, kind: "side-degree" as const } },
-    ]) {
-      const p = annotated();
-      p.chordTrack.regions[0].semantics = { ...literal, interpretations: [reading] };
-      expect(warnings(p)).toHaveLength(1);
-    }
+    expect(warnings(p)).toHaveLength(0);
   });
 
   it("keeps a genuine minor-key leading tone descending on a deceptive resolution", () => {

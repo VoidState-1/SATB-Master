@@ -44,16 +44,17 @@ describe("大调三级三和弦到下属", () => {
     expect(alerts(dominant)).toEqual(expect.arrayContaining([retrogression, leading]));
   });
 
-  it("女高下行到别的和弦成员时可接下属，导音的跳进仍报告", () => {
+  it("三级五音跳进到另一和弦成员也可接下属，不触发 E.1", () => {
     const leap = progression.replace("B4/4 A4/2", "B4/4 F4/2").replace("G4/4 G4/4 F4/2", "G4/4 G4/4 A4/2");
     const result = alerts(leap);
     expect(result).not.toContain(retrogression);
-    expect(result).toContain(leading);
+    expect(result).not.toContain(leading);
   });
 
-  it("实际三音被改变时不靠三级标注放行", () => {
-    expect(alerts(progression.replace("G4/4 G4/4", "G4/4 G#4/4")))
-      .toEqual(expect.arrayContaining([retrogression, leading]));
+  it("实际三音与三级标注矛盾时仍报逆功能", () => {
+    const result = alerts(progression.replace("G4/4 G4/4", "G4/4 G#4/4"));
+    expect(result).toContain(retrogression);
+    expect(result).not.toContain(leading);
   });
 
   it("两端均明确标为局部 C 大调时，按这个调的 VII–VI 判定", () => {
