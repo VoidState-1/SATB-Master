@@ -115,6 +115,7 @@ export function buildChordInferenceRegions(
   observations: readonly ChordInferenceObservation[],
   candidateSets: readonly (readonly ChordInferenceCandidate[])[],
   selectedPath: readonly (ChordInferenceCandidate | undefined)[],
+  separateStarts?: ReadonlySet<number>,
 ) {
   // Preserve the selectChordInferencePath + raw candidate sets calling pattern.
   if (candidateSets.some((candidates) => candidates.some((candidate) => candidate.pathScore === undefined))) {
@@ -132,6 +133,7 @@ export function buildChordInferenceRegions(
     index += 1;
     while (
       index < observations.length &&
+      !separateStarts?.has(observations[index].fromTick) &&
       observations[index - 1].toTick === observations[index].fromTick &&
       observations[index - 1].key.mode === observations[index].key.mode &&
       observations[index - 1].key.tonic.step === observations[index].key.tonic.step &&

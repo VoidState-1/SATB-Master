@@ -1,3 +1,4 @@
+import { isWrittenLowerNeighborMotion } from "../helpers/writtenLowerNeighborPair";
 import type { HarmonyAnalysis, MelodyTransition } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import { chordIdentityToneSpellings } from "../../../chordModel";
@@ -219,6 +220,7 @@ function alteredIntervalRule(
       (expectedQuality === "减" && isResolvedDominantSixthBass(context, transition)) ||
       (expectedQuality === "减" && resolvesRaisedSecondApproach(context, transition)) ||
       (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
+      (expectedQuality === "减" && isWrittenLowerNeighborMotion(context, transition)) ||
       (expectedQuality === "增" && (
         lowersSixthInSubdominant(context, transition) ||
         lowerDoubleDominantLeadingTone(context, transition) ||

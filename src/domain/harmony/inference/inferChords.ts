@@ -23,6 +23,7 @@ import { withPreparedSuspensions } from "./preparedSuspensions";
 import { withProlongedHarmony } from "./prolongation";
 import { withSingleVoiceTriadRevoicings } from "./triadRevoicing";
 import { simultaneousNeighborCandidates } from "./simultaneousNeighbors";
+import { withWrittenLowerNeighborPairs } from "./lowerNeighborPair";
 import { inferLocalKeys } from "./localKeys";
 import { inferPhrases, isCurrentPhraseBoundary } from "../phrase";
 import type {
@@ -144,7 +145,8 @@ export function inferChords(
   const writtenTriads = withWholeWrittenTriadRespellings(
     observations, leadingSevenths, currentPhraseTicks,
   );
-  const sequence = analyzeChordInferencePaths(observations, writtenTriads);
+  const lowerNeighbors = withWrittenLowerNeighborPairs(observations, writtenTriads, options, currentPhraseTicks);
+  const sequence = analyzeChordInferencePaths(observations, lowerNeighbors.candidateSets);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;
@@ -162,7 +164,7 @@ export function inferChords(
     selectedPath = selectedPath.slice(first, end).map((selected, index) =>
       selected && scored[index].find(candidate => candidate.id === selected.id));
   }
-  const regions = buildChordInferenceRegions(visible, scored, selectedPath);
+  const regions = buildChordInferenceRegions(visible, scored, selectedPath, lowerNeighbors.withheldStarts);
   return {
     sourceRevision: 0,
     range,
