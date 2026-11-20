@@ -15,6 +15,7 @@ import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
 import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
+import { closingTonicPedalEvidence } from "./tonicPedalEnding";
 import { continuesThroughParallelTonic } from "./parallelTonicPivot";
 import { articulatedEndingEvidence } from "./articulatedEnding";
 import type {
@@ -386,15 +387,17 @@ function authenticCadence(
   tonic: CadenceSpanFacts,
   landingEvidence: CadenceEvidence,
   landingGap?: CadenceEvidence,
+  extension?: { readonly path: readonly CadenceSpanFacts[]; readonly evidence: CadenceEvidence },
 ) {
   const dominant = approach.path.at(-1)!;
   const completion = completionFor(dominant, tonic);
-  const path = [...approach.path, tonic];
+  const path = [...approach.path, tonic, ...(extension?.path ?? [])];
   const bassFormula = hasBassFormula(dominant, tonic, 5, 1);
   const evidence: CadenceEvidence[] = [
     landingEvidence,
     ...approach.evidence,
     ...(landingGap ? [landingGap] : []),
+    ...(extension ? [extension.evidence] : []),
     { code: "dominant-to-tonic", value: "当前调性 D -> T" },
   ];
   if (approach.path[0].isCadential64) evidence.push({ code: "cadential64-chain", value: "K46 -> D -> T" });
@@ -405,7 +408,7 @@ function authenticCadence(
     form: "authentic",
     completion,
     confidenceCap: completion && bassFormula && tonic.span.toTick === phrase.toTick &&
-      !landingGap
+      !landingGap && !extension
       ? undefined
       : "probable",
   });
@@ -537,6 +540,7 @@ export function detectCadences(
 ): readonly CadenceCandidate[] {
   const allCandidates: CadenceCandidate[] = [];
   const interiorCandidates: CadenceCandidate[] = [];
+  const tonicPedalCandidates: CadenceCandidate[] = [];
   let measures: ReturnType<typeof buildMeasures> | undefined;
   const measureFor = (tick: number) => measureAtTick(measures ??= buildMeasures(analysis.project), tick);
   const writtenBeatAt = (tick: number) => {
@@ -566,6 +570,25 @@ export function detectCadences(
     const previous = facts.at(-2);
     const previousPrevious = facts.at(-3);
     const phraseEvidence = evidenceForPhrase(phrase);
+    const pedalDominant = facts.at(-5);
+    const pedalArrival = facts.at(-4);
+    if (pedalDominant && pedalArrival && previousPrevious && previous &&
+        isFifthDegreeDominant(pedalDominant) && connectionIsValid(pedalDominant, pedalArrival)) {
+      const bar = measureFor(pedalArrival.span.fromTick);
+      if (bar?.startTick === pedalArrival.span.fromTick && terminal.span.toTick <= bar.endTick) {
+        const evidence = closingTonicPedalEvidence(
+          pedalDominant, pedalArrival, previousPrevious, previous, terminal, analysis.slices,
+          ticksPerBeat(analysis.project.ppq, bar.denominator),
+        );
+        if (evidence) {
+          const approach = dominantApproach(facts, facts.length - 5, gapEvidence);
+          tonicPedalCandidates.push(authenticCadence(phrase, approach, pedalArrival, phraseEvidence, undefined, {
+            path: [previousPrevious, previous, terminal],
+            evidence,
+          }));
+        }
+      }
+    }
     const landingGap = previous && terminal.isTonic && isFifthDegreeDominant(previous) &&
       previous.interpretationStatus === "resolved" && sameKey(previous.key, terminal.key) &&
       previous.span.toTick < terminal.span.fromTick &&
@@ -718,9 +741,13 @@ export function detectCadences(
     }
   }
   // An existing cadence at the same landing still owns its structural evidence.
-  const knownLandings = new Set(allCandidates.map(item => `${item.phraseId}:${item.toTick}`));
+  const landingKey = (item: CadenceCandidate) => `${item.phraseId}:${item.toTick}`;
+  const ordinaryLandings = new Set(allCandidates.map(landingKey));
+  const known = [...allCandidates, ...interiorCandidates.filter(item => !ordinaryLandings.has(landingKey(item)))];
+  // Keep an independently detected cadence at the same ending, including a supplementary one.
+  const knownLandings = new Set(known.map(landingKey));
   return Object.freeze(resolveConflicts([
-    ...allCandidates,
-    ...interiorCandidates.filter(item => !knownLandings.has(`${item.phraseId}:${item.toTick}`)),
+    ...known,
+    ...tonicPedalCandidates.filter(item => !knownLandings.has(landingKey(item))),
   ]));
 }
