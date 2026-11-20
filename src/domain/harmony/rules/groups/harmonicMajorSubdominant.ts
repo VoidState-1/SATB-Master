@@ -2,7 +2,7 @@ import { chordToneSpellings, type KeyReference } from "../../../chordModel";
 import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../../pitch";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { hasWrittenVoicing } from "../state/doubleDominantSeventh";
+import { hasWrittenVoicing } from "../helpers/writtenResolution";
 import { resolvesLoweredSupertonicFifth } from "./loweredSupertonicFifth";
 import { cadentialSixFourInKey } from "./chromaticDoubleDominant";
 

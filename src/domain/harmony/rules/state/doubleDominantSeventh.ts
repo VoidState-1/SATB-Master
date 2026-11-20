@@ -1,6 +1,6 @@
 import { chordIdentityInversion, chordToneSpellings, type KeyReference } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval } from "../../../pitch";
-import type { SpelledPitchClass } from "../../../pitch";
+import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../../pitch";
+import { hasWrittenVoicing } from "../helpers/writtenResolution";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { crossesManualPhraseBoundary } from "../groups/dominantSixthSubstitution";
@@ -14,15 +14,6 @@ function plainQuality(slice: AnalysisSlice, quality: "diminished7" | "dominant7"
   const structure = slice.chord?.identity.structure;
   return structure?.kind === "tertian" && structure.quality === quality &&
     structure.extensions.length === 0 && structure.alterations.length === 0;
-}
-
-export function hasWrittenVoicing(slice: AnalysisSlice, tones: readonly SpelledPitchClass[]) {
-  const notes = activeNotes(slice);
-  const bass = slice.notes.bass;
-  return !!bass && slice.completeSatb &&
-    notes.every(({ note }) => !note.nonChordToneRole && toMidi(note.pitch) >= toMidi(bass.pitch) &&
-      tones.some(tone => pitchClassEquals(note.pitch, tone))) &&
-    tones.every(tone => notes.some(({ note }) => pitchClassEquals(note.pitch, tone)));
 }
 
 function descendsAt(before: AnalysisNote, after: AnalysisNote | undefined, tick: number, steps: 0 | -1) {

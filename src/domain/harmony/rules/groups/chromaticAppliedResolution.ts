@@ -3,10 +3,9 @@ import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, stepInd
   type SpelledPitchClass } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project";
 import type { MelodyTransition } from "../../analysis";
-import { resolvesInVoice, matchesWrittenChord } from "../helpers/writtenResolution";
+import { hasWrittenVoicing, resolvesInVoice, matchesWrittenChord } from "../helpers/writtenResolution";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { hasWrittenVoicing } from "../state/doubleDominantSeventh";
 
 // §§28.6, 32.4. A same-voice alteration introduces a tendency tone of a
 // secondary dominant. Establish its local target from both resolutions.

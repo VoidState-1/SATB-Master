@@ -5,8 +5,7 @@ import { sameChordIdentityWithoutBass, type AnalysisNote, type AnalysisSlice, ty
 import { soundsCompleteWrittenChord } from "../../writtenNeighbors";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasExactPitch } from "../helpers/core";
-import { matchesWrittenChord, resolvesInVoice } from "../helpers/writtenResolution";
-import { hasWrittenVoicing } from "../state/doubleDominantSeventh";
+import { hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../helpers/writtenResolution";
 
 function writtenDegree(key: KeyReference, pitch: SpelledPitchClass) {
   return (stepIndex(pitch.step) - stepIndex(key.tonic.step) + 7) % 7 + 1;
