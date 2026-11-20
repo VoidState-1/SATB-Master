@@ -1,6 +1,5 @@
 import {
   chordIdentityToneSpellings,
-  identityContainsWrittenPitchClass,
   type FunctionalFamily,
 } from "../../../chordModel";
 import type { RuleDiagnostic } from "../../runtime";
@@ -13,6 +12,10 @@ import type {
 import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass } from "../../analysis";
 import { formatPitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import {
+  currentSpanId, openedSourceChord, openedSourceNote, openedSpanId, receivingVoiceIds,
+  sameLeadingToneContext, sameSeventhContext, seventhTransferVoiceIds,
+} from "../state/tendencyContext";
 import { writtenSeventhHandoff } from "../state/writtenSeventhHandoff";
 import {
   leadingRootContinuesInHalfDiminishedChain,
@@ -115,49 +118,6 @@ function resolutionCauseRef(
     connection?.connectionKey ??
     `connection:${sourceSpanId ?? "none"}->${currentSpanId ?? "none"}`;
   return `resolution.${kind}|${connectionKey}|voice:${voiceId}`;
-}
-
-function openedSourceNote<Payload extends JsonValue>(
-  environment: ObligationEnvironment<Payload>,
-) {
-  const noteId = environment.obligation.openedBy.noteIds?.[0];
-  return noteId
-    ? environment.context.rules
-        .notes()
-        .first(({ note }) => note.id === noteId)?.note
-    : undefined;
-}
-
-function openedSourceChord<Payload extends JsonValue>(
-  environment: ObligationEnvironment<Payload>,
-) {
-  const chordId = environment.obligation.openedBy.chordIds?.[0];
-  if (chordId) {
-    const chord = environment.context.rules
-      .spans()
-      .selectMany(({ chords }) => chords)
-      .first((candidate) => candidate.id === chordId);
-    if (chord) return chord;
-  }
-  const spanId = openedSpanId(environment);
-  return spanId
-    ? environment.context.rules
-        .spans({ id: spanId })
-        .selectMany(({ chords }) => chords)
-        .first()
-    : undefined;
-}
-
-function openedSpanId<Payload extends JsonValue>(
-  environment: ObligationEnvironment<Payload>,
-) {
-  return environment.obligation.openedBy.spanIds?.[0];
-}
-
-function currentSpanId<Payload extends JsonValue>(
-  environment: ObligationEnvironment<Payload>,
-) {
-  return environment.context.rules.spanAt(environment.moment.tick)?.span.id;
 }
 
 function leadingToneDiagnostic(
@@ -400,68 +360,6 @@ function sameOpenedSpan<Payload extends JsonValue>(
   return Boolean(sourceSpanId && sourceSpanId === currentSpanId(environment));
 }
 
-/**
- * 判断导音义务是否仍处于同一功能性和声上下文。
- *
- * HarmonySpan 会因为完整语义对象（尤其是转位推导出的 interpretation id）
- * 变化而切分，但导音在同一调性、同一和弦实体和同一功能目标内仍可跨声部交接。
- * 这个判断只供导音义务使用，不能替代全局 HarmonySpan 的严格边界。
- */
-function sameLeadingToneContext(
-  environment: ObligationEnvironment<LeadingTonePayload>,
-) {
-  if (
-    !leadingTargetUnchanged(environment) ||
-    !environment.context.transitionFromPrevious?.contiguous
-  )
-    return false;
-
-  const sourceChord = openedSourceChord(environment);
-  const currentChord = environment.context.slice.chord;
-  if (!sourceChord || !currentChord) return false;
-
-  const exactSame = sameChordIdentityWithoutBass(
-    sourceChord.identity,
-    currentChord.identity,
-  );
-  const payload = environment.obligation.payload;
-  const sameFamily =
-    pitchClassEquals(sourceChord.identity.root, currentChord.identity.root) &&
-    identityContainsWrittenPitchClass(currentChord.identity, {
-      step: payload.leadingStep,
-      alter: payload.leadingAlter,
-    });
-
-  if (!exactSame && !sameFamily) return false;
-
-  const interpretationContext = (chord: typeof sourceChord) => {
-    if (!chord.semantics) return undefined;
-    const resolution = environment.context.rules.harmony.primaryInterpretation(
-      chord,
-    );
-    if (resolution.status !== "resolved") return undefined;
-    const interpretation = resolution.value;
-    return JSON.stringify({
-      localKey: interpretation.localKey ?? null,
-      degree: interpretation.degree,
-      degreeAlteration: interpretation.degreeAlteration,
-      appliedTarget: interpretation.appliedTarget ?? null,
-      designation: interpretation.designation ?? null,
-      mixture: chord.semantics.mixture ?? null,
-      cadenceRole: chord.semantics.cadenceRole ?? null,
-      pedalContext: chord.semantics.pedalContext ?? null,
-    });
-  };
-
-  const sourceContext = interpretationContext(sourceChord);
-  const currentContext = interpretationContext(currentChord);
-  if (sourceChord.semantics || currentChord.semantics)
-    return Boolean(
-      sourceContext && currentContext && sourceContext === currentContext,
-    );
-  return true;
-}
-
 function subjectAttacked<Payload extends VoiceObligationPayload>(
   environment: ObligationEnvironment<Payload>,
 ) {
@@ -507,40 +405,6 @@ function sameWrittenPitchAsSource<Payload extends VoiceObligationPayload>(
   );
 }
 
-/**
- * 同一 HarmonySpan 内，导音可以从一个声部交接到另一个声部。
- * 只有原义务声部已经离开导音，且另一声部在当前边界重新起奏导音时，
- * 才取消旧义务；原声部仍保持导音时属于重复导音，不能误当作交接。
- */
-function leadingToneTransferred(
-  environment: ObligationEnvironment<LeadingTonePayload>,
-) {
-  return leadingToneTransferVoiceIds(environment).length > 0;
-}
-
-function leadingToneTransferVoiceIds(
-  environment: ObligationEnvironment<LeadingTonePayload>,
-) {
-  const payload = environment.obligation.payload;
-  const currentSource = environment.context.slice.notes[payload.voiceId];
-  const sourceStillLeading = Boolean(
-    currentSource &&
-      currentSource.pitch.step === payload.leadingStep &&
-      currentSource.pitch.alter === payload.leadingAlter,
-    );
-  if (sourceStillLeading) return [];
-
-  return environment.moment.attackedVoiceIds.filter((voiceId) => {
-    if (voiceId === payload.voiceId) return false;
-    const note = environment.context.slice.notes[voiceId];
-    return Boolean(
-      note &&
-        note.pitch.step === payload.leadingStep &&
-        note.pitch.alter === payload.leadingAlter,
-    );
-  });
-}
-
 function decision<Payload extends VoiceObligationPayload>(
   environment: ObligationEnvironment<Payload>,
   outcome: ObligationDecision["outcome"],
@@ -562,10 +426,11 @@ function leadingToneTransition(
 ): ObligationDecision | undefined {
   const targetUnchanged = leadingTargetUnchanged(environment);
   const attacked = subjectAttacked(environment);
-  const transferVoiceIds = leadingToneTransferVoiceIds(environment);
   const sameLeadingContext = sameLeadingToneContext(environment);
   const { context, obligation: { payload } } = environment;
   const currentNote = context.slice.notes[payload.voiceId];
+  const transferVoiceIds = receivingVoiceIds(environment, { step: payload.leadingStep, alter: payload.leadingAlter });
+  const spanId = currentSpanId(environment);
   const debugFacts = {
     sameOpenedSpan: sameOpenedSpan(environment),
     sameLeadingToneContext: sameLeadingContext,
@@ -576,9 +441,7 @@ function leadingToneTransition(
       currentNote?.pitch.alter === payload.leadingAlter,
     transferredVoiceIds: transferVoiceIds,
     ...(currentNote ? { currentNoteId: currentNote.id } : {}),
-    ...(currentSpanId(environment)
-      ? { currentSpanId: currentSpanId(environment) }
-      : {}),
+    ...(spanId ? { currentSpanId: spanId } : {}),
   } satisfies Record<string, JsonValue>;
 
   if (attacked && targetUnchanged && currentNote) {
@@ -626,7 +489,7 @@ function leadingToneTransition(
   if (
     targetUnchanged &&
     sameLeadingContext &&
-    leadingToneTransferred(environment)
+    transferVoiceIds.length > 0
   )
     return decision(
       environment,
@@ -688,74 +551,6 @@ function leadingToneTransition(
     );
 
   return undefined;
-}
-
-function sameSeventhContext(
-  environment: ObligationEnvironment<SeventhPayload>,
-) {
-  if (!environment.context.transitionFromPrevious?.contiguous) return false;
-
-  const sourceChord = openedSourceChord(environment);
-  const currentChord = environment.context.slice.chord;
-  if (!sourceChord || !currentChord) return false;
-
-  if (!pitchClassEquals(sourceChord.identity.root, currentChord.identity.root))
-    return false;
-
-  const sourceTones = chordIdentityToneSpellings(sourceChord.identity);
-  const currentTones = chordIdentityToneSpellings(currentChord.identity);
-  if (sourceTones.length < 4 || currentTones.length < 4) return false;
-  if (!pitchClassEquals(sourceTones[3], currentTones[3])) return false;
-
-  const interpretationContext = (chord: typeof sourceChord) => {
-    if (!chord.semantics) return undefined;
-    const resolution = environment.context.rules.harmony.primaryInterpretation(
-      chord,
-    );
-    if (resolution.status !== "resolved") return undefined;
-    const interpretation = resolution.value;
-    return JSON.stringify({
-      localKey: interpretation.localKey ?? null,
-      degree: interpretation.degree,
-      degreeAlteration: interpretation.degreeAlteration,
-      appliedTarget: interpretation.appliedTarget ?? null,
-      designation: interpretation.designation ?? null,
-      mixture: chord.semantics.mixture ?? null,
-      cadenceRole: chord.semantics.cadenceRole ?? null,
-      pedalContext: chord.semantics.pedalContext ?? null,
-    });
-  };
-
-  const sourceContext = interpretationContext(sourceChord);
-  const currentContext = interpretationContext(currentChord);
-  if (sourceChord.semantics || currentChord.semantics)
-    return Boolean(
-      sourceContext && currentContext && sourceContext === currentContext,
-    );
-  return true;
-}
-
-function seventhTransferVoiceIds(
-  environment: ObligationEnvironment<SeventhPayload>,
-) {
-  const payload = environment.obligation.payload;
-  const sourceChord = openedSourceChord(environment);
-  if (!sourceChord) return [];
-  const sourceTones = chordIdentityToneSpellings(sourceChord.identity);
-  if (sourceTones.length < 4) return [];
-  const seventhTone = sourceTones[3];
-
-  const currentSource = environment.context.slice.notes[payload.voiceId];
-  const sourceStillSeventh = Boolean(
-    currentSource && pitchClassEquals(currentSource.pitch, seventhTone),
-  );
-  if (sourceStillSeventh) return [];
-
-  return environment.moment.attackedVoiceIds.filter((voiceId) => {
-    if (voiceId === payload.voiceId) return false;
-    const note = environment.context.slice.notes[voiceId];
-    return Boolean(note && pitchClassEquals(note.pitch, seventhTone));
-  });
 }
 
 function soundsDominantSeventh(slice: RuleStepContext["slice"], tones: readonly SpelledPitchClass[]) {
