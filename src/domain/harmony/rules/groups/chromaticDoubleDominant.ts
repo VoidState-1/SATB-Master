@@ -110,7 +110,7 @@ function respeltSeventhKey(context: HarmonyRuleContext, middle: AnalysisSlice) {
   return key;
 }
 
-function cadentialSixFourInKey(context: HarmonyRuleContext, landing: AnalysisSlice, key: KeyReference) {
+export function cadentialSixFourInKey(context: HarmonyRuleContext, landing: AnalysisSlice, key: KeyReference) {
   const target = landing.chord;
   if (!target) return false;
   const targetReading = context.harmony.primaryInterpretation(target);

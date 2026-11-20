@@ -27,6 +27,7 @@ import { isRespeltDoubleDominantSeventh, resolvesRaisedSecondApproach } from "./
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { recognizesAugmentedSixthPreparation, resolvesGermanSixthDiminishedThird } from "./chromaticAugmentedSixth";
 import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
+import { lowersSixthInSubdominant } from "./harmonicMajorSubdominant";
 import { sameHarmonyAtMelodicAttack } from "../helpers/motionHarmony";
 
 function validMelodyTransitions(
@@ -219,6 +220,7 @@ function alteredIntervalRule(
       (expectedQuality === "减" && resolvesRaisedSecondApproach(context, transition)) ||
       (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
       (expectedQuality === "增" && (
+        lowersSixthInSubdominant(context, transition) ||
         lowerDoubleDominantLeadingTone(context, transition) ||
         preparesDoubleDominantSeventhBass(context, transition) ||
         preparesChromaticDominant(context, transition) ||
