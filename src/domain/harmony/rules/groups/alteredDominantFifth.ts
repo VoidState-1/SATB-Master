@@ -40,7 +40,14 @@ export function preparesAlteredDominantFifth(context: HarmonyRuleContext, motion
   const [dominant, third, , seventh] = chordToneSpellings(root, "dominant7");
   const altered = [dominant, third, current.pitch];
   const alteredSeventh = [...altered, seventh];
-  return context.slices({ overlapping: { fromTick: start, toTick: end } }).toArray().every(slice =>
-    slice.key.id === before.key.id &&
-    (hasWrittenVoicing(slice, altered) || hasWrittenVoicing(slice, alteredSeventh)));
+  let heardDominantSeventh = hasWrittenVoicing(before, chordToneSpellings(root, "dominant7"));
+  for (const slice of context.slices({ overlapping: { fromTick: start, toTick: end } })) {
+    if (slice.key.id !== before.key.id) return false;
+    if (hasWrittenVoicing(slice, alteredSeventh)) heardDominantSeventh = true;
+    else if (!hasWrittenVoicing(slice, altered)) return false;
+  }
+  // A major triad becoming augmented can also be a tonic decorated on its
+  // way to IV. Away from the printed tonic, require the dominant seventh.
+  return heardDominantSeventh || (pitchClassEquals(tonic, arrival.key.tonic) &&
+    (!raisesFifth || arrival.key.mode === "major"));
 }

@@ -40,6 +40,11 @@ describe("属和弦变五音的半音准备（第46章）", () => {
     const score = raised.replace("G3/4 F3/4 E3/2", "G3/4. F3/8 E3/2");
     expect(warnsAtChange(score, "alto")).toBe(false);
   });
+  it("只有增三和弦且没有属七音时，区分本调属准备和外观相同的主到下属", () => {
+    const triad = raised.replace("G3/4 F3/4 E3/2", "G3/2 E3/2");
+    expect(warnsAtChange(triad, "alto")).toBe(false);
+    expect(warnsAtChange(triad.replace("key C major", "key G major"), "alto")).toBe(true);
+  });
   it.each([
     ["落点由另一声部代奏", lowered.replace("Db4/4 C4/2", "Db4/4 E4/2")],
     ["错拼落点", lowered.replace("Db4/4 C4/2", "Db4/4 B#3/2")],
