@@ -1,7 +1,11 @@
 import { metricPositionAt, buildMetricTimeline } from "../../rhythm/metric";
 import {
+  isWrittenStep,
+  pitchClassEquals,
   pitchClassValue,
+  spelledPitchEquals,
   toMidi,
+  writtenInterval,
   type SpelledPitchClass,
 } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
@@ -140,4 +144,29 @@ export function observationPitchClassKey(
 
 export function noteMidi(note: AnalysisNote) {
   return toMidi(note.pitch);
+}
+
+export function soundingBass(observation: ChordInferenceObservation) {
+  const bass = observation.bass;
+  if (observation.completeSatb && bass && observationNotes(observation).every(
+    ({ note }) => toMidi(note.pitch) >= toMidi(bass.pitch) && !note.nonChordToneRole,
+  )) return bass.pitch;
+}
+
+export function resolvesTone(
+  source: ChordInferenceObservation,
+  target: ChordInferenceObservation,
+  from: SpelledPitchClass,
+  to: SpelledPitchClass,
+  direction: -1 | 0 | 1,
+) {
+  return observationNotes(source).some(({ voiceId, note }) => {
+    const next = target.activeNotes[voiceId];
+    if (!next || !pitchClassEquals(note.pitch, from) || !pitchClassEquals(next.pitch, to)) return false;
+    if (direction === 0) return spelledPitchEquals(note.pitch, next.pitch);
+    if (next.startTick !== target.fromTick) return false;
+    const interval = writtenInterval(note.pitch, next.pitch);
+    return interval.diatonicSteps === direction &&
+      (direction === 1 ? interval.semitones === 1 : isWrittenStep(interval));
+  });
 }

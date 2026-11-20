@@ -1,6 +1,7 @@
 import { chordToneSpellings, type KeyReference } from "../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, type SpelledPitchClass } from "../../pitch";
+import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, type SpelledPitchClass } from "../../pitch";
 import type { ChordInferenceObservation } from "./types";
+import { observationNotes, resolvesTone, soundingBass } from "./observations";
 import { harmonicMajorPreparation } from "./appliedSequences";
 
 export interface LocalKeyContext {
@@ -111,12 +112,60 @@ function preparationStart(
   return start;
 }
 
+function hasEarlierHomeTonic(
+  observations: readonly ChordInferenceObservation[], source: ChordInferenceObservation,
+  localKeys: ReadonlyMap<number, LocalKeyContext>, manualPhraseTicks: readonly number[],
+) {
+  for (let j = source.index - 1; j >= 0; j--) {
+    const item = observations[j];
+    if (item.key !== source.key || localKeys.has(j) || !item.completeSatb ||
+        manualPhraseTicks.some(t => item.fromTick < t && t <= observations[j + 1].fromTick)) break;
+    const mode = homeTonicMode(item);
+    if (mode && item.soundingPitchClasses.length === 3 && soundingBass(item) &&
+        (hasBass(item, item.key.tonic) || hasBass(item, chordToneSpellings(item.key.tonic, mode)[1])))
+      return mode === item.key.mode;
+  }
+  return false;
+}
+
+function sameWrittenVoicing(previous: ChordInferenceObservation, current: ChordInferenceObservation) {
+  return previous.key === current.key && previous.toTick === current.fromTick && !!soundingBass(previous) &&
+    observationNotes(current).every(({ voiceId, note }) => {
+      const other = previous.activeNotes[voiceId];
+      return other && spelledPitchEquals(note.pitch, other.pitch);
+    });
+}
+
+// Spasobin §54.2. The opposite-mode tonic can be a common chord with a
+// separately established destination. The home V7 alone also admits mixture.
+function parallelTonicPivot(
+  dominant: ChordInferenceObservation, pivot: ChordInferenceObservation, destination: KeyReference,
+): KeyReference | undefined {
+  if (dominant.key !== pivot.key || dominant.toTick !== pivot.fromTick ||
+      pivot.metric?.role !== "downbeat" || !soundingBass(dominant) || !soundingBass(pivot)) return;
+  const home = pivot.key;
+  const parallel: KeyReference = { tonic: home.tonic, mode: home.mode === "major" ? "minor" : "major" };
+  const triad = chordToneSpellings(home.tonic, parallel.mode);
+  if (pivot.soundingPitchClasses.length !== 3 || !fits(pivot, triad) ||
+      !(hasBass(pivot, triad[0]) || hasBass(pivot, triad[1]))) return;
+  const seventh = chordToneSpellings(scaleDegreePitchClass(home, 5), "dominant7");
+  if (dominant.soundingPitchClasses.length !== 4 || !fits(dominant, seventh) ||
+      !resolvesTone(dominant, pivot, seventh[1], triad[0], 1) ||
+      !resolvesTone(dominant, pivot, seventh[3], triad[1], -1)) return;
+  const destinationScale = scale(destination), parallelScale = scale(parallel), homeScale = scale(home);
+  const destinationTriad = chordToneSpellings(destination.tonic, destination.mode);
+  if (triad.every(p => contains(destinationScale, p)) &&
+      destinationTriad.every(p => contains(parallelScale, p)) &&
+      !destinationTriad.every(p => contains(homeScale, p))) return parallel;
+}
+
 /** A written V(7)–I can tonicize a scale degree without a change of key.
  * Require a phrase close and independent preparation in the destination.
  * Keep printed key changes as hard boundaries. */
 export function inferLocalKeys(
   observations: readonly ChordInferenceObservation[],
   phraseEnds: ReadonlySet<number>,
+  manualPhraseTicks: readonly number[] = [],
 ) {
   const keys = new Map<number, LocalKeyContext>();
   for (let i = 1; i < observations.length; i++) {
@@ -150,6 +199,22 @@ export function inferLocalKeys(
         i = end;
       }
       break;
+    }
+  }
+  const ends = [...phraseEnds];
+  for (let i = 1; i < observations.length - 1; i++) {
+    const destination = keys.get(i + 1);
+    if (!destination || keys.has(i) || destination.dominantIndex <= i || !soundingBass(observations[i])) continue;
+    let start = i;
+    while (start > 0 && !keys.has(start - 1) && sameWrittenVoicing(observations[start - 1], observations[start])) start--;
+    if (!start || keys.has(start - 1)) continue;
+    const source = observations[start - 1], pivot = observations[start], landing = observations[destination.tonicIndex];
+    if (pivot.key !== landing.key || manualPhraseTicks.some(t => source.fromTick < t && t <= landing.fromTick) ||
+        ends.some(t => pivot.fromTick < t && t <= landing.fromTick)) continue;
+    const key = parallelTonicPivot(source, pivot, destination.key);
+    if (key && hasEarlierHomeTonic(observations, source, keys, manualPhraseTicks)) {
+      const context = { key, dominantIndex: start - 1, tonicIndex: start };
+      for (let j = start; j <= i; j++) keys.set(j, context);
     }
   }
   return keys;

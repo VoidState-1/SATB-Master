@@ -84,7 +84,10 @@ export function inferChords(
   const terminalTicks = new Set(
     phraseAnalysis.boundaries.map((boundary) => boundary.tick),
   );
-  const localKeys = inferLocalKeys(fullScore, terminalTicks);
+  const manualPhraseTicks = project.structure.phraseBoundaries
+    .filter(boundary => boundary.source === "manual")
+    .map(boundary => boundary.tick);
+  const localKeys = inferLocalKeys(fullScore, terminalTicks, manualPhraseTicks);
   const observations = fullScore.map(item => {
     const localKey = localKeys.get(item.index)?.key;
     return localKey ? { ...item, key: { ...item.key, ...localKey }, localKey } : item;
@@ -119,9 +122,6 @@ export function inferChords(
   const currentPhraseTicks = [...new Set([...terminalTicks, ...phraseBoundaryTicks])];
   const doubleNeighbors = simultaneousNeighborCandidates(observations, prolonged, options, project.ppq, phraseBoundaryTicks);
   const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high", currentPhraseTicks, doubleNeighbors);
-  const manualPhraseTicks = project.structure.phraseBoundaries
-    .filter(boundary => boundary.source === "manual")
-    .map(boundary => boundary.tick);
   const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence, manualPhraseTicks);
   const recovered = withDeceptiveDominants(observations, withSixths, options, project.ppq, phraseBoundaryTicks);
   const withPassingSevenths = withPassingTonicSevenths(
