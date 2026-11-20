@@ -106,7 +106,8 @@ function romanNameSingle(identity: ChordIdentity, semantics: HarmonySemantics) {
   const target = interpretation.appliedTarget
     ? `/${romanDegreeLabel(interpretation.appliedTarget.degree)}`
     : "";
-  return `${accidentalSymbol(interpretation.degreeAlteration)}${numeral}${qualityMark}${extension}${target}`;
+  const base = `${accidentalSymbol(interpretation.degreeAlteration)}${numeral}${qualityMark}${extension}`;
+  return `${base}${alterationSuffix(identity)}${target}`;
 }
 
 function alterationSuffix(identity: ChordIdentity) {

@@ -118,6 +118,24 @@ describe("和弦命名", () => {
       absolute: "D♭",
     });
   });
+  it.each([
+    ["转位降五副属", { inversion: 1, alterations: [{ degree: 5, alter: -1 }] }, "V6/5(♭5)/V", "D7(♭5)/F♯"],
+    ["含多个变音的九和弦", {
+      inversion: 0, extensions: [9], alterations: [{ degree: 5, alter: -1 }, { degree: 9, alter: 1 }],
+    }, "V9(♭5,♯9)/V", "D9(♭5,♯9)"],
+  ] as const)("%s 的罗马名称保留变音和副属目标", (_name, structure, roman, absolute) => {
+    expect(formatChord({
+      degree: 5,
+      degreeAlteration: 0,
+      quality: "dominant7",
+      inversion: structure.inversion,
+      appliedTarget: 5,
+      extensions: "extensions" in structure ? [...structure.extensions] : [],
+      alterations: [...structure.alterations],
+      source: "manual",
+      confidence: "certain",
+    }, cMajor)).toMatchObject({ roman, absolute });
+  });
 });
 
 describe("和弦范围命令", () => {
