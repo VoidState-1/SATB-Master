@@ -1,10 +1,6 @@
-import { isWrittenLowerNeighborMotion } from "../helpers/writtenLowerNeighborPair";
 import type { HarmonyAnalysis, MelodyTransition } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
-import {
-  formatSpelledPitch,
-  toMidi,
-} from "../../../pitch";
+import { toMidi } from "../../../pitch";
 import {
   diagnostic,
   intervalName,
@@ -13,17 +9,12 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { hasSupportedChromaticPreparation } from "./chromaticUnison";
-import { chromaticPassingTransitionIds } from "./chromaticPassing";
-import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
-import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
-import { resolvesContextualMinorDominantSixth } from "./dominantSixthSubstitution";
 import { isResolvedDominantSixthBass } from "./resolvedDominantSixthBass";
-import { resolvesDominantSeventhEntry } from "./resolvedDominantSeventhEntry";
-import { resolvesRaisedSecondApproach } from "./chromaticDoubleDominant";
-import { resolvesGermanSixthDiminishedThird } from "./chromaticAugmentedSixth";
 import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
 import { sameHarmonyAtMelodicAttack } from "../helpers/motionHarmony";
+import { augmentedIntervalRule, diminishedIntervalRule } from "./alteredMelodicIntervals";
+
+export { augmentedIntervalRule, diminishedIntervalRule };
 
 function validMelodyTransitions(
   context: HarmonyRuleContext,
@@ -137,77 +128,6 @@ export function largeLeapRule(context: HarmonyRuleContext) {
 
 export function tritoneRule(context: HarmonyRuleContext) {
   return evaluateMelodyTransitionRule(context, TRITONE_POLICY);
-}
-
-function alteredIntervalRule(
-  context: HarmonyRuleContext,
-  ruleId: "melody.augmented-interval" | "melody.diminished-interval",
-  expectedQuality: "增" | "减",
-) {
-  const diagnostics: RuleDiagnostic[] = [];
-  const passing = expectedQuality === "增" ? chromaticPassingTransitionIds(context) : undefined;
-  const chain = halfDiminishedChainArrivals(context, expectedQuality);
-  for (const transition of validMelodyTransitions(context)) {
-    const named = intervalName(transition.writtenInterval);
-    if (
-      !named.altered ||
-      named.quality !== expectedQuality ||
-      Math.abs(transition.writtenInterval.semitones) === 0 ||
-      isNeapolitanSeventhBassTritone(context, transition) ||
-      passing?.has(transition.id) ||
-      chain.has(transition.current.id) ||
-      isMinorSixthChordBassLine(context, transition) ||
-      (expectedQuality === "减" && isResolvedDominantSixthBass(context, transition)) ||
-      (expectedQuality === "减" && resolvesDominantSeventhEntry(context, transition)) ||
-      (expectedQuality === "减" && resolvesRaisedSecondApproach(context, transition)) ||
-      (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
-      (expectedQuality === "减" && isWrittenLowerNeighborMotion(context, transition)) ||
-      (expectedQuality === "增" && hasSupportedChromaticPreparation(context, transition))
-    )
-      continue;
-    const attack = context.sliceAt(transition.current.startTick);
-    // The following 6→5 stays within V7. That internal continuity cannot
-    // exempt a separate melodic leap into the proved start of this V7.
-    const contextualDominantOnset = attack && attack.notes.bass?.startTick === attack.tick &&
-      attack.notes.soprano?.startTick === attack.tick &&
-      resolvesContextualMinorDominantSixth(attack, context);
-    diagnostics.push(
-      diagnostic(
-        ruleId,
-        transition.current.startTick,
-        transition.current.startTick + transition.current.durationTicks,
-        [transition.voiceId],
-        [transition.previous, transition.current],
-        "旋律出现增减音程",
-        `${voiceName(context.analysis, transition.voiceId)}的 ${formatSpelledPitch(transition.previous.pitch)} 到 ${formatSpelledPitch(transition.current.pitch)} 构成${named.label}。`,
-        {
-          motionSameHarmony: contextualDominantOnset
-            ? sameHarmonyAtMelodicAttack(context, transition.current.startTick, transition.voiceId)
-            : undefined,
-          messageKey: `${ruleId}.${named.quality}`,
-          params: {
-            intervalNumber: named.number,
-            quality: named.quality,
-            semitones: Math.abs(transition.writtenInterval.semitones),
-          },
-          evidence: [
-            noteEvidence(transition.previous, "前一音"),
-            noteEvidence(transition.current, "当前音"),
-            { kind: "interval", label: "书写音程", value: named.label },
-          ],
-        },
-      ),
-    );
-  }
-  return diagnostics;
-}
-
-export function augmentedIntervalRule(context: HarmonyRuleContext) {
-  return alteredIntervalRule(context, "melody.augmented-interval", "增");
-}
-
-export function diminishedIntervalRule(context: HarmonyRuleContext) {
-  return alteredIntervalRule(context, "melody.diminished-interval", "减");
 }
 
 interface MelodicContourFact {
