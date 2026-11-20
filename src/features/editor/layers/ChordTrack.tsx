@@ -98,8 +98,9 @@ export function ChordTrack({
           );
           const cadence = cadences.length === 1 && cadences[0].fromTick <= startTick &&
             startTick + durationTicks <= cadences[0].toTick ? cadences[0] : undefined;
-          const display =
-            project.chordTrack.displayMode === "functional"
+          const display = !chord.semantics && formatted.roman === "?"
+            ? formatted.absolute
+            : project.chordTrack.displayMode === "functional"
               ? formatted.functional
               : project.chordTrack.displayMode === "roman"
                 ? formatted.roman

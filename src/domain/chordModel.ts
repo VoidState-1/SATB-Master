@@ -539,6 +539,10 @@ export function semanticsFromChordDraft(draft: ChordDraft): HarmonySemantics {
   };
 }
 
+export function inversionBassOptions(identity: ChordIdentity) {
+  return chordIdentityToneSpellings(identity).slice(0, maximumInversionForStructure(identity.structure) + 1);
+}
+
 export function chordIdentityInversion(identity: ChordIdentity) {
   const maximum = maximumInversionForStructure(identity.structure);
   if (maximum === 0) return 0;

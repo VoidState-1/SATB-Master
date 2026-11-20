@@ -2,10 +2,10 @@ import { useMemo } from "react";
 import { Lock, LockOpen, Trash2 } from "lucide-react";
 import {
   chordDraftFromRegion,
-  defaultChordDraftAtTick,
   formatChord,
   formatChordRegion,
 } from "../../domain/chords";
+import { inversionBassOptions } from "../../domain/chordModel";
 import {
   inspectChordRegion,
   inspectNoteEvent,
@@ -18,7 +18,9 @@ import {
 } from "../../domain/project";
 import {
   enharmonicSpellings,
+  formatPitchClass,
   formatSpelledPitch,
+  pitchClassEquals,
   parseSpelledPitch,
   serializeSpelledPitch,
   spellMidi,
@@ -75,6 +77,13 @@ export function SelectionInspector({
         : undefined,
     [developerMode, selectedChord],
   );
+
+  const chordName = selectedChord && formatChordRegion(project, selectedChord);
+  const chordDraft = selectedChord && chordDraftFromRegion(selectedChord);
+  const writtenBassOptions = selectedChord && !chordDraft ? inversionBassOptions(selectedChord.identity) : [];
+  const selectedBassIndex = selectedChord
+    ? writtenBassOptions.findIndex(bass => pitchClassEquals(bass, selectedChord.identity.bass))
+    : -1;
 
   return (
     <>
@@ -267,43 +276,37 @@ export function SelectionInspector({
         <DeveloperEventInspector inspection={noteInspection} />
       ) : null}
 
-      {selectedChord ? (
+      {selectedChord && chordName ? (
         <section className="property-section">
-          <header>
-            和弦 · {formatChordRegion(project, selectedChord).functional}
-          </header>
+          <header>和弦 · {chordDraft ? chordName.functional : chordName.absolute}</header>
           <div className="computed-chord-name">
-            <strong>
-              {formatChordRegion(project, selectedChord).functional}
-            </strong>
-            <span>
-              {formatChordRegion(project, selectedChord).roman} ·{" "}
-              {formatChordRegion(project, selectedChord).absolute}
-            </span>
-            <small>
-              {formatChordRegion(project, selectedChord).semanticSummary}
-            </small>
+            <strong>{chordDraft ? chordName.functional : chordName.absolute}</strong>
+            {chordDraft ? <span>{chordName.roman} · {chordName.absolute}</span> : null}
+            <small>{chordDraft ? chordName.semanticSummary : "局部功能未定"}</small>
           </div>
-          <ChordSemanticsEditor
-            draft={
-              chordDraftFromRegion(selectedChord) ??
-              defaultChordDraftAtTick(project, selectedChord.startTick)
-            }
-            keyEvent={keyAtTick(project.keyEvents, selectedChord.startTick)}
-            onChange={(patch) =>
-              onUpdateChord(selectedChord.id, {
-                draft: selectedChord.semantics
-                  ? patch
-                  : {
-                      ...defaultChordDraftAtTick(
-                        project,
-                        selectedChord.startTick,
-                      ),
-                      ...patch,
-                    },
-              })
-            }
-          />
+          {chordDraft ? (
+            <ChordSemanticsEditor
+              draft={chordDraft}
+              keyEvent={keyAtTick(project.keyEvents, selectedChord.startTick)}
+              onChange={draft => onUpdateChord(selectedChord.id, { draft })}
+            />
+          ) : (
+            <label>
+              <span>实写转位低音</span>
+              <select value={selectedBassIndex} disabled={selectedChord.locked || project.chordTrack.locked}
+                onChange={event => {
+                  const writtenBass = writtenBassOptions[Number(event.target.value)];
+                  if (writtenBass) onUpdateChord(selectedChord.id, { writtenBass });
+                }}>
+                {selectedBassIndex < 0 && (
+                  <option value={-1} disabled>{formatPitchClass(selectedChord.identity.bass)}（当前低音）</option>
+                )}
+                {writtenBassOptions.map((bass, index) => (
+                  <option key={index} value={index}>{formatPitchClass(bass)}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <CadenceEditor
             project={project}
             selectedChord={selectedChord}

@@ -1,5 +1,6 @@
 import {
   chordDraftFromIdentity,
+  inversionBassOptions,
   harmonySemanticsCompatibleWithIdentity,
   maximumInversionForDraft,
   resolveChordIdentity,
@@ -17,7 +18,7 @@ import {
   type NoteEvent,
   type ProjectDocument,
 } from "./project";
-import { toMidi } from "./pitch";
+import { pitchClassEquals, toMidi } from "./pitch";
 import { keyAtTick } from "./time";
 import { cadenceChordCoverage } from "./project/cadenceCoverage";
 import { detectProjectCadences } from "./harmony/cadence/projectEvidence";
@@ -569,6 +570,7 @@ export type ChordRegionPatch = Partial<
   Pick<ChordRegion, "startTick" | "durationTicks" | "locked">
 > & {
   draft?: Partial<ChordDraft>;
+  writtenBass?: ChordRegion["identity"]["bass"];
 };
 
 export function updateChordRegion(
@@ -583,10 +585,16 @@ export function updateChordRegion(
   if (project.chordTrack.locked) return { project, error: "和弦轨已锁定" };
   if (current.locked && patch.locked !== false)
     return { project, error: "该和弦已锁定" };
-  const { draft: draftPatch, ...directPatch } = patch;
+  const { draft: draftPatch, writtenBass, ...directPatch } = patch;
+  if (writtenBass && (current.semantics || draftPatch ||
+      !inversionBassOptions(current.identity)
+        .some(tone => pitchClassEquals(tone, writtenBass)))) {
+    return { project, error: "实写低音必须是当前绝对和弦可用的转位音" };
+  }
   let updated: ChordRegion = {
     ...current,
     ...directPatch,
+    ...(writtenBass ? { identity: { ...current.identity, bass: writtenBass } } : {}),
   };
   if (current.semantics || draftPatch) {
     if (!current.semantics) return { project, error: "和弦缺少可编辑的语义" };
