@@ -20,6 +20,7 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import { bassNeighborAgainstHeldUpper } from "../helpers/heldBassNeighbor";
 import { isCadentialContraryOctave } from "./cadentialContraryOctaves";
 import { sameHarmonyOnTransition } from "../helpers/motionHarmony";
 
@@ -171,7 +172,8 @@ function crossRelationDiagnostic(
 
 export function simultaneousCrossRelationRule(context: HarmonyRuleContext) {
   return crossRelationCandidates(context, {})
-    .filter((candidate) => candidate.simultaneous)
+    .filter(({ simultaneous, left, right }) => simultaneous &&
+      !(right.voiceId === "bass" && bassNeighborAgainstHeldUpper(context, right.note, left.voiceId, left.note)))
     .map((candidate) =>
       crossRelationDiagnostic(
         context,
