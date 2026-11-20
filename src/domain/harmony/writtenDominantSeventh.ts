@@ -15,15 +15,34 @@ function hasSoundingBass(frame: WrittenFrame) {
   return !!bass && frame.completeSatb && VOICE_ORDER.every(voice => toMidi(frame.notes[voice]!.pitch) >= toMidi(bass.pitch));
 }
 
-function invertedDominantSource(departure: WrittenFrame, onset: WrittenFrame) {
+function dominantSource(departure: WrittenFrame, onset: WrittenFrame) {
   if (!hasSoundingBass(departure) || !hasSoundingBass(onset) || departure.tick >= onset.tick) return;
   const notes = VOICE_ORDER.map(voice => departure.notes[voice]!);
   if (notes.some(note => note.nonChordToneRole || endOf(note) < onset.tick)) return;
   const chord = readWrittenDominantSeventh(departure.notes);
-  if (!chord || chord.inversion === 0) return;
-  const [, leading, fifth, seventh] = chordToneSpellings(chord.root, "dominant7");
-  const voiceOf = (tone: typeof leading) => VOICE_ORDER.find(voice => pitchClassEquals(departure.notes[voice]!.pitch, tone))!;
-  return { ...chord, leadingVoice: voiceOf(leading), fifthVoice: voiceOf(fifth), seventhVoice: voiceOf(seventh) };
+  if (!chord) return;
+  const [, , fifth] = chordToneSpellings(chord.root, "dominant7");
+  const voiceOf = (tone: typeof fifth) => VOICE_ORDER.find(voice => pitchClassEquals(departure.notes[voice]!.pitch, tone));
+  return {
+    ...chord,
+    leadingVoice: voiceOf(chord.third)!,
+    fifthVoice: voiceOf(fifth),
+    seventhVoice: voiceOf(chord.seventh)!,
+  };
+}
+
+function invertedDominantSource(departure: WrittenFrame, onset: WrittenFrame) {
+  const source = dominantSource(departure, onset);
+  if (!source || source.inversion === 0 || !source.fifthVoice) return;
+  return { ...source, fifthVoice: source.fifthVoice };
+}
+
+function settleSingleVoice(onset: WrittenFrame, voice: VoiceId, settled: WrittenFrame | undefined) {
+  if (!settled || settled.tick !== endOf(onset.notes[voice]!) || !hasSoundingBass(settled)) return;
+  const landing = settled.notes[voice]!;
+  if (landing.startTick !== settled.tick || VOICE_ORDER.some(voice => settled.notes[voice]!.nonChordToneRole)) return;
+  if (VOICE_ORDER.some(other => other !== voice && onset.notes[other]!.id !== settled.notes[other]!.id)) return;
+  return { settled, landing };
 }
 
 function reattackResolution(
@@ -36,12 +55,8 @@ function reattackResolution(
   if (endOf(before) !== onset.tick || repeated.startTick !== onset.tick ||
       repeated.id === before.id || !spelledPitchEquals(before.pitch, repeated.pitch) ||
       (repeated.nonChordToneRole && repeated.nonChordToneRole !== "suspension")) return;
-  const settled = frameAt(endOf(repeated));
-  if (!settled || settled.tick !== endOf(repeated) || !hasSoundingBass(settled)) return;
-  const landing = settled.notes[voice]!;
-  if (landing.startTick !== settled.tick || VOICE_ORDER.some(voice => settled.notes[voice]!.nonChordToneRole)) return;
-  if (VOICE_ORDER.some(other => other !== voice && onset.notes[other]!.id !== settled.notes[other]!.id)) return;
-  return { repeated, settled, landing };
+  const resolution = settleSingleVoice(onset, voice, frameAt(endOf(repeated)));
+  return resolution && { repeated, ...resolution };
 }
 
 function retainsDominantRoot(departure: WrittenFrame, onset: WrittenFrame, voice: VoiceId) {
@@ -130,4 +145,44 @@ export function readWrittenDominantSeventh(voicing: AnalysisSlice["notes"]) {
       return { root, inversion, third, seventh, target: scaleDegreePitchClass({ tonic: root, mode: "major" }, 4) };
     }
   }
+}
+
+/** The doubled-root V7 can omit its fifth. Confirm its actual root-position
+ * destination and the separate third, seventh and retained root lines.
+ * A tied leading tone may settle one written frame after the bass. */
+export function readResolvedRootSeventhWithoutFifth(
+  source: WrittenFrame,
+  arrival: WrittenFrame,
+  later?: WrittenFrame,
+) {
+  const chord = dominantSource(source, arrival);
+  if (chord?.inversion !== 0 || chord.fifthVoice) return;
+  const { root, target, leadingVoice, seventhVoice } = chord;
+  const sourceBass = source.notes.bass!, arrivalBass = arrival.notes.bass!;
+  const bassMotion = writtenInterval(sourceBass.pitch, arrivalBass.pitch);
+  if (!pitchClassEquals(arrivalBass.pitch, target) || endOf(sourceBass) !== arrival.tick || arrivalBass.startTick !== arrival.tick ||
+      !((bassMotion.diatonicSteps === 3 && bassMotion.semitones === 5) ||
+        (bassMotion.diatonicSteps === -4 && bassMotion.semitones === -7))) return;
+
+  const rootVoice = VOICE_ORDER.find(voice =>
+    voice !== "bass" && pitchClassEquals(source.notes[voice]!.pitch, root),
+  )!;
+  if (!retainsDominantRoot(source, arrival, rootVoice)) return;
+
+  const held = arrival.notes[leadingVoice]?.id === source.notes[leadingVoice]!.id;
+  const settled = held ? settleSingleVoice(arrival, leadingVoice, later)?.settled : arrival;
+  if (!settled || !resolvesInVoice(source, settled, leadingVoice, target, 1)) return;
+
+  const mode = (["major", "minor"] as const).find(quality => {
+    const tones = chordToneSpellings(target, quality);
+    return hasWrittenVoicing(settled, tones) && resolvesInVoice(source, arrival, seventhVoice, tones[1], -1);
+  });
+  if (!mode) return;
+  const noteIds = [source, arrival, settled].flatMap(frame =>
+    VOICE_ORDER.map(voice => frame.notes[voice]!.id),
+  );
+  return {
+    root, target, mode, settledTick: settled.tick,
+    noteIds: [...new Set(noteIds)],
+  };
 }
