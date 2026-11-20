@@ -8,6 +8,7 @@ import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import { readDominantSeventhExchange, readWrittenDominantSeventh } from "../../writtenDominantSeventh";
 import { resolvesInVoice } from "../../writtenResolution";
+import { inheritedLeadingToneKeyAtRotation } from "./writtenLeadingToneTransfer";
 import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { readDoubleDominantResolution } from "../helpers/doubleDominantResolution";
 import { resolvesDominantSixthSubstitution } from "../groups/dominantSixthSubstitution";
@@ -83,7 +84,7 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
     const { slice, previous, transitionFromPrevious } = context;
     const chord = slice.chord;
     if (!supportsTendencyResolutionRules(context, chord)) return [];
-    const targetKey = leadingToneSourceKey(context.rules, slice);
+    const targetKey = leadingToneSourceKey(context.rules, slice) ?? inheritedLeadingToneKeyAtRotation(context);
     if (!targetKey) return [];
     const { tonic: targetTonic, mode: targetMode } = targetKey;
     const leadingTone = leadingTonePitchClass(targetKey);

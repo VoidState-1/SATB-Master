@@ -14,6 +14,21 @@ bars 1..1 {
  B: | E3/4 C#3/4 D3/4 |
 }`;
 
+const rotation = `satb 1
+key G minor
+meter 3/4
+bars 1..1 {
+ S: | C5/4 F#4/4 G4/4 |
+ A: | F#4/4 D4/2 |
+ T: | D4/4 C4/4 Bb3/4 |
+ B: | A2/2 G2/4 |
+}`;
+const localRotation = rotation.replace("key G minor", "key Eb major");
+const localOpening = `
+annotations {
+ chord opening range=[1:1,1:2) symbol=D43 localKey="G minor"
+}`;
+
 function compile(text: string) {
   const project = compileScoreText(text).project;
   expect(validateProject(project)).toBe(true);
@@ -104,6 +119,65 @@ describe("Written leading-tone exchange across a gap in the chord track", () => 
     project.structure.phraseBoundaries.push({ id: "phrase-break", tick: project.ppq,
       source: "manual", confidence: "certain" });
     expect(expectedAt(project, 1, "soprano")).toHaveLength(1);
+  });
+});
+
+describe("Written leading-tone handoff in a rotation of the upper voices", () => {
+  it("passes the third to the soprano through a written three-voice rotation over held bass", () => {
+    const project = withLabels("D43/4 r/4 t/4", rotation);
+    expect(expectedAt(project, 1, "alto")).toEqual([]);
+    expect(expectedAt(project, 2, "soprano")).toEqual([]);
+  });
+
+  it("evaluates the soprano's own departure from the same dominant", () => {
+    const project = withLabels("D43/4 r/4 t/4", rotation.replace("G4/4", "A4/4"));
+    expect(expectedAt(project, 1, "alto")).toEqual([]);
+    expect(expectedAt(project, 2, "soprano")).toMatchObject([{
+      params: { key: "G minor", leadingTone: "F♯", targetTonic: "G" },
+      trace: [
+        { tick: 960, outcome: "continue", reason: "obligation-opened" },
+        { tick: 1920, outcome: "violate", reason: "leading-tone-moved-elsewhere" },
+      ],
+    }]);
+  });
+
+  it.each([
+    ["the received pitch changes register", rotation.replace("F#4/4 G4/4", "F#5/4 G5/4")],
+    ["a different voicing intervenes before the rotation", rotation.replace("C5/4", "C5/16 Eb5/16 C5/8")],
+    ["a new bass attack replaces the held bass", rotation.replace("A2/2", "A2/4 A2/4")],
+    ["one of the other voices abandons its chord member", rotation.replace("C4/4 Bb3/4", "Eb4/4 Bb3/4")],
+  ])("keeps the original warning when %s", (_reason, text) => {
+    const project = withLabels("D43/4 r/4 t/4", text);
+    expect(expectedAt(project, 1, "alto")).toHaveLength(1);
+  });
+
+  it("keeps the original warning if a conflicting chord is declared at the rotation", () => {
+    const project = withLabels("D43/4 s/4 t/4", rotation);
+    expect(expectedAt(project, 1, "alto")).toHaveLength(1);
+  });
+
+  it("retains the confirmed local target when only the opening dominant is labelled", () => {
+    const project = compile(localRotation.replace("G4/4", "A4/4") + localOpening);
+    expect(expectedAt(project, 1, "alto")).toEqual([]);
+    expect(expectedAt(project, 2, "soprano")).toMatchObject([{
+      params: { key: "G minor", leadingTone: "F♯", targetTonic: "G" },
+      trace: [
+        { tick: 960, outcome: "continue", reason: "obligation-opened" },
+        { tick: 1920, outcome: "violate", reason: "leading-tone-moved-elsewhere" },
+      ],
+    }]);
+  });
+
+  it("opens no obligation when the rotation lacks evidence for a local target", () => {
+    const project = compile(localRotation.replace("G4/4", "A4/4"));
+    expect(expectedAt(project, 1, "alto")).toEqual([]);
+    expect(expectedAt(project, 2, "soprano")).toEqual([]);
+  });
+
+  it("keeps the original obligation when the new voicing independently points to a different mode", () => {
+    const project = compile(localRotation.replace("Bb3/4", "B3/4") + localOpening);
+    expect(expectedAt(project, 1, "alto")).toMatchObject([{ params: { key: "G minor" } }]);
+    expect(expectedAt(project, 2, "soprano")).toEqual([]);
   });
 });
 
