@@ -1,0 +1,223 @@
+import { describe, expect, it } from "vitest";
+import { PPQ, type ProjectDocument } from "../../../project/types";
+import { compileScoreText } from "../../../scoreText";
+import { checkHarmony } from "../../registry";
+
+const rule = "voice-leading.overlap";
+
+function atSecondBeat(
+  project: ProjectDocument, strict = false, voices = ["alto", "soprano"],
+) {
+  const policy = strict ? { [rule]: { "same-harmony": "strict", "voice-exchange": "strict" } } as const : {};
+  return checkHarmony(project, undefined, {}, policy).diagnostics
+    .filter(diagnostic => diagnostic.ruleId === rule && diagnostic.tick === PPQ &&
+      voices.every(voice => diagnostic.voiceIds.some(id => id === voice)))
+    .map(({ tick, endTick, severity }) => ({ tick, endTick, severity }));
+}
+
+function expandsUnison({
+  tenor = "B3/4 C4/4 G3/4 B3/4", bass = "G2/4 E3/4 E3/2", harmony = "r/4 I6/4 iii/2",
+}: { tenor?: string; bass?: string; harmony?: string } = {}) {
+  return compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | G4/4 E6/2. |
+ A: | G4/4 G5/4 B5/4 G5/4 |
+ T: | ${tenor} |
+ B: | ${bass} |
+ H: | ${harmony} |
+}`).project;
+}
+
+const warning = { tick: PPQ, endTick: 2 * PPQ, severity: "warning" };
+
+describe("同度分开时的声部超越证据", () => {
+  it.each(["r/4 I6/4 iii/2", "r/2 iii/2"])("还原实奏属到主六的超越 %s", harmony => {
+    // G4/G4/B3/G2 -> E6/G5/C4/E3 before the unrelated E-minor revoicing.
+    expect(atSecondBeat(expandsUnison({ harmony }))).toEqual([warning]);
+  });
+
+  it("出发缺少实际大三音时保留原例外判断", () => {
+    const project = expandsUnison({ tenor: "G3/4 C4/4 G3/4 B3/4" });
+    expect(atSecondBeat(project, true)).toEqual([warning]);
+    expect(atSecondBeat(project)).toEqual([]);
+  });
+
+  it("到达低音与主六实奏不符时保留原例外判断", () => {
+    const project = expandsUnison({ bass: "G2/4 Eb3/4 E3/2" });
+    expect(atSecondBeat(project, true)).toEqual([warning]);
+    expect(atSecondBeat(project)).toEqual([]);
+  });
+
+  it("显式局部属功能反证主六时不升级", () => {
+    const project = expandsUnison();
+    const interpretation = project.chordTrack.regions[0].semantics!.interpretations[0];
+    interpretation.localKey = { tonic: { step: "F", alter: 0 }, mode: "major" };
+    interpretation.degree = 5;
+    interpretation.designation = { notationSystem: "spasobin", kind: "primary", primaryFunction: "dominant" };
+    expect(atSecondBeat(project, true)).toEqual([warning]);
+    expect(atSecondBeat(project)).toEqual([]);
+  });
+
+  it("保留手动句界处的原例外判断", () => {
+    const project = expandsUnison();
+    project.structure.phraseBoundaries.push({ id: "boundary", tick: PPQ, source: "manual", confidence: "certain" });
+    expect(atSecondBeat(project)).toEqual([]);
+  });
+});
+
+it.each(["K46", "r"])("终止四六接属七只越二度时，沿用原默认政策 %s", label => {
+  const project = compileScoreText(`satb 1
+key G major
+meter 4/4
+bars 1..1 {
+ S: | B4/4 A4/4 D5/4 B4/4 |
+ A: | G4/4 F#4/2 G4/4 |
+ T: | D4/4 C4/2 B3/4 |
+ B: | D4/4 D3/2 G2/4 |
+ H: | ${label}/4 V7/2 I/4 |
+}`).project;
+  const pair = ["tenor", "bass"];
+  expect(atSecondBeat(project, true, pair)).toEqual([warning]);
+  expect(atSecondBeat(project, false, pair)).toEqual([]);
+});
+
+it("汇入同度的连接沿用原默认政策", () => {
+  const project = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | F4/4 G4/2. |
+ A: | D4/4 G4/4 E4/4 G4/4 |
+ T: | B3/4 E3/4 C4/4 E4/4 |
+ B: | G2/4 C3/2. |
+ H: | V7/4 I/2. |
+}`).project;
+  expect(atSecondBeat(project, true)).toEqual([warning]);
+  expect(atSecondBeat(project)).toEqual([]);
+});
+
+it("完整同和弦中跨八度交换仍有默认豁免", () => {
+  const project = compileScoreText(`satb 1
+key C major
+meter 3/4
+bars 1..1 {
+ S: | G4/4 E6/2 |
+ A: | E4/4 G5/2 |
+ T: | C4/4 C5/2 |
+ B: | C3/2. |
+ H: | I/2. |
+}`).project;
+  expect(atSecondBeat(project, true)).toEqual([{ ...warning, endTick: 3 * PPQ }]);
+  expect(atSecondBeat(project)).toEqual([]);
+});
+
+it("手动同和声的部分配声仍遵守用户配置的豁免和严格选项", () => {
+  const project = compileScoreText(`satb 1
+key C major
+meter 3/4
+bars 1..1 {
+ S: | G4/4 E5/2 |
+ A: | E4/4 C5/2 |
+ T: | r/2. |
+ B: | r/2. |
+ H: | I/2. |
+}`).project;
+  expect(atSecondBeat(project, true)).toEqual([{ ...warning, endTick: 3 * PPQ }]);
+  expect(atSecondBeat(project)).toEqual([]);
+});
+
+function subdominantToMediant(harmony: string) {
+  return compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | A4/4 E6/2. |
+ A: | A4/4 B5/4 C6/4 G5/4 |
+ T: | C4/4 G3/4 G3/4 C4/4 |
+ B: | F3/4 E3/4 E3/2 |
+ H: | ${harmony} |
+}`).project;
+}
+
+it("越过大九度的 IV→iii 由完整实奏取证", () => {
+  expect(atSecondBeat(subdominantToMediant("IV/4 iii/4 I6/2"))).toEqual([warning]);
+});
+
+it("两个实奏实体虽不同，标签相冲突时沿用原例外", () => {
+  const project = subdominantToMediant("IV/4 I6/4 I6/2");
+  expect(atSecondBeat(project, true)).toEqual([warning]);
+  expect(atSecondBeat(project)).toEqual([]);
+});
+
+it("替代解释未决时沿用原例外", () => {
+  const project = subdominantToMediant("IV/4 iii/4 I6/2");
+  project.chordTrack.regions[1].semantics!.interpretations[0].confidence = "ambiguous";
+  expect(atSecondBeat(project, true)).toEqual([warning]);
+  expect(atSecondBeat(project)).toEqual([]);
+});
+
+it("真实换和弦但只越三度时，沿用原默认政策", () => {
+  const project = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | G4/4 E5/2. |
+ A: | G4/4 B4/4 C5/4 G4/4 |
+ T: | E4/4 G3/4 G3/4 C4/4 |
+ B: | C3/4 E3/4 E3/2 |
+ H: | I/4 iii/4 I6/2 |
+}`).project;
+  expect(atSecondBeat(project, true)).toEqual([warning]);
+  expect(atSecondBeat(project)).toEqual([]);
+});
+
+
+it("下行离开同度时，iii→I 的跨八度超越也取实奏证据", () => {
+  const project = compileScoreText(`satb 1
+key C major
+meter 3/4
+bars 1..1 {
+ S: | B4/4 C4/4 E4/4 |
+ A: | G4/4 G3/4 C4/4 |
+ T: | E3/4 E2/2 |
+ B: | E3/4 C2/2 |
+ H: | iii/4 I/2 |
+}`).project;
+  expect(atSecondBeat(project, false, ["tenor", "bass"])).toEqual([warning]);
+});
+
+it("同和弦内从同度分开并越过整八度时，仍遵守同和声豁免", () => {
+  const project = compileScoreText(`satb 1
+key C major
+meter 3/4
+bars 1..1 {
+ S: | G4/4 C6/2 |
+ A: | G4/4 G5/2 |
+ T: | E4/2. |
+ B: | C3/2. |
+ H: | I/2. |
+}`).project;
+  expect(atSecondBeat(project, true)).toEqual([{ ...warning, endTick: 3 * PPQ }]);
+  expect(atSecondBeat(project)).toEqual([]);
+});
+
+it.each([
+  ["增七度实响十二个半音", "G#5", "B#4", "D#4 G#3 E4", "G#2/4 E3/2", "E5 B4", "III"],
+  ["减八度实响只有十一个半音", "Ab5", "Cb5", "Eb4 C4 F4", "Ab2/4 F3/2", "F5 C5", "iv"],
+])("%s 时都不能取八度反证", (_, soprano, alto, tenor, bass, nextAlto, label) => {
+  const quarterNotes = (pitches: string) => pitches.split(" ").map(pitch => `${pitch}/4`).join(" ");
+  const project = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | C4/4 ${soprano}/2. |
+ A: | C4/4 ${alto}/4 ${quarterNotes(nextAlto)} |
+ T: | E3/4 ${quarterNotes(tenor)} |
+ B: | C3/4 ${bass} |
+ H: | I/4 r/4 ${label}/2 |
+}`).project;
+  expect(atSecondBeat(project, true)).toEqual([warning]);
+  expect(atSecondBeat(project)).toEqual([]);
+});

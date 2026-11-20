@@ -21,6 +21,7 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { bassNeighborAgainstHeldUpper } from "../helpers/heldBassNeighbor";
+import { overlapSameHarmony } from "../helpers/overlapHarmony";
 import { isCadentialContraryOctave } from "./cadentialContraryOctaves";
 import { sameHarmonyOnTransition } from "../helpers/motionHarmony";
 
@@ -219,6 +220,7 @@ interface VoicePairRulePolicy {
   title: string;
   message: string;
   matches(fact: VoicePairTransitionFact, transition: SliceTransition): boolean;
+  sameHarmony?(transition: SliceTransition, fact: VoicePairTransitionFact): boolean | undefined;
 }
 
 function isPerfectOctave(interval: VoicePairTransitionFact["currentInterval"]) {
@@ -253,8 +255,7 @@ function evaluateVoicePairRule(
           policy.title,
           policy.message,
           {
-            motionSameHarmony: policy.id === "voice-leading.hidden-fifth"
-              ? sameHarmonyOnTransition(transition, context.harmony) : undefined,
+            motionSameHarmony: policy.sameHarmony?.(transition, fact),
             pairMotion: {
               voiceExchange: fact.voiceExchange,
               bassStepUp: fact.bassMotion === "step-up",
@@ -316,6 +317,7 @@ export function parallelOctavesRule(context: HarmonyRuleContext) {
 export function hiddenFifthRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.hidden-fifth",
+    sameHarmony: transition => sameHarmonyOnTransition(transition, context.harmony),
     title: "外声部隐伏五度",
     message: "外声部同向进入纯五度，且高声部发生跳进。",
     matches: (fact) =>
@@ -350,6 +352,7 @@ export function hiddenOctaveRule(context: HarmonyRuleContext) {
 export function voiceOverlapRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.overlap",
+    sameHarmony: (transition, fact) => overlapSameHarmony(context, transition, fact),
     title: "声部重叠",
     message: "当前声部进入了相邻声部上一位置所占据的音域。",
     matches: (fact) => {
