@@ -1,5 +1,5 @@
 import { chordToneSpellings } from "../../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, stepIndex, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
+import { leadingTonePitchClass, pitchClassEquals, spelledPitchEquals, stepIndex, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
 import type { VoiceId } from "../../../project/types";
 import type { AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -68,7 +68,7 @@ function wholeChordRespelt(before: Slot, after: Slot) {
 export function leadingRootContinuesInHalfDiminishedChain(
   context: HarmonyRuleContext, openedAt: number, arrival: AnalysisSlice, voice: VoiceId, targetKey: KeyLike,
 ) {
-  const first = context.analysis.slices[arrival.index - 1];
+  const first = context.sliceAt(arrival.tick - 1);
   const source = first?.notes[voice];
   if (!first || first.tick !== openedAt || !source || targetKey.mode !== "major" || first.key.mode !== targetKey.mode ||
       !pitchClassEquals(first.key.tonic, targetKey.tonic) ||
@@ -77,7 +77,9 @@ export function leadingRootContinuesInHalfDiminishedChain(
   if (!head || !pitchClassEquals(head.root, source.pitch)) return false;
   // Three statements of the two-chord model distinguish a sequence
   // from an unresolved leading seventh followed by a single similar chord.
-  const tail = context.analysis.slices.slice(arrival.index, arrival.index + 5);
+  const tail = [...context.slices({
+    overlapping: { fromTick: arrival.tick, toTick: arrival.tick + 5 * head.duration },
+  })];
   if (tail.length !== 5 || crossesManualPhraseBoundary(context, first.tick, tail[4].endTick - 1)) return false;
   let previous = head;
   for (const frame of [first, ...tail]) {
@@ -93,6 +95,46 @@ export function leadingRootContinuesInHalfDiminishedChain(
     const next = readHalfDiminishedSlot(frame);
     if (!next || !continuesModel(previous, next) || !writtenRootFourth(previous, next)) return false;
     previous = next;
+  }
+  return true;
+}
+
+/**
+ * A reattack in the same part can change from the written third to the
+ * seventh of the next chord. Confirm the seventh actually resolves within
+ * three statements of the model before dropping the stale leading obligation.
+ */
+export function reattackedLeadingToneResolvesAsChainSeventh(
+  context: HarmonyRuleContext, openedAt: number, arrival: AnalysisSlice, voice: VoiceId,
+) {
+  const fromTick = arrival.tick - 5 * (arrival.endTick - arrival.tick);
+  if (fromTick < 0) return false;
+  const frames = [...context.slices({ overlapping: { fromTick, toTick: arrival.endTick } })];
+  if (frames.length !== 6) return false;
+  const origin = frames[3];
+  const repeated = frames[4];
+  const firstNote = origin.notes[voice];
+  const seventh = repeated.notes[voice];
+  const landing = arrival.notes[voice];
+  if (origin.tick !== openedAt || !firstNote || !seventh || !landing ||
+      !spelledPitchEquals(firstNote.pitch, seventh.pitch)) return false;
+  const motion = writtenInterval(seventh.pitch, landing.pitch);
+  if (motion.diatonicSteps !== -1 || motion.semitones !== -2 ||
+      crossesManualPhraseBoundary(context, frames[0].tick, arrival.endTick - 1)) return false;
+
+  const slots = frames.map(readHalfDiminishedSlot);
+  if (!slots.every((slot): slot is Slot => slot !== undefined) ||
+      !slots[3].voices.some(({ note, member }) => note.id === firstNote.id && member === 1) ||
+      !slots[4].voices.some(({ note, member }) => note.id === seventh.id && member === 3)) return false;
+
+  let respelt = false;
+  for (let i = 1; i < slots.length; i++) {
+    const before = slots[i - 1], after = slots[i];
+    if (!continuesModel(before, after)) return false;
+    if (writtenRootFourth(before, after)) continue;
+    // One full enharmonic respelling may corroborate the earlier model.
+    if (respelt || i > 3 || !wholeChordRespelt(before, after)) return false;
+    respelt = true;
   }
   return true;
 }

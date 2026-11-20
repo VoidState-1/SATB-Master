@@ -200,3 +200,46 @@ bars 1..3 {
     expect(events(broken, leading)).toContainEqual([6720, "bass"]);
   });
 });
+
+describe("a reattacked scale degree seven inside a half-diminished chain", () => {
+  const reattack = `satb 1
+key Ab major
+meter 2/4
+bars 1..3 {
+  S: | E5/4 E5/4 | D5/4 D5/4 | C5/4 C5/4 |
+  A: | B4/4 A4/4 | A4/4 G4/4 | G4/4 F4/4 |
+  T: | G4/4 F#4/4 | F4/4 E4/4 | Eb4/4 D4/4 |
+  B: | C#4/4 C4/4 | B3/4 Bb3/4 | A3/4 Ab3/4 |
+}`;
+  const withSeventh = '\nannotations {\n' +
+    'chord seven at=3:1 duration=1/4 symbol=viiø7 localKey="Bb major"\n' +
+    'chord arrival at=3:2 duration=1/4 symbol=viiø43 localKey="Eb major"\n}';
+  const seventh = "resolution.chord-seventh";
+
+  it.each(["", withSeventh])("recognizes the alto third becoming a seventh and descending", labels => {
+    const project = compileScoreText(reattack + labels).project;
+    expect(events(project, leading)).not.toContainEqual([4800, "alto"]);
+    expect(events(project, seventh)).not.toContainEqual([4800, "alto"]);
+  });
+
+  it("requires the earlier complete sounding model", () => {
+    const project = compileScoreText(reattack).project;
+    project.satbTracks.find(track => track.voice === "tenor")!.notes[1].pitch.octave++;
+    expect(events(project, leading)).toContainEqual([4800, "alto"]);
+  });
+
+  it("does not use a preceding statement across a manual boundary", () => {
+    const project = compileScoreText(reattack).project;
+    project.structure.phraseBoundaries.push({ id: "cut", source: "manual", tick: 1920, confidence: "certain" });
+    expect(events(project, leading)).toContainEqual([4800, "alto"]);
+  });
+
+  it("keeps the leading and the actual seventh warnings if the alto leaps instead", () => {
+    // Both harmonies remain complete. Only the voice assignment at the arrival is different.
+    const score = reattack.replace("| C5/4 C5/4 |", "| C5/4 F5/4 |")
+      .replace("| G4/4 F4/4 |", "| G4/4 C5/4 |");
+    const project = compileScoreText(score + withSeventh).project;
+    expect(events(project, leading)).toContainEqual([4800, "alto"]);
+    expect(events(project, seventh)).toContainEqual([4800, "alto"]);
+  });
+});

@@ -14,7 +14,10 @@ import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass } from "../../analysis";
 import { formatPitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import { writtenSeventhHandoff } from "../state/writtenSeventhHandoff";
-import { leadingRootContinuesInHalfDiminishedChain } from "./halfDiminishedChain";
+import {
+  leadingRootContinuesInHalfDiminishedChain,
+  reattackedLeadingToneResolvesAsChainSeventh,
+} from "./halfDiminishedChain";
 import { leavesDiatonicSequenceLeadingTone } from "../state/diatonicSequenceLeadingTone";
 import {
   chordEvidence,
@@ -657,6 +660,10 @@ function leadingToneTransition(
     environment.context.rules, environment.obligation.openedAt.tick, environment.context.slice, payload.voiceId,
     { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode },
   )) return decision(environment, "cancel", "leading-tone-half-diminished-sequence", debugFacts);
+
+  if (attacked && reattackedLeadingToneResolvesAsChainSeventh(
+    context.rules, environment.obligation.openedAt.tick, context.slice, payload.voiceId,
+  )) return decision(environment, "cancel", "leading-tone-reattack-resolves-as-chain-seventh", debugFacts);
 
   if (attacked && leavesDiatonicSequenceLeadingTone(environment))
     return decision(environment, "cancel", "leading-tone-diatonic-sequence", debugFacts);
