@@ -65,6 +65,16 @@ describe("E.1 书写导音与同一和声中的实际装饰", () => {
     expect(warnings(heldDominant(), "tenor")).toEqual([]);
   });
 
+  it("回到同一属七时允许局部调换序，改变实际落音仍须解决导音", () => {
+    for (const succeeds of [true, false]) {
+      const project = heldDominant({ successor: succeeds ? "C4/4." : "E4/4." });
+      const [first, returning] = project.chordTrack.regions.map(region => region.semantics!.interpretations[0]);
+      first.localKey = { tonic: { step: "C", alter: 0 }, mode: "major" };
+      returning.localKey = { mode: "major", tonic: { alter: 0, step: "C" } };
+      expect(warnings(project, "tenor").map(item => item.tick)).toEqual(succeeds ? [] : [1440]);
+    }
+  });
+
   it("返回后错到 E4 仍在真实和声后继发 warning", () => {
     expect(warnings(heldDominant({ successor: "E4/4." }), "tenor")).toEqual([
       { tick: 1440, noteIds: ["note-T-0", "note-T-1440"] },

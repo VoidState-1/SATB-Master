@@ -2,6 +2,7 @@ import { canonicalJson } from "../../../canonicalJson";
 import { chordIdentityToneSpellings, identityContainsWrittenPitchClass } from "../../../chordModel";
 import { pitchClassEquals, type SpelledPitchClass } from "../../../pitch";
 import { sameChordIdentityWithoutBass, type AnalysisChord } from "../../analysis";
+import { sameFunctionalReading } from "../../functionalReading";
 import type { JsonValue, RuleStepContext } from "../../runtime";
 import type { ObligationEnvironment } from "./obligation";
 import { leadingTargetUnchanged, type LeadingTonePayload, type SeventhPayload, type VoiceObligationPayload } from "./tendency";
@@ -54,26 +55,14 @@ function sameResolutionInterpretation(
   source: AnalysisChord,
   current: AnalysisChord,
 ) {
-  if (!source.semantics && !current.semantics) return true;
-  const interpretationContext = (chord: AnalysisChord) => {
-    if (!chord.semantics) return undefined;
-    const resolution = rules.harmony.primaryInterpretation(chord);
-    if (resolution.status !== "resolved") return undefined;
-    const interpretation = resolution.value;
-    return canonicalJson({
-      localKey: interpretation.localKey ?? null,
-      degree: interpretation.degree,
-      degreeAlteration: interpretation.degreeAlteration,
-      appliedTarget: interpretation.appliedTarget ?? null,
-      designation: interpretation.designation ?? null,
-      mixture: chord.semantics.mixture ?? null,
-      cadenceRole: chord.semantics.cadenceRole ?? null,
-      pedalContext: chord.semantics.pedalContext ?? null,
-    });
-  };
-
-  const sourceContext = interpretationContext(source);
-  return !!sourceContext && sourceContext === interpretationContext(current);
+  if (!source.semantics || !current.semantics) return source.semantics === current.semantics;
+  const before = rules.harmony.primaryInterpretation(source);
+  const after = rules.harmony.primaryInterpretation(current);
+  return before.status === "resolved" && after.status === "resolved" &&
+    sameFunctionalReading(before.value, after.value) &&
+    source.semantics.mixture === current.semantics.mixture &&
+    source.semantics.cadenceRole === current.semantics.cadenceRole &&
+    canonicalJson(source.semantics.pedalContext) === canonicalJson(current.semantics.pedalContext);
 }
 
 /**

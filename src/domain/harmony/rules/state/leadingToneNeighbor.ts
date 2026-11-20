@@ -8,6 +8,7 @@ import { VOICE_ORDER } from "../../../project/voice";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { VoiceId } from "../../../project";
 import type { AnalysisChord, AnalysisNote, AnalysisSlice } from "../../analysis";
+import { sameFunctionalReading } from "../../functionalReading";
 import { returnsByWrittenStep, writtenNeighborsOverHeldBass } from "../../writtenNeighbors";
 import { soundsCompleteWrittenChord } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -53,14 +54,9 @@ function sameDeclaredHarmony(rules: HarmonyRuleContext, left: AnalysisSlice, rig
   const before = rules.harmony.primaryInterpretation(a);
   const after = rules.harmony.primaryInterpretation(b);
   if (before.status !== "resolved" || after.status !== "resolved") return false;
-  const context = (slice: AnalysisSlice, value: typeof before.value) => {
-    const key = value.localKey ?? slice.key;
-    return JSON.stringify([
-      key.tonic, key.mode, value.degree, value.degreeAlteration, value.appliedTarget,
-      value.designation, slice.chord?.semantics?.cadenceRole, slice.chord?.semantics?.mixture,
-    ]);
-  };
-  return context(left, before.value) === context(right, after.value);
+  return a.semantics?.cadenceRole === b.semantics?.cadenceRole &&
+    a.semantics?.mixture === b.semantics?.mixture &&
+    sameFunctionalReading(before.value, after.value, before.value.localKey ?? left.key, after.value.localKey ?? right.key);
 }
 
 function writtenDominantThirdTarget(rules: HarmonyRuleContext, slice: AnalysisSlice, note: AnalysisNote) {

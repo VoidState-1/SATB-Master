@@ -27,6 +27,19 @@ describe("转位检查识别外声部同步辅助音", () => {
     expect(inversionErrors(project)).toEqual([]);
   });
 
+  it("两侧标注的局部调字段顺序不影响转位检查，真正换调仍报", () => {
+    const project = example();
+    const [first, last] = project.chordTrack.regions.map(region => region.semantics!.interpretations[0]);
+    first.localKey = { tonic: { step: "A", alter: -1 }, mode: "major" };
+    last.localKey = { mode: "major", tonic: { alter: -1, step: "A" } };
+    expect(inversionErrors(project)).toEqual([]);
+
+    last.localKey.mode = "minor";
+    expect(inversionErrors(project)).toContainEqual(expect.objectContaining({
+      tick: 1.5 * project.ppq, voiceIds: ["bass"],
+    }));
+  });
+
   it.each([
     ["落点改成真实根位", { returnBass: "Ab2", last: "I" }],
     ["出发标注转位写错", { first: "I" }],

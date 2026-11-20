@@ -2,6 +2,7 @@ import { chordIdentityEquals, chordIdentityToneSpellings, primaryHarmonyInterpre
 import { pitchClassEquals, spelledPitchEquals, toMidi } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisChord, AnalysisSlice } from "../../analysis";
+import { sameFunctionalReading } from "../../functionalReading";
 import { returnsByWrittenStep, supportsPairedNeighborMotion } from "../../writtenNeighbors";
 import { soundsCompleteWrittenChord } from "../../writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
@@ -21,11 +22,7 @@ function sameLabel(anchor: AnalysisChord, candidate: AnalysisChord | undefined) 
   const left = anchor.semantics, right = candidate.semantics;
   if (!left || !right) return left === right;
   const a = primaryHarmonyInterpretation(left), b = primaryHarmonyInterpretation(right);
-  return a.degree === b.degree && a.degreeAlteration === b.degreeAlteration &&
-    left.mixture === right.mixture &&
-    JSON.stringify(a.localKey) === JSON.stringify(b.localKey) &&
-    JSON.stringify(a.appliedTarget) === JSON.stringify(b.appliedTarget) &&
-    JSON.stringify(a.designation) === JSON.stringify(b.designation);
+  return left.mixture === right.mixture && sameFunctionalReading(a, b);
 }
 
 function orderedNotes(slice: AnalysisSlice) {
