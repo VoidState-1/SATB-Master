@@ -20,6 +20,7 @@ import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
 import { analyzeChordInferencePaths } from "./sequence";
 import { classifySixFours } from "./sixFours";
 import { withPreparedSuspensions } from "./preparedSuspensions";
+import { withUpperPassingTones } from "./upperPassing";
 import { withProlongedHarmony } from "./prolongation";
 import { withSingleVoiceTriadRevoicings } from "./triadRevoicing";
 import { simultaneousNeighborCandidates } from "./simultaneousNeighbors";
@@ -146,7 +147,10 @@ export function inferChords(
     observations, leadingSevenths, currentPhraseTicks,
   );
   const lowerNeighbors = withWrittenLowerNeighborPairs(observations, writtenTriads, options, currentPhraseTicks);
-  const sequence = analyzeChordInferencePaths(observations, lowerNeighbors.candidateSets);
+  const upperPassing = withUpperPassingTones(
+    observations, lowerNeighbors.candidateSets, options, currentPhraseTicks, project.ppq,
+  );
+  const sequence = analyzeChordInferencePaths(observations, upperPassing);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;
