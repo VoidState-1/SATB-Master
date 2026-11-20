@@ -11,13 +11,18 @@ import { preparesWrittenAppliedSeventh } from "./chromaticAppliedResolution";
 import { recognizesAugmentedSixthPreparation } from "./chromaticAugmentedSixth";
 import { isRespeltDoubleDominantSeventh, preparesWrittenRespeltDoubleDominant } from "./chromaticDoubleDominant";
 import { lowersSixthInSubdominant } from "./harmonicMajorSubdominant";
+import { readRaisedMinorThirdIntoDominant } from "./raisedMinorThirdDominant";
 import { subdominantSeventhBassEntry } from "./heldDoubleDominantContinuation";
 
 function preparesChromaticDominant(context: HarmonyRuleContext, transition: MelodyTransition) {
   const { previous, current, writtenInterval } = transition;
   const heldBass = subdominantSeventhBassEntry(context, transition);
   if (heldBass !== undefined) return heldBass;
+  const raisedMinorThird = readRaisedMinorThirdIntoDominant(context, transition);
+  if (raisedMinorThird === "conflicting-destination") return false;
   if (preparesWrittenAppliedSeventh(context, transition) || preparesDominantWithReattackedSeventh(context, transition)) return true;
+  if (raisedMinorThird !== undefined) return raisedMinorThird === "supported";
+
   const targetSlice = context.sliceAt(current.startTick);
   const target = targetSlice?.chord;
   if (!targetSlice || !target || target.startTick !== current.startTick) return false;
