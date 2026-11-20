@@ -3,6 +3,7 @@ import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasWrittenVoicing } from "../state/doubleDominantSeventh";
+import { resolvesLoweredSupertonicFifth } from "./loweredSupertonicFifth";
 import { cadentialSixFourInKey } from "./chromaticDoubleDominant";
 
 function subdominantSixth(
@@ -32,6 +33,7 @@ export function lowersSixthInSubdominant(rules: HarmonyRuleContext, motion: Melo
   const { previous, current, voiceId, writtenInterval: entry } = motion;
   if (!motion.contiguous || !motion.sameKey || entry.diatonicSteps !== 0 || entry.semitones !== -1) return false;
   const tick = current.startTick;
+  if (resolvesLoweredSupertonicFifth(rules, motion)) return true;
   const end = tick + current.durationTicks;
   const from = rules.sliceAt(tick - 1), middle = rules.sliceAt(tick), landing = rules.sliceAt(end);
   if (!from || !middle || !landing?.chord || from.notes[voiceId]?.id !== previous.id ||
