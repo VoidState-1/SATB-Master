@@ -10,6 +10,7 @@ import { withDeceptiveDominants } from "./deceptiveDominants";
 import { withDominantSixthSubstitutions } from "./dominantSixths";
 import { withDoubleAugmentedFourThree } from "./doubleAugmentedFourThree";
 import { withNeapolitanPivotDominants } from "./neapolitanPivotDominants";
+import { withPassingTonicSevenths } from "./passingTonicSevenths";
 import { withWrittenPivotSevenths } from "./pivotSevenths";
 import { withAppliedSequences } from "./appliedSequences";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
@@ -122,8 +123,11 @@ export function inferChords(
     .map(boundary => boundary.tick);
   const withSixths = withDominantSixthSubstitutions(observations, classified, meetsMinimumConfidence, manualPhraseTicks);
   const recovered = withDeceptiveDominants(observations, withSixths, options, project.ppq, phraseBoundaryTicks);
+  const withPassingSevenths = withPassingTonicSevenths(
+    observations, recovered, options, currentPhraseTicks,
+  );
   const withNeapolitanPivots = withNeapolitanPivotDominants(
-    observations, recovered, options, localKeys, currentPhraseTicks,
+    observations, withPassingSevenths, options, localKeys, currentPhraseTicks,
   );
   const withAlteredDoubleDominants = withDoubleAugmentedFourThree(
     observations, withNeapolitanPivots, manualPhraseTicks, meetsMinimumConfidence,
