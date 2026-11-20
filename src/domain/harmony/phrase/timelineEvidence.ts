@@ -1,4 +1,3 @@
-import { pitchClassEquals, type KeyLike } from "../../pitch";
 import type { ChordRegion } from "../../project/types";
 import type { MetricTimeline } from "../../rhythm/metric";
 import type { PhraseAnalysisInput } from "./types";
@@ -38,9 +37,7 @@ export function followingRegion(regions: readonly ChordRegion[], tick: number) {
   return regions.find((region) => region.startTick === tick);
 }
 
-export function sameKey(left: KeyLike, right: KeyLike) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
+export { keyEquals as sameKey } from "../../pitch";
 
 export function confirmedFullCadences(project: PhraseAnalysisInput) {
   return (project.chordTrack?.cadenceAnnotations ?? []).filter(cadence =>

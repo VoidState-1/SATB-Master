@@ -9,7 +9,7 @@ import {
   type KeyReference,
 } from "../../chordModel";
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
-import { leadingTonePitchClass, pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
 import { buildMeasures, measureAtTick, ticksPerBeat, type MeasureInfo } from "../../time";
 import { buildMetricTimeline, compareMetricStrength, metricPositionAt } from "../../rhythm/metric";
 import { closingTonicDecorationEvidence } from "./closingTonicDecoration";
@@ -59,12 +59,7 @@ function keyAtTick(analysis: Pick<HarmonyAnalysis, "project">, tick: number) {
 }
 
 function sameKey(left: KeyReference | undefined, right: KeyReference | undefined) {
-  return Boolean(
-    left &&
-      right &&
-      left.mode === right.mode &&
-      pitchClassEquals(left.tonic, right.tonic),
-  );
+  return Boolean(left && right && keyEquals(left, right));
 }
 
 function representativeChord(

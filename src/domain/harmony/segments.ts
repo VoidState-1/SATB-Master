@@ -4,7 +4,7 @@ import {
   chordIdentityKeyWithoutBass,
   harmonySemanticsConfidence,
 } from "../chordModel";
-import { pitchClassEquals } from "../pitch";
+import { keyEquals as sameKey } from "../pitch";
 import type { HarmonySemantics, VoiceId } from "../project/types";
 import { VOICE_ORDER } from "../project/voice";
 import type { AnalysisKey, AnalysisNote, AnalysisSlice, DeepReadonly, HarmonySpan, ProjectSnapshot } from "./analysis";
@@ -19,10 +19,7 @@ export function keyAtTick(events: readonly AnalysisKey[], tick: number) {
   return current;
 }
 
-/** 内部辅助：判断两个调号事件是否同调（主音与调式一致） */
-export function sameKey(left: AnalysisKey, right: AnalysisKey) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
+export { sameKey };
 
 /** 内部辅助：判断两个和弦的语义上下文是否相同 */
 export function sameSemanticContext(

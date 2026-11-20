@@ -426,3 +426,8 @@ export function pitchClassEquals(
 ) {
   return left.step === right.step && left.alter === right.alter;
 }
+
+/** Tonal equality uses the written tonic and mode, including across repeated key declarations. */
+export function keyEquals(left: KeyLike, right: KeyLike) {
+  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
+}
