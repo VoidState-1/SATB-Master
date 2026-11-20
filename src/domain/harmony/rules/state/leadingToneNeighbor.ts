@@ -12,7 +12,7 @@ import { sameFunctionalReading } from "../../functionalReading";
 import { returnsByWrittenStep, writtenNeighborsOverHeldBass } from "../../writtenNeighbors";
 import { soundsCompleteWrittenChord } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { crossesManualPhraseBoundary } from "../groups/dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { leadingToneResolutionKey } from "./leadingToneTarget";
 
 function endTick(note: AnalysisNote) {

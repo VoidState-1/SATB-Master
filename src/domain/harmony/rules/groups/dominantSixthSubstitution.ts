@@ -12,13 +12,9 @@ import {
   resolvesDominantInnerVoice,
 } from "../../dominantSixthMotion";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 
 type SixthRuleContext = Pick<HarmonyRuleContext, "analysis" | "sliceAt">;
-
-export function crossesManualPhraseBoundary(context: SixthRuleContext, fromTick: number, toTick: number) {
-  return context.analysis.phraseBoundaries.some(boundary =>
-    boundary.source === "manual" && fromTick < boundary.tick && boundary.tick <= toTick);
-}
 
 function hasPlainRootPosition(slice: AnalysisSlice, degree: 1 | 5, quality: ChordQuality, allowWrittenSixth = false) {
   const { chord, key } = slice;

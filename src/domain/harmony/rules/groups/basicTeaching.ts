@@ -24,7 +24,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { structuralTriadVoicing } from "../helpers/structuralTriadVoicing";
 import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { resolvesLeadingSeventhToPassingTonic } from "../../leadingSeventhTonicSixFour";
-import { crossesManualPhraseBoundary } from "./dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { hasSubdominantSixFourOnTonicPedal } from "./tonicPedalSubdominantSixFour";
 import { leadingToneForFunction } from "../services/harmony";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";

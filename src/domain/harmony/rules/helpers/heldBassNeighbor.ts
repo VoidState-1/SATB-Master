@@ -5,7 +5,7 @@ import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import { returnsByWrittenStep } from "../../writtenNeighbors";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { crossesManualPhraseBoundary } from "../groups/dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "./phraseBoundary";
 
 const upperVoices = ["soprano", "alto", "tenor"] as const;
 

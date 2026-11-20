@@ -5,7 +5,7 @@ import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi,
 import { movesToWrittenTone } from "../../dominantSixthMotion";
 import type { AnalysisSlice, SliceTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { crossesManualPhraseBoundary } from "./dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { activeNotes } from "../helpers/core";
 import type { VoicePairTransitionFact } from "../sharedFacts";
 
@@ -140,8 +140,7 @@ export function preparedSuspensionParallel(
   const release = context.metric.positionAt(current.tick);
   if (!accent || !release || accent.measureNumber !== release.measureNumber ||
       release.beatPosition - accent.beatPosition > 1 || context.metric.compare(accent, release) !== "stronger" ||
-      context.analysis.phraseBoundaries.some(boundary =>
-        boundary.source === "manual" && prepared.tick < boundary.tick && boundary.tick <= current.tick)) return;
+      crossesManualPhraseBoundary(context, prepared.tick, current.tick)) return;
 
   const from = soundedHarmony(prepared, false);
   const to = soundedHarmony(current, true);

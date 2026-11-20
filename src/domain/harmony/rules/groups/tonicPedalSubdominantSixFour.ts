@@ -7,7 +7,7 @@ import {
 import type { AnalysisSlice } from "../../analysis";
 import { movesToWrittenTone } from "../../dominantSixthMotion";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { crossesManualPhraseBoundary } from "./dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 
 function matchingWrittenChord(
   context: HarmonyRuleContext, slice: AnalysisSlice, key: KeyLike,

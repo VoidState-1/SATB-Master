@@ -1,3 +1,4 @@
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { pitchClassEquals, scaleDegreePitchClass, type KeyLike } from "../../../pitch";
 import { resolvesDoubleAugmentedFourThree } from "../../doubleAugmentedFourThree";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -37,8 +38,7 @@ export function resolvesPreparedDoubleAugmentedFourThree(
   const weak = context.metric.positionAt(releaseTick);
   if (!accent || !weak || accent.measureNumber !== weak.measureNumber ||
       weak.beatPosition - accent.beatPosition > 1 || context.metric.compare(accent, weak) !== "stronger" ||
-      context.analysis.phraseBoundaries.some(mark =>
-        mark.source === "manual" && source.span.fromTick < mark.tick && mark.tick <= releaseTick)) return false;
+      crossesManualPhraseBoundary(context, source.span.fromTick, releaseTick)) return false;
 
   const common = activeNotes(before).find(({ voiceId, note }) =>
     voiceId !== "bass" && pitchClassEquals(note.pitch, key.tonic));

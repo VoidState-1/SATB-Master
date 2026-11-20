@@ -9,7 +9,8 @@ import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import { readDominantSeventhExchange, readWrittenDominantSeventh } from "../../writtenDominantSeventh";
 import { resolvesInVoice } from "../../writtenResolution";
-import { crossesManualPhraseBoundary, resolvesDominantSixthSubstitution } from "../groups/dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
+import { resolvesDominantSixthSubstitution } from "../groups/dominantSixthSubstitution";
 import {
   leadingTonePitchClass,
   pitchClassEquals,

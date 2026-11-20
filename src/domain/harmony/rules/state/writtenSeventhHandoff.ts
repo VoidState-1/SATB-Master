@@ -1,3 +1,4 @@
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import type { SpelledPitchClass } from "../../../pitch";
 import { pitchClassEquals, spelledPitchEquals, writtenInterval } from "../../../pitch";
 import type { VoiceId } from "../../../project/types";
@@ -22,8 +23,7 @@ export function writtenSeventhHandoff(context: RuleStepContext, voice: VoiceId, 
 
   if ([previous, slice].some(frame => Object.values(frame.notes)
       .filter(note => note && pitchClassEquals(note.pitch, seventh)).length !== 1)) return;
-  if (context.analysis.phraseBoundaries.some(b => b.source === "manual" &&
-      departure.startTick < b.tick && b.tick <= slice.tick)) return;
+  if (crossesManualPhraseBoundary(context, departure.startTick, slice.tick)) return;
   const fromTick = Math.max(sourceChord.startTick, departure.startTick);
   const frames = rules.slices({ overlapping: { fromTick, toTick: slice.tick } });
   if (!frames.toArray().every(frame => {

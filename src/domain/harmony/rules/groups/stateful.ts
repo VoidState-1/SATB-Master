@@ -1,3 +1,4 @@
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import {
   chordIdentityToneSpellings,
   type FunctionalFamily,
@@ -333,8 +334,7 @@ function bassSeventhRisesToDominantRoot(environment: ObligationEnvironment<Seven
     pitchClassEquals(chord.identity.root, chord.identity.bass) && pitchClassEquals(landing.pitch, chord.identity.root) &&
     motion.diatonicSteps === 1 && motion.semitones === 2 &&
     soundsDominantSeventh(previous, tones) && soundsDominantSeventh(slice, tones) &&
-    !context.analysis.phraseBoundaries.some(boundary => boundary.source === "manual" &&
-      departure.startTick < boundary.tick && boundary.tick <= slice.tick);
+    !crossesManualPhraseBoundary(context, departure.startTick, slice.tick);
 }
 
 // Spasobin §15.5 and companion ch. 15, exercise IV: ②⑤ and ⑥ have different receiving motions.

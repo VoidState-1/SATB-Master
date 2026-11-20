@@ -12,7 +12,7 @@ import {
 } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { crossesManualPhraseBoundary } from "../groups/dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import type { ObligationEnvironment } from "./obligation";
 import type { LeadingTonePayload } from "./tendency";
 

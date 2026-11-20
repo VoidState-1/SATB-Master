@@ -3,7 +3,7 @@ import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../
 import { hasWrittenVoicing } from "../../writtenResolution";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { crossesManualPhraseBoundary } from "../groups/dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { activeNotes } from "../helpers/core";
 
 function sameKey(left: KeyReference, right: KeyReference) {

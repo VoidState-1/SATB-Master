@@ -4,7 +4,7 @@ import type { VoiceId } from "../../../project";
 import type { AnalysisSlice } from "../../analysis";
 import { readWrittenDominantSeventh } from "../../writtenDominantSeventh";
 import { hasWrittenVoicing } from "../../writtenResolution";
-import { crossesManualPhraseBoundary } from "../groups/dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { leadingToneResolutionKey } from "./leadingToneTarget";
 import type { ObligationEnvironment } from "./obligation";
 import type { LeadingTonePayload } from "./tendency";

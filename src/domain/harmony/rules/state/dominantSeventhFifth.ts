@@ -3,7 +3,7 @@ import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, wr
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisSlice } from "../../analysis";
 import { movesToWrittenTone } from "../../dominantSixthMotion";
-import { crossesManualPhraseBoundary } from "../groups/dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import type { ObligationEnvironment } from "./obligation";
 import type { LeadingTonePayload } from "./tendency";
 

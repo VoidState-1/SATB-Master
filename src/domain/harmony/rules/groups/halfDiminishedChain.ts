@@ -4,7 +4,7 @@ import type { VoiceId } from "../../../project/types";
 import type { AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { activeNotes } from "../helpers/core";
-import { crossesManualPhraseBoundary } from "./dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 
 function readHalfDiminishedSlot(slice: AnalysisSlice) {
   if (!slice.completeSatb || !slice.notes.bass) return;

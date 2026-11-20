@@ -2,7 +2,7 @@ import { sameChordIdentityWithoutBass, type AnalysisSlice } from "../../analysis
 import { pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
 import type { VoiceId } from "../../../project/types";
 import type { RuleStepContext } from "../../runtime";
-import { crossesManualPhraseBoundary } from "./dominantSixthSubstitution";
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { movesToWrittenTone } from "../../dominantSixthMotion";
 import { writtenSeventhHandoff } from "../state/writtenSeventhHandoff";
 

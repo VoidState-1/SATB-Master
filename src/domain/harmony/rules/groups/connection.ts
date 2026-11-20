@@ -1,3 +1,4 @@
+import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { chordIdentityToneSpellings } from "../../../chordModel";
 import type { RuleDiagnostic } from "../../runtime";
 import { VOICE_ORDER } from "../../../project/voice";
@@ -118,8 +119,7 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
     if (isDoubleAugmentedTarget &&
         pitchClassEquals(sourceChord.identity.root, low.note.pitch) &&
         pitchClassEquals(sourceChord.identity.bass, sourceSlice.notes.bass!.pitch) &&
-        !context.analysis.phraseBoundaries.some(mark =>
-          mark.source === "manual" && sourceSlice.tick < mark.tick && mark.tick <= targetSlice.tick) &&
+        !crossesManualPhraseBoundary(context, sourceSlice.tick, targetSlice.tick) &&
         (resolvesDoubleAugmentedFourThree(sourceSlice.notes, targetSlice.notes, sourceKey) ||
           resolvesPreparedDoubleAugmentedFourThree(context, candidate, sourceKey))) continue;
     if (!isDoubleAugmented43 && (isDominant || isCadential64) && lowResolves && highResolves)
