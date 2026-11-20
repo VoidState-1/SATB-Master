@@ -1084,6 +1084,70 @@ async function configureHarmonyRuleSeverity() {
   await clickButton('关闭设置')
 }
 
+async function verifyVoiceRangeSettings() {
+  const lowerBound = JSON.stringify('input[aria-label="女高音域下界"]')
+
+  async function openRangeSettings() {
+    await clickButton('设置')
+    await clickButton('检查规则')
+    await selectRuleByKey('builtin:voice.range')
+    await waitFor(`Boolean(document.querySelector(${lowerBound}))`, '女高音域设置')
+  }
+
+  function readLowerBound() {
+    return evaluate(`document.querySelector(${lowerBound})?.value`)
+  }
+
+  async function editLowerBound(value, exit) {
+    const focused = await evaluate(`(() => {
+      const input = document.querySelector(${lowerBound});
+      if (!input || input.disabled) return false;
+      input.focus();
+      input.select();
+      return document.activeElement === input;
+    })()`)
+    if (!focused) throw new Error('无法聚焦女高音域下界')
+
+    if (value === '') {
+      await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 })
+      await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 })
+    } else {
+      await client.send('Input.insertText', { text: value })
+    }
+    const draft = await readLowerBound()
+    if (draft !== value) throw new Error(`女高音域草稿应为 ${JSON.stringify(value)}，实际为 ${JSON.stringify(draft)}`)
+
+    if (exit === 'Escape') {
+      await dispatchShortcut('Escape')
+      await waitFor(`!document.querySelector('.settings-dialog')`, 'Escape 关闭设置')
+    } else {
+      await evaluate(`document.querySelector(${lowerBound}).blur()`)
+      await clickButton('关闭设置')
+    }
+  }
+
+  await openRangeSettings()
+  const original = await readLowerBound()
+  const failures = []
+  for (const [label, value, exit] of [
+    ['清空下界', '', 'blur'],
+    ['输入分数', '56.5', 'blur'],
+    ['按 Escape 取消', '50', 'Escape'],
+  ]) {
+    await editLowerBound('56', 'blur')
+    await openRangeSettings()
+    if (await readLowerBound() !== '56') throw new Error('女高音域下界未保存为自定义值 56')
+    await editLowerBound(value, exit)
+    await openRangeSettings()
+    const actual = await readLowerBound()
+    if (actual !== '56') failures.push(`${label}后保存为 ${JSON.stringify(actual)}`)
+  }
+  await editLowerBound(original, 'blur')
+  if (failures.length > 0) {
+    throw new Error(`无效或取消的音域编辑应保留自定义下界 56：${failures.join('；')}`)
+  }
+}
+
 async function verifyExternalRuleSandbox() {
   await clickButton('设置')
   await clickButton('检查规则')
@@ -1444,6 +1508,7 @@ try {
   await verifyInitialGridSelection()
   await verifyShortcutSettings()
   await configureHarmonyRuleSeverity()
+  await verifyVoiceRangeSettings()
   await verifyExternalRuleSandbox()
   await verifyEditorShortcutGestures()
   await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
@@ -1618,6 +1683,7 @@ try {
     panelResizing: 'left-right-bottom-drag-and-reset-ready',
     shortcutSettings: 'remap-conflict-persist-reset-ready',
     harmonyRuleSettings: 'list-severity-disable-persist-reset-ready',
+    voiceRangeSettings: 'invalid-edits-and-cancel-preserve-range',
     externalRuleSandbox: 'private-library-quickjs-limits-mount-remove-ready',
     shortcutGestures: 'modifiers-voice-zoom-navigation-ready',
     selectionShortcuts: 'select-clear-duplicate-cut-paste-ready',
