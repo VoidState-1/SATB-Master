@@ -166,8 +166,10 @@ function hasStepwiseEntry(
 ) {
   const onset = context.sliceAt(fromTick);
   if (!onset?.notes[voice] || !fullySoundsTriad(onset, harmony)) return false;
-  const line = context.analysis.notesByVoice[voice].filter(note =>
-    fromTick <= note.startTick && note.startTick <= left.startTick);
+  const line = context.notes({ voiceId: voice })
+    .where(({ note }) => fromTick <= note.startTick && note.startTick <= left.startTick)
+    .select(({ note }) => note)
+    .toArray();
   if (line.length < 2 || line.length > 3 || line[0].id !== onset.notes[voice].id ||
       line[line.length - 1].id !== left.id) return false;
   return line.slice(1).every((note, index) => {
