@@ -385,26 +385,27 @@ export function fitAnticipation(
 }
 
 export function fitPreparedSuspension(
-  tonic: ChordInferenceCandidate,
+  anchor: ChordInferenceCandidate,
   observation: ChordInferenceObservation,
   suspensions: readonly { noteId: string; figure: "4-3" | "9-8" }[],
 ): ChordInferenceCandidate | undefined {
-  const fit = fitChordObservation(observation, tonic.identity, {
+  const hasFourth = suspensions.some(motion => motion.figure === "4-3");
+  const fit = fitChordObservation(observation, anchor.identity, {
     allowNonChordToneCandidates: true,
-    allowedOmittedChordDegrees: [3],
+    allowedOmittedChordDegrees: hasFourth ? [3] : [],
   });
-  if (fit.hardRejected || !fit.spellingConsistent || fit.omittedChordDegrees.length !== 1 ||
-      fit.omittedChordDegrees[0] !== 3 || fit.nonChordToneNoteIds.length !== suspensions.length ||
+  if (fit.hardRejected || !fit.spellingConsistent || fit.omittedChordDegrees.length !== (hasFourth ? 1 : 0) ||
+      (hasFourth && fit.omittedChordDegrees[0] !== 3) || fit.nonChordToneNoteIds.length !== suspensions.length ||
       !suspensions.every(({ noteId }) => fit.nonChordToneNoteIds.includes(noteId))) return;
   return {
-    ...tonic,
-    id: `${observation.index}:prepared-suspension:${tonic.id}`,
+    ...anchor,
+    id: `${observation.index}:prepared-suspension:${anchor.id}`,
     observationIndex: observation.index,
     fit,
-    score: scoreFor(observation, tonic.identity, fit, tonic.score.functionalTier),
+    score: scoreFor(observation, anchor.identity, fit, anchor.score.functionalTier),
     confidence: "medium",
     // A held note also belongs to the preparation chord. Its suspension
-    // evidence covers only the slice between the tonic attack and resolution.
+    // evidence covers only the slice between the anchor attack and resolution.
     evidence: [...evidenceFor(fit, true), ...suspensions.map(({ noteId, figure }) => ({
       kind: "inferred-nonchord-tone" as const,
       code: "prepared-suspension",

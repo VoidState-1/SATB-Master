@@ -28,7 +28,7 @@ function dominantPreparation(sets: CandidateSet, observation: ChordInferenceObse
 }
 
 /** Spasobin §36.2–4, §37.1–2. Restore a root-position tonic obscured by a
- * prepared 4–3, optionally accompanied by a prepared 9–8 in another voice. */
+ * prepared 4–3, or extend the actual resolution triad across a single 9–8. */
 export function withPreparedSuspensions(
   observations: readonly ChordInferenceObservation[],
   sets: readonly CandidateSet[],
@@ -47,10 +47,12 @@ export function withPreparedSuspensions(
     const voicing = verifyPreparedSuspensionVoicing({
       slices, onsetIndex: index, key: middle.key, beatTicks: ppq,
       metricAt: tick => metrics.get(tick),
-      preparationAt: previousIndex => {
+      preparationAt: (previousIndex, singleNinth) => {
         const previous = observations[previousIndex];
         if (!sameKey(previous, middle) ||
             phraseBoundaryTicks.some(tick => previous.fromTick < tick && tick <= middle.fromTick)) return "blocked";
+        if (singleNinth) return sets[previousIndex].some(isExact) &&
+          !Object.values(previous.activeNotes).some(note => note?.nonChordToneRole) ? "confirmed" : "blocked";
         return dominantPreparation(sets[previousIndex], previous);
       },
     });
@@ -59,16 +61,26 @@ export function withPreparedSuspensions(
         observations.slice(index + 1, voicing.resolutionIndex + 1).some(part => !sameKey(middle, part))) return existing;
 
     const resolution = observations[voicing.resolutionIndex];
-    if (voicing.motions.some(({ voiceId }) =>
-      middle.activeNotes[voiceId]?.nonChordToneRole || resolution.activeNotes[voiceId]?.nonChordToneRole,
-    )) return existing;
-
-    const tonic = sets[voicing.resolutionIndex].find(candidate =>
-      isExact(candidate) && (candidate.functionalBaseId === "T" || candidate.functionalBaseId === "t") &&
-      pitchClassEquals(candidate.identity.root, bass.pitch) && pitchClassEquals(candidate.identity.bass, bass.pitch),
+    const markedVoice = [middle, resolution].some(part => voicing.singleNinth
+      ? Object.values(part.activeNotes).some(note => note?.nonChordToneRole)
+      : voicing.motions.some(({ voiceId }) => part.activeNotes[voiceId]?.nonChordToneRole));
+    if (markedVoice) return existing;
+    const exactRootPosition = sets[voicing.resolutionIndex].filter(candidate =>
+      isExact(candidate) && pitchClassEquals(candidate.identity.root, bass.pitch) &&
+      pitchClassEquals(candidate.identity.bass, bass.pitch),
     );
-    if (!tonic) return existing;
-    const candidate = fitPreparedSuspension(tonic, middle, voicing.motions);
-    return candidate ? [candidate] : existing;
+    if (!voicing.singleNinth) {
+      const tonic = exactRootPosition.find(candidate => candidate.functionalBaseId === "T" || candidate.functionalBaseId === "t");
+      const fitted = tonic && fitPreparedSuspension(tonic, middle, voicing.motions);
+      return fitted ? [fitted] : existing;
+    }
+    const anchors = exactRootPosition.filter(({ identity: { structure } }) =>
+      structure.kind === "tertian" && (structure.quality === "major" || structure.quality === "minor") &&
+      !structure.extensions.length && !structure.alterations.length,
+    );
+    return anchors.flatMap(anchor => {
+      const candidate = fitPreparedSuspension(anchor, middle, voicing.motions);
+      return candidate ? [candidate] : [];
+    });
   });
 }
