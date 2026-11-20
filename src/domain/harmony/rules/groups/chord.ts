@@ -36,6 +36,7 @@ import { leadingToneForFunction } from "../services/harmony";
 import { diatonicSequenceAtMiddleArrival } from "../state/diatonicSequenceLeadingTone";
 import { resolvesDominantSixthSubstitution } from "./dominantSixthSubstitution";
 import { heldSuspensionsAt } from "./heldSuspensions";
+import { preparedCadentialPair } from "./preparedCadentialPair";
 import { respeltDoubleDominantMember } from "./chromaticDoubleDominant";
 
 interface ChordSliceFact {
@@ -87,6 +88,7 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
       if (unresolved.length === 0) return;
       if (unresolved.length === 1 && unresolved[0].voiceId === "soprano" &&
           resolvesDominantSixthSubstitution(slice, context)) return;
+      if (preparedCadentialPair(context, slice, unresolved)) return;
       const confirmed = heldSuspensionsAt(context, slice);
       const respelt = respeltDoubleDominantMember(context, slice);
       const outside = unresolved.filter(({ note }) =>
