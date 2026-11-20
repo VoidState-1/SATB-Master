@@ -11,13 +11,14 @@ import {
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
 import { buildMeasures, measureAtTick, ticksPerBeat, type MeasureInfo } from "../../time";
-import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
+import { buildMetricTimeline, compareMetricStrength, metricPositionAt } from "../../rhythm/metric";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
 import { detachedAuthenticEvidence } from "./detachedAuthentic";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
 import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
 import { closingTonicPedalEvidence } from "./tonicPedalEnding";
 import { continuesThroughParallelTonic } from "./parallelTonicPivot";
+import { isWrittenAuxiliaryReturn } from "./auxiliaryReturn";
 import { articulatedEndingEvidence } from "./articulatedEnding";
 import type {
   AnalysisChord,
@@ -678,6 +679,14 @@ export function detectCadences(
         ], { form: "plagal", completion: "imperfect", confidenceCap: "probable" }));
         continue;
       }
+      if (firstTonic?.isTonic && previous.degree === 4 && phrase.endBoundary?.source !== "manual" &&
+          connectionIsValid(firstTonic, previous) &&
+          compareMetricStrength(metricAt(previous.span.fromTick), metricAt(firstTonic.span.fromTick)) === "weaker" &&
+          isWrittenAuxiliaryReturn(firstTonic, previous, terminal, analysis.slices) &&
+          !hasAuthenticTailAnchor(analysis, previous, measureFor) &&
+          ![allCandidates, interiorCandidates, tonicPedalCandidates].some(candidates =>
+            candidates.some(item => item.kind === "full" && item.form === "authentic" &&
+              item.confidence !== "ambiguous" && item.toTick <= firstTonic.span.fromTick))) continue;
       allCandidates.push(
         candidate(
           phrase,
