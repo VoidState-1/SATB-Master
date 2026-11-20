@@ -6,6 +6,7 @@ import type { AnalysisSlice } from "../analysis";
 import { soundsCompleteWrittenChord } from "../writtenNeighbors";
 import { hasCompleteWrittenTertianVoicing } from "../writtenTertian";
 import type { CadenceEvidence, CadenceSpanFacts } from "./types";
+import { tonicBassGapFrames } from "./tonicBassGap";
 
 const upperVoices = ["soprano", "alto", "tenor"] as const;
 
@@ -28,15 +29,9 @@ export function tonicBassSuspensionEvidence(
       tonic.span.semantics?.cadenceRole || !pitchClassEquals(target.root, tonic.key.tonic) ||
       chordIdentityInversion(source) !== 0 || chordIdentityInversion(target) !== 0) return;
 
-  const before = slices[dominant.span.sliceIndices.at(-1)!];
-  const suspension = before && slices[before.index + 1];
-  const landing = tonic.boundarySlice;
-  if (!before?.completeSatb || !suspension?.completeSatb || !landing?.completeSatb || suspension.chord ||
-      before.endTick !== dominant.span.toTick || suspension.tick !== before.endTick ||
-      suspension.endTick !== tonic.span.fromTick || landing.tick !== suspension.endTick ||
-      landing.index !== suspension.index + 1 ||
-      before.key.id !== suspension.key.id || suspension.key.id !== landing.key.id ||
-      suspension.endTick - suspension.tick > beatTicks) return;
+  const frames = tonicBassGapFrames(dominant, tonic, slices, beatTicks);
+  if (!frames) return;
+  const { before, suspension, landing } = frames;
 
   const onset = metricAt(suspension.tick);
   if (onset?.role !== "downbeat" ||

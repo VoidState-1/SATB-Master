@@ -16,6 +16,7 @@ import { dominantNeighborEvidence } from "./dominantNeighbors";
 import { detachedAuthenticEvidence, detachedSparseTonicEvidence } from "./detachedAuthentic";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
 import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
+import { stagedTonicArrivalEvidence } from "./stagedTonicArrival";
 import { closingTonicPedalEvidence, closingTonicRevoicingEvidence } from "./tonicPedalEnding";
 import { continuesThroughParallelTonic } from "./parallelTonicPivot";
 import { isWrittenAuxiliaryReturn } from "./auxiliaryReturn";
@@ -438,7 +439,8 @@ function authenticCadence(
   return candidate(phrase, "full", path, evidence, {
     form: "authentic",
     completion,
-    observedLandingTick: extension || landingGap?.code === "detached-dominant-to-tonic"
+    observedLandingTick: extension || landingGap?.code === "detached-dominant-to-tonic" ||
+      landingGap?.code === "staged-tonic-arrival"
       ? tonic.span.fromTick
       : undefined,
     confidenceCap: completion && bassFormula && tonic.span.toTick === phrase.toTick &&
@@ -711,6 +713,8 @@ export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandi
       previous.span.toTick < terminal.span.fromTick &&
       (dominantLandingGapEvidence(previous, terminal, analysis.slices, metricAt, analysis.project.ppq) ??
         tonicBassSuspensionEvidence(previous, terminal, analysis.slices, metricAt,
+          writtenBeatAt(previous.span.toTick)) ??
+        stagedTonicArrivalEvidence(previous, terminal, analysis.slices, metricAt,
           writtenBeatAt(previous.span.toTick)) ??
         detachedAuthenticEvidence(previousPrevious, previous, terminal, analysis.slices,
           writtenBeatAt(previous.span.fromTick), measureFor(terminal.span.fromTick)?.startTick));
