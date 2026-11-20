@@ -21,6 +21,7 @@ import { continuesThroughParallelTonic } from "./parallelTonicPivot";
 import { isWrittenAuxiliaryReturn } from "./auxiliaryReturn";
 import { precedingDetachedDeception } from "./detachedDeceptive";
 import { articulatedEndingEvidence } from "./articulatedEnding";
+import { octaveTonicEndingEvidence } from "./octaveTonicEnding";
 import type {
   AnalysisChord,
   AnalysisSlice,
@@ -610,20 +611,32 @@ export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandi
         isFifthDegreeDominant(terminal)) {
       const preparation = facts.at(-2);
       const index = terminal.span.sliceIndices.at(-1)!;
-      const landing = analysis.slices[index + 2];
-      if (preparation && landing && metricAt(landing.tick)?.confidence === "certain") {
-        const evidence = detachedSparseTonicEvidence(preparation, terminal, landing, analysis.slices,
-          writtenBeatAt(terminal.span.fromTick), measureFor(landing.tick)?.startTick);
+      const next = analysis.slices[index + 1];
+      const detached = next && Object.keys(next.notes).length === 0;
+      const landing = detached ? analysis.slices[index + 2] : next;
+      const metric = landing && metricAt(landing.tick);
+      if (landing && metric?.confidence === "certain") {
+        let evidence: CadenceEvidence | undefined;
+        if (detached && preparation) {
+          evidence = detachedSparseTonicEvidence(preparation, terminal, landing, analysis.slices,
+            writtenBeatAt(terminal.span.fromTick), measureFor(landing.tick)?.startTick);
+        } else if (!detached && phrase.confidence === "certain" && metric.role === "downbeat" &&
+            landing.tick === terminal.span.toTick && landing.endTick - landing.tick >= (writtenBeatAt(landing.tick) ?? Infinity)) {
+          const octave = octaveTonicEndingEvidence(terminal, analysis.slices[index], landing);
+          if (octave && !analysis.slices.slice(landing.index + 1).some(slice => Object.keys(slice.notes).length)) evidence = octave;
+        }
         if (evidence) {
-          // The ending can corroborate an earlier cadence across template cuts.
-          // Keep each landing in its own phrase and preserve independent cadences.
-          if (!allCandidates.length && !interiorCandidates.length && !tonicPedalCandidates.length) {
+          if (detached && preparation && !allCandidates.length && !interiorCandidates.length && !tonicPedalCandidates.length) {
             const earlier = sparseRepriseCandidate(analysis, preparation, terminal, landing, evidence, measureFor);
             if (earlier) allCandidates.push(earlier);
           }
-          allCandidates.push(candidate(phrase, "full", [terminal], [evidenceForPhrase(phrase), evidence,
-            { code: "bass-formula", value: "低音 5 -> 1" },
-          ], { form: "authentic", completion: "perfect", confidenceCap: "probable", unharmonizedLanding: landing }));
+          const approach = detached ? undefined : dominantApproach(facts, facts.length - 1, gapEvidence);
+          const support: CadenceEvidence[] = [evidenceForPhrase(phrase), ...(approach?.evidence ?? []), evidence,
+            { code: "bass-formula", value: "低音 5 -> 1" }];
+          if (!detached) support.push({ code: "metric-support", value: "小节强拍齐起，区间止于所见音符释放" });
+          allCandidates.push(candidate(phrase, "full", approach?.path ?? [terminal], support, {
+            form: "authentic", completion: "perfect", confidenceCap: "probable", unharmonizedLanding: landing,
+          }));
           continue;
         }
       }
