@@ -116,6 +116,7 @@ npm run generate:assets
 | 要做的工作 | 先读 |
 | --- | --- |
 | 修改音符、和弦、锁定或撤销 | [data-model.md](./data-model.md)、[editor-and-state.md](./editor-and-state.md) |
+| 审计分析算法的系统性误判并修复 | [Gemini 外部审计与修复工作流](./analysis-audit-workflow.md) |
 | 新增或修正规则 | [harmony-engine.md](./harmony-engine.md) |
 | 维护规则查询、领域视图或算子 | [harmony-query.md](./harmony-query.md)、[harmony-engine.md](./harmony-engine.md) |
 | 维护规则状态或跨切片义务 | [harmony-rule-runtime.md](./harmony-rule-runtime.md) |
