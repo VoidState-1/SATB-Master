@@ -1,40 +1,9 @@
-import {
-  buildChordInferenceCandidates,
-  withLoweredSupertonics,
-} from "./candidates";
-import { withThirdInversionResolutions } from "./supertonicResolution";
-import { withAppliedDominants } from "./appliedDominants";
-import { withAnticipations } from "./anticipations";
-import { buildChordInferenceObservations } from "./observations";
-import { withDiatonicSevenths } from "./diatonicSevenths";
-import { withDeceptiveDominants } from "./deceptiveDominants";
-import { withDominantSixthSubstitutions } from "./dominantSixths";
-import { withDoubleAugmentedFourThree } from "./doubleAugmentedFourThree";
-import { withNeapolitanPivotSixths } from "./neapolitanPivotSixths";
-import { withNeapolitanPivotDominants } from "./neapolitanPivotDominants";
-import { withPassingTonicSevenths } from "./passingTonicSevenths";
-import { withLeadingSeventhIntoConfirmedKey } from "./leadingSeventhIntoConfirmedKey";
-import { withWholeWrittenTriadRespellings } from "./wholeWrittenTriadRespellings";
-import { withWrittenPivotSevenths } from "./pivotSevenths";
-import { withAppliedSequences } from "./appliedSequences";
+import type { ProjectDocument } from "../../project";
+import { buildContextualChordCandidates } from "./contextualCandidates";
+import { chooseNoncadentialTonicSixFours } from "./noncadentialTonicSixFours";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
 import { analyzeChordInferencePaths } from "./sequence";
-import { withRaisedFifthResolutions } from "./raisedFifthResolutions";
-import { chooseNoncadentialTonicSixFours } from "./noncadentialTonicSixFours";
-import { classifySixFours } from "./sixFours";
-import { withPreparedSuspensions } from "./preparedSuspensions";
-import { withUpperPassingTones } from "./upperPassing";
-import { withProlongedHarmony } from "./prolongation";
-import { withSingleVoiceRevoicings } from "./triadRevoicing";
-import { simultaneousNeighborCandidates } from "./simultaneousNeighbors";
-import { withWrittenLowerNeighborPairs } from "./lowerNeighborPair";
-import { inferLocalKeys } from "./localKeys";
-import { inferPhrases, isCurrentPhraseBoundary } from "../phrase";
-import type {
-  ChordInferenceObservation,
-  ChordInferenceOptions,
-  ChordInferenceResult,
-} from "./types";
+import type { ChordInferenceObservation, ChordInferenceOptions, ChordInferenceResult } from "./types";
 
 function normalizedRange(
   lengthTicks: number,
@@ -51,12 +20,8 @@ function normalizedRange(
   return { fromTick, toTick };
 }
 
-function confidenceRank(value: "high" | "medium" | "low") {
-  return value === "high" ? 2 : value === "medium" ? 1 : 0;
-}
-
 export function inferChords(
-  project: Parameters<typeof buildChordInferenceObservations>[0],
+  project: ProjectDocument,
   options: ChordInferenceOptions = {},
 ): ChordInferenceResult {
   const range = normalizedRange(project.lengthTicks, options);
@@ -76,86 +41,8 @@ export function inferChords(
       ],
     };
   }
-  const fullScore = buildChordInferenceObservations(project);
-  const minimumConfidence = options.minConfidence ?? "low";
-  const meetsMinimumConfidence = (candidate: ReturnType<typeof buildChordInferenceCandidates>[number]) =>
-    confidenceRank(candidate.confidence) >= confidenceRank(minimumConfidence);
-  // Phrase boundaries are normally written after chord inference. Precompute
-  // the note/rhythm-only structure here so an inferred middle-phrase cadence
-  // can still unlock the terminal tonic's permitted fifth omission.
-  const phraseAnalysis = inferPhrases({
-    ...project,
-    // Existing chord annotations must not bias a fresh chord inference run.
-    chordRegions: [],
-  });
-  const terminalTicks = new Set(
-    phraseAnalysis.boundaries.map((boundary) => boundary.tick),
-  );
-  const manualPhraseTicks = project.structure.phraseBoundaries
-    .filter(boundary => boundary.source === "manual")
-    .map(boundary => boundary.tick);
-  const localKeys = inferLocalKeys(fullScore, terminalTicks, manualPhraseTicks);
-  const observations = fullScore.map(item => {
-    const localKey = localKeys.get(item.index)?.key;
-    return localKey ? { ...item, key: { ...item.key, ...localKey }, localKey } : item;
-  });
-  const candidateSets: Array<ReturnType<typeof buildChordInferenceCandidates>> = [];
-  observations.forEach((observation, index) => {
-    const previousCandidates = candidateSets[index - 1] ?? [];
-    const followsDominant = previousCandidates.some(
-      (candidate) =>
-        candidate.functionalBaseId === "D" &&
-        candidate.fit.omittedChordDegrees.length === 0 &&
-        candidate.fit.nonChordToneNoteIds.length === 0,
-    );
-    const candidates = buildChordInferenceCandidates(observation, {
-      ...options,
-      allowCadentialTonicOmission:
-        terminalTicks.has(observation.toTick) && followsDominant,
-    }).filter(meetsMinimumConfidence);
-    candidateSets.push(candidates);
-  });
-  const pivots = withWrittenPivotSevenths(observations, candidateSets, options);
-  const diatonic = withDiatonicSevenths(observations, pivots, options);
-  const predominants = withLoweredSupertonics(observations, diatonic);
-  const sequences = withAppliedSequences(observations, predominants, options);
-  const applied = withAppliedDominants(observations, sequences, options);
-  const phraseBoundaryTicks = project.structure.phraseBoundaries
-    .filter(boundary => isCurrentPhraseBoundary(project, boundary))
-    .map(boundary => boundary.tick);
-  const anticipated = withAnticipations(observations, applied, options, project.ppq, phraseBoundaryTicks);
-  const suspended = withPreparedSuspensions(observations, anticipated, options, project.ppq, phraseBoundaryTicks);
-  const prolonged = withProlongedHarmony(observations, suspended, options, project.ppq, phraseBoundaryTicks);
-  const currentPhraseTicks = [...new Set([...terminalTicks, ...phraseBoundaryTicks])];
-  const doubleNeighbors = simultaneousNeighborCandidates(observations, prolonged, options, project.ppq, phraseBoundaryTicks);
-  const classified = classifySixFours(observations, prolonged, minimumConfidence !== "high", currentPhraseTicks, doubleNeighbors);
-  const recovered = withDeceptiveDominants(observations, classified, options, project.ppq, phraseBoundaryTicks);
-  const withSixths = withDominantSixthSubstitutions(observations, recovered, meetsMinimumConfidence, manualPhraseTicks);
-  const withPassingSevenths = withPassingTonicSevenths(
-    observations, withSixths, options, currentPhraseTicks,
-  );
-  const withNeapolitanPivots = withNeapolitanPivotDominants(
-    observations, withPassingSevenths, options, localKeys, currentPhraseTicks,
-  );
-  const withAlteredDoubleDominants = withDoubleAugmentedFourThree(
-    observations, withNeapolitanPivots, manualPhraseTicks, meetsMinimumConfidence,
-  );
-  const revoiced = minimumConfidence === "high" ? withAlteredDoubleDominants :
-    withSingleVoiceRevoicings(observations, withAlteredDoubleDominants, project.ppq, phraseBoundaryTicks, currentPhraseTicks);
-  const thirdInversions = withThirdInversionResolutions(observations, revoiced, options, currentPhraseTicks);
-  const leadingSevenths = withLeadingSeventhIntoConfirmedKey(
-    observations, thirdInversions, options, localKeys, currentPhraseTicks,
-  );
-  const writtenTriads = withWholeWrittenTriadRespellings(
-    observations, leadingSevenths, currentPhraseTicks,
-  );
-  const lowerNeighbors = withWrittenLowerNeighborPairs(observations, writtenTriads, options, currentPhraseTicks);
-  const upperPassing = withUpperPassingTones(
-    observations, lowerNeighbors.candidateSets, options, currentPhraseTicks, project.ppq,
-  );
-  const pivotSixths = withNeapolitanPivotSixths(observations, upperPassing, localKeys, currentPhraseTicks);
-  const raisedFifths = withRaisedFifthResolutions(observations, pivotSixths, manualPhraseTicks, meetsMinimumConfidence);
-  const sequence = analyzeChordInferencePaths(observations, raisedFifths);
+  const { observations, candidates, currentPhraseTicks, withheldStarts } = buildContextualChordCandidates(project, options);
+  const sequence = analyzeChordInferencePaths(observations, candidates);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;
@@ -174,7 +61,7 @@ export function inferChords(
     selectedPath = selectedPath.slice(first, end).map((selected, index) =>
       selected && { ...selected, observationIndex: index });
   }
-  const regions = buildChordInferenceRegions(visible, scored, selectedPath, lowerNeighbors.withheldStarts);
+  const regions = buildChordInferenceRegions(visible, scored, selectedPath, withheldStarts);
   return {
     sourceRevision: 0,
     range,
