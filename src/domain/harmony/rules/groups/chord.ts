@@ -35,6 +35,7 @@ import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { leadingToneForFunction } from "../services/harmony";
 import { diatonicSequenceAtMiddleArrival } from "../state/diatonicSequenceLeadingTone";
 import { resolvesDominantSixthSubstitution } from "./dominantSixthSubstitution";
+import { landsOnIncompleteTonic } from "../helpers/dominantTonicVoicing";
 import { heldSuspensionsAt } from "./heldSuspensions";
 import { preparedCadentialPair } from "./preparedCadentialPair";
 import { respeltDoubleDominantMember } from "./chromaticDoubleDominant";
@@ -225,7 +226,7 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
                 : undefined,
             )
           : undefined;
-      const isCadentialTonicFifthOmission =
+      const isTonicFifthOmission =
         missing.length === 1 &&
         chord.identity.structure.kind === "tertian" &&
         (chord.identity.structure.quality === "major" ||
@@ -233,7 +234,6 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
         chord.identity.structure.extensions.length === 0 &&
         chord.identity.structure.alterations.length === 0 &&
         pitchClassEquals(chord.identity.bass, chord.identity.root) &&
-        fullCadenceTargets.has(chord.id) &&
         interpretation.status === "resolved" &&
         interpretation.value.degree === 1 &&
         functionalDesignation?.primaryFunction === "tonic" &&
@@ -241,7 +241,7 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
           missing[0],
           chordIdentityToneSpellingForDegree(chord.identity, 5)!,
         );
-      if (isCadentialTonicFifthOmission) return;
+      if (isTonicFifthOmission && (fullCadenceTargets.has(chord.id) || landsOnIncompleteTonic(context, slice))) return;
       if (missing.length === 1) {
         const respelt = respeltDoubleDominantMember(context, slice);
         if (respelt && pitchClassEquals(missing[0], respelt.seventh)) return;
