@@ -21,7 +21,7 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { structuralTriadVoicing } from "../helpers/passingTriadVoicing";
+import { structuralTriadVoicing } from "../helpers/structuralTriadVoicing";
 import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { hasSubdominantSixFourOnTonicPedal } from "./tonicPedalSubdominantSixFour";
 import { leadingToneForFunction } from "../services/harmony";

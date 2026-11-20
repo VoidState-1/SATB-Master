@@ -10,7 +10,7 @@ import { VOICE_ORDER } from "../../../project/voice";
 
 // A labelled passing tone can precede a harmony change. Without a label,
 // require the same written triad and three held parts through the arrival.
-export function upperPassingVoicing(context: HarmonyRuleContext, end: AnalysisSlice) {
+function upperPassingVoicing(context: HarmonyRuleContext, end: AnalysisSlice) {
   if (!end.chord || end.attackVoiceIds.length !== 1) return;
   const [voice] = end.attackVoiceIds;
   const note = end.notes[voice];
@@ -34,11 +34,15 @@ export function upperPassingVoicing(context: HarmonyRuleContext, end: AnalysisSl
       context.harmony.isWrittenChordTone(motion.note, right.chord) ||
       !soundsCompleteWrittenChord(left.chord.identity, Object.values(left.notes), left.notes.bass!) ||
       !soundsCompleteWrittenChord(right.chord.identity, Object.values(right.notes), right.notes.bass!)) return;
-  return { noteId: motion.note.id, departure: left };
+  return { noteIds: [motion.note.id], departure: left };
+}
+
+export function triadUpperOrnaments(context: HarmonyRuleContext, slice: AnalysisSlice) {
+  return upperPassingVoicing(context, slice) ?? triadTailOrnaments(context, slice);
 }
 
 export function structuralTriadVoicing(context: HarmonyRuleContext, end: AnalysisSlice) {
   if (end.attackVoiceIds.length === 1 && end.attackVoiceIds[0] === "bass" &&
       end.notes.bass?.nonChordToneRole === "passing") return beforeMelodicMinorPassingBass(context, end) ?? end;
-  return upperPassingVoicing(context, end)?.departure ?? triadTailOrnaments(context, end)?.departure ?? end;
+  return triadUpperOrnaments(context, end)?.departure ?? end;
 }
