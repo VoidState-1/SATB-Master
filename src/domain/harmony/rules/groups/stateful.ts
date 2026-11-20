@@ -25,6 +25,7 @@ import {
   reattackedLeadingToneResolvesAsChainSeventh,
 } from "./halfDiminishedChain";
 import { homeLeadingToneWasDominantFifth } from "../state/dominantSeventhFifth";
+import { transfersLeadingToneInWrittenDominant } from "../state/writtenLeadingToneTransfer";
 import { leavesDiatonicSequenceLeadingTone, resolvesCopiedSeventhFifth } from "../state/diatonicSequenceLeadingTone";
 import {
   chordEvidence,
@@ -232,8 +233,8 @@ function leadingToneTransition(
 
   if (
     targetUnchanged &&
-    sameLeadingContext &&
-    transferVoiceIds.length > 0
+    transferVoiceIds.length > 0 &&
+    (sameLeadingContext || transfersLeadingToneInWrittenDominant(environment, transferVoiceIds))
   )
     return decision(
       environment,
