@@ -25,6 +25,7 @@ export interface CadenceEvidence {
     | "dominant-neighbor-prolongation"
     | "dominant-before-tonic-gap"
     | "detached-dominant-to-tonic"
+    | "detached-sparse-tonic"
     | "tonic-bass-suspension"
     | "closing-tonic-pedal"
     | "articulated-interior-ending"
@@ -42,6 +43,8 @@ export interface CadenceCandidate {
   readonly phraseId: string;
   readonly fromTick: number;
   readonly toTick: number;
+  /** Actual cadence arrival when no chord span is present at the landing. */
+  readonly unharmonizedLandingTick?: number;
   readonly kind: CadenceKind;
   readonly form?: CadenceForm;
   readonly completion?: CadenceCompletion;

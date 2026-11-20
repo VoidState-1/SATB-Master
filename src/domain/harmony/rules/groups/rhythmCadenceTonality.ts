@@ -124,6 +124,7 @@ function cadenceRuleContexts(context: HarmonyRuleContext) {
     .where(
       (cadence) =>
         !cadence.annotation?.stale &&
+        cadence.candidate?.unharmonizedLandingTick === undefined &&
         (cadence.source !== "candidate" || cadence.confidence === "certain"),
     )
     .selectMany((cadence) => {

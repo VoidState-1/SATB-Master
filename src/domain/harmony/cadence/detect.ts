@@ -13,7 +13,7 @@ import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../
 import { buildMeasures, measureAtTick, ticksPerBeat, type MeasureInfo } from "../../time";
 import { buildMetricTimeline, compareMetricStrength, metricPositionAt } from "../../rhythm/metric";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
-import { detachedAuthenticEvidence } from "./detachedAuthentic";
+import { detachedAuthenticEvidence, detachedSparseTonicEvidence } from "./detachedAuthentic";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
 import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
 import { closingTonicPedalEvidence } from "./tonicPedalEnding";
@@ -250,6 +250,7 @@ function candidate(
     readonly form?: CadenceForm;
     readonly completion?: CadenceCompletion;
     readonly confidenceCap?: CadenceConfidence;
+    readonly unharmonizedLanding?: AnalysisSlice;
   } = {},
 ): CadenceCandidate {
   const score = scoreFor(kind, phrase, evidence);
@@ -262,10 +263,12 @@ function candidate(
       ? options.confidenceCap
       : evidenceConfidence;
   return {
-    id: `cadence:${phrase.id}:${kind}:${first.id}:${last.id}`,
+    id: `cadence:${phrase.id}:${kind}:${first.id}:${last.id}` +
+      (options.unharmonizedLanding ? `:notes-${options.unharmonizedLanding.tick}` : ""),
     phraseId: phrase.id,
     fromTick: first.fromTick,
-    toTick: last.toTick,
+    toTick: options.unharmonizedLanding?.endTick ?? last.toTick,
+    ...(options.unharmonizedLanding && { unharmonizedLandingTick: options.unharmonizedLanding.tick }),
     kind,
     form: options.form,
     completion: options.completion,
@@ -560,6 +563,22 @@ export function detectCadences(
     interiorCandidates.push(...articulatedInteriorCadences(phrase, facts, analysis.slices, measureFor));
     const terminal = facts.at(-1);
     if (!terminal || terminal.interpretationStatus !== "resolved") continue;
+    if (phrase.toTick === analysis.project.lengthTicks && terminal.span.toTick < phrase.toTick &&
+        isFifthDegreeDominant(terminal)) {
+      const preparation = facts.at(-2);
+      const index = terminal.span.sliceIndices.at(-1)!;
+      const landing = analysis.slices[index + 2];
+      if (preparation && landing && metricAt(landing.tick)?.confidence === "certain") {
+        const evidence = detachedSparseTonicEvidence(preparation, terminal, landing, analysis.slices,
+          writtenBeatAt(terminal.span.fromTick), measureFor(landing.tick)?.startTick);
+        if (evidence) {
+          allCandidates.push(candidate(phrase, "full", [terminal], [evidenceForPhrase(phrase), evidence,
+            { code: "bass-formula", value: "低音 5 -> 1" },
+          ], { form: "authentic", completion: "perfect", confidenceCap: "probable", unharmonizedLanding: landing }));
+          continue;
+        }
+      }
+    }
     const terminalRole = terminal.span.semantics?.cadenceRole;
     if ((terminalRole === "pedal64" || terminalRole === "passing64") &&
         terminal.chord && chordIdentityInversion(terminal.chord.identity) === 2) continue;
