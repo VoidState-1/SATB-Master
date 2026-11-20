@@ -13,7 +13,7 @@ function isRootPositionTonic(context: HarmonyRuleContext, slice: AnalysisSlice, 
   if (!chord || chord.semantics?.cadenceRole) return false;
   const { root, bass, structure } = chord.identity;
   if (
-    structure.kind !== "tertian" || structure.quality !== "minor" ||
+    structure.kind !== "tertian" || structure.quality !== key.mode ||
     structure.alterations.length || structure.extensions.length ||
     !pitchClassEquals(root, key.tonic) || !pitchClassEquals(bass, root)
   ) return false;
@@ -114,23 +114,25 @@ function hasAuthenticPreparation(context: HarmonyRuleContext, tonic: AnalysisSli
 }
 
 /** 第 30 章书 203–204 页「补充」，例 30-461、462。
- * 仅核对句末同一原位小主和弦之间，完整法增六的辅助性回归。 */
-export function isAuxiliaryFrenchSixthReturn(
+ * 核对句末同一原位主和弦之间有实写支持的辅助性回归。 */
+export function isAuxiliaryAugmentedSixthReturn(
   context: HarmonyRuleContext,
   { source, target, sourceBoundary: middle, targetBoundary: landing }: ConnectionView,
   key: KeyLike,
 ): boolean {
   const chord = middle.chord;
+  const major = key.mode === "major";
+  const variant = major ? "doubleAugmented43" : "french";
   if (
-    key.mode !== "minor" || !middle.completeSatb || !landing.completeSatb ||
+    !middle.completeSatb || !landing.completeSatb ||
     chord?.identity.structure.kind !== "augmented-sixth" ||
-    chord.identity.structure.variant !== "french" ||
+    chord.identity.structure.variant !== variant ||
     context.harmony.primaryInterpretation(chord).status === "ambiguous" ||
     !isRootPositionTonic(context, landing, key) ||
     !voicesInOrder(middle) || !voicesInOrder(landing)
   ) return false;
 
-  const sixth = scaleDegreePitchClass(key, 6);
+  const sixth = scaleDegreePitchClass(key, 6, major ? -1 : 0);
   const targetBass = landing.notes.bass!;
   if (!pitchClassEquals(chord.identity.root, sixth) ||
       !pitchClassEquals(chord.identity.bass, sixth) ||
@@ -142,12 +144,12 @@ export function isAuxiliaryFrenchSixthReturn(
   if (!tones.every(tone => middleNotes.some(({ note }) => pitchClassEquals(note.pitch, tone))))
     return false;
   const upperLeadingTone = scaleDegreePitchClass(key, 4, 1);
-  const second = scaleDegreePitchClass(key, 2);
-  const minorThird = scaleDegreePitchClass(key, 3);
+  const second = scaleDegreePitchClass(key, 2, major ? 1 : 0);
+  const third = scaleDegreePitchClass(key, 3);
   const fifth = scaleDegreePitchClass(key, 5);
 
   const bassMotion = writtenInterval(middle.notes.bass!.pitch, targetBass.pitch);
-  const lowerOctave = bassMotion.diatonicSteps === -5 && bassMotion.semitones === -8;
+  const lowerOctave = !major && bassMotion.diatonicSteps === -5 && bassMotion.semitones === -8;
   if (!lowerOctave && (bassMotion.diatonicSteps !== 2 || bassMotion.semitones !== 4)) return false;
   if (!middleNotes.every(({ voiceId, note }) => {
     const arrival = landing.notes[voiceId]!;
@@ -155,7 +157,7 @@ export function isAuxiliaryFrenchSixthReturn(
     if (pitchClassEquals(note.pitch, key.tonic)) return context.pitch.sameWrittenPitch(note, arrival);
     const motion = writtenInterval(note.pitch, arrival.pitch);
     if (voiceId === "bass") return true;
-    const goal = pitchClassEquals(note.pitch, second) ? minorThird : fifth;
+    const goal = pitchClassEquals(note.pitch, second) ? third : fifth;
     return (pitchClassEquals(note.pitch, second) || pitchClassEquals(note.pitch, upperLeadingTone)) &&
       pitchClassEquals(arrival.pitch, goal) && motion.diatonicSteps === 1 && motion.semitones === 1;
   })) return false;

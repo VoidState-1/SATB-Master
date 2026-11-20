@@ -95,7 +95,7 @@ describe("实写升二的重属倍增三四", () => {
     expect(firstRuleIds(result, "resolution.augmented-sixth", project.ppq)).toHaveLength(1);
   });
 
-  it("主音连持、相邻两个实写原位主和弦时，辅助回主仍用独立书写身份", () => {
+  it("实写倍增三四保留独立身份，主音连持且回到同配置原位主和弦时解决成立", () => {
     const project = compileScoreText(`satb 1
 key D major
 meter 3/4
@@ -110,7 +110,7 @@ bars 1..1 {
       .toBe("DD++43");
     const result = applyHarmonyInference(project, { chordInference: inference },
       { mode: "replace-unlocked", writeNonChordToneRoles: true }).project;
-    expect(firstRuleIds(result, "resolution.augmented-sixth", 2 * project.ppq)).toHaveLength(1);
+    expect(firstRuleIds(result, "resolution.augmented-sixth", 2 * project.ppq)).toEqual([]);
   });
 
   it.each([

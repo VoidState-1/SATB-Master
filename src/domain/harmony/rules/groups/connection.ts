@@ -20,7 +20,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { ConnectionView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { isGermanToFrenchVoicing, isItalianToFrenchVoicing } from "./augmentedSixthContinuation";
-import { isAuxiliaryFrenchSixthReturn } from "./auxiliaryAugmentedSixth";
+import { isAuxiliaryAugmentedSixthReturn } from "./auxiliaryAugmentedSixth";
 import { isMajorTonicSixFour, resolvesDoubleAugmentedFourThree } from "../../doubleAugmentedFourThree";
 import { resolvesPreparedDoubleAugmentedFourThree } from "./preparedDoubleAugmentedFourThree";
 
@@ -126,9 +126,9 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
       continue;
     if (continuesInFrenchVoicing(context, candidate, sourceKey)) continue;
     if (!isDominant && !isCadential64 &&
-        isAuxiliaryFrenchSixthReturn(context, candidate, sourceKey)) continue;
+        isAuxiliaryAugmentedSixthReturn(context, candidate, sourceKey)) continue;
 
-    const problems = isDoubleAugmented43 ? ["重属倍增三四须以实写升二级、升四级的上行半音及降六级的下行半音解决到大调主四六"] : [
+    const problems = isDoubleAugmented43 ? ["重属倍增三四通常以实写升二级、升四级的上行半音及降六级的下行半音解决到大调主四六，辅助性回归需核对前后主和弦及实际声部"] : [
       ...(!isDominant && !isCadential64 ? ["目标不是明确的属功能或 K46"] : []),
       ...(!lowResolves ? ["增六低端未下行半音到属音"] : []),
       ...(!highResolves ? ["增六高端未上行半音到属音"] : []),
@@ -253,7 +253,7 @@ export const CONNECTION_RULES = defineRuleGroup(
     catalogNumber: "E.5",
     label: "增六音程未反向解决",
     description:
-      "检查增六和弦是否反向半音解决到属音，或形成句末法增六向原位小主和弦的辅助性回归。",
+      "检查增六和弦是否反向半音解决到属音，或形成句末增六和弦向同一原位主和弦的辅助性回归。",
     rationale:
       "增六和弦通常由降Ⅵ级下行、升Ⅳ级上行半音汇聚于属音。斯波索宾第30章亦允许经辅助性增六返回主和弦作为补充终止，此时须由前后主和弦与实际声部进行共同确认。",
     group: "resolution",
