@@ -1,5 +1,6 @@
 import { chordIdentityToneSpellings, type FunctionalDesignation } from "../../../chordModel";
-import { pitchClassEquals, type SpelledPitchClass } from "../../../pitch";
+import { pitchClassEquals, spelledPitchEquals, type SpelledPitchClass } from "../../../pitch";
+import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass, type AnalysisSlice, type SliceTransition } from "../../analysis";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -8,10 +9,10 @@ function allWrittenMembers(pitches: readonly SpelledPitchClass[], tones: readonl
   return pitches.every(pitch => tones.some(tone => pitchClassEquals(pitch, tone)));
 }
 
-export function sameHarmonyAtMelodicAttack(context: HarmonyRuleContext, tick: number) {
+export function sameHarmonyAtMelodicAttack(context: HarmonyRuleContext, tick: number, voice: VoiceId) {
   const landing = context.sliceAt(tick);
   const motion = landing && context.sliceTransitions({ toSliceIndex: landing.index }).first();
-  return !!motion && sameHarmonyOnTransition(motion, context.harmony);
+  return !!motion && sameHarmonyOnTransition(motion, context.harmony, voice);
 }
 
 function labelAllowsVoicing(slice: AnalysisSlice, pitches: readonly SpelledPitchClass[], complete: boolean) {
@@ -58,8 +59,22 @@ function explicitUsesAgree(previous: AnalysisSlice, current: AnalysisSlice, harm
     leftDesignation?.specialRole === rightDesignation?.specialRole;
 }
 
+function rolesAllowRevoicing(slice: AnalysisSlice, melodicVoice?: VoiceId) {
+  const notes = Object.entries(slice.notes);
+  return notes.every(([part, note]) => {
+    if (!note.nonChordToneRole) return true;
+    // A suspension tag covers the whole note, including its consonant preparation.
+    // Require a separate part at the very same written pitch to confirm the doubling.
+    return melodicVoice !== undefined && part !== melodicVoice && part !== "bass" && !!slice.chord &&
+      note.nonChordToneRole === "suspension" && note.startTick + note.durationTicks > slice.endTick &&
+      notes.some(([, other]) => !other.nonChordToneRole && spelledPitchEquals(other.pitch, note.pitch));
+  });
+}
+
 /** Prove revoicing on this connection from the two sounding voicings. */
-export function sameHarmonyOnTransition(transition: SliceTransition, harmony: HarmonyRuleContext["harmony"]) {
+export function sameHarmonyOnTransition(
+  transition: SliceTransition, harmony: HarmonyRuleContext["harmony"], melodicVoice?: VoiceId,
+) {
   if (!transition.contiguous || !transition.sameKey) return false;
   const { previous, current } = transition;
   if (previous.chord && current.chord &&
@@ -77,6 +92,6 @@ export function sameHarmonyOnTransition(transition: SliceTransition, harmony: Ha
     return transition.sameHarmony;
   }
   return allWrittenMembers(left, right) && allWrittenMembers(right, left) &&
-    !before.some(note => note.nonChordToneRole) && !after.some(note => note.nonChordToneRole) &&
+    rolesAllowRevoicing(previous, melodicVoice) && rolesAllowRevoicing(current, melodicVoice) &&
     explicitUsesAgree(previous, current, harmony);
 }

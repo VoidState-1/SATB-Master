@@ -4,6 +4,25 @@ import { checkHarmony } from "../../registry";
 
 const leapRule = "melody.large-leap";
 
+it.each([[true, false], [false, true]])("核对其他声部延留准备的同音加倍 %s", (doubled, reports) => {
+  const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | C5/4 ${doubled ? "G4" : "E5"}/4 A4/2 |
+ A: | G4/4 G4/2 F4/4 |
+ T: | E4/4 C4/4 C4/2 |
+ B: | C4/4 E3/4 F3/2 |
+ H: | I/4 I6/4 IV/2 |
+}`);
+  project.satbTracks.find(track => track.voice === "alto")!.notes[1].nonChordToneRole = "suspension";
+  const hasLeap = (strict: boolean) =>
+    checkHarmony(project, undefined, {}, strict ? { [leapRule]: { "same-harmony": "strict" } } : {})
+      .diagnostics.some(d => d.ruleId === leapRule && d.tick === project.ppq && d.voiceIds.includes("bass"));
+  expect(hasLeap(true)).toBe(true);
+  expect(hasLeap(false)).toBe(reports);
+});
+
 function leaps(score: string, strict = false) {
   const { project } = compileScoreText(score);
   return checkHarmony(project, undefined, {}, strict ? { [leapRule]: { "same-harmony": "strict" } } : {})
