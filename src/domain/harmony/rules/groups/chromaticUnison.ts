@@ -6,6 +6,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasExactPitch } from "../helpers/core";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { preparesAlteredDominantFifth } from "./alteredDominantFifth";
+import { preparesDominantWithReattackedSeventh } from "./chromaticReattackedSeventh";
 import { preparesWrittenAppliedSeventh } from "./chromaticAppliedResolution";
 import { recognizesAugmentedSixthPreparation } from "./chromaticAugmentedSixth";
 import { isRespeltDoubleDominantSeventh, preparesWrittenRespeltDoubleDominant } from "./chromaticDoubleDominant";
@@ -16,7 +17,7 @@ function preparesChromaticDominant(context: HarmonyRuleContext, transition: Melo
   const { previous, current, writtenInterval } = transition;
   const heldBass = subdominantSeventhBassEntry(context, transition);
   if (heldBass !== undefined) return heldBass;
-  if (preparesWrittenAppliedSeventh(context, transition)) return true;
+  if (preparesWrittenAppliedSeventh(context, transition) || preparesDominantWithReattackedSeventh(context, transition)) return true;
   const targetSlice = context.sliceAt(current.startTick);
   const target = targetSlice?.chord;
   if (!targetSlice || !target || target.startTick !== current.startTick) return false;
