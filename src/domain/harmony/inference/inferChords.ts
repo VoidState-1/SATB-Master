@@ -2,7 +2,7 @@ import {
   buildChordInferenceCandidates,
   withLoweredSupertonics,
 } from "./candidates";
-import { withSupertonicResolutions } from "./supertonicResolution";
+import { withThirdInversionResolutions } from "./supertonicResolution";
 import { withAppliedDominants } from "./appliedDominants";
 import { withAnticipations } from "./anticipations";
 import { buildChordInferenceObservations } from "./observations";
@@ -138,9 +138,9 @@ export function inferChords(
   );
   const revoiced = minimumConfidence === "high" ? withAlteredDoubleDominants :
     withSingleVoiceTriadRevoicings(observations, withAlteredDoubleDominants, project.ppq, phraseBoundaryTicks);
-  const supertonics = withSupertonicResolutions(observations, revoiced, options, currentPhraseTicks);
+  const thirdInversions = withThirdInversionResolutions(observations, revoiced, options, currentPhraseTicks);
   const leadingSevenths = withLeadingSeventhIntoConfirmedKey(
-    observations, supertonics, options, localKeys, currentPhraseTicks,
+    observations, thirdInversions, options, localKeys, currentPhraseTicks,
   );
   const writtenTriads = withWholeWrittenTriadRespellings(
     observations, leadingSevenths, currentPhraseTicks,

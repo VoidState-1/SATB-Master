@@ -1,66 +1,80 @@
-import { chordIdentityEquals, chordToneSpellings, semanticsFromChordDraft } from "../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
+import { chordIdentityEquals, semanticsFromChordDraft, type KeyReference, type ScaleDegree } from "../../chordModel";
+import { pitchClassEquals, scaleDegreePitchClass, stepIndex, type Alteration } from "../../pitch";
 import { createAbsoluteCandidate } from "./candidates";
-import { resolvesTone, soundingBass } from "./observations";
-import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
+import { adjacentTonicAnchor, writtenThirdInversion } from "./thirdInversionAnchors";
+import type { ChordInferenceCandidate as Candidate, ChordInferenceObservation as Observation, ChordInferenceOptions } from "./types";
 
-type CandidateSet = readonly ChordInferenceCandidate[];
+type CandidateSet = readonly Candidate[];
 
-/** In a minor key the diatonic supertonic triad is diminished. A major or
- * minor triad on that root can nevertheless be a local goal. Identify the
- * two written sonorities without inferring a key span or the goal's function
- * in the larger phrase. See Spasobin §15.2 and §32.2. */
-export function withSupertonicResolutions(
-  observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[],
-  options: ChordInferenceOptions, phraseBoundaries: readonly number[],
+function needsIdentity(set: CandidateSet) {
+  return set.every(c => !c.semantics && c.confidence === "low");
+}
+
+function sameContext(source: Observation, end: Observation) {
+  return source.key.id === end.key.id && source.key.mode === end.key.mode &&
+    pitchClassEquals(source.key.tonic, end.key.tonic);
+}
+
+function literalDominant(item: Observation, key: KeyReference, options: ChordInferenceOptions, inversion: 2 | 3) {
+  const root = scaleDegreePitchClass(key, 5);
+  const candidate = createAbsoluteCandidate(item, root, "dominant7", options);
+  if (!candidate) return;
+  const degree = (1 + (stepIndex(root.step) - stepIndex(item.key.tonic.step) + 7) % 7) as ScaleDegree;
+  const diatonicRoot = scaleDegreePitchClass(item.key, degree);
+  const alteration = root.alter - diatonicRoot.alter;
+  if (diatonicRoot.step !== root.step || Math.abs(alteration) > 2) return candidate;
+  return { ...candidate, semantics: semanticsFromChordDraft({
+    degree, degreeAlteration: alteration as Alteration, quality: "dominant7", inversion,
+    localKey: item.localKey, source: "inferred", confidence: "probable",
+  }) };
+}
+
+export function withThirdInversionResolutions(
+  frames: readonly Observation[], sets: readonly CandidateSet[], options: ChordInferenceOptions, boundaries: readonly number[],
 ) {
   if (options.minConfidence === "high") return sets;
   const result = sets.slice();
-  const needsIdentity = (set: CandidateSet) => set.every(c => !c.semantics && c.confidence === "low");
-  for (let i = 0; i + 1 < observations.length; i++) {
-    const source = observations[i], goal = observations[i + 1];
-    if ((!needsIdentity(sets[i]) && !needsIdentity(sets[i + 1])) ||
-        source.key.mode !== "minor" || goal.key.mode !== "minor" ||
-        source.key.id !== goal.key.id || !pitchClassEquals(source.key.tonic, goal.key.tonic) ||
-        source.toTick !== goal.fromTick || phraseBoundaries.includes(goal.fromTick) ||
-        source.soundingPitchClasses.length !== 4 || goal.soundingPitchClasses.length !== 3) continue;
+  const connected = (i: number, end: number) =>
+    frames.slice(i, end + 1).every((f, offset) => sameContext(frames[i], f) &&
+      (!offset || frames[i + offset - 1].toTick === f.fromTick)) &&
+    !boundaries.some(t => frames[i].fromTick < t && t <= frames[end].fromTick);
+  for (let i = 0; i + 1 < frames.length; i++) {
+    const source = frames[i], goal = frames[i + 1];
+    if ((!needsIdentity(result[i]) && !needsIdentity(result[i + 1])) || !connected(i, i + 1)) continue;
+    const key = writtenThirdInversion(source, goal);
+    if (!key) continue;
+    const homeSupertonic = source.key.mode === "minor" && pitchClassEquals(key.tonic, scaleDegreePitchClass(source.key, 2));
+    const anchor = adjacentTonicAnchor(frames, i, key, connected);
+    if (!homeSupertonic && !anchor) continue;
 
-    const bass = soundingBass(source), goalBass = soundingBass(goal);
-    if (!bass || !goalBass) continue;
-    const tonic = scaleDegreePitchClass(source.key, 2);
-    const dominant = scaleDegreePitchClass({ tonic, mode: "major" }, 5);
-    const [root, third, fifth, seventh] = chordToneSpellings(dominant, "dominant7");
-    const mode = (["major", "minor"] as const).find(quality =>
-      pitchClassEquals(goalBass, chordToneSpellings(tonic, quality)[1]));
-    if (!mode || !pitchClassEquals(bass, seventh) ||
-        !resolvesTone(source, goal, root, root, 0) ||
-        !resolvesTone(source, goal, third, tonic, 1) ||
-        !resolvesTone(source, goal, fifth, tonic, -1) ||
-        !resolvesTone(source, goal, seventh, goalBass, -1)) continue;
-
-    const from = createAbsoluteCandidate(source, dominant, "dominant7", options);
-    const to = createAbsoluteCandidate(goal, tonic, mode, options);
-    if (!from || !to ||
-        !sets[i].every(c => chordIdentityEquals(c.identity, from.identity)) ||
-        !sets[i + 1].every(c => chordIdentityEquals(c.identity, to.identity))) continue;
-    const evidence = { kind: "sequence-context" as const, code: "written-supertonic-resolution",
-      details: { fromTick: source.fromTick, toTick: goal.fromTick } };
-    const supported = (candidate: ChordInferenceCandidate): ChordInferenceCandidate => ({
-      ...candidate, confidence: "medium", score: { ...candidate.score, functionalTier: 3 },
-      evidence: [...candidate.evidence, evidence],
-    });
-    if (needsIdentity(sets[i])) result[i] = [{
-      ...supported(from),
-      // Its root is the raised submediant of the active minor key. This
-      // literal degree leaves the target's wider function and mode open.
-      semantics: semanticsFromChordDraft({
-        degree: 6, degreeAlteration: 1, quality: "dominant7", inversion: 3,
-        localKey: source.localKey, source: "inferred", confidence: "probable",
-      }),
-    }];
-    // A stable local goal does not establish the home SII6 doubling rule or
-    // a modulation. Preserve an existing analysis, including a double dominant.
-    if (needsIdentity(sets[i + 1])) result[i + 1] = [supported(to)];
+    // Keep the existing single-pair contract on the home minor supertonic.
+    // Other targets require an independently voiced return to a root-position tonic.
+    const sourceChord = literalDominant(source, key, options, 3);
+    // Keep the local tonic role in the proof. A literal degree on this triad
+    // would also assert home-key doubling or progression obligations.
+    const tonicChord = (j: number) => createAbsoluteCandidate(frames[j], key.tonic, key.mode, options);
+    const readings = [{ j: i, candidate: sourceChord, role: "D2" },
+      { j: i + 1, candidate: tonicChord(i + 1), role: "T6" }];
+    // Revoicing over the same bass belongs to the witnessed I6. The passing
+    // V64 is evidence only: a bare 64 would leave its doubling unexplained.
+    if (anchor && anchor.dominant > i) {
+      for (let j = i + 2; j < anchor.dominant; j++) readings.push({ j, candidate: tonicChord(j), role: "T6" });
+    }
+    if (anchor && anchor.kind !== "passing-six-four") {
+      readings.push({ j: anchor.dominant, candidate: literalDominant(frames[anchor.dominant], key, options, 2), role: "D43" },
+        { j: anchor.tonic, candidate: tonicChord(anchor.tonic), role: "T" });
+    }
+    if (!readings.every(({ j, candidate }) => candidate && result[j].every(c => chordIdentityEquals(c.identity, candidate.identity)))) continue;
+    for (const { j, candidate, role } of readings) {
+      if (!candidate || !needsIdentity(result[j])) continue;
+      const evidence = { kind: "sequence-context" as const, code: homeSupertonic ? "written-supertonic-resolution" : "written-third-inversion-return",
+        details: { fromTick: source.fromTick, toTick: goal.fromTick, ...(anchor ? {
+          anchor: anchor.kind, dominantTick: frames[anchor.dominant].fromTick, rootTonicTick: frames[anchor.tonic].fromTick,
+          tonicStep: key.tonic.step, tonicAlter: key.tonic.alter, mode: key.mode, role,
+        } : {}) } };
+      result[j] = [{ ...candidate, confidence: "medium", score: { ...candidate.score, functionalTier: 3 },
+        evidence: [...candidate.evidence, evidence] }];
+    }
   }
   return result;
 }
