@@ -1,5 +1,5 @@
 import { chordIdentityToneSpellings, type ChordIdentity } from "../chordModel";
-import { isWrittenStep, pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../pitch";
+import { isWrittenStep, pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitch } from "../pitch";
 import { VOICE_ORDER } from "../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "./analysis";
 import { soundsCompleteWrittenChord } from "./writtenVoicing";
@@ -16,6 +16,26 @@ export function returnsByWrittenStep(first: AnalysisNote, middle: AnalysisNote, 
       middle.durationTicks > Math.min(first.durationTicks, last.durationTicks)) return false;
   const step = writtenInterval(first.pitch, middle.pitch);
   return isWrittenStep(step) && Math.sign(step.semitones) === step.diatonicSteps;
+}
+
+function formsThirdOrSixth(lower: SpelledPitch, upper: SpelledPitch) {
+  const interval = writtenInterval(lower, upper);
+  const steps = interval.diatonicSteps % 7;
+  const semitones = interval.semitones % 12;
+  return (steps === 2 && (semitones === 3 || semitones === 4)) ||
+    (steps === 5 && (semitones === 8 || semitones === 9));
+}
+
+/** Once both voices have a written step and return, parallel neighbors require
+ * a major or minor third or sixth (possibly compound) at both positions. */
+export function supportsPairedNeighborMotion(
+  lowerBefore: SpelledPitch, upperBefore: SpelledPitch,
+  lowerNeighbor: SpelledPitch, upperNeighbor: SpelledPitch,
+) {
+  const lowerMotion = writtenInterval(lowerBefore, lowerNeighbor);
+  const upperMotion = writtenInterval(upperBefore, upperNeighbor);
+  return lowerMotion.diatonicSteps !== upperMotion.diatonicSteps ||
+    (formsThirdOrSixth(lowerBefore, upperBefore) && formsThirdOrSixth(lowerNeighbor, upperNeighbor));
 }
 
 type NeighborFrame = Pick<AnalysisSlice, "tick" | "notes" | "completeSatb">;

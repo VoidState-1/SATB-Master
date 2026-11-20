@@ -1,8 +1,8 @@
 import { chordIdentityEquals, chordIdentityToneSpellings, primaryHarmonyInterpretation } from "../../../chordModel";
-import { pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../../../pitch";
+import { pitchClassEquals, spelledPitchEquals, toMidi } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisChord, AnalysisSlice } from "../../analysis";
-import { returnsByWrittenStep } from "../../writtenNeighbors";
+import { returnsByWrittenStep, supportsPairedNeighborMotion } from "../../writtenNeighbors";
 import { soundsCompleteWrittenChord } from "../../writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -33,14 +33,6 @@ function orderedNotes(slice: AnalysisSlice) {
   const notes = VOICE_ORDER.map(voice => slice.notes[voice]!);
   if (notes.some((note, i) => i > 0 && toMidi(notes[i - 1].pitch) <= toMidi(note.pitch))) return;
   return notes;
-}
-
-function outerThirdOrSixth(notes: NonNullable<ReturnType<typeof orderedNotes>>) {
-  const interval = writtenInterval(notes[3].pitch, notes[0].pitch);
-  const steps = interval.diatonicSteps % 7;
-  const semitones = interval.semitones % 12;
-  return (steps === 2 && (semitones === 3 || semitones === 4)) ||
-    (steps === 5 && (semitones === 8 || semitones === 9));
 }
 
 /** Spasobin §40.5: on a held harmony the outer voices can decorate the
@@ -77,10 +69,7 @@ export function hasPairedOuterNeighborBass(context: HarmonyRuleContext, slice: A
       !returnsByWrittenStep(first[3], bass, last[3]) ||
       !returnsByWrittenStep(first[0], soprano, last[0]) ||
       hasCompleteWrittenTertianVoicing(middle.map(note => note.pitch))) return false;
-  const upperMotion = writtenInterval(first[0].pitch, soprano.pitch);
-  const lowerMotion = writtenInterval(first[3].pitch, bass.pitch);
-  if (upperMotion.diatonicSteps === lowerMotion.diatonicSteps &&
-      (!outerThirdOrSixth(first) || !outerThirdOrSixth(middle))) return false;
+  if (!supportsPairedNeighborMotion(first[3].pitch, first[0].pitch, bass.pitch, soprano.pitch)) return false;
   if (![1, 2].every(i => spelledPitchEquals(first[i].pitch, last[i].pitch))) return false;
   return context.slices({ overlapping: { fromTick: start, toTick: end } }).all(frame =>
     frame.key.id === before.key.id && sameLabel(chord, frame.chord) &&

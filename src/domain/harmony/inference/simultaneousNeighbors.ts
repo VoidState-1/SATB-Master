@@ -1,6 +1,6 @@
 import { chordIdentityEquals, chordIdentityInversion, primaryHarmonyInterpretation } from "../../chordModel";
-import { pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
-import { writtenNeighborsOverHeldBass } from "../writtenNeighbors";
+import { pitchClassEquals, toMidi } from "../../pitch";
+import { supportsPairedNeighborMotion, writtenNeighborsOverHeldBass } from "../writtenNeighbors";
 import { fitSimultaneousNeighbors } from "./candidates";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
@@ -37,14 +37,7 @@ function supportsPairedMotion(left: Observation, middle: Observation, ids: reado
   if (!higher || !lower) return false;
   const previousHigher = left.activeNotes[higher.voiceId], previousLower = left.activeNotes[lower.voiceId];
   if (!previousHigher || !previousLower) return false;
-  if (writtenInterval(previousHigher.pitch, higher.note.pitch).diatonicSteps !==
-      writtenInterval(previousLower.pitch, lower.note.pitch).diatonicSteps) return true;
-  return [[previousLower, previousHigher], [lower.note, higher.note]].every(([bottom, top]) => {
-    const interval = writtenInterval(bottom.pitch, top.pitch);
-    const steps = interval.diatonicSteps % 7, semitones = interval.semitones % 12;
-    return (steps === 2 && (semitones === 3 || semitones === 4)) ||
-      (steps === 5 && (semitones === 8 || semitones === 9));
-  });
+  return supportsPairedNeighborMotion(previousLower.pitch, previousHigher.pitch, lower.note.pitch, higher.note.pitch);
 }
 
 /** Spasobin §§40.1, 40.4–5: two upper neighbors may decorate one held
