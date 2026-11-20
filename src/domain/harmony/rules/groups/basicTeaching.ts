@@ -23,6 +23,7 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { structuralTriadVoicing } from "../helpers/passingTriadVoicing";
 import { notesWithAnticipationReplacements } from "../helpers/anticipation";
+import { hasSubdominantSixFourOnTonicPedal } from "./tonicPedalSubdominantSixFour";
 import { leadingToneForFunction } from "../services/harmony";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
@@ -265,7 +266,8 @@ export function secondInversionTriadVoicingRule(context: HarmonyRuleContext) {
     const role = fact.chord.semantics?.cadenceRole;
     if (
       fact.counts[2] === 2 &&
-      (role === "cadential64" || role === "passing64" || role === "pedal64")
+      (role === "cadential64" || role === "passing64" || role === "pedal64" ||
+        (!role && hasSubdominantSixFourOnTonicPedal(context, fact.slice)))
     )
       return;
     diagnostics.push(
@@ -588,7 +590,7 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     group: "chord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
-    dependencyScope: "chord",
+    dependencyScope: "phrase",
     evaluate: secondInversionTriadVoicingRule,
   }),
   defineStatelessRule({
