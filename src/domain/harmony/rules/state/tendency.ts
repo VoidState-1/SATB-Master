@@ -36,6 +36,7 @@ import { dominantNinthTone, writtenDominantNinthResolves } from "../../writtenDo
 import { preparedSeventhEntries } from "./preparedSeventh";
 import { openedSourceChord, openedSourceNote, sameSeventhContext, supportsTendencyResolutionRules } from "./tendencyContext";
 import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
+import { supportsWrittenInnerLeadingToneDescent } from "./writtenInnerLeadingTone";
 import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneNeighbor";
 
 export { supportsTendencyResolutionRules } from "./tendencyContext";
@@ -389,7 +390,7 @@ export function innerLeadingToneDescendsToFifth(
   const leading = source?.notes[payload.voiceId];
   const landing = target.notes[payload.voiceId];
   if (
-    !source || !from || !to || !leading || !landing ||
+    !source || !leading || !landing ||
     !context.transitionFromPrevious?.contiguous || !context.transitionFromPrevious.sameKey ||
     !supportsTendencyResolutionRules(context, from) || !supportsTendencyResolutionRules(context, to)
   ) return false;
@@ -397,6 +398,13 @@ export function innerLeadingToneDescendsToFifth(
   const interval = writtenInterval(leading.pitch, landing.pitch);
   if (interval.diatonicSteps !== -2 || interval.semitones !== -4) return false;
 
+  const tonic = { step: payload.targetStep, alter: payload.targetAlter };
+  const resolutionKey = { tonic, mode: payload.targetMode };
+  const dominant = scaleDegreePitchClass(resolutionKey, 5);
+  if (supportsWrittenInnerLeadingToneDescent(source, target, dominant, tonic) &&
+      obligationFollowsWrittenLeadingTone(environment, source, leading, landing, dominant, resolutionKey)) return true;
+
+  if (!from || !to) return false;
   if (obligationFollowsWrittenLeadingTone(environment, source, leading, landing, scaleDegreePitchClass(target.key, 5)) &&
       resolvesDominantSixthSubstitution(source, context.rules, true)) return true;
 
@@ -407,7 +415,6 @@ export function innerLeadingToneDescendsToFifth(
     ? fromInterpretation.value.localKey ?? source.key : source.key;
   const toKey = toInterpretation.status === "resolved"
     ? toInterpretation.value.localKey ?? target.key : target.key;
-  const tonic = { step: payload.targetStep, alter: payload.targetAlter };
   const fromStructure = from.identity.structure;
   const toStructure = to.identity.structure;
   return (
