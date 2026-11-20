@@ -2,8 +2,7 @@ import { chordIdentityInversion, chordIdentityToneSpellings } from "../../chordM
 import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import { ticksPerBeat, type MeasureInfo } from "../../time";
-import type { HarmonyAnalysis } from "../analysis";
-import type { PhraseSegment } from "../phrase";
+import type { AnalysisSlice, HarmonyAnalysis } from "../analysis";
 import { bassStepsUpToSubmediant } from "./articulatedEnding";
 import { sameDetachedRhythm, writtenAttack } from "./detachedAttacks";
 import type { CadenceEvidence, CadenceSpanFacts } from "./types";
@@ -27,27 +26,45 @@ function reprisesOpening({ project }: Score, start: number, end: number, offset:
   });
 }
 
+interface ConfirmedEnding {
+  readonly preparation: CadenceSpanFacts;
+  readonly dominant: CadenceSpanFacts;
+  readonly arrival: AnalysisSlice;
+  readonly tonic?: CadenceSpanFacts;
+  readonly proof: CadenceEvidence;
+}
+
+// A template boundary can fall at a rest within the copied material or at the
+// first preparation's release. A cut at V, VI or the start of a new clause stands.
+function isInternalRest(score: Score, tick: number, opening: number, pre: AnalysisSlice, offset: number) {
+  if (!(tick === pre.endTick || (opening < tick && tick < pre.tick) ||
+      (opening + offset < tick && tick < pre.tick + offset))) return false;
+  const rest = score.slices.find(s => s.tick === tick);
+  const attack = rest && score.slices[rest.index - 1];
+  return !!rest && !rest.chord && !Object.keys(rest.notes).length && !!attack?.notes.soprano && !!attack.notes.bass &&
+    Object.values(attack.notes).length >= 3 && Object.values(attack.notes).every(n => n.startTick + n.durationTicks === tick);
+}
+
 /** Spasobin §20.7: the same opening reaches two cadential preparations.
  * Only the earlier dominant avoids the expected tonic. The caller has
  * already established the second, detached authentic ending. */
 export function precedingDetachedDeception(
-  score: Score, phrase: PhraseSegment, facts: readonly CadenceSpanFacts[],
-  measureFor: (tick: number) => MeasureInfo | undefined,
+  score: Score, openingTick: number, facts: readonly CadenceSpanFacts[], ending: ConfirmedEnding,
+  measureFor: (tick: number) => MeasureInfo | undefined, inferredCuts: readonly number[] = [],
 ) {
-  const [laterPre, laterV, tonic] = facts.slice(-3);
-  const key = tonic.key;
-  const finalOnset = tonic.boundarySlice;
-  const opening = measureFor(phrase.fromTick);
-  if (!opening || opening.startTick !== phrase.fromTick || !laterPre.chord || !finalOnset || key.mode !== "major" ||
-      score.project.meterEvents.some(e => phrase.fromTick < e.tick && e.tick < tonic.span.toTick) ||
-      score.slices.some(s => phrase.fromTick <= s.tick && s.tick < tonic.span.toTick && s.key.id !== finalOnset.key.id)) return;
+  const { preparation: laterPre, dominant: laterV, arrival: finalOnset, tonic } = ending;
+  const key = tonic?.key ?? laterV.key;
+  const opening = measureFor(openingTick);
+  if (!opening || opening.startTick !== openingTick || !laterPre.chord || key.mode !== "major" ||
+      score.project.meterEvents.some(e => openingTick < e.tick && e.tick < finalOnset.endTick) ||
+      score.slices.some(s => openingTick <= s.tick && s.tick < finalOnset.endTick && s.key.id !== finalOnset.key.id)) return;
   const inKey = (f: CadenceSpanFacts) => f.interpretationStatus === "resolved" &&
     f.key.mode === key.mode && pitchClassEquals(f.key.tonic, key.tonic) &&
     f.span.semantics?.interpretations.length === 1 && !f.span.semantics.alternatives?.length && !f.span.semantics?.mixture &&
     !f.span.semantics?.cadenceRole && !f.span.semantics?.pedalContext;
-  if (![laterPre, laterV, tonic].every(inKey)) return;
+  if (!inKey(laterPre) || !inKey(laterV) || (tonic && !inKey(tonic))) return;
   let found: { dominant: CadenceSpanFacts; vi: CadenceSpanFacts; evidence: CadenceEvidence } | undefined;
-  for (let i = 2; i < facts.length - 3; i++) {
+  for (let i = 2; i < facts.length; i++) {
     const pre = facts[i - 2], dominant = facts[i - 1], vi = facts[i];
     if (!pre.isSubdominant || pre.degree !== laterPre.degree || !pre.chord ||
         !pitchClassEquals(pre.chord.identity.root, laterPre.chord.identity.root) ||
@@ -65,10 +82,10 @@ export function precedingDetachedDeception(
     const p = pre.boundarySlice, v = dominant.boundarySlice, arrival = vi.boundarySlice;
     const bar = measureFor(vi.span.fromTick);
     const offset = laterPre.span.fromTick - pre.span.fromTick;
-    const restart = phrase.fromTick + offset;
+    const restart = openingTick + offset;
     if (!bar || opening.endTick > pre.span.fromTick || bar.startTick !== vi.span.fromTick || measureFor(restart)?.startTick !== restart ||
         restart < vi.span.toTick || !p || !v || !arrival ||
-        laterV.span.fromTick !== v.tick + offset || tonic.span.fromTick !== arrival.tick + offset ||
+        laterV.span.fromTick !== v.tick + offset || finalOnset.tick !== arrival.tick + offset ||
         laterPre.span.toTick !== p.endTick + offset || laterV.span.toTick !== v.endTick + offset ||
         !sameDetachedRhythm(p, v, arrival, score.slices, ticksPerBeat(score.project.ppq, bar.denominator)) ||
         !writtenAttack(pre, chordIdentityToneSpellings(pre.chord.identity)) ||
@@ -84,11 +101,12 @@ export function precedingDetachedDeception(
     // An intervening harmonic clause gives the return a different context.
     if (score.slices.some(s => vi.span.toTick <= s.tick && s.tick < restart &&
         (s.chord || Object.keys(s.notes).length > 1)) ||
-        !reprisesOpening(score, phrase.fromTick, p.tick, offset)) continue;
+        inferredCuts.some(tick => !isInternalRest(score, tick, openingTick, p, offset)) ||
+        !reprisesOpening(score, openingTick, p.tick, offset)) continue;
     if (found) return;
     found = { dominant, vi, evidence: {
       code: "detached-deceptive-reprise", value: "前段属至六级，原材料重奏后以相同的顿奏节奏落主",
-      refs: [pre, dominant, vi, laterPre, laterV, tonic].map(f => f.span.id),
+      refs: [pre.span.id, dominant.span.id, vi.span.id, ...(ending.proof.refs ?? [])],
     } };
   }
   return found;

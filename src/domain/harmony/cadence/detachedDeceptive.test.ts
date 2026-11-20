@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { compileScoreText } from "../../scoreText";
 import { buildHarmonyAnalysis } from "../analysis";
+import { phraseInferenceFingerprint } from "../phrase";
+import { applyHarmonyInference, inferChords } from "../inference";
 
 // One three-beat opening, notated eighth rests between the cadential attacks,
 // and a single-line pickup after vi. The second statement reaches I.
@@ -101,9 +103,9 @@ describe("阻碍重奏与无和弦标注的稀疏末主", () => {
     expect(Boolean(ending.chord)).toBe(labeled);
 
     const candidates = analysis.cadenceCandidates;
-    expect(candidates.map(c => [c.kind, c.fromTick, c.toTick])).toEqual(labeled
-      ? [["deceptive", 4320, 6720], ["full", 12960, 17280]]
-      : [["full", 12960, 17280]]);
+    expect(candidates.map(c => [c.kind, c.fromTick, c.toTick])).toEqual([
+      ["deceptive", 4320, 6720], ["full", 12960, 17280],
+    ]);
     const authentic = candidates.at(-1)!;
     expect(authentic).toMatchObject({form: "authentic", completion: "perfect", confidence: "probable"});
     expect(authentic.unharmonizedLandingTick).toBe(labeled ? undefined : endTick);
@@ -112,12 +114,12 @@ describe("阻碍重奏与无和弦标注的稀疏末主", () => {
       .filter(c => starts.includes(c.startTick)).map(c => c.id));
     expect(authentic.spanIds).toEqual(analysis.harmonySpans.filter(h => starts.includes(h.fromTick)).map(h => h.id));
     expect(authentic.evidence.map(e => e.code)).toContain(labeled ? "detached-dominant-to-tonic" : "detached-sparse-tonic");
-    if (labeled) {
-      const earlier = candidates[0];
-      expect(earlier.unharmonizedLandingTick).toBeUndefined();
-      expect(earlier.chordIds).toEqual(project.chordTrack.regions
-        .filter(c => [4320, 5760].includes(c.startTick)).map(c => c.id));
-    }
+    const earlier = candidates[0];
+    expect(earlier.unharmonizedLandingTick).toBeUndefined();
+    expect(earlier.chordIds).toEqual(project.chordTrack.regions
+      .filter(c => [4320, 5760].includes(c.startTick)).map(c => c.id));
+    expect(earlier.evidence[0].refs?.slice(3)).toEqual(authentic.evidence.find(e =>
+      e.code === (labeled ? "detached-dominant-to-tonic" : "detached-sparse-tonic"))!.refs);
     expect(project).toEqual(snapshot);
   });
 
@@ -138,5 +140,82 @@ describe("阻碍重奏与无和弦标注的稀疏末主", () => {
     expect(analysis.cadenceCandidates.filter(c =>
       c.kind === "deceptive" || c.kind === "full" || c.unharmonizedLandingTick !== undefined)).toEqual([]);
     expect(analysis.slices.find(s => s.tick === 14400)?.chord).toBeUndefined();
+  });
+});
+
+// A different meter, key and duration from the printed example. Two eighth
+// rests in the repeated opening can carry inferred boundaries independently.
+function sparsePair(edit?: (q: typeof parts) => void) {
+  return score(q => {
+    for (const v of Object.keys(q) as (keyof typeof parts)[]) {
+      for (const bar of [0, 3]) q[v][bar] = q[v][bar].replace("/4 ", "/8 r/8 ");
+    }
+    q.A[5] = "r/2.";
+    q.H[5] = "r/2.";
+    edit?.(q);
+  });
+}
+
+describe("无标签末主只佐证同一组实写重奏中的原位 VI", () => {
+  function cut(p: Doc, tick: number, source: "inferred" | "manual") {
+    p.structure.phraseBoundaries.push({id: "cut-" + tick, tick, source, confidence: "probable",
+      ...(source === "inferred" ? {inferenceFingerprint: phraseInferenceFingerprint(p)} : {})});
+  }
+
+  it("模板在准备释放和重奏内齐休处分句，两个候选各归实际属、落点所在句", () => {
+    const p = sparsePair();
+    cut(p, 3840, "inferred");
+    cut(p, 9120, "inferred");
+    const z = buildHarmonyAnalysis(p);
+    expect(z.phraseSegments.map(s => s.fromTick)).toEqual([0, 3840, 9120]);
+    expect(z.cadenceCandidates.map(c => [c.kind, c.phraseId, c.fromTick, c.toTick])).toEqual([
+      ["deceptive", z.phraseSegments[1].id, 4320, 6720], ["full", z.phraseSegments[2].id, 12960, 17280],
+    ]);
+    expect(z.cadenceCandidates[0].spanIds).toEqual(z.harmonySpans
+      .filter(s => [4320, 5760].includes(s.fromTick)).map(s => s.id));
+    expect(z.cadenceCandidates[0].evidence[0].refs).toEqual(expect.arrayContaining(
+      Object.values(z.slices.find(s => s.tick === 14400)!.notes).map(note => note.id)));
+  });
+
+  it.each<[number, "manual" | "inferred"]>([
+    [3840, "manual"], [9120, "manual"], [8640, "inferred"],
+    [9600, "inferred"], [5280, "inferred"], [5760, "inferred"],
+  ])("句界 %i (%s) 不可跨越，保留末端稀疏正格", (tick, source) => {
+    const p = sparsePair();
+    cut(p, tick, source);
+    const z = buildHarmonyAnalysis(p);
+    expect(z.phraseSegments.some(s => s.fromTick === tick)).toBe(true);
+    expect(z.cadenceCandidates.some(c => c.evidence.some(e => e.code === "detached-deceptive-reprise"))).toBe(false);
+    expect(z.cadenceCandidates.some(c => c.unharmonizedLandingTick === 14400)).toBe(true);
+  });
+
+  it.each<[string, (q: typeof parts) => void]>([
+    ["首段 VI 无和弦", q => { q.H[2] = "r/2."; }],
+    ["首段标为 VI6", q => { q.H[2] = "vi6/4 r/2"; }],
+    ["重奏内声部改音", q => { q.T[3] = q.T[3].replace("Bb3", "C4"); }],
+    ["两个终止间重新构成和弦", q => { q.A[2] = "F4/4 C4/2"; }],
+    ["句中短 V→vi→IV", q => {
+      q.S[1] = "G4/4 A4/8 Bb4/4 r/8"; q.A[1] = "E4/4 F4/8 F4/4 r/8";
+      q.T[1] = "C4/4 D4/8 D4/4 r/8"; q.B[1] = "C3/4 D3/8 Bb2/4 r/8";
+      q.H[1] = "V/4 vi/8 IV/4 r/8";
+    }],
+  ])("%s，末次正格不能反推前次阻碍", (_name, edit) => {
+    const z = buildHarmonyAnalysis(sparsePair(edit));
+    expect(z.cadenceCandidates.filter(c => c.kind === "deceptive")).toEqual([]);
+    expect(z.cadenceCandidates.some(c => c.unharmonizedLandingTick === 14400)).toBe(true);
+  });
+
+  it("从四条裸音轨正常推导与写回后，两种终止落在各自的区间", () => {
+    const bare = sparsePair();
+    bare.chordTrack.regions.length = 0;
+    const inference = inferChords(bare);
+    const p = applyHarmonyInference(bare, { chordInference: inference }, {
+      mode: "replace-unlocked", writeNonChordToneRoles: true,
+    }).project;
+    const z = buildHarmonyAnalysis(p);
+    expect(z.cadenceCandidates.map(c => [c.kind, c.fromTick, c.toTick])).toEqual([
+      ["deceptive", 4320, 6720], ["full", 12960, 17280],
+    ]);
+    expect(z.cadenceCandidates[1].unharmonizedLandingTick).toBe(14400);
   });
 });

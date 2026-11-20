@@ -511,6 +511,12 @@ function hasAuthenticTailAnchor(
   return false;
 }
 
+function deceptiveRepriseCandidate(phrase: PhraseSegment, earlier: NonNullable<ReturnType<typeof precedingDetachedDeception>>) {
+  return candidate(phrase, "deceptive", [earlier.dominant, earlier.vi], [
+    earlier.evidence, { code: "dominant-to-alternative", value: "本调原位属和弦到六级" },
+  ], { confidenceCap: "probable" });
+}
+
 function articulatedInteriorCadences(
   phrase: PhraseSegment,
   facts: readonly CadenceSpanFacts[],
@@ -559,12 +565,27 @@ function halfEndingContinuesThroughPivot(
     continuesThroughParallelTonic(previous, terminal, pivot, onward, analysis.slices, writtenBeatAt);
 }
 
-export function detectCadences(
-  analysis: Pick<
-    HarmonyAnalysis,
-    "project" | "harmonySpans" | "chordById" | "slices" | "phraseSegments"
-  >,
-): readonly CadenceCandidate[] {
+type CadenceAnalysis = Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById" | "slices" | "phraseSegments">;
+
+function sparseRepriseCandidate(
+  analysis: CadenceAnalysis, preparation: CadenceSpanFacts, dominant: CadenceSpanFacts,
+  arrival: AnalysisSlice, proof: CadenceEvidence, measureFor: (tick: number) => MeasureInfo | undefined,
+) {
+  const phrases = analysis.phraseSegments;
+  const cuts = phrases.slice(1);
+  if (phrases[0]?.fromTick !== 0 || phrases.some(segment => segment.confidence === "ambiguous") ||
+      cuts.some(({startBoundary}) => startBoundary?.source !== "inferred" || startBoundary.stale)) return;
+  const prior = analysis.harmonySpans.filter(span => span.toTick <= preparation.span.fromTick)
+    .map(span => factsFor(analysis, span));
+  const earlier = precedingDetachedDeception(analysis, 0, prior, { preparation, dominant, arrival, proof },
+    measureFor, cuts.map(segment => segment.fromTick));
+  if (!earlier) return;
+  const owner = phrases.find(segment => segment.fromTick <= earlier.dominant.span.fromTick &&
+    earlier.vi.span.toTick <= segment.toTick);
+  return owner && deceptiveRepriseCandidate(owner, earlier);
+}
+
+export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandidate[] {
   const allCandidates: CadenceCandidate[] = [];
   const interiorCandidates: CadenceCandidate[] = [];
   const tonicPedalCandidates: CadenceCandidate[] = [];
@@ -594,6 +615,12 @@ export function detectCadences(
         const evidence = detachedSparseTonicEvidence(preparation, terminal, landing, analysis.slices,
           writtenBeatAt(terminal.span.fromTick), measureFor(landing.tick)?.startTick);
         if (evidence) {
+          // The ending can corroborate an earlier cadence across template cuts.
+          // Keep each landing in its own phrase and preserve independent cadences.
+          if (!allCandidates.length && !interiorCandidates.length && !tonicPedalCandidates.length) {
+            const earlier = sparseRepriseCandidate(analysis, preparation, terminal, landing, evidence, measureFor);
+            if (earlier) allCandidates.push(earlier);
+          }
           allCandidates.push(candidate(phrase, "full", [terminal], [evidenceForPhrase(phrase), evidence,
             { code: "bass-formula", value: "低音 5 -> 1" },
           ], { form: "authentic", completion: "perfect", confidenceCap: "probable", unharmonizedLanding: landing }));
@@ -692,11 +719,11 @@ export function detectCadences(
         facts, dominantIndex, terminal, measureFor(previous.span.fromTick),
         dominantApproach(facts, dominantIndex, gapEvidence),
       );
-      if (landingGap && landingGap.code === "detached-dominant-to-tonic") {
-        const earlier = precedingDetachedDeception(analysis, phrase, facts, measureFor);
-        if (earlier) allCandidates.push(candidate(phrase, "deceptive", [earlier.dominant, earlier.vi], [
-          earlier.evidence, { code: "dominant-to-alternative", value: "本调原位属和弦到六级" },
-        ], { confidenceCap: "probable" }));
+      if (landingGap && landingGap.code === "detached-dominant-to-tonic" && previousPrevious && terminal.boundarySlice) {
+        const earlier = precedingDetachedDeception(analysis, phrase.fromTick, facts.slice(0, -3), {
+          preparation: previousPrevious, dominant: previous, arrival: terminal.boundarySlice, tonic: terminal, proof: landingGap,
+        }, measureFor);
+        if (earlier) allCandidates.push(deceptiveRepriseCandidate(phrase, earlier));
       }
       allCandidates.push(authenticCadence(phrase, approach, terminal, phraseEvidence, landingGap || undefined));
     }
