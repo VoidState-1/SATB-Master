@@ -26,6 +26,7 @@ import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { hasSubdominantSixFourOnTonicPedal } from "./tonicPedalSubdominantSixFour";
 import { leadingToneForFunction } from "../services/harmony";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import { hasDeceptiveSixthThirdDoubling } from "./deceptiveSixthDoubling";
 
 const UPPER_VOICES = ["soprano", "alto", "tenor"] as const;
 
@@ -220,6 +221,9 @@ export function rootPositionTriadDoublingRule(context: HarmonyRuleContext) {
     )
       return;
     if (fact.counts[0] === 2) return;
+    if (fact.counts[1] === 2 &&
+        fact.active.every(({ voiceId, note }) => fact.slice.notes[voiceId]?.id === note.id) &&
+        hasDeceptiveSixthThirdDoubling(context, fact.slice)) return;
     diagnostics.push(
       triadVoicingDiagnostic(
         fact,
@@ -562,7 +566,7 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     group: "chord",
     defaultSeverity: "suggestion",
     requires: ["written-pitches", "chords"],
-    dependencyScope: "chord",
+    dependencyScope: "phrase",
     evaluate: rootPositionTriadDoublingRule,
   }),
   defineStatelessRule({
