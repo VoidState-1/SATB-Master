@@ -23,6 +23,8 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { structuralTriadVoicing } from "../helpers/structuralTriadVoicing";
 import { notesWithAnticipationReplacements } from "../helpers/anticipation";
+import { resolvesLeadingSeventhToPassingTonic } from "../../leadingSeventhTonicSixFour";
+import { crossesManualPhraseBoundary } from "./dominantSixthSubstitution";
 import { hasSubdominantSixFourOnTonicPedal } from "./tonicPedalSubdominantSixFour";
 import { leadingToneForFunction } from "../services/harmony";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
@@ -264,10 +266,21 @@ export function firstInversionTriadDoublingRule(context: HarmonyRuleContext) {
   return diagnostics;
 }
 
+function hasPassingTonicAfterLeadingSeventh(context: HarmonyRuleContext, slice: HarmonyAnalysis["slices"][number]) {
+  const preceding = context.sliceAt(slice.tick - 1), following = context.sliceAt(slice.endTick);
+  const metric = context.metric.positionAt(slice.tick);
+  return preceding && following && metric?.confidence === "certain" && metric.level < 2 &&
+    slice.endTick - slice.tick <= context.analysis.project.ppq &&
+    !crossesManualPhraseBoundary(context, preceding.tick, following.tick) &&
+    resolvesLeadingSeventhToPassingTonic(preceding, slice, following);
+}
+
 export function secondInversionTriadVoicingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   triadVoicingFacts(context, 2).forEach((fact) => {
     const role = fact.chord.semantics?.cadenceRole;
+    if (fact.counts[1] === 2 && (!role || role === "passing64") &&
+        hasPassingTonicAfterLeadingSeventh(context, fact.slice)) return;
     if (
       fact.counts[2] === 2 &&
       (role === "cadential64" || role === "passing64" || role === "pedal64" ||
@@ -590,7 +603,7 @@ export const BASIC_TEACHING_RULES = defineRuleGroup(
     description:
       "检查第二转位（四六和弦）是否重复五音（低音）并符合规范的结构语境。",
     rationale:
-      "四六和弦低音为五音，与上方声部构成不稳定的四度音程，因此四六和弦本身不具备独立功能，主要作为经过、辅助或终止四六使用。四声部中必须重复其低音（五音），以强化其低音线条的依托。",
+      "四六和弦低音为五音，与上方声部构成不稳定的四度音程，因此四六和弦本身不具备独立功能，主要作为经过、辅助或终止四六使用。四声部通常重复其低音（五音）。导七二和弦按规范解决到经过主四六时可重复三音。",
     group: "chord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
