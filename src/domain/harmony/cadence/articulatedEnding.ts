@@ -4,7 +4,7 @@ import { VOICE_ORDER } from "../../project/voice";
 import type { MeasureInfo } from "../../time";
 import type { AnalysisSlice } from "../analysis";
 import type { PhraseSegment } from "../phrase";
-import { soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../writtenVoicing";
 import type { CadenceEvidence, CadenceSpanFacts } from "./types";
 
 type MeasureFor = (tick: number) => MeasureInfo | undefined;

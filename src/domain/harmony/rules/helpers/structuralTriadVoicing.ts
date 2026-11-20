@@ -5,7 +5,7 @@ import { upperPassingMotion } from "../../upperPassingMotion";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { triadTailOrnaments } from "./triadTailOrnaments";
 import { beforeMelodicMinorPassingBass } from "./melodicMinorPassingBass";
-import { soundsCompleteWrittenChord } from "../../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../../writtenVoicing";
 import { VOICE_ORDER } from "../../../project/voice";
 
 // A labelled passing tone can precede a harmony change. Without a label,

@@ -1,16 +1,12 @@
 import { chordToneSpellings, type ChordQuality } from "../../../chordModel";
-import { pitchClassEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { pitchClassEquals, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import type { VoiceId } from "../../../project";
 import type { AnalysisSlice } from "../../analysis";
-import { activeNotes } from "./core";
+import { soundsCompleteWrittenTones } from "../../writtenVoicing";
 
 export function hasWrittenVoicing(slice: AnalysisSlice, tones: readonly SpelledPitchClass[]) {
-  const notes = activeNotes(slice);
   const bass = slice.notes.bass;
-  return !!bass && slice.completeSatb &&
-    notes.every(({ note }) => !note.nonChordToneRole && toMidi(note.pitch) >= toMidi(bass.pitch) &&
-      tones.some(tone => pitchClassEquals(note.pitch, tone))) &&
-    tones.every(tone => notes.some(({ note }) => pitchClassEquals(note.pitch, tone)));
+  return !!bass && slice.completeSatb && soundsCompleteWrittenTones(tones, Object.values(slice.notes), bass);
 }
 
 export function matchesWrittenChord(slice: AnalysisSlice, root: SpelledPitchClass, quality: ChordQuality) {

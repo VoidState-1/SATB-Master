@@ -2,7 +2,7 @@ import { chordIdentityInversion, chordIdentityToneSpellingForDegree, type ChordI
 import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisSlice } from "../analysis";
-import { soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../writtenVoicing";
 import type { CadenceSpanFacts } from "./types";
 
 function plain(identity: ChordIdentity, quality: "major" | "minor" | "dominant7") {

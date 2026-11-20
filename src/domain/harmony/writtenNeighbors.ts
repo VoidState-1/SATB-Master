@@ -2,7 +2,10 @@ import { chordIdentityToneSpellings, type ChordIdentity } from "../chordModel";
 import { isWrittenStep, pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../pitch";
 import { VOICE_ORDER } from "../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "./analysis";
+import { soundsCompleteWrittenChord } from "./writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "./writtenTertian";
+
+export { soundsCompleteWrittenChord };
 
 export function returnsByWrittenStep(first: AnalysisNote, middle: AnalysisNote, last: AnalysisNote) {
   if (first.nonChordToneRole || last.nonChordToneRole ||
@@ -13,18 +16,6 @@ export function returnsByWrittenStep(first: AnalysisNote, middle: AnalysisNote, 
       middle.durationTicks > Math.min(first.durationTicks, last.durationTicks)) return false;
   const step = writtenInterval(first.pitch, middle.pitch);
   return isWrittenStep(step) && Math.sign(step.semitones) === step.diatonicSteps;
-}
-
-export function soundsCompleteWrittenChord(
-  identity: ChordIdentity, notes: readonly AnalysisNote[], bass: AnalysisNote, passingNoteId?: string,
-) {
-  const tones = chordIdentityToneSpellings(identity);
-  const lowest = toMidi(bass.pitch);
-  return pitchClassEquals(bass.pitch, identity.bass) &&
-    notes.every(note => (!note.nonChordToneRole || (note.id === passingNoteId && note.nonChordToneRole === "passing")) &&
-      toMidi(note.pitch) >= lowest &&
-      tones.some(tone => pitchClassEquals(tone, note.pitch))) &&
-    tones.every(tone => notes.some(note => pitchClassEquals(tone, note.pitch)));
 }
 
 type NeighborFrame = Pick<AnalysisSlice, "tick" | "notes" | "completeSatb">;

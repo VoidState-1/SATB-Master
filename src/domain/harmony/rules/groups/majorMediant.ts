@@ -1,6 +1,6 @@
 import { pitchClassEquals, scaleDegreePitchClass } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
-import { soundsCompleteWrittenChord } from "../../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 
 function writtenRootTriad(context: HarmonyRuleContext, slice: AnalysisSlice, degree: 3 | 4) {

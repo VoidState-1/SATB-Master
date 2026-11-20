@@ -3,7 +3,7 @@ import { enharmonicSpellings, pitchClassEquals, scaleDegreePitchClass, spelledPi
 import { VOICE_ORDER, type VoiceId } from "../../../project";
 import { sameChordIdentityWithoutBass, type AnalysisNote, type AnalysisSlice, type MelodyTransition } from "../../analysis";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
-import { soundsCompleteWrittenChord } from "../../writtenNeighbors";
+import { soundsCompleteWrittenChord, soundsDeclaredChord } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasInsertedChromaticResolution } from "./insertedChromaticResolution";
 import { hasExactPitch } from "../helpers/core";
@@ -331,7 +331,7 @@ function readChromaticPassingSpelling(context: HarmonyRuleContext, first: Melody
   if (meter.confidence !== "certain" || meter.level >= 2 ||
       middle.durationTicks > Math.min(left.durationTicks, right.durationTicks) ||
       !continuousContext(context, left.startTick, to) ||
-      !matchesWrittenEndpoint(from) || !matchesWrittenEndpoint(to) ||
+      !soundsDeclaredChord(from) || !soundsDeclaredChord(to) ||
       hasCompleteWrittenTertianVoicing(Object.values(via.notes).map(note => note.pitch)) ||
       !slices.all(slice => otherVoices.every(voice =>
         slice.notes[voice]?.id === from.notes[voice]?.id))) return;
@@ -339,12 +339,6 @@ function readChromaticPassingSpelling(context: HarmonyRuleContext, first: Melody
   const spelling = enharmonicSpellings(middle.pitch).find(pitch =>
     pitch.step === otherStep && usualChromaticSpelling(key, pitch, a.semitones > 0));
   if (spelling) return { note: middle, spelling };
-}
-
-function matchesWrittenEndpoint(slice: AnalysisSlice) {
-  const chord = slice.chord;
-  return !!chord && !!slice.notes.bass && pitchClassEquals(slice.notes.bass.pitch, chord.identity.bass) &&
-    hasWrittenVoicing(slice, chordIdentityToneSpellings(chord.identity));
 }
 
 export function chromaticPassingMotions(context: HarmonyRuleContext) {

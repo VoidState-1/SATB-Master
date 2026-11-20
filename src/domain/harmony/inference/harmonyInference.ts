@@ -7,7 +7,7 @@ import { buildMeasures, measureAtTick, ticksPerBeat } from "../../time";
 import { detectCadences, type CadenceCandidate } from "../cadence";
 import { cadenceInputs } from "../cadence/projectEvidence";
 import { inferPhrases, type PhraseAnalysis } from "../phrase";
-import { soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../writtenVoicing";
 import { applyChordInference } from "./apply";
 import { inferChords } from "./inferChords";
 import type {

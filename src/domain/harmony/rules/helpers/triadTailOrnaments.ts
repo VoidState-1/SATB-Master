@@ -4,7 +4,8 @@ import {
 } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
-import { soundsCompleteWrittenChord, writtenNeighborsOverHeldBass } from "../../writtenNeighbors";
+import { writtenNeighborsOverHeldBass } from "../../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../../writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 

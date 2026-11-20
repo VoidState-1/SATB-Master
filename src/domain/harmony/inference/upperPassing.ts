@@ -1,7 +1,7 @@
 import { chordIdentityToneSpellingForDegree, chordIdentityToneSpellings } from "../../chordModel";
 import { pitchClassEquals } from "../../pitch";
 import { upperPassingMotion } from "../upperPassingMotion";
-import { soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../writtenVoicing";
 import { fitProlongedHarmony } from "./candidates";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";

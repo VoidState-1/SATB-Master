@@ -3,7 +3,7 @@ import { pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from ".
 import { VOICE_ORDER } from "../project/voice";
 import type { MetricPosition } from "../rhythm/metric";
 import type { AnalysisKey, AnalysisNote, AnalysisSlice } from "./analysis";
-import { soundsCompleteWrittenChord } from "./writtenNeighbors";
+import { soundsCompleteWrittenChord } from "./writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "./writtenTertian";
 
 export interface LowerNeighborFrame extends Pick<AnalysisSlice, "tick" | "endTick" | "notes" | "completeSatb" | "key"> {

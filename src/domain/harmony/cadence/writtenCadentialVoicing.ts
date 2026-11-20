@@ -2,7 +2,7 @@ import { chordIdentityToneSpellings, type ChordIdentity } from "../../chordModel
 import { pitchClassEquals, toMidi } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisSlice } from "../analysis";
-import { soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../writtenVoicing";
 
 export function hasCadentialWrittenVoicing(slice: AnalysisSlice, identity: ChordIdentity, allowOmittedFifth: boolean) {
   if (!slice.completeSatb) return false;

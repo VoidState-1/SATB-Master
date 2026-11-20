@@ -13,7 +13,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineStatelessRule } from "../defineRule";
 import { diagnostic, hasExactPitch, noteEvidence, voiceName } from "../helpers/core";
 import { bassNeighborAgainstHeldUpper } from "../helpers/heldBassNeighbor";
-import { hasWrittenVoicing } from "../helpers/writtenResolution";
+import { soundsDeclaredChord } from "../../writtenVoicing";
 import { leadingToneForFunction } from "../services/harmony";
 
 function chromaticHarmonyLicenses(
@@ -115,11 +115,7 @@ function transferredLeadingToneConnection(
       pitchClassEquals(current.pitch, right.note.pitch);
   })) return;
 
-  if (
-    !before.notes.bass || !pitchClassEquals(before.notes.bass.pitch, before.chord.identity.bass) ||
-    !arrival.notes.bass || !pitchClassEquals(arrival.notes.bass.pitch, identity.bass) ||
-    !hasWrittenVoicing(before, preparation) || !hasWrittenVoicing(arrival, tones)
-  ) return;
+  if (!soundsDeclaredChord(before) || !soundsDeclaredChord(arrival)) return;
 
   // Limit the modulation exception to the connection that produced this pair.
   const sourceSpanId = context.spanAt(tick - 1)?.span.id;

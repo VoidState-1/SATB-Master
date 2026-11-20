@@ -3,7 +3,7 @@ import { isWrittenStep, pitchClassEquals, toMidi, writtenInterval } from "../../
 import { VOICE_ORDER } from "../../project/voice";
 import { compareMetricStrength, type MetricPosition } from "../../rhythm/metric";
 import type { AnalysisSlice } from "../analysis";
-import { soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "../writtenTertian";
 import type { CadenceEvidence, CadenceSpanFacts } from "./types";
 import { tonicBassGapFrames } from "./tonicBassGap";

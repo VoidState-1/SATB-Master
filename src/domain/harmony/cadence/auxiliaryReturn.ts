@@ -4,7 +4,8 @@ import {
 import { pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisSlice } from "../analysis";
-import { returnsByWrittenStep, soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { returnsByWrittenStep } from "../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../writtenVoicing";
 import type { CadenceSpanFacts } from "./types";
 
 function isPlainTriad(identity: ChordIdentity) {

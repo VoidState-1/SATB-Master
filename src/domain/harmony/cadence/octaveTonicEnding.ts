@@ -2,7 +2,7 @@ import { chordIdentityInversion, chordIdentityToneSpellings } from "../../chordM
 import { pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisSlice } from "../analysis";
-import { soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../writtenVoicing";
 import type { CadenceEvidence, CadenceSpanFacts } from "./types";
 
 /** Spasobin 8–92. The terminal tonic is a written arrival in several

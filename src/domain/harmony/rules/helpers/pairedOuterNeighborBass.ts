@@ -2,7 +2,8 @@ import { chordIdentityEquals, chordIdentityToneSpellings, primaryHarmonyInterpre
 import { pitchClassEquals, spelledPitchEquals, toMidi, writtenInterval } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisChord, AnalysisSlice } from "../../analysis";
-import { returnsByWrittenStep, soundsCompleteWrittenChord } from "../../writtenNeighbors";
+import { returnsByWrittenStep } from "../../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../../writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 

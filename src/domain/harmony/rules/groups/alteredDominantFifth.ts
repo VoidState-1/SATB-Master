@@ -1,7 +1,8 @@
-import { chordIdentityToneSpellings, chordToneSpellings } from "../../../chordModel";
+import { chordToneSpellings } from "../../../chordModel";
 import { pitchClassEquals, scaleDegreePitchClass, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
+import { soundsDeclaredChord } from "../../writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../helpers/writtenResolution";
@@ -15,11 +16,7 @@ function resolvesMember(
 }
 
 function labelFitsAlteredDominant(slice: AnalysisSlice, root: SpelledPitchClass) {
-  if (!slice.chord) return true;
-  const { identity } = slice.chord;
-  return pitchClassEquals(identity.root, root) && !!slice.notes.bass &&
-    pitchClassEquals(identity.bass, slice.notes.bass.pitch) &&
-    hasWrittenVoicing(slice, chordIdentityToneSpellings(identity));
+  return !slice.chord || (pitchClassEquals(slice.chord.identity.root, root) && soundsDeclaredChord(slice));
 }
 
 /** A secondary dominant can be identified from the two successive leading

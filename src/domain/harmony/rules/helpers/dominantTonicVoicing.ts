@@ -3,7 +3,7 @@ import { pitchClassEquals, scaleDegreePitchClass, toMidi, writtenInterval, type 
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import { dominantSixthInnerVoices, movesToWrittenTone, resolvesDominantInnerVoice } from "../../dominantSixthMotion";
-import { soundsCompleteWrittenChord } from "../../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 
 function primaryKey(context: HarmonyRuleContext, slice: AnalysisSlice, degree: 1 | 5) {

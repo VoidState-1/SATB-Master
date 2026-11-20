@@ -1,6 +1,6 @@
 import { chordIdentityEquals, chordIdentityInversion, primaryHarmonyInterpretation } from "../../chordModel";
 import { isWrittenStep, pitchClassEquals, spelledPitchEquals, writtenInterval } from "../../pitch";
-import { soundsCompleteWrittenChord } from "../writtenNeighbors";
+import { soundsCompleteWrittenChord } from "../writtenVoicing";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation } from "./types";
 
