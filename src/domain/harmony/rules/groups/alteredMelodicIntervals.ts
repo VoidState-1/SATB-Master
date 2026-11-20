@@ -6,7 +6,7 @@ import { diagnostic, intervalName, noteEvidence, voiceName } from "../helpers/co
 import { isWrittenLowerNeighborMotion } from "../helpers/writtenLowerNeighborPair";
 import { hasSupportedChromaticPreparation } from "./chromaticUnison";
 import { readDominantSeventhHandoffSpelling } from "./dominantSeventhHandoffSpelling";
-import { readWrittenDominantSpelling } from "./writtenDominantSpelling";
+import { readWrittenStructuralSpelling } from "./writtenStructuralSpelling";
 import { chromaticPassingMotions } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
@@ -40,7 +40,7 @@ function alteredIntervalRule(
     const named = intervalName(transition.writtenInterval);
     if (augmented && named.quality !== "减") {
       const handoff = readDominantSeventhHandoffSpelling(context, transition);
-      const spelling = handoff ?? readWrittenDominantSpelling(context, transition);
+      const spelling = handoff ?? readWrittenStructuralSpelling(context, transition);
       if (spelling) {
         const notes = [transition.previous, transition.current];
         const expected = [spelling.previous, spelling.current];

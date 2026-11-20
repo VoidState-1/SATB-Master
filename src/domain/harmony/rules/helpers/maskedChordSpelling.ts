@@ -59,6 +59,13 @@ export function agreedMember(readings: readonly CompletedVoicing[]) {
 export function agreesWithExplicitIdentity(
   frame: AnalysisSlice, masked: VoiceId, voicing: CompletedVoicing, trackLocked: boolean,
 ) {
+  return agreesWithExplicitMembers(frame, masked, voicing, chordToneSpellings(voicing.root, voicing.quality), trackLocked);
+}
+
+export function agreesWithExplicitMembers(
+  frame: AnalysisSlice, masked: VoiceId, voicing: Pick<CompletedVoicing, "root" | "member">,
+  realized: readonly SpelledPitchClass[], trackLocked: boolean,
+) {
   const chord = frame.chord;
   if (!chord) return true;
   // An absolute-only label has no provenance. Preserve a conflicting spelling
@@ -71,7 +78,6 @@ export function agreesWithExplicitIdentity(
   const bass = masked === "bass" ? voicing.member : frame.notes.bass!.pitch;
   if (!pitchClassEquals(chord.identity.root, voicing.root) || !pitchClassEquals(chord.identity.bass, bass)) return false;
   const declared = chordIdentityToneSpellings(chord.identity);
-  const realized = chordToneSpellings(voicing.root, voicing.quality);
   return declared.length === realized.length &&
     realized.every(tone => declared.some(member => pitchClassEquals(tone, member)));
 }
