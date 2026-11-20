@@ -26,6 +26,7 @@ import type {
 } from "./obligation";
 import { hasExactPitch, noteEvidence } from "../helpers/core";
 import type { SpanView } from "../context/views";
+import { leadingToneResolutionKey } from "./leadingToneTarget";
 import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
 import { majorMediantToSubdominant } from "../groups/majorMediant";
 import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneNeighbor";
@@ -74,26 +75,6 @@ export function supportsTendencyResolutionRules(
   );
 }
 
-function leadingToneExpectation(context: RuleStepContext) {
-  const resolution = context.slice.chord
-    ? context.rules.harmony.primaryInterpretation(context.slice.chord)
-    : undefined;
-  const interpretation =
-    resolution?.status === "resolved" ? resolution.value : undefined;
-  const baseKey = interpretation?.localKey ?? context.slice.key;
-  const targetTonic = interpretation?.appliedTarget
-    ? scaleDegreePitchClass(baseKey, interpretation.appliedTarget.degree)
-    : baseKey.tonic;
-  const targetKey = interpretation?.appliedTarget
-    ? { tonic: targetTonic, mode: "major" as const }
-    : baseKey;
-  return {
-    leadingTone: leadingTonePitchClass(targetKey),
-    targetTonic,
-    targetMode: targetKey.mode,
-  };
-}
-
 function currentSpanRefs(context: RuleStepContext) {
   const spanId = context.rules.spanAt(context.slice.tick)?.span.id;
   return spanId ? { spanIds: [spanId] } : {};
@@ -106,7 +87,9 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
     const { slice, previous, transitionFromPrevious } = context;
     const chord = slice.chord;
     if (!supportsTendencyResolutionRules(context, chord)) return [];
-    const { leadingTone, targetTonic, targetMode } = leadingToneExpectation(context);
+    const targetKey = leadingToneResolutionKey(slice, context.rules.harmony);
+    const { tonic: targetTonic, mode: targetMode } = targetKey;
+    const leadingTone = leadingTonePitchClass(targetKey);
     if (chord && !identityContainsWrittenPitchClass(chord.identity, leadingTone)) return [];
 
     const previousChord = previous?.chord;
@@ -357,8 +340,12 @@ function obligationFollowsWrittenLeadingTone(
   for (let tick = openedAt.tick; tick < target.tick;) {
     const slice = context.rules.sliceAt(tick);
     const note = slice?.notes[payload.voiceId];
-    if (!slice || !note || note.nonChordToneRole || slice.key.id !== source.key.id ||
-        !spelledPitchEquals(note.pitch, opened.pitch)) return false;
+    if (!slice || !note || slice.key.id !== source.key.id) return false;
+    if (!spelledPitchEquals(note.pitch, opened.pitch)) {
+      const frame = leadingNeighborFrame(context.rules, payload.voiceId, note);
+      if (!frame || !spelledPitchEquals(frame.preparation.pitch, opened.pitch) ||
+          !ornamentsSameLeadingHarmony(context.rules, frame)) return false;
+    } else if (note.nonChordToneRole) return false;
     tick = slice.endTick;
   }
   return true;
