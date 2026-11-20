@@ -26,7 +26,7 @@ import { functionalTargetMatches, isCadential64Span } from "../connector";
 import { leadingNeighborFrame, ornamentsSameLeadingHarmony } from "../state/leadingToneNeighbor";
 import { readDoubleDominantSeventhLanding } from "../state/doubleDominantSeventh";
 import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
-import { exchangesSupertonicSeventhWithRoot } from "./supertonicSeventhExchange";
+import { exchangesSupertonicSeventhWithRoot, seventhLeapsToUnlabelledSixFour } from "./supertonicSeventhExchange";
 import {
   defineObligationRule,
   mergeDiagnosticEvidence,
@@ -223,12 +223,16 @@ function seventhDiagnostic(
   const chord = openedSourceChord(environment);
   const current = environment.context.slice.notes[payload.voiceId];
   const targetChord = environment.context.slice.chord;
-  if (!source || !chord || !current || !targetChord) return undefined;
+  const writtenSixFour = decision.reason === "supertonic-seventh-leaps-to-six-four";
+  if (!source || !chord || !current || (!targetChord && !writtenSixFour)) return undefined;
   const tones = chordIdentityToneSpellings(chord.identity);
   const resolution = toMidi(current.pitch) - payload.seventhMidi;
   let title = "七音未级进下行解决";
   let message = `书写七音 ${formatPitchClass(tones[3])} 通常应以半音或全音级进下行解决。`;
-  if (decision.reason === "chord-seventh-bass-rises-to-root") {
+  if (writtenSixFour) {
+    title = "下属七和弦的七音上行三度";
+    message = "进入属低音上的主四六音组时，原声部七音上行了三度。终止四六要求保持七音，经过主四六也不能这样跳进。";
+  } else if (decision.reason === "chord-seventh-bass-rises-to-root") {
     title = "属七和弦换位时低音七音上行";
     message = "属二和弦换为同一属七和弦原位时，低音七音不可级进上行到根音。";
   } else if (decision.reason === "supertonic-seventh-exchanges-with-root") {
@@ -250,16 +254,17 @@ function seventhDiagnostic(
     title,
     message,
     {
-      chordIds: [chord.id, targetChord.id],
+      chordIds: targetChord ? [chord.id, targetChord.id] : [chord.id],
       params: {
         resolutionSemitones: resolution,
-        targetChord: chordLabel(targetChord),
+        ...(targetChord && { targetChord: chordLabel(targetChord) }),
       },
       evidence: mergeDiagnosticEvidence(
         [
           chordEvidence(chord),
           noteEvidence(source, "和弦七音"),
-          chordEvidence(targetChord),
+          ...(targetChord ? [chordEvidence(targetChord)] : Object.values(environment.context.slice.notes)
+            .map(note => noteEvidence(note, "实写四六音组"))),
           noteEvidence(current, "后继音"),
         ],
         obligationContext.evidence,
@@ -817,6 +822,10 @@ function upperSeventhTransferViolation(environment: ObligationEnvironment<Sevent
 function seventhTransition(
   environment: ObligationEnvironment<SeventhPayload>,
 ): ObligationDecision | undefined {
+  if (!environment.context.slice.chord && seventhLeapsToUnlabelledSixFour(
+    environment.context, environment.obligation.payload.voiceId,
+    environment.obligation.openedBy.noteIds?.[0], environment.obligation.openedAt.tick,
+  )) return decision(environment, "violate", "supertonic-seventh-leaps-to-six-four");
   if (
     subjectEnteredRest(environment) ||
     !supportsTendencyResolutionRules(
