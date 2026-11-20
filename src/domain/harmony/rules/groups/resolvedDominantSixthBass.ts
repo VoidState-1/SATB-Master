@@ -23,8 +23,15 @@ export function isResolvedDominantSixthBass(context: HarmonyRuleContext, motion:
       context.analysis.project.keyEvents.some(e => previous.startTick < e.tick && e.tick <= end &&
         (e.mode !== key.mode || !pitchClassEquals(e.tonic, key.tonic)))) return false;
 
-  const predominant = supportsBassTriad(context, key, previous, tick, 4, key.mode, false, tick - 1) ||
-    (key.mode === "major" && supportsBassTriad(context, key, previous, tick, 2, "minor", false, tick - 1));
-  return predominant && supportsBassTriad(context, key, current, end, 5, "major", false) &&
-    supportsBassTriad(context, key, next, end + 1, 1, key.mode, false);
+  const bassOnly = context.analysis.project.satbTracks.every(track => track.voice === "bass" || !track.notes.length);
+  if (bassOnly && !context.slices({ overlapping: { fromTick: tick - 1, toTick: end + 1 } }).all(slice => {
+    const reading = slice.chord && context.harmony.primaryInterpretation(slice.chord);
+    return reading?.status === "resolved" &&
+      (reading.value.source === "manual" || reading.value.source === "confirmed");
+  })) return false;
+
+  const predominant = supportsBassTriad(context, key, previous, tick, 4, key.mode, bassOnly, tick - 1) ||
+    (key.mode === "major" && supportsBassTriad(context, key, previous, tick, 2, "minor", bassOnly, tick - 1));
+  return predominant && supportsBassTriad(context, key, current, end, 5, "major", bassOnly) &&
+    supportsBassTriad(context, key, next, end + 1, 1, key.mode, bassOnly);
 }

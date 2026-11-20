@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileScoreText } from "../../../scoreText";
+import { checkHarmony } from "../../registry";
 import { buildHarmonyAnalysis } from "../../analysis";
 import { createHarmonyRuleContext } from "../context/createRuleContext";
 import { diminishedIntervalRule, tritoneRule } from "./melody";
@@ -26,6 +27,30 @@ function checks(text: string, boundary?: number) {
 const both = ["melody.tritone", "melody.diminished-interval"];
 
 describe("低音下跳减五度进入属六并在原声部解决", () => {
+  it.each([
+    ["manual", "IV/4 V6/4 I/4", "D3/4 Eb3/4", false],
+    ["confirmed", "IV/4 V6/4 I/4", "D3/4 Eb3/4", false],
+    ["inferred", "IV/4 V6/4 I/4", "D3/4 Eb3/4", true],
+    ["manual", "IV/4 r/4 I/4", "D3/4 Eb3/4", true],
+    ["manual", "IV/4 V6/4 I/4", "D4/4 Eb4/4", true],
+  ] as const)("单线低音核验三处和声标注及解决方向 %s %s %s", (source, harmony, line, reported) => {
+    const { project } = compileScoreText(`satb 1
+key Eb major
+meter 3/4
+bars 1..1 {
+ S: empty
+ A: empty
+ T: empty
+ B: | Ab3/4 ${line} |
+ H: | ${harmony} |
+}`);
+    for (const chord of project.chordTrack.regions) {
+      for (const reading of chord.semantics!.interpretations) reading.source = source;
+    }
+    const result = checkHarmony(project).diagnostics.some(d =>
+      d.ruleId === "melody.tritone" && d.tick === project.ppq && d.voiceIds.includes("bass"));
+    expect(result).toBe(reported);
+  });
   it("按实写 S–D6–T 放行，给定或缺标签均须有四部支持", () => {
     expect(checks(score)).toEqual([]);
     expect(checks(score.replace(/ H:.*\n/, ""))).toEqual([]);
