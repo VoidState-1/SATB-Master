@@ -3,6 +3,7 @@ import { pitchClassEquals } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import { upperPassingMotion } from "../../upperPassingMotion";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { triadTailOrnaments } from "./triadTailOrnaments";
 import { beforeMelodicMinorPassingBass } from "./melodicMinorPassingBass";
 import { soundsCompleteWrittenChord } from "../../writtenNeighbors";
 import { VOICE_ORDER } from "../../../project/voice";
@@ -39,5 +40,5 @@ export function upperPassingVoicing(context: HarmonyRuleContext, end: AnalysisSl
 export function structuralTriadVoicing(context: HarmonyRuleContext, end: AnalysisSlice) {
   if (end.attackVoiceIds.length === 1 && end.attackVoiceIds[0] === "bass" &&
       end.notes.bass?.nonChordToneRole === "passing") return beforeMelodicMinorPassingBass(context, end) ?? end;
-  return upperPassingVoicing(context, end)?.departure ?? end;
+  return upperPassingVoicing(context, end)?.departure ?? triadTailOrnaments(context, end)?.departure ?? end;
 }

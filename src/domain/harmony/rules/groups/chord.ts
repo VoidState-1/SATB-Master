@@ -25,6 +25,7 @@ import {
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
+import { triadTailOrnaments } from "../helpers/triadTailOrnaments";
 import { structuralTriadVoicing, upperPassingVoicing } from "../helpers/passingTriadVoicing";
 import { continuesCompleteSeventh } from "../helpers/seventhRevoicing";
 import { beforeMelodicMinorPassingBass } from "../helpers/melodicMinorPassingBass";
@@ -91,10 +92,11 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
       if (unresolved.length === 1 && unresolved[0].voiceId === "soprano" &&
           resolvesDominantSixthSubstitution(slice, context)) return;
       if (preparedCadentialPair(context, slice, unresolved)) return;
+      const tail = triadTailOrnaments(context, slice);
       const confirmed = heldSuspensionsAt(context, slice);
       const respelt = respeltDoubleDominantMember(context, slice);
       const outside = unresolved.filter(({ note }) =>
-        note.id !== respelt?.noteId && !confirmed.includes(note.id),
+        note.id !== respelt?.noteId && !confirmed.includes(note.id) && !tail?.noteIds.includes(note.id),
       );
       if (outside.length === 0) return;
       diagnostics.push(
