@@ -11,6 +11,7 @@ import { withDominantSixthSubstitutions } from "./dominantSixths";
 import { withDoubleAugmentedFourThree } from "./doubleAugmentedFourThree";
 import { withNeapolitanPivotDominants } from "./neapolitanPivotDominants";
 import { withPassingTonicSevenths } from "./passingTonicSevenths";
+import { withLeadingSeventhIntoConfirmedKey } from "./leadingSeventhIntoConfirmedKey";
 import { withWrittenPivotSevenths } from "./pivotSevenths";
 import { withAppliedSequences } from "./appliedSequences";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
@@ -134,7 +135,10 @@ export function inferChords(
   );
   const revoiced = minimumConfidence === "high" ? withAlteredDoubleDominants :
     withSingleVoiceTriadRevoicings(observations, withAlteredDoubleDominants, project.ppq, phraseBoundaryTicks);
-  const sequence = analyzeChordInferencePaths(observations, revoiced);
+  const leadingSevenths = withLeadingSeventhIntoConfirmedKey(
+    observations, revoiced, options, localKeys, currentPhraseTicks,
+  );
+  const sequence = analyzeChordInferencePaths(observations, leadingSevenths);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;
