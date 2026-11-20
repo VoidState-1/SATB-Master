@@ -59,7 +59,7 @@ describe("bass raises the subdominant seventh's root into a sustained leading to
     ["ordinary tonic inversion", named.replace("symbol=K46", "symbol=i64")],
     ["named dominant in a conflicting key", exercise.replace("symbol=V7", 'symbol=V7 localKey="F minor"')],
     ["explicit nonchord role", named.replace(" chord dd range", " note B@1:2 role=passing\n chord dd range")],
-  ])("%s keeps the bass warning", (_, text) => expect(result(text)).toEqual([true, true]));
+  ])("%s leaves the bass semitone free of B.3", (_, text) => expect(result(text)).toEqual([false, false]));
   it("still reports a soprano augmented fourth inside a proven bass chain", () => {
     const withUpperLeap = named.replace("C5/4. A4/4.", "C5/4. F#5/4.");
     expect(result(withUpperLeap)).toEqual([false, false]);
@@ -73,16 +73,16 @@ describe("bass raises the subdominant seventh's root into a sustained leading to
     const full = named.replace(" chord dd range", " chord prep range=[1:1,1:2) symbol=IV7\n chord dd range");
     // Roman IV7 compiles to major7. The project can also explicitly encode
     // the major triad with minor seventh that is written in these four parts.
-    expect(result(full)).toEqual([true, true]);
-    for (const [score, warning] of [[full, false], [full.replace("G3/2.", "G2/2."), true]] as const) {
+    expect(result(full)).toEqual([false, false]);
+    for (const score of [full, full.replace("G3/2.", "G2/2.")]) {
       const project = compileScoreText(score).project;
       const chord = project.chordTrack.regions[0].identity.structure;
       if (chord.kind !== "tertian") throw new Error("Expected a tertian chord");
       chord.quality = "dominant7";
-      expect(result(project)).toEqual([warning, warning]);
+      expect(result(project)).toEqual([false, false]);
     }
   });
-  it.each([480, 1440, 2880, 4320])("keeps the warning across phrase boundary %i", cut => {
-    expect(result(named, cut)).toEqual([true, true]);
+  it.each([480, 1440, 2880, 4320])("does not report B.3 at a bass semitone around phrase boundary %i", cut => {
+    expect(result(named, cut)).toEqual([false, false]);
   });
 });

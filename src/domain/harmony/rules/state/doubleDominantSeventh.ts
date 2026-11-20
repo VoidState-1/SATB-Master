@@ -1,4 +1,4 @@
-import { chordIdentityInversion, chordToneSpellings } from "../../../chordModel";
+import { chordToneSpellings } from "../../../chordModel";
 import { keyEquals, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../../pitch";
 import { hasWrittenVoicing } from "../../writtenResolution";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
@@ -6,7 +6,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import { activeNotes } from "../helpers/core";
 
-function plainQuality(slice: AnalysisSlice, quality: "diminished7" | "dominant7" | "major") {
+function plainQuality(slice: AnalysisSlice, quality: "diminished7" | "dominant7") {
   const structure = slice.chord?.identity.structure;
   return structure?.kind === "tertian" && structure.quality === quality &&
     structure.extensions.length === 0 && structure.alterations.length === 0;
@@ -68,31 +68,4 @@ export function readDoubleDominantSeventhLanding(rules: HarmonyRuleContext, tick
       crossesManualPhraseBoundary(rules, leading.note.startTick, tick)) return;
 
   return { source, landing, key, leading, leadingArrival, seventh, seventhArrival, dominantRoot };
-}
-
-/** The bass entry in ex. 29-440a is a different chromatic event, T6's
- * major third becoming DD's diminished seventh before descending to V43. */
-export function isDoubleDominantSeventhBassPreparation(
-  rules: HarmonyRuleContext, before: AnalysisNote, middle: AnalysisNote,
-) {
-  const tick = middle.startTick;
-  const proof = readDoubleDominantSeventhLanding(rules, tick + middle.durationTicks);
-  if (!proof || proof.key.mode !== "major" || proof.source.tick !== tick ||
-      proof.seventh.voiceId !== "bass" || proof.seventh.note.id !== middle.id ||
-      !descendsAt(before, middle, tick, 0)) return false;
-  const preparation = rules.sliceAt(tick - 1);
-  const tonic = preparation?.chord;
-  if (!preparation || !tonic || preparation.key.id !== proof.source.key.id ||
-      preparation.notes.bass?.id !== before.id ||
-      crossesManualPhraseBoundary(rules, before.startTick, proof.landing.tick) ||
-      rules.phraseAt(preparation.tick)?.id !== rules.phraseAt(proof.landing.tick)?.id ||
-      !plainQuality(preparation, "major") || chordIdentityInversion(tonic.identity) !== 1 ||
-      !pitchClassEquals(tonic.identity.root, proof.key.tonic) ||
-      !pitchClassEquals(before.pitch, tonic.identity.bass) ||
-      !hasWrittenVoicing(preparation, chordToneSpellings(proof.key.tonic, "major"))) return false;
-  const reading = rules.harmony.primaryInterpretation(tonic);
-  return reading.status === "resolved" && !reading.value.appliedTarget &&
-    reading.value.degree === 1 && reading.value.degreeAlteration === 0 &&
-    reading.value.designation?.primaryFunction === "tonic" &&
-    keyEquals(reading.value.localKey ?? preparation.key, proof.key);
 }

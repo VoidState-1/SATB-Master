@@ -17,59 +17,6 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasWrittenVoicing } from "../../writtenResolution";
 import { activeNotes } from "../helpers/core";
 
-export function isRespeltDoubleDominantSeventh(
-  context: HarmonyRuleContext,
-  transition: MelodyTransition,
-): boolean {
-  const { previous, current, voiceId, writtenInterval: entry } = transition;
-  if (
-    !transition.contiguous || !transition.sameKey ||
-    entry.diatonicSteps !== 0 || entry.semitones !== 1 ||
-    current.nonChordToneRole
-  ) return false;
-
-  const preparation = context.sliceAt(current.startTick - 1);
-  const middle = context.sliceAt(current.startTick);
-  const chord = middle?.chord;
-  if (
-    !preparation || !middle || !chord || chord.startTick !== current.startTick ||
-    middle.notes[voiceId]?.id !== current.id
-  )
-    return false;
-
-  const key = respeltSeventhKey(context, middle);
-  if (!key) return false;
-  const preparationReading = preparation.chord &&
-    context.harmony.primaryInterpretation(preparation.chord);
-  const preparationKey = preparationReading?.status === "resolved"
-    ? preparationReading.value.localKey ?? preparation.key
-    : preparation.key;
-  if (
-    preparationReading?.status === "ambiguous" || !keyEquals(preparationKey, key) ||
-    !pitchClassEquals(previous.pitch, scaleDegreePitchClass(key, 2)) ||
-    !pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 2, 1))
-  ) return false;
-
-  const next = context.notes({ voiceId, startingAfter: current.startTick }).first()?.note;
-  const landingTick = chord.startTick + chord.durationTicks;
-  if (
-    !next || next.nonChordToneRole || next.startTick !== landingTick ||
-    current.startTick + current.durationTicks !== landingTick ||
-    !pitchClassEquals(next.pitch, scaleDegreePitchClass(key, 3)) ||
-    writtenInterval(current.pitch, next.pitch).semitones !== 1 ||
-    context.analysis.project.keyEvents.some(event =>
-      event.tick > previous.startTick && event.tick <= landingTick &&
-      !keyEquals(event, middle.key),
-    )
-  ) return false;
-
-  const landing = context.sliceAt(landingTick);
-  const target = landing?.chord;
-  if (!landing || !target || target.startTick !== landingTick ||
-      landing.notes[voiceId]?.id !== next.id) return false;
-  return cadentialSixFourInKey(context, landing, key);
-}
-
 function respeltSeventhKey(context: HarmonyRuleContext, middle: AnalysisSlice) {
   const chord = middle.chord;
   if (!chord) return;
@@ -300,26 +247,6 @@ function readRespeltContinuation(
 /** §28.5, examples 28-427/428. The written #II may take the seventh's
  * place in a double-dominant preparation. Check the original voices even
  * when there is no chord annotation on that sonority. */
-export function preparesWrittenRespeltDoubleDominant(context: HarmonyRuleContext, transition: MelodyTransition) {
-  const { previous, current, voiceId, writtenInterval: entry } = transition;
-  if (!transition.contiguous || !transition.sameKey || previous.nonChordToneRole ||
-      entry.diatonicSteps !== 0 || entry.semitones !== 1) return false;
-  const tick = current.startTick;
-  const middle = context.sliceAt(tick);
-  if (!middle || middle.chord || middle.tick !== tick || middle.notes[voiceId]?.id !== current.id) return false;
-
-  const key = middle.key;
-  if (key.mode !== "major") return false;
-  const preparation = readRespeltPreparation(context, middle, key);
-  if (!preparation || preparation.slice.notes[voiceId]?.id !== previous.id ||
-      !preparation.tones.some(tone => pitchClassEquals(previous.pitch, tone))) return false;
-  const degrees = respeltDegrees(key);
-  if (!pitchClassEquals(current.pitch, degrees.raisedSecond) && !pitchClassEquals(current.pitch, degrees.raisedFourth)) return false;
-  const continuation = readRespeltContinuation(context, middle, key, degrees);
-  return !!continuation &&
-    context.phraseAt(preparation.slice.tick)?.id === context.phraseAt(continuation.arrival.slice.tick)?.id;
-}
-
 function targetsDominant(target: FunctionalTarget | undefined) {
   return target?.degree === 5 && target.primaryFunction === "dominant" && !target.secondaryFunction;
 }

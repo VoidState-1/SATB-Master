@@ -9,7 +9,6 @@ const ruleId = "melody.augmented-interval";
 const spelling = {
   severity: "warning", messageKey: ruleId + ".structural-spelling", message: expect.stringContaining("C♯"),
 };
-const warning = { severity: "warning", messageKey: ruleId + ".增" };
 
 interface Annotation {
   source: HarmonyInterpretation["source"];
@@ -60,7 +59,7 @@ function entry(
   }
   if (mark) markRole(project, mark);
   return checkHarmony(project).diagnostics.filter(d =>
-    d.ruleId === ruleId && d.tick === project.ppq && d.voiceIds.includes("tenor"));
+    d.messageKey === spelling.messageKey && d.tick === project.ppq && d.voiceIds.includes("tenor"));
 }
 
 function markRole(project: ReturnType<typeof compileScoreText>["project"], mark: RoleMark) {
@@ -94,8 +93,8 @@ describe("Structural spelling from written dominant resolution", () => {
     { source: "inferred", locked: false, absoluteOnly: true, conflict: "middle" },
     { source: "inferred", locked: true, conflict: "middle" },
     { source: "manual", locked: false, conflict: "enharmonic-goal" },
-  ] satisfies Annotation[])("preserves the warning when an explicit written identity conflicts: %o", annotation => {
-    expect(entry("C#4", "A4", annotation)).toMatchObject([warning]);
+  ] satisfies Annotation[])("withholds a correction when an explicit written identity conflicts: %o", annotation => {
+    expect(entry("Db4", "A4", annotation)).toEqual([]);
   });
 
   it("ignores an unlocked inferred identity that contradicts the performed one", () => {
@@ -104,13 +103,13 @@ describe("Structural spelling from written dominant resolution", () => {
     expect(entry("Db4", "A4", inferred)).toMatchObject([spelling]);
   });
 
-  it("keeps the warning for a diminished landing even if a manual tonic is given", () => {
-    expect(entry("C#4", "Ab4")).toMatchObject([warning]);
-    expect(entry("C#4", "Ab4", { source: "manual", locked: false })).toMatchObject([warning]);
+  it("withholds the correction for a diminished landing even if a manual tonic is given", () => {
+    expect(entry("Db4", "Ab4")).toEqual([]);
+    expect(entry("Db4", "Ab4", { source: "manual", locked: false })).toEqual([]);
   });
 
-  it("keeps the unison warning when the seventh reaches the tonic third in the wrong octave", () => {
-    expect(entry("C#4", "A4", undefined, "F2")).toMatchObject([warning]);
+  it("withholds the correction if the seventh reaches the tonic third in the wrong octave", () => {
+    expect(entry("Db4", "A4", undefined, "F2")).toEqual([]);
   });
 
   it.each([
@@ -118,8 +117,7 @@ describe("Structural spelling from written dominant resolution", () => {
     { voice: "tenor", tick: 960, role: "neighbor" },
     { voice: "tenor", tick: 1920, role: "suspension" },
     { voice: "bass", tick: 960, role: "anticipation" },
-  ] satisfies RoleMark[])("keeps the existing adjudication when a required note has an ornamental role: %o", mark => {
-    expect(entry("C#4", "A4", undefined, "F3", mark)).toMatchObject([warning]);
+  ] satisfies RoleMark[])("withholds the correction if a required note has an ornamental role: %o", mark => {
     expect(entry("Db4", "A4", undefined, "F3", mark)).toEqual([]);
   });
 
@@ -140,17 +138,17 @@ describe("Structural spelling from written dominant resolution", () => {
       d.ruleId === ruleId && d.tick === project.ppq && d.voiceIds.includes("alto"))).toBe(false);
   });
 
-  it.each([1920, 2400])("checks an early seventh resolution even before the tonic onset: %s", tick => {
+  it.each([1920, 2400])("uses the early seventh to prove an enharmonic correction before the tonic onset: %s", tick => {
     const { project } = compileScoreText([
       "satb 1", "key C minor", "meter 4/4", "bars 1..1 {",
       " S: | C5/4 Bb4/8 C5/8 Bb4/8 A4/8 A4/4 |", " A: | G4/2. F#4/4 |",
-      " T: | Eb4/4 E4/2 D4/4 |", " B: | C3/4 C#3/2 D3/4 |", "}",
+      " T: | D#4/4 E4/2 D4/4 |", " B: | C3/4 C#3/2 D3/4 |", "}",
     ].join("\n"));
     const warns = () => checkHarmony(project).diagnostics.some(d =>
       d.ruleId === ruleId && d.tick === project.ppq && d.voiceIds.includes("tenor"));
-    expect(warns()).toBe(false);
-    markRole(project, { voice: "soprano", tick, role: "neighbor" });
     expect(warns()).toBe(true);
+    markRole(project, { voice: "soprano", tick, role: "neighbor" });
+    expect(warns()).toBe(false);
   });
 
   it("does not respell an ornamental lower neighbor as the minor third of a stationary chord", () => {

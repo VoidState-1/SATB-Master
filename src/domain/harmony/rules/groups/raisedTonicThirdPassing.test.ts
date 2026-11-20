@@ -61,7 +61,7 @@ describe("小调低音升三音半音经过到下属", () => {
     ["明确副属标签", { harmony: "i6/8 V6/IV/8 iv/2" }],
     ["移至 D 小调", { key: "D minor", soprano: "A4/4 Bb4/2", alto: "D4/2.",
       tenor: "A3/4 G3/2", bass: "F2/8 F#2/8 G2/2", harmony: "i6/8 I6/8 iv/2" }],
-  ] satisfies [string, Example][])("%s 时检查完整半音经过", (_label, example) => {
+  ] satisfies [string, Example][])("%s 时同声部半音经过无 B.3", (_label, example) => {
     expect(warnings(example)).toHaveLength(0);
   });
 
@@ -82,7 +82,7 @@ describe("小调低音升三音半音经过到下属", () => {
       tenor: "D4/8 C4/8 C4/2", onset: 0.25 }],
     ["句界落在右端", { boundary: 1 }],
     ["两音之间暂时换调再返回", { keyDetour: true }],
-  ] satisfies [string, Example][])("%s 时保留 B.3", (_label, example) => {
-    expect(warnings(example)).toEqual([expect.objectContaining({ severity: "warning", voiceIds: ["bass"] })]);
+  ] satisfies [string, Example][])("%s 时仍不从低音增一度推断错拼", (_label, example) => {
+    expect(warnings(example)).toHaveLength(0);
   });
 });

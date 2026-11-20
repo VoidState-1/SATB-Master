@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 import { compileScoreText } from "../../../scoreText";
 import type { ProjectDocument } from "../../../project";
 import { checkHarmony } from "../../registry";
-import { buildHarmonyAnalysis } from "../../analysis";
-import { createHarmonyRuleContext } from "../context/createRuleContext";
-import { preparesWrittenRespeltDoubleDominant } from "./chromaticDoubleDominant";
 
 interface Example {
   key?: string;
@@ -171,37 +168,12 @@ describe("D.1/D.2: dominant preparation with a written raised second", () => {
 });
 
 
-describe("shared continuation keeps the two entry policies", () => {
-  function unlabelledProof(example: Example) {
-    const context = createHarmonyRuleContext(buildHarmonyAnalysis(make({ ...example, source:"" })));
-    const transitions = context.melodyTransitions()
-      .where(transition => preparesWrittenRespeltDoubleDominant(context, transition))
-      .select(transition => transition.voiceId).toArray();
-    return [...transitions].sort();
-  }
-
-  it("keeps the legacy preparation check scoped to the entering voice", () => {
-    const extraInPreparation = { alto:"E4/4 F4/4 F4/4 E4/4" };
-    expect(unlabelledProof(extraInPreparation)).toEqual(["bass","soprano"]);
-    expectBoth(make(extraInPreparation));
-  });
-
-  it("keeps the legacy dominant-seventh voicing scope while membership demands a doubled root", () => {
-    const doublesDominantThird = { ...firstInversion, tenor:"Bb3/4 B3/4 C4/4 E3/4" };
-    expect(unlabelledProof(doublesDominantThird)).toEqual(["tenor"]);
-    expectBoth(make(doublesDominantThird));
-  });
-
-  it("keeps the legacy proof at the entry of a valid K46 without widening the member exemption", () => {
-    const reattackInCadentialSixFour = { alto:"D4/4 F4/4 F4/8 F4/8 E4/4" };
-    expect(unlabelledProof(reattackInCadentialSixFour)).toEqual(["bass","soprano"]);
-    expectBoth(make(reattackInCadentialSixFour));
-  });
-
-  it("keeps the legacy interval evidence unavailable when the sonority carries a label", () => {
-    const context = createHarmonyRuleContext(buildHarmonyAnalysis(make()));
-    expect(context.melodyTransitions()
-      .where(transition => preparesWrittenRespeltDoubleDominant(context, transition)).toArray()).toEqual([]);
-    expect(memberWarnings(make())).toEqual([]);
+describe("D.1/D.2: boundaries of the written member exemption", () => {
+  it.each([
+    ["extra preparation tone", { alto: "E4/4 F4/4 F4/4 E4/4" }],
+    ["dominant seventh doubles the third", { ...firstInversion, tenor: "Bb3/4 B3/4 C4/4 E3/4" }],
+    ["reattack inside K46", { alto: "D4/4 F4/4 F4/8 F4/8 E4/4" }],
+  ] satisfies [string, Example][])("keeps both reports with %s", (_name, example) => {
+    expectBoth(make(example));
   });
 });

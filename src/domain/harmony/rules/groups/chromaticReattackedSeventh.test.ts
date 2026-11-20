@@ -57,13 +57,14 @@ describe("chromatic preparation of a V7 with a reattacked seventh", () => {
     ["another copy of the natural note", motif.replace("E4/2 D4/4", "G4/2 D4/4")],
     ["a separate written D minor at the delayed onset", motif.replace("| E5/2. |","| F5/4 E5/2 |")],
     ["incompatible middle labels", motif + annotations.replace("symbol=t6", "symbol=iv")],
-  ])("retains B.3 with %s", (_name, text) => {
-    expect(warns(project(text))).toBe(true);
+  ])("keeps the soprano G–G♯ free of B.3 with %s", (_name, text) => {
+    const input = project(text);
+    expect(warns(input)).toBe(false);
   });
 
-  it("cannot borrow the resolution across a manual phrase boundary", () => {
+  it("does not infer a spelling error at G–G♯ before a manual phrase boundary", () => {
     const cut = project();
     cut.structure.phraseBoundaries.push({ id: "phrase-cut", tick: 4 * cut.ppq, source: "manual", confidence: "certain" });
-    expect(warns(cut)).toBe(true);
+    expect(warns(cut)).toBe(false);
   });
 });

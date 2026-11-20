@@ -72,24 +72,25 @@ describe("a written chromatic passing tone after arpeggiation", () => {
     ["a reattack in the accompaniment", minor.replace("E4/1", "E4/2 E4/2")],
     ["an independent label during the passing note", minor.replace(" B:", " H: | r/2 r/4. iv/8 | V7/2 i/2 |\n B:")],
     ["an incomplete destination", minor.replace("D#4/2 E4/2", "F#4/2 E4/2")],
-  ])("retains the warning with %s", (_label, score) => {
-    expect(b3(project(score))).toContainEqual(expect.objectContaining({ tick: 3840 }));
+  ])("does not infer a spelling error with %s", (_label, score) => {
+    expect(b3(project(score))).not.toContainEqual(expect.objectContaining({ tick: 3840 }));
   });
 
-  it("rejects a label with the same written triad but a different local key", () => {
-    const conflicting = minor + `
+  it("withholds a spelling correction when the local-key label conflicts", () => {
+    const conflicting = minor.replace("F5/8", "E#5/8") + `
 annotations {
  chord handoff range=[1:4+1/2,2:1) symbol=vi localKey="G major"
 }
 `;
-    expect(b3(project(conflicting))).toContainEqual(expect.objectContaining({ tick: 3840 }));
+    expect(b3(project(conflicting))).not.toContainEqual(expect.objectContaining({ messageKey: ruleId + ".passing-spelling" }));
   });
 
   it("does not import the accompaniment's harmony across a key event or phrase boundary", () => {
-    const key = project(minor);
+    const misspelled = minor.replace("F5/8", "E#5/8");
+    const key = project(misspelled);
     key.keyEvents.push({ ...key.keyEvents[0], id: "new-key", tick: 1920 });
-    const phrase = project(minor);
+    const phrase = project(misspelled);
     phrase.structure.phraseBoundaries.push({ id: "cut", confidence: "certain", source: "manual", tick: 1920 });
-    for (const input of [key, phrase]) expect(b3(input)).toContainEqual(expect.objectContaining({ tick: 3840 }));
+    for (const input of [key, phrase]) expect(b3(input)).not.toContainEqual(expect.objectContaining({ messageKey: ruleId + ".passing-spelling" }));
   });
 });

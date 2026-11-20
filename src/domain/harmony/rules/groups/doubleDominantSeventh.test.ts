@@ -74,7 +74,7 @@ describe("第29章完整重属导减七到属七", () => {
   it("大调例 29-440a 型分别放行导音交接、旋律增一度与低音准备", () => {
     const rules = example();
     expect(threeWarnings(rules)).toEqual({
-      leading: !active.has("leading"), exit: !active.has("exit"), entry: !active.has("entry"),
+      leading: !active.has("leading"), exit: false, entry: false,
     });
     expect(at(rules, "seventh", 2880, "soprano")).toBe(false);
   });
@@ -85,14 +85,14 @@ describe("第29章完整重属导减七到属七", () => {
       soprano: "G4/4 F#4/4 F4/4 Eb4/4",
     });
     expect(threeWarnings(rules)).toEqual({
-      leading: !active.has("leading"), exit: !active.has("exit"), entry: false,
+      leading: !active.has("leading"), exit: false, entry: false,
     });
     expect(at(rules, "seventh", 2880, "soprano")).toBe(false);
   });
 
   it("未填重属标签时可凭完整实音与已辨明 D7 识别两个旋律事件", () => {
     expect(threeWarnings(example({ source: "r" }))).toEqual({
-      leading: false, exit: !active.has("exit"), entry: !active.has("entry"),
+      leading: false, exit: false, entry: false,
     });
   });
 
@@ -107,7 +107,7 @@ describe("第29章完整重属导减七到属七", () => {
       soprano: "G4/4 F#4/4 G4/4 E4/4", tenor: "G3/4 A3/4 F3/4 E3/4",
     });
     expect(at(rules, "leading", 1920, "soprano")).toBe(false);
-    expect(at(rules, "augmented", 960, "bass")).toBe(true);
+    expect(at(rules, "augmented", 960, "bass")).toBe(false);
   });
 
   it.each<[string, Example]>([
@@ -120,8 +120,8 @@ describe("第29章完整重属导减七到属七", () => {
     }],
     ["调号事件隔断两个实际和弦", { keyBoundary: 1920 }],
     ["明确的句界切在重属内部", { manualBoundary: 1440 }],
-  ])("%s 时三条警告各自保留", (_label, options) => {
-    expect(threeWarnings(example(options))).toEqual({ leading: true, exit: true, entry: true });
+  ])("%s 时导音义务仍报告", (_label, options) => {
+    expect(threeWarnings(example(options))).toEqual({ leading: true, exit: false, entry: false });
   });
 
   it("有低声部休止时不能结算导音义务，旋律沿用既有休止情境的处理", () => {
@@ -130,16 +130,16 @@ describe("第29章完整重属导减七到属七", () => {
     });
   });
 
-  it("低音来自 Am/E 时，仅保留低音准备警告", () => {
+  it("低音来自 Am/E 时不借通用 B.3 报准备错误", () => {
     expect(threeWarnings(example({
       preparation: "vi64", soprano: "A4/4 F#4/4 F4/4 E4/4", tenor: "A3/2 G3/2",
-    }))).toEqual({ leading: !active.has("leading"), exit: !active.has("exit"), entry: true });
+    }))).toEqual({ leading: !active.has("leading"), exit: false, entry: false });
   });
 
   it("半音拼写但属七落点换了八度时拒绝接续", () => {
     const rules = example({ soprano: "G4/4 F#4/4 F5/4 E5/4" });
     expect(at(rules, "leading", 1920, "soprano")).toBe(true);
-    expect(at(rules, "augmented", 960, "bass")).toBe(true);
+    expect(at(rules, "augmented", 960, "bass")).toBe(false);
   });
 
   it("同一教材连接中，低音直接承担升四级到属七音", () => {
@@ -151,7 +151,7 @@ describe("第29章完整重属导减七到属七", () => {
       bass: "C3/4 F#2/4 F2/4 E2/4",
     });
     expect(at(rules, "leading", 1920, "bass")).toBe(!active.has("leading"));
-    expect(at(rules, "augmented", 1920, "bass")).toBe(!active.has("exit"));
+    expect(at(rules, "augmented", 1920, "bass")).toBe(false);
     expect(at(rules, "seventh", 2880, "bass")).toBe(false);
   });
 });

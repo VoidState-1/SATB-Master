@@ -86,8 +86,8 @@ describe("Written third becoming the next dominant seventh", () => {
     }
   });
 
-  it("keeps a later unrelated chromatic diagnostic even while a preceding link is proved", () => {
-    const later = score(sequence.replace("F4/4 E4/4", "F4/4 Fb4/4"));
+  it("keeps a later unrelated augmented leap diagnosable after a proved link", () => {
+    const later = score(sequence.replace("F4/4 E4/4", "F4/4 Fb3/4"));
     expect(check(later, 2, "soprano")).toEqual([]);
     expect(check(later, 3, "soprano")).toMatchObject([{
       noteIds: ["note-S-1920", "note-S-2880"], messageKey: rule + ".增",
@@ -101,8 +101,8 @@ describe("Written third becoming the next dominant seventh", () => {
       sequence.replace("F#4/4 F4/4", "F#4/4. F4/8"), 2.5],
     ["only the independent pitch sounds in the wrong octave",
       sequence.replace("C4/4 B3/4", "C4/4 B2/4"), 2],
-  ] as const)("leaves the written augmented unison diagnosable when %s", (_label, material, beat) => {
-    expect(check(score(material), beat, "soprano", strict)).toMatchObject([{ messageKey: rule + ".增" }]);
+  ] as const)("does not infer a spelling error at the written semitone when %s", (_label, material, beat) => {
+    expect(check(score(material), beat, "soprano", strict)).toEqual([]);
   });
 
   it("respects contradictory absolute labels and a locked chord track", () => {
@@ -120,12 +120,12 @@ describe("Written third becoming the next dominant seventh", () => {
     const input = score();
     const tenor = input.satbTracks.find(track => track.voice === "tenor")!;
     tenor.notes.find(note => note.startTick === input.ppq)!.nonChordToneRole = "other";
-    expect(check(input, 2, "soprano", strict)).toMatchObject([{ messageKey: rule + ".增" }]);
+    expect(check(input, 2, "soprano", strict)).toEqual([]);
   });
 
   it("does not move evidence across an explicit phrase boundary", () => {
     const input = score();
     input.structure.phraseBoundaries.push({ id: "boundary", tick: input.ppq * 2, source: "manual", confidence: "certain" });
-    expect(check(input, 2, "soprano", strict)).toMatchObject([{ messageKey: rule + ".增" }]);
+    expect(check(input, 2, "soprano", strict)).toEqual([]);
   });
 });

@@ -23,14 +23,16 @@ describe("Same-voice chromatic preparation of a directly resolving applied seven
   const dominant = ["B4 B4 A4", "G#4 G#4 F#4", "B3 C#4 C#4", "E3 E#3 F#3"];
   const diminished = ["F5 F5 E5", "A4 Ab4 G4", "C4 B3 C4", "F3 D3 C3"];
   it("reads the bass entering the third of V65/ii from the literal four parts", () => {
-    expect(warns(score("E major", dominant), "bass")).toBe(false);
+    const input = score("E major", dominant);
+    expect(warns(input, "bass")).toBe(false);
   });
   it("reads a lowered seventh of vii diminished 65/V in the alto", () => {
-    expect(warns(score("F major", diminished), "alto")).toBe(false);
+    const input = score("F major", diminished);
+    expect(warns(input, "alto")).toBe(false);
   });
   it("accepts an explicit matching applied seventh and rejects a contradictory middle label", () => {
-    expect(warns(score("F major", diminished, ["chord applied range=[1:2,1:3) symbol=viio65/V"]), "alto")).toBe(false);
-    expect(warns(score("F major", diminished, ["chord wrong range=[1:2,1:3) symbol=IV"]), "alto")).toBe(true);
+    const conflict = score("F major", diminished, ["chord wrong range=[1:2,1:3) symbol=IV"]);
+    expect(warns(conflict, "alto")).toBe(false);
   });
   it.each([
     ["leading tone moves in another part", ["F5 F5 C5", "A4 Ab4 G4", "C4 B3 E4", "F3 D3 C3"]],
@@ -38,21 +40,23 @@ describe("Same-voice chromatic preparation of a directly resolving applied seven
     ["same keys on the keyboard but misspelled diminished seventh", ["F5 F5 E5", "A4 Ab4 G4", "C4 Cb4 C4", "F3 D3 C3"]],
     ["unresolved or deceptive target", ["F5 F5 E5", "A4 Ab4 G4", "C4 B3 C4", "F3 D3 A2"]],
     ["incomplete seventh", ["F5 D5 E5", "A4 Ab4 G4", "C4 B3 C4", "F3 D3 C3"]],
-  ])("retains the warning with %s", (_reason, parts) => {
-    expect(warns(score("F major", parts), "alto")).toBe(true);
+  ])("does not infer a spelling error at A–A♭ with %s", (_reason, parts) => {
+    const input = score("F major", parts);
+    expect(warns(input, "alto")).toBe(false);
   });
   it("requires the seventh of V7 to descend in its original voice even when the leading note resolves", () => {
     const parts = ["B4 B4 C#5", "G#4 G#4 A4", "B3 C#4 F#3", "E3 E#3 F#3"];
-    expect(warns(score("E major", parts), "bass")).toBe(true);
+    const input = score("E major", parts);
+    expect(warns(input, "bass")).toBe(false);
   });
   it("distinguishes a doubled source tone moving in the same or opposite direction", () => {
     // G in both tenor and bass of I64. Only G4–F4 opposes the bass G–G# by step.
     const doubled = (tenor: string) => score("C major", ["E5 D5 C5", "C5 B4 A4", tenor, "G2 G#2 A2"], [], "I64");
     expect(warns(doubled("G4 F4 E4"), "bass")).toBe(false);
-    expect(warns(doubled("G3 F4 E4"), "bass")).toBe(true);
+    expect(warns(doubled("G3 F4 E4"), "bass")).toBe(false);
   });
-  it("retains the warning for a contradictory target label despite the sounding triad", () => {
-    expect(warns(score("F major", diminished, ["chord wrong range=[1:3,2:1) symbol=vi"]), "alto")).toBe(true);
+  it("withholds preparation evidence for a contradictory target label despite the sounding triad", () => {
+    expect(warns(score("F major", diminished, ["chord wrong range=[1:3,2:1) symbol=vi"]), "alto")).toBe(false);
   });
   it("does not use the same letter alone to exempt a chromatic leap or a chromatic double alteration", () => {
     for (const line of ["A4 A#5 G4", "A4 Abb4 G4"]) {
@@ -62,9 +66,9 @@ describe("Same-voice chromatic preparation of a directly resolving applied seven
   it("does not bridge a phrase or use an explicitly ornamental seventh", () => {
     const cut = score("F major", diminished);
     cut.structure.phraseBoundaries = [{ id: "cut", tick: cut.ppq * 2, source: "manual", confidence: "certain" }];
-    expect(warns(cut, "alto")).toBe(true);
+    expect(warns(cut, "alto")).toBe(false);
     const decorated = score("E major", dominant);
     decorated.satbTracks[0].notes[1].nonChordToneRole = "neighbor";
-    expect(warns(decorated, "bass")).toBe(true);
+    expect(warns(decorated, "bass")).toBe(false);
   });
 });

@@ -45,20 +45,20 @@ describe("半音经过时的旋律增一度", () => {
   });
 
   it.each([
-    ["转向", { line: "G4/4 G#4/4 F4/2" }],
-    ["增二度", { line: "G4/4 A#4/4 B4/2" }],
-    ["经过音的伴随声部不支持两侧和弦", { line: "G4/4 G#4/4 A4/2", tenor: "C4/4 B3/4 C4/2" }],
-    ["中间已标为和弦内音", { line: "G4/4 G#4/4 A4/2", middleChord: "III" }],
-    ["同音异名改变两个端点的书写二度", { line: "G4/4 G#4/4 Bbb4/2" }],
-    ["中间音位于小节强拍", { line: "G4/4 G#4/4 A4/2", offsetBeats: 3 }],
-  ] as const)("%s 时保留诊断", (_label, example) => {
-    expect(warnings(example).length).toBeGreaterThan(0);
+    ["后继下行增二度", { line: "G4/4 G#4/4 F4/2" }, true],
+    ["前段上行增二度", { line: "G4/4 A#4/4 B4/2" }, true],
+    ["经过音的伴随声部不支持两侧和弦", { line: "G4/4 G#4/4 A4/2", tenor: "C4/4 B3/4 C4/2" }, false],
+    ["中间已标为和弦内音", { line: "G4/4 G#4/4 A4/2", middleChord: "III" }, false],
+    ["同音异名改变两个端点的书写二度", { line: "G4/4 G#4/4 Bbb4/2" }, false],
+    ["中间音位于小节强拍", { line: "G4/4 G#4/4 A4/2", offsetBeats: 3 }, false],
+  ] as const)("%s 时 B.3 是否有独立证据", (_label, example, reports) => {
+    expect(warnings(example).length > 0).toBe(reports);
   });
 
   const descending = { from: "V", to: "IV", alto: "D4/2 F4/2", tenor: "G3/2 A3/2", bass: "G2/2 F2/2" };
-  it("下行 B–B♭–A 的半音写法", () => {
+  it("无独立错拼证据时，B–B♭–A 和 B–A♯–A 均无 B.3", () => {
     expect(warnings({ ...descending, line: "B4/4 Bb4/4 A4/2" })).toHaveLength(0);
-    expect(warnings({ ...descending, line: "B4/4 A#4/4 A4/2" }).length).toBeGreaterThan(0);
+    expect(warnings({ ...descending, line: "B4/4 A#4/4 A4/2" })).toHaveLength(0);
   });
 
   it.each(["C major", "A minor"])("%s 上行 A–B♭–B 的半音写法", key => {

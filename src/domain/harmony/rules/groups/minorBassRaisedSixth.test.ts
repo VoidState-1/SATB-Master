@@ -50,7 +50,6 @@ describe("小调低音变化半音接属六和弦", () => {
   });
 
   it.each([
-    ["直接上行增二度", { bass: "Eb3/4 F#3/2 r/4", solo: true }],
     ["出发处实际最低音是男高", { tenor: "G2/4 G3/2 A3/4", harmony: "iv6/4 IV6/2 V6/4" }],
     ["中间和弦内部有较低的男高", { tenor: "G3/4 G3/4 G2/4 A3/4" }],
     ["到达处实际最低音是男高", { tenor: "G3/4 G3/2 A2/4" }],
@@ -66,7 +65,13 @@ describe("小调低音变化半音接属六和弦", () => {
     ["音阶缺少本调关系", { key: "D minor", solo: true }],
     ["源音内部有句界", { solo: true, boundary: 0.5 }],
     ["到达导音处有句界", { solo: true, boundary: 3 }],
-  ] satisfies [string, Example][])("%s 时保留警告", (_label, example) => {
-    expect(warnings(example)).toEqual([expect.objectContaining({ severity: "warning", voiceIds: ["bass"] })]);
+  ] satisfies [string, Example][])("%s 时低音半音不报 B.3", (_label, example) => {
+    expect(warnings(example)).toHaveLength(0);
+  });
+
+  it("直接上行增二度仍报 B.3", () => {
+    expect(warnings({ bass: "Eb3/4 F#3/2 r/4", solo: true })).toEqual([
+      expect.objectContaining({ severity: "warning", voiceIds: ["bass"], params: expect.objectContaining({ intervalNumber: 2 }) }),
+    ]);
   });
 });

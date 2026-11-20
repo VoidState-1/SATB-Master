@@ -40,10 +40,10 @@ describe("属和弦变五音的半音准备（第46章）", () => {
     const score = raised.replace("G3/4 F3/4 E3/2", "G3/4. F3/8 E3/2");
     expect(warnsAtChange(score, "alto")).toBe(false);
   });
-  it("只有增三和弦且没有属七音时，区分本调属准备和外观相同的主到下属", () => {
+  it("本调属准备与外观相同的主到下属均无半音入音警告", () => {
     const triad = raised.replace("G3/4 F3/4 E3/2", "G3/2 E3/2");
     expect(warnsAtChange(triad, "alto")).toBe(false);
-    expect(warnsAtChange(triad.replace("key C major", "key G major"), "alto")).toBe(true);
+    expect(warnsAtChange(triad.replace("key C major", "key G major"), "alto")).toBe(false);
   });
   it.each([
     ["落点由另一声部代奏", lowered.replace("Db4/4 C4/2", "Db4/4 E4/2")],
@@ -52,8 +52,8 @@ describe("属和弦变五音的半音准备（第46章）", () => {
     ["无属三音", lowered.replace("B4/2 C5/2", "A4/2 C5/2")],
     ["后继另成和弦", lowered.replace("F3/2 E3/2", "F3/2 A2/2")],
     ["中间改换和声", lowered.replace("B4/2 C5/2", "B4/4. A4/8 C5/2")],
-  ])("%s 时保留原警告", (_why, score) => {
-    expect(warnsAtChange(score, "tenor")).toBe(true);
+  ])("%s 时缺少变五音解决证据，入音仍无 B.3", (_why, score) => {
+    expect(warnsAtChange(score, "tenor")).toBe(false);
   });
 });
 
@@ -83,7 +83,9 @@ bars 1..1 {
       .replace("F#4/4 E4/4 A4/4", "A4/4 G4/4 C5/4")
       .replace("D#4/4 E4/4 E4/4", "F#4/4 G4/4 G4/4")
       .replace("B2/4 G#2/4 A2/4", "D3/4 B2/4 C3/4")],
-  ])("%s 的两个导音和升五音各自解决", (_label, text) => expect(hasWarning(text)).toBe(false));
+  ])("%s 的两个导音和升五音各自解决", (_label, text) => {
+    expect(hasWarning(text)).toBe(false);
+  });
 
   it.each([
     ["先行和弦成为小三和弦", progression.replace("D#4/4", "D4/4")],
@@ -91,5 +93,7 @@ bars 1..1 {
     ["增和弦三音越八度落主音", progression.replace("G#2/4 A2/4", "G#2/4 A3/4")],
     ["先行属七的七音未在原音区解决", progression.replace("B2/4 G#2/4 A2/4", "A2/4 G#3/4 A3/4")],
     ["中间和弦标注与实奏冲突", progression + "\nannotations {\n chord other range=[1:2,1:3) symbol=IV\n}"],
-  ])("%s 时保留增一度", (_label, text) => expect(hasWarning(text)).toBe(true));
+  ])("%s 时缺少完整的局部属解决链", (_label, text) => {
+    expect(hasWarning(text)).toBe(false);
+  });
 });

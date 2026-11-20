@@ -3,13 +3,11 @@ import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchCla
 import type { MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 
-// Spasobin, ch. 12 §4(b–c): iv6 can approach V6 by raising the bass
-// sixth in IV6, or by dropping a diminished seventh and resolving to i.
+// Spasobin, ch. 12 §4: the bass of iv6 can drop a diminished seventh to V6 and resolve to i.
 export function isMinorSixthChordBassLine(context: HarmonyRuleContext, transition: MelodyTransition) {
   const { voiceId, previous, current, contiguous, sameKey, writtenInterval } = transition;
   const descendingSeventh = writtenInterval.diatonicSteps === -6 && writtenInterval.semitones === -9;
-  const raisedSixth = writtenInterval.diatonicSteps === 0 && writtenInterval.semitones === 1;
-  if (voiceId !== "bass" || (!descendingSeventh && !raisedSixth) || !contiguous || !sameKey ||
+  if (voiceId !== "bass" || !descendingSeventh || !contiguous || !sameKey ||
       previous.nonChordToneRole || current.nonChordToneRole) return false;
 
   const key = context.keyAt(previous.startTick);
@@ -19,10 +17,7 @@ export function isMinorSixthChordBassLine(context: HarmonyRuleContext, transitio
   if (!next || next.startTick !== current.startTick + current.durationTicks || next.nonChordToneRole) return false;
   const leading = leadingTonePitchClass(key);
   const step = toMidi(next.pitch) - toMidi(current.pitch);
-  if (descendingSeventh) {
-    if (!pitchClassEquals(current.pitch, leading) || !pitchClassEquals(next.pitch, key.tonic) || step !== 1) return false;
-  } else if (!pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 6, 1)) ||
-      !pitchClassEquals(next.pitch, leading) || step !== 2) return false;
+  if (!pitchClassEquals(current.pitch, leading) || !pitchClassEquals(next.pitch, key.tonic) || step !== 1) return false;
 
   if (context.analysis.project.keyEvents.some(event =>
     previous.startTick < event.tick && event.tick <= next.startTick &&
@@ -32,7 +27,6 @@ export function isMinorSixthChordBassLine(context: HarmonyRuleContext, transitio
 
   const soloBass = context.analysis.project.satbTracks.every(track => track.voice === "bass" || !track.notes.length);
   return supportsBassTriad(context, key, previous, current.startTick, 4, "minor", soloBass) &&
-    supportsBassTriad(context, key, current, next.startTick, descendingSeventh ? 5 : 4, "major", soloBass) &&
-    supportsBassTriad(context, key, next, next.startTick + 1, descendingSeventh ? 1 : 5,
-      descendingSeventh ? "minor" : "major", soloBass);
+    supportsBassTriad(context, key, current, next.startTick, 5, "major", soloBass) &&
+    supportsBassTriad(context, key, next, next.startTick + 1, 1, "minor", soloBass);
 }

@@ -25,7 +25,7 @@ function events(project: ProjectDocument, ruleId = augmented) {
 describe("half-diminished seventh chain in ascending fourths", () => {
   it("accepts the internal written semitone in alternating voices, with sparse or absent labels", () => {
     for (const project of [example(), compileScoreText(score).project]) {
-      expect(events(project)).toEqual([[4800, "bass"]]);
+      expect(events(project)).toEqual([]);
     }
   });
 
@@ -66,21 +66,14 @@ describe("half-diminished seventh chain in ascending fourths", () => {
       p.keyEvents.push({ ...p.keyEvents[0], id: "new-key", tick: 2880, mode: "minor" });
     }],
   ];
-  it.each(breaks)("keeps the first warning with a %s", (_name, change) => {
+  it.each(breaks)("keeps the leading obligation with a %s", (_name, change) => {
     const project = example();
     change(project);
-    expect(events(project)).toContainEqual([960, "bass"]);
+    expect(events(project, leading)).toContainEqual([960, "bass"]);
+    expect(events(project)).not.toContainEqual([960, "bass"]);
   });
 
-  it("checks an explicit chord identity and inversion against the actual notes", () => {
-    const chord = (symbol: string) => head + "\nchord copy at=2:1 duration=1/4 symbol=" + symbol + ' localKey="C major"';
-    expect(events(example(chord("viiø7")))).not.toContainEqual([960, "bass"]);
-    for (const symbol of ["viiø43", "V7", "iiø7"]) {
-      expect(events(example(chord(symbol)))).toContainEqual([960, "bass"]);
-    }
-  });
-
-  it("reports the written chromatic step and unresolved leading tone of an ordinary dominant seventh", () => {
+  it("reports the unresolved leading tone independently of the chromatic step of an ordinary dominant seventh", () => {
     const project = compileScoreText(`satb 1
 key C major
 meter 2/4
@@ -91,7 +84,7 @@ bars 1..2 {
   B: | G3/4 A3/4 | C3/2 |
   H: | V7/4 ii/4 | I/2 |
 }`).project;
-    expect(events(project)).toContainEqual([960, "soprano"]);
+    expect(events(project)).not.toContainEqual([960, "soprano"]);
     expect(events(project, leading)).toContainEqual([960, "soprano"]);
   });
 
@@ -111,7 +104,7 @@ bars 1..3 {
   it("accepts both respelt thirds at a whole-chord change in D major", () => {
     for (const labels of ["", '\nannotations {\nchord seam at=2:2 duration=1/4 symbol=viiø43 localKey="C# major"\n}']) {
       const project = compileScoreText(respeltScore + labels).project;
-      expect(events(project)).toEqual([[4800, "bass"]]);
+      expect(events(project)).toEqual([]);
       expect(events(project, diminished)).toEqual([]);
     }
   });
@@ -193,7 +186,7 @@ bars 1..3 {
       .replace("A3/4 Ab3/4 |", "A3/4 Ab3/4 | G3/4 Ab3/4 |");
     const labels = "\nannotations {\nchord terminal at=4:1 duration=1/4 symbol=viiø7\nchord tonic at=4:2 duration=1/4 symbol=I\n}";
     const resolved = compileScoreText(text + labels).project;
-    expect(events(resolved)).toContainEqual([5760, "tenor"]);
+    expect(events(resolved)).not.toContainEqual([5760, "tenor"]);
     expect(events(resolved, leading)).not.toContainEqual([6720, "bass"]);
     const broken = compileScoreText(text.replace("G3/4 Ab3/4", "G3/4 C3/4")
       .replace("Db4/4 Eb4/4", "Db4/4 Ab3/4") + labels.replace("symbol=I\n", "symbol=I6\n")).project;

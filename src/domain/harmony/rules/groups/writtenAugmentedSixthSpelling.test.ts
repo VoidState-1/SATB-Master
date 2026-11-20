@@ -6,7 +6,6 @@ import { buildHarmonyAnalysis } from "../../analysis";
 import { checkHarmony } from "../../registry";
 
 const ruleId = "melody.augmented-interval";
-const warning = { messageKey: ruleId + ".增" };
 const spelling = { messageKey: ruleId + ".structural-spelling", message: expect.stringContaining("C♯") };
 
 function example(entry = "C#5", peer = "A#3", middleBass = "Eb3", goalBass = "D3") {
@@ -63,7 +62,7 @@ describe("Written resolution of a lowered-sixth augmented-sixth sonority", () =>
   });
 
   it.each([0, 1])("rejects a change and return between attacks after beat %i", beat => {
-    const project = example();
+    const project = example("Db5");
     project.chordTrack.regions = [];
     const startKey = project.keyEvents[0];
     project.keyEvents.push(
@@ -73,7 +72,7 @@ describe("Written resolution of a lowered-sixth augmented-sixth sonority", () =>
     const transition = buildHarmonyAnalysis(project).melodyTransitions.find(item =>
       item.voiceId === "soprano" && item.current.startTick === project.ppq);
     expect(transition?.sameKey).toBe(true);
-    expect(focus(project)).toMatchObject([warning]);
+    expect(focus(project)).not.toContainEqual(expect.objectContaining({ messageKey: spelling.messageKey }));
   });
 
   it("can prove the entry without a marked redundant member of the preparation", () => {
@@ -86,10 +85,10 @@ describe("Written resolution of a lowered-sixth augmented-sixth sonority", () =>
   });
 
   it("requires the other written alteration and its true resolution", () => {
-    for (const project of [example("C#5", "Bb3"), example("C#5", "A#3", "Eb3", "G3"),
-      example("C#5", "A#3", "Eb5", "D5")]) {
+    for (const project of [example("Db5", "Bb3"), example("Db5", "A#3", "Eb3", "G3"),
+      example("Db5", "A#3", "Eb5", "D5")]) {
       project.chordTrack.regions = [];
-      expect(focus(project)).toMatchObject([warning]);
+      expect(focus(project)).not.toContainEqual(expect.objectContaining({ messageKey: spelling.messageKey }));
     }
   });
 
@@ -108,11 +107,11 @@ describe("Written resolution of a lowered-sixth augmented-sixth sonority", () =>
   });
 
   it.each([
-    { source: "inferred", trackLocked: false, expected: [] },
-    { source: "manual", trackLocked: false, expected: [warning] },
-    { source: "inferred", trackLocked: true, expected: [warning] },
+    { source: "inferred", trackLocked: false, expected: [spelling] },
+    { source: "manual", trackLocked: false, expected: [] },
+    { source: "inferred", trackLocked: true, expected: [] },
   ] as const)("honors an enharmonic identity conflict under %o", ({ source, trackLocked, expected }) => {
-    const project = example();
+    const project = example("Db5");
     markIdentities(project, true);
     project.chordTrack.locked = trackLocked;
     for (const chord of project.chordTrack.regions) {
@@ -125,10 +124,10 @@ describe("Written resolution of a lowered-sixth augmented-sixth sonority", () =>
     for (const [voice, beat, mark] of [
       ["soprano", 0, "passing"], ["tenor", 1, "neighbor"], ["bass", 2, "pedal"],
     ] as const) {
-      const project = example();
+      const project = example("Db5");
       project.chordTrack.regions = [];
       role(project, voice, beat, mark);
-      expect(focus(project)).toMatchObject([warning]);
+      expect(focus(project)).not.toContainEqual(expect.objectContaining({ messageKey: spelling.messageKey }));
     }
   });
 });

@@ -48,16 +48,16 @@ describe("升五属七解决时主和弦重复三音（第46章第4节）", () =
     ["升五音越过八度", progression.replace("G#4/4 A4", "G#4/4 A5")],
     ["低音解决前有休止", progression.replace("C3/2 F3/2", "C3/4. r/8 F3/2")],
     ["低音越过八度", progression.replace("C3/2 F3/2", "C3/2 F1/2")],
-  ])("%s 时仍指出增一度和缺五音", (_name, score) => {
-    expect(diagnoses(score)).toEqual({ spelling: true, fifth: true });
+  ])("%s 时仍指出缺五音而无入音 B.3", (_name, score) => {
+    expect(diagnoses(score)).toEqual({ spelling: false, fifth: true });
   });
 
-  it("显式标注普通属七时保留升五音的拼写诊断", () => {
+  it("显式标注普通属七时也不从半音入音推断错拼", () => {
     const score = progression.replace("  chord target", "  chord source range=[1:2,1:3) symbol=V7\n  chord target");
-    expect(diagnoses(score).spelling).toBe(true);
+    expect(diagnoses(score).spelling).toBe(false);
   });
 
-  it("盲推后仍区分升五音级进解决和同声部跳走", () => {
+  it("盲推后由 E.6 区分升五音的两种解决走向", () => {
     const unmarked = `satb 1
 key F major
 meter 4/4
@@ -67,17 +67,20 @@ bars 1..2 {
   T: | A3/4 Bb3/2. | A3/1 |
   B: | F3/4 C3/2. | F3/1 |
 }`;
-    for (const [text, expected] of [[unmarked, false], [unmarked.replace("A4/1", "C5/1"), true]] as const) {
+    for (const [text, violatesResolution] of [[unmarked, false], [unmarked.replace("A4/1", "C5/1"), true]] as const) {
       const input = compileScoreText(text).project;
       const { project } = applyHarmonyInference(input, { chordInference: inferChords(input) }, {
         mode: "replace-unlocked", writeNonChordToneRoles: true,
       });
-      expect(checkHarmony(project).diagnostics.some(d => d.ruleId === melody && d.tick === 3.5 * input.ppq &&
-        d.voiceIds.includes("soprano"))).toBe(expected);
+      const { diagnostics } = checkHarmony(project);
+      expect(diagnostics.some(d => d.ruleId === melody && d.tick === 3.5 * input.ppq &&
+        d.voiceIds.includes("soprano"))).toBe(false);
+      expect(diagnostics.some(d => d.ruleId === "resolution.altered-dominant-fifth" && d.tick === 4 * input.ppq &&
+        d.voiceIds.includes("soprano"))).toBe(violatesResolution);
     }
   });
 
   it("解决不能跨显式句界", () => {
-    expect(diagnoses(progression, true)).toEqual({ spelling: true, fifth: true });
+    expect(diagnoses(progression, true)).toEqual({ spelling: false, fifth: true });
   });
 });

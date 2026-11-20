@@ -43,60 +43,6 @@ function plainTriad(root: SpelledPitchClass, quality: "major" | "minor", bass: S
   return { root, bass, structure: { kind: "tertian", quality, extensions: [], alterations: [] } };
 }
 
-// Spasobin, ch. 41 §§1–3: in a weak subdivision the raised third of the
-// minor tonic can be a written chromatic step toward the subdominant.
-// The other voices must sustain the same sounding tonic and fifth even
-// if the middle sonority is labelled separately as a major triad.
-function isRaisedTonicThirdPassing(
-  context: HarmonyRuleContext, first: MelodyTransition, second: MelodyTransition,
-  from: AnalysisSlice, to: AnalysisSlice, key: KeyReference,
-) {
-  const { previous: left, current: middle, voiceId } = first;
-  const { current: right } = second;
-  if (voiceId !== "bass" || key.mode !== "minor" ||
-      first.writtenInterval.diatonicSteps !== 0 || first.writtenInterval.semitones !== 1) return false;
-
-  const third = scaleDegreePitchClass(key, 3);
-  const raisedThird = scaleDegreePitchClass(key, 3, 1);
-  const subdominant = scaleDegreePitchClass(key, 4);
-  if (!pitchClassEquals(left.pitch, third) || !pitchClassEquals(middle.pitch, raisedThird) ||
-      !pitchClassEquals(right.pitch, subdominant)) return false;
-
-  const position = context.metric.positionAt(middle.startTick);
-  const measure = position && context.analysis.metricTimeline.measures[position.measureNumber - 1];
-  if (!position || position.role !== "subdivision" || !measure ||
-      middle.durationTicks > measure.beatLength ||
-      context.metric.compare(context.metric.positionAt(right.startTick), position) !== "stronger") return false;
-  if (context.analysis.project.keyEvents.some(event =>
-    left.startTick < event.tick && event.tick <= right.startTick &&
-    (!keyEquals(event, from.key))) ||
-    context.analysis.phraseBoundaries.some(boundary =>
-      !boundary.stale && left.startTick < boundary.tick && boundary.tick <= right.startTick)) return false;
-
-  const source = plainTriad(key.tonic, "minor", third);
-  const colored = plainTriad(key.tonic, "major", raisedThird);
-  const arrival = plainTriad(subdominant, "minor", subdominant);
-  if (from.notes.bass?.id !== left.id || to.notes.bass?.id !== right.id ||
-      !fullySoundsTriad(from, source) || !fullySoundsTriad(to, arrival) ||
-      (from.chord && !chordIdentityEquals(from.chord.identity, source)) ||
-      (to.chord && !chordIdentityEquals(to.chord.identity, arrival))) return false;
-
-  const upperParts = VOICE_ORDER.filter(part => part !== "bass");
-  return context.slices({ overlapping: { fromTick: middle.startTick, toTick: right.startTick } }).all(slice => {
-    if (slice.notes.bass?.id !== middle.id || !fullySoundsTriad(slice, colored, middle.id) ||
-        !upperParts.every(part => slice.notes[part]?.id === from.notes[part]?.id)) return false;
-    const chord = slice.chord;
-    if (!chord || chord.id === from.chord?.id) return true;
-    if (!chordIdentityEquals(chord.identity, colored)) return false;
-    const reading = context.harmony.primaryInterpretation(chord);
-    if (reading.status === "ambiguous") return false;
-    if (reading.status !== "resolved") return true;
-    const { localKey: labelledKey, appliedTarget } = reading.value;
-    return (!labelledKey || keyEquals(labelledKey, key)) &&
-      (!appliedTarget || appliedTarget.degree === 4);
-  });
-}
-
 function continuousContext(context: HarmonyRuleContext, fromTick: number, to: AnalysisSlice) {
   return !context.analysis.phraseBoundaries.some(mark =>
     !mark.stale && fromTick < mark.tick && mark.tick <= to.tick) &&
@@ -178,29 +124,6 @@ function hasStepwiseEntry(
   });
 }
 
-function loweredThirdPreparingDominant(
-  context: HarmonyRuleContext, source: AnalysisSlice, voiceId: VoiceId, key: KeyReference,
-) {
-  const approach = context.melodyTransitions({ voiceId }).first(motion => motion.current.id === source.notes[voiceId]?.id);
-  if (!approach || !approach.contiguous || !approach.sameKey || approach.current.startTick !== source.tick ||
-      approach.previous.nonChordToneRole || approach.writtenInterval.diatonicSteps !== 0 ||
-      approach.writtenInterval.semitones !== -1 ||
-      !pitchClassEquals(approach.previous.pitch, scaleDegreePitchClass(key, 3))) return;
-  const before = context.sliceAt(source.tick - 1);
-  const sixth = scaleDegreePitchClass(key, 6);
-  if (!before || !continuousContext(context, approach.previous.startTick, source) ||
-      !(matchesWrittenChord(before, sixth, "minor") || matchesWrittenChord(before, sixth, "minor7"))) return;
-  if (VOICE_ORDER.filter(part => pitchClassEquals(before.notes[part]!.pitch, approach.previous.pitch)).length !== 1) return;
-  if (before.chord) {
-    const reading = context.harmony.primaryInterpretation(before.chord);
-    if (before.chord.semantics?.interpretations.length !== 1 || reading.status !== "resolved" ||
-        reading.value.degree !== 6 || reading.value.degreeAlteration !== 0 || reading.value.appliedTarget ||
-        !keyEquals(reading.value.localKey ?? before.key, key)) return;
-  }
-  // §41.3, ex. 41-617: lowered III takes the written seventh of DDVII7.
-  return approach.id;
-}
-
 function preparesNinthOnDominant(
   context: HarmonyRuleContext, voice: VoiceId, fromTick: number, left: AnalysisNote,
   key: KeyReference, root: SpelledPitchClass,
@@ -223,7 +146,7 @@ function preparesNinthOnDominant(
     pitchClassEquals(preparation.notes[part]!.pitch, scaleDegreePitchClass(key, 3, -1)))!;
   if (!resolvesInVoice(preparation, arrival, "bass", root, 1) ||
       !resolvesInVoice(preparation, arrival, seventh, scaleDegreePitchClass(key, 2), -1)) return;
-  return { seventhEntry: loweredThirdPreparingDominant(context, preparation, seventh, key) };
+  return true;
 }
 
 /** §41.1b/§41.3: a chromatic step may connect a diatonic passing tone
@@ -268,7 +191,7 @@ function readHeldTriadForDescendingPassing(
       !usualChromaticSpelling(key, middle.pitch, false) ||
       !spans.all(slice => compatibleBackbone(context, slice, harmony, key))) return;
   if (prepared) return preparesNinthOnDominant(context, voiceId, backingStart, left, key, root);
-  if (hasStepwiseEntry(context, voiceId, backingStart, left, key, harmony)) return { seventhEntry: undefined };
+  return hasStepwiseEntry(context, voiceId, backingStart, left, key, harmony);
 }
 
 function chromaticPassingDirection(left: AnalysisNote, middle: AnalysisNote, right: AnalysisNote) {
@@ -347,7 +270,7 @@ interface PassingSpellingCorrection {
   spelling: AnalysisNote["pitch"];
 }
 
-function readChromaticPassingSpelling(context: HarmonyRuleContext, first: MelodyTransition, second: MelodyTransition): "usual" | PassingSpellingCorrection | undefined {
+function readChromaticPassingSpelling(context: HarmonyRuleContext, first: MelodyTransition, second: MelodyTransition): PassingSpellingCorrection | undefined {
   if (first.current.id !== second.previous.id || !first.contiguous || !second.contiguous ||
       !first.sameKey || !second.sameKey) return;
   const { previous: left, current: middle } = first;
@@ -356,7 +279,7 @@ function readChromaticPassingSpelling(context: HarmonyRuleContext, first: Melody
   if (direction === undefined) return;
   const heldKey = readHeldChromaticPassing(context, first.voiceId, left, middle, right);
   if (heldKey) return usualChromaticSpelling(heldKey, middle.pitch, direction > 0)
-    ? "usual" : passingSpellingCorrection(heldKey, left, middle, right, direction > 0);
+    ? undefined : passingSpellingCorrection(heldKey, left, middle, right, direction > 0);
   const meter = context.metric.positionAt(middle.startTick);
   if (!meter || meter.confidence === "ambiguous" || meter.role === "downbeat") return;
   const from = context.sliceAt(middle.startTick - 1);
@@ -368,8 +291,7 @@ function readChromaticPassingSpelling(context: HarmonyRuleContext, first: Melody
   const middleKey = via.chord ? localKey(context, via) : key;
   if (!key || ![middleKey, landingKey].every(k => k && keyEquals(k, key))) return;
   if (![left, right].every(note => isDiatonicIn(key, note))) return;
-  const usual = usualChromaticSpelling(key, middle.pitch, direction > 0);
-  if (usual && isRaisedTonicThirdPassing(context, first, second, from, to, key)) return "usual";
+  if (usualChromaticSpelling(key, middle.pitch, direction > 0)) return;
   if (!from.chord || !to.chord) return;
   if (!hasExactPitch(left, chordIdentityToneSpellings(from.chord.identity)) ||
       !hasExactPitch(right, chordIdentityToneSpellings(to.chord.identity))) return;
@@ -389,7 +311,6 @@ function readChromaticPassingSpelling(context: HarmonyRuleContext, first: Melody
     }),
   );
   if (!heldAccompaniment) return;
-  if (usual) return "usual";
 
   // §41.3 permits chordal spellings in parallel motion. Reattacking the same
   // written pitch does not add a moving voice. Respect explicit nonchord roles.
@@ -411,27 +332,20 @@ function passingSpellingCorrection(
   if (spelling) return { note: middle, spelling };
 }
 
-export function chromaticPassingMotions(context: HarmonyRuleContext) {
-  const supported = new Set<string>();
+export function chromaticPassingSpellingCorrections(context: HarmonyRuleContext) {
   const corrections = new Map<string, PassingSpellingCorrection>();
   for (const voiceId of VOICE_ORDER) {
     for (const [first, second] of context.melodyTransitions({ voiceId }).window(2)) {
-      const held = readHeldTriadForDescendingPassing(context, first, second);
-      if (held) {
-        supported.add(first.id);
-        if (held.seventhEntry) supported.add(held.seventhEntry);
-        continue;
-      }
-      if (hasInsertedChromaticResolution(context, first, second)) {
-        supported.add(first.id);
-        continue;
-      }
-      const spelling = readChromaticPassingSpelling(context, first, second);
-      if (!spelling) continue;
+      const correction = readChromaticPassingSpelling(context, first, second);
+      if (!correction) continue;
+
+      // A held triad or a prepared resolution can justify the written spelling.
+      if (readHeldTriadForDescendingPassing(context, first, second) ||
+          hasInsertedChromaticResolution(context, first, second)) continue;
+
       const unison = first.writtenInterval.diatonicSteps === 0 ? first : second;
-      if (spelling === "usual") supported.add(unison.id);
-      else corrections.set(unison.id, spelling);
+      corrections.set(unison.id, correction);
     }
   }
-  return { supported, corrections };
+  return corrections;
 }

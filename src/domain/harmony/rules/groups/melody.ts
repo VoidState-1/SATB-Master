@@ -114,8 +114,8 @@ const LARGE_LEAP_POLICY: MelodyTransitionRulePolicy = {
 
 const TRITONE_POLICY: MelodyTransitionRulePolicy = {
   id: "melody.tritone",
-  matches: (_interval, named) =>
-    named.altered &&
+  matches: (semitones, named) =>
+    semitones === 6 &&
     ((named.number === 4 && named.quality === "增") ||
       (named.number === 5 && named.quality === "减")),
   title: "旋律三全音",
@@ -313,9 +313,9 @@ export const MELODY_RULES = defineRuleGroup(
     catalogNumber: "B.3",
     label: "旋律增音程",
     description:
-      "检查单声部旋律进行中是否包含增二度、增四度等增音程。",
+      "检查增二度等旋律增音程，以及有谱面依据的半音错拼。",
     rationale:
-      "旋律中的增二度、增四度等增音程会影响平稳进行。重属可以由同声部的自然 IV 级半音上行引入，大调变音重属的增六低端也可由 VI 级半音下行准备。其他副属和弦也可以用半音引入导音，再上行级进解决到相应的局部主音。",
+      "斯波索宾第 32 章说明半音变化通常在同一声部进行。普通增一度可以用于和弦衔接或装饰；只有和弦结构或第 41 章的半音经过写法足以确定另一个拼写时，才提示改写。更大的增音程按实写音程检查。",
     group: "melody",
     defaultSeverity: "warning",
     requires: ["written-pitches"],

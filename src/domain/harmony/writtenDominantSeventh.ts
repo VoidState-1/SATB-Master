@@ -65,34 +65,6 @@ function retainsDominantRoot(departure: WrittenFrame, onset: WrittenFrame, voice
     (before.id === current.id || current.startTick === onset.tick && endOf(before) === onset.tick);
 }
 
-/** Spasobin §§15.2, 36.2–3, 44.1. Read a complete inverted V7 whose
- * seventh is reattacked over the tonic arrival and resolves one event later.
- * The other voices establish the same tonic throughout the delay. */
-export function readReattackedDominantSeventh(
-  departure: WrittenFrame,
-  onset: WrittenFrame,
-  frameAt: (tick: number) => WrittenFrame | undefined,
-) {
-  const source = invertedDominantSource(departure, onset);
-  if (!source) return;
-  const { root, target: tonic, leadingVoice, fifthVoice, seventhVoice } = source;
-  const delay = reattackResolution(departure, onset, seventhVoice, frameAt);
-  if (!delay) return;
-  const { repeated, settled, landing } = delay;
-  const mode = (["major", "minor"] as const).find(quality =>
-    movesToWrittenTone(repeated.pitch, landing.pitch, chordToneSpellings(tonic, quality)[1], -1, quality === "major" ? -1 : -2),
-  );
-  if (!mode) return;
-
-  const rootVoice = VOICE_ORDER.find(voice => pitchClassEquals(departure.notes[voice]!.pitch, root))!;
-  if (!retainsDominantRoot(departure, onset, rootVoice) ||
-      !resolvesInVoice(departure, onset, leadingVoice, tonic, 1) ||
-      !resolvesInVoice(departure, onset, fifthVoice, tonic, -1) ||
-      writtenInterval(departure.notes[fifthVoice]!.pitch, onset.notes[fifthVoice]!.pitch).semitones !== -2) return;
-
-  return { root, key: { tonic, mode }, leadingVoice, seventhVoice, repeated, settledTick: settled.tick };
-}
-
 /** A V65 can resolve its leading tone and seventh while the written fifth
  * reattacks as a ninth. Confirm the tonic when that voice reaches the octave. */
 export function readReattackedTonicNinth(

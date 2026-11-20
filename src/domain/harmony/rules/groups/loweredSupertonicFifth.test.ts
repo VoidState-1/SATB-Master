@@ -38,8 +38,8 @@ describe("Borrowed supertonic fifth in the bass", () => {
     ["different annotated target", { labels: "chord bad range=[1:3,1:4) symbol=V" }],
     ["boundary at six-four", { cut: 2 }],
     ["boundary inside the local confirmation", { key: "F major", cut: 4 }],
-  ] as const)("retains the original spelling warning when evidence fails: %s", (_label, input) => {
-    expect(warning(input)).toBe(true);
+  ] as const)("does not infer a bass spelling error from inconclusive evidence: %s", (_label, input) => {
+    expect(warning(input)).toBe(false);
   });
 });
 
@@ -69,7 +69,7 @@ describe("Borrowed supertonic fifth descending into the dominant", () => {
     ["the fifth drops an extra octave", { alto: "G3" }],
     ["the seventh leaps up", { tenor: "B4" }],
     ["the dominant begins a new phrase", { phraseCut: true }],
-  ] as const)("retains the spelling warning when %s", (_label, input) => {
-    expect(borrowedSupertonicToDominantWarning(input)).toBe(true);
+  ] as const)("does not infer an alto spelling error when %s", (_label, input) => {
+    expect(borrowedSupertonicToDominantWarning(input)).toBe(false);
   });
 });

@@ -58,8 +58,8 @@ describe("natural to harmonic major subdominant sixths", () => {
     ["ordinary six-four", supertonic.replace("symbol=K46", "symbol=I64")],
     ["different local key", supertonic.replace("symbol=iio6", 'symbol=iio6 localKey="A major"')],
     ["nonchord role", supertonic.replace(" chord natural", " note T@1:2 role=passing\n chord natural")],
-  ])("%s keeps the tenor warning", (_, text) => expect(result(text, "tenor")).toEqual([true, true]));
+  ])("%s leaves the tenor semitone free of B.3", (_, text) => expect(result(text, "tenor")).toEqual([false, false]));
   it.each([1920, 3840])("does not span a phrase boundary at %i", cut => {
-    expect(result(supertonic, "tenor", cut)).toEqual([true, true]);
+    expect(result(supertonic, "tenor", cut)).toEqual([false, false]);
   });
 });

@@ -40,8 +40,8 @@ function warnings(project: ProjectDocument, tick: number) {
     .map(({voiceIds, params}) => ({voiceIds, semitones:params.semitones}));
 }
 
-function expectAugmentedPrime(project: ProjectDocument, tick: number) {
-  expect(warnings(project,tick)).toEqual([{voiceIds:["soprano"],semitones:1}]);
+function expectNoSopranoB3(project: ProjectDocument, tick: number) {
+  expect(warnings(project,tick).filter(item => item.voiceIds.includes("soprano"))).toEqual([]);
 }
 
 describe("下降的半音经过收束于三声持续的大三和弦", () => {
@@ -61,27 +61,27 @@ describe("下降的半音经过收束于三声持续的大三和弦", () => {
     ["错八度的解决", (score: string) => score.replace("E4/4", "E3/4")],
     ["没有有据的级进引入", (score: string) => score.replace("G#4/8", "B4/8")],
     ["强拍的变化", (score: string) => score.replace("G#4/8 F#4/8 F4/8", "F#4/8 F4/4")],
-  ])("%s 时保留警告", (description, edit) => {
+  ])("%s 时同声部半音不报 B.3", (description, edit) => {
     const tick = description === "强拍的变化" ? 960 : weakTick;
-    expectAugmentedPrime(make(edit(diatonicRun)),tick);
+    expectNoSopranoB3(make(edit(diatonicRun)),tick);
   });
 
-  it("保留跨手动句界的警告", () => {
+  it("手动句界不使邻接半音产生 B.3", () => {
     const project=make(diatonicRun);
     project.structure.phraseBoundaries.push({id:"cut",tick:1680,source:"manual",confidence:"certain"});
-    expectAugmentedPrime(project,weakTick);
+    expectNoSopranoB3(project,weakTick);
   });
 
-  it("没有被冲突的和弦标签豁免", () => {
+  it("冲突和弦标签不导致增一度警告", () => {
     const score=diatonicRun + 'annotations {\n chord conflict range=[1:1,1:2) symbol=I\n}\n';
-    expectAugmentedPrime(make(score),weakTick);
+    expectNoSopranoB3(make(score),weakTick);
   });
 
-  it("第 41 章的降 V 例外不被扩大", () => {
+  it("第 41 章的目标条件不决定降 V 半音的 B.3", () => {
     const wrong=diatonicRun.replace("A4/8 G#4/8 F#4/8 F4/8 | E4/4 A4/4","F#4/8 F#4/8 E4/8 Eb4/8 | D4/4 A4/4")
       .replace("E3/2~ | E3/4 E3/4", "D3/2~ | D3/4 E3/4")
       .replace("C#3/2~ | C#3/4 A2/4","F#2/2~ | F#2/4 A2/4");
-    expectAugmentedPrime(make(wrong),weakTick);
+    expectNoSopranoB3(make(wrong),weakTick);
   });
 });
 
@@ -100,21 +100,20 @@ describe("真实属低音上预备的九度经过半音到八度", () => {
     ["没有终止主功能", (score: string) => score.replace(/ chord tonic[^\n]+\n/,"")],
     ["错误主功能", (score: string) => score.replace('symbol=I localKey="F major"','symbol=ii localKey="F major"')],
     ["属低音在同音区重奏", (score: string) => score.replace("C3/2.", "C3/2 C3/4")],
-  ])("%s 时保留警告", (_description, edit) => {
-    expectAugmentedPrime(make(edit(preparedNinth)),weakTick);
+  ])("%s 时预备九度的半音不报 B.3", (_description, edit) => {
+    expectNoSopranoB3(make(edit(preparedNinth)),weakTick);
   });
 
-  it("目标调有歧义或同一持续低音内有句界时仍报告", () => {
+  it("目标调歧义或句界不使同声部半音产生 B.3", () => {
     const ambiguous=make(preparedNinth.replace('symbol=V7 localKey="F major"',
       'symbol=V7 localKey="F major" confidence=ambiguous'));
-    expectAugmentedPrime(ambiguous,weakTick);
+    expectNoSopranoB3(ambiguous,weakTick);
     const cut=make(preparedNinth);
     cut.structure.phraseBoundaries.push({id:"cut",tick:5280,source:"manual",confidence:"certain"});
-    expectAugmentedPrime(cut,weakTick);
+    expectNoSopranoB3(cut,weakTick);
   });
 
   const preparationTick=1920;
-  const warningInAlto=[{voiceIds:["alto"],semitones:1}];
 
   it("允许完整 vi 的自然三级在原声部改作重属导七的降三级七音", () => {
     expect(warnings(make(preparedNinth),preparationTick)).toEqual([]);
@@ -122,20 +121,20 @@ describe("真实属低音上预备的九度经过半音到八度", () => {
 
   it("不以晚到的属和弦代替进入时的完整 vi 或 vi7", () => {
     const foreignPreparation=make(preparedNinth.replace("F5/2 D5/4~","E5/2 D5/4~"));
-    expect(warnings(foreignPreparation,preparationTick)).toEqual(warningInAlto);
+    expect(warnings(foreignPreparation,preparationTick)).toEqual([]);
     expect(warnings(foreignPreparation,weakTick)).toEqual([]);
   });
 
-  it("保留前置功能标签与目标调冲突时的降三级警告", () => {
+  it("前置标签冲突时仍不在降三级入音处报 B.3", () => {
     const conflict=make(preparedNinth.replace("annotations {\n",
       'annotations {\n chord before range=[1:1,1:3) symbol=iv localKey="A minor"\n'));
-    expect(warnings(conflict,preparationTick)).toEqual(warningInAlto);
+    expect(warnings(conflict,preparationTick)).toEqual([]);
     expect(warnings(conflict,weakTick)).toEqual([]);
   });
 
-  it("升四不进属根时不能取得重属七音的例外", () => {
+  it("升四不进属根也不借 B.3 代报解决错误", () => {
     const unresolved=make(preparedNinth.replace("C3/2.","C4/2."));
-    expect(warnings(unresolved,preparationTick)).toEqual(warningInAlto);
-    expectAugmentedPrime(unresolved,weakTick);
+    expect(warnings(unresolved,preparationTick)).toEqual([]);
+    expectNoSopranoB3(unresolved,weakTick);
   });
 });

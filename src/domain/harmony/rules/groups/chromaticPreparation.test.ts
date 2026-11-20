@@ -49,21 +49,21 @@ bars 1..1 {
   });
 
   it.each([
-    ["D", "C5", "C#5"],
-    ["Ger+6", "C#5", "C5"],
-    ["Ger+6", "B4", "C##5"],
-    ["viio7/V", "A4", "A#4"],
-    ["D", "F4", "G#4"],
-  ])("保留目标 %s 中未获该准备条件支持的 %s→%s", (symbol, before, after) => {
-    expect(warnings(symbol, before, after).some(d => d.voiceIds.includes("soprano"))).toBe(true);
+    ["D", "C5", "C#5", false],
+    ["Ger+6", "C#5", "C5", false],
+    ["Ger+6", "B4", "C##5", true],
+    ["viio7/V", "A4", "A#4", false],
+    ["D", "F4", "G#4", true],
+  ] as const)("目标 %s 的 %s→%s 是否报告 B.3", (symbol, before, after, reports) => {
+    expect(warnings(symbol, before, after).some(d => d.voiceIds.includes("soprano"))).toBe(reports);
   });
 });
 
 describe("其他副属和弦的导音半音引入", () => {
   it.each([
     { nextNote: "A4", nextChord: "vi", reports: false },
-    { nextNote: "E4", nextChord: "vi", reports: true },
-    { nextNote: "A4", nextChord: "IV", reports: true },
+    { nextNote: "E4", nextChord: "vi", reports: false },
+    { nextNote: "A4", nextChord: "IV", reports: false },
   ])("G–G#–$nextNote 落在 $nextChord 时，增一度警告为 $reports", ({ nextNote, nextChord, reports }) => {
     const project = compileScoreText(`satb 1
 key C major

@@ -38,26 +38,26 @@ describe("大调重属改写到完整终止四六的同声部增一度", () => {
   it.each([
     ["四部仍拼出 K46，但升IV进了和弦三音", approach.replace("C4/2", "A3/4 C4/4")],
     ["后继四部没有实写属导音", approach.replace("F4/4 E4/4", "F4/4 F4/4")],
-  ])("%s 时仍查出两个增一度", (_description, score) => {
-    expect(warningVoices(compile(score))).toEqual(["soprano", "tenor"]);
+  ])("%s 时两个半音入音均无 B.3", (_description, score) => {
+    expect(warningVoices(compile(score))).toEqual([]);
   });
 
-  it("只接受带终止职能的四六", () => {
+  it("普通四六标签也不导致半音入音报警", () => {
     const score = compile(approach);
     const landing = score.chordTrack.regions.find(region => region.startTick === 2 * PPQ)!;
     landing.semantics = undefined;
-    expect(warningVoices(score)).toEqual(["soprano", "tenor"]);
+    expect(warningVoices(score)).toEqual([]);
   });
 
-  it("不跨与上下文冲突的局部调或有效句界", () => {
+  it("局部调冲突或句界不构成半音入音的报错证据", () => {
     const conflict = compile(approach);
     const prep = conflict.chordTrack.regions.find(region => region.startTick === PPQ / 2)!;
     prep.semantics = { ...prep.semantics!, interpretations: prep.semantics!.interpretations.map(reading => ({
       ...reading, localKey: { tonic: { step: "B", alter: -1 }, mode: "major" },
     })) };
-    expect(warningVoices(conflict)).toEqual(["soprano", "tenor"]);
+    expect(warningVoices(conflict)).toEqual([]);
     const cut = compile(approach);
     cut.structure.phraseBoundaries.push({ id: "cut", tick: 2*PPQ, source: "manual", confidence: "certain" });
-    expect(warningVoices(cut)).toEqual(["soprano", "tenor"]);
+    expect(warningVoices(cut)).toEqual([]);
   });
 });

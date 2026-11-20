@@ -140,7 +140,7 @@ export function reattackedLeadingToneResolvesAsChainSeventh(
 
 // Spasobin, ch. 56, example 817 and keyboard exercises. Require three
 // two-chord statements and a continuing link beyond every exempt arrival.
-export function halfDiminishedChainArrivals(context: HarmonyRuleContext, quality: "增" | "减") {
+export function halfDiminishedChainArrivals(context: HarmonyRuleContext) {
   const arrivals = new Set<string>();
   for (const slots of context.slices().select(readHalfDiminishedSlot).window(6)) {
     if (!slots.every((slot): slot is Slot => slot !== undefined)) continue;
@@ -148,20 +148,12 @@ export function halfDiminishedChainArrivals(context: HarmonyRuleContext, quality
         crossesManualPhraseBoundary(context, slots[0].slice.tick, slots[5].slice.endTick - 1)) continue;
     for (let i = 1; i < slots.length - 1; i++) {
       const before = slots[i - 1], after = slots[i];
-      if (quality === "减") {
-        if (i > 1 && wholeChordRespelt(before, after) &&
-            slots.every((slot, j) => j === 0 || j === i || writtenRootFourth(slots[j - 1], slot))) {
-          before.voices.forEach(({ member }, v) => {
-            if (member >= 2) arrivals.add(after.voices[v].note.id);
-          });
-        }
-        continue;
+      if (i > 1 && wholeChordRespelt(before, after) &&
+          slots.every((slot, j) => j === 0 || j === i || writtenRootFourth(slots[j - 1], slot))) {
+        before.voices.forEach(({ member }, v) => {
+          if (member >= 2) arrivals.add(after.voices[v].note.id);
+        });
       }
-      if (!writtenRootFourth(before, after)) continue;
-      const voice = before.voices.findIndex(v => v.member === 0);
-      const arrival = after.voices[voice].note;
-      if (writtenInterval(before.voices[voice].note.pitch, arrival.pitch).diatonicSteps === 0)
-        arrivals.add(arrival.id);
     }
   }
   return arrivals;

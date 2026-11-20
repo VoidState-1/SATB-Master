@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileScoreText } from "../../../scoreText";
 import { applyHarmonyInference, inferChords } from "../../inference";
-import { buildHarmonyAnalysis } from "../../analysis";
-import { createHarmonyRuleContext } from "../context/createRuleContext";
-import { preparesWrittenAppliedSeventh } from "./chromaticAppliedResolution";
-import { readRaisedMinorThirdIntoDominant } from "./raisedMinorThirdDominant";
 import { checkHarmony } from "../../registry";
 
 const raisedTriad = `satb 1
@@ -60,81 +56,26 @@ describe("小三音升为局部属的导音", () => {
     expect(warningsAtRaise(score, harmony)).toEqual([]);
   });
 
-  it("七音到达错误八度时保留原低音警告", () => {
+  it("七音错八度时低音入音无 B.3，仍查标明的七音义务", () => {
     const wrong = raisedInBass.replace("Bb4/2", "Bb5/2");
-    expect(warningsAtRaise(wrong)).toContain("bass");
-    expect(warningsAtRaise(wrong, "| i65/4. V65/IV/8 | iv/2 |")).toContain("bass");
+    expect(warningsAtRaise(wrong)).toEqual([]);
+    const harmony = "| i65/4. V65/IV/8 | iv/2 |";
+    expect(warningsAtRaise(wrong, harmony)).toEqual([]);
+    const project = labelled(wrong, harmony);
+    expect(checkHarmony(project).diagnostics).toContainEqual(expect.objectContaining({
+      ruleId: "resolution.chord-seventh", tick: 2 * project.ppq, voiceIds: ["soprano"],
+    }));
   });
 
-  it("导音到达错误八度时保留原高音警告", () => {
+  it("导音错八度时仍查标明的导音义务", () => {
     const wrong = raisedSeventh.replace("G4/2", "G5/2");
-    expect(warningsAtRaise(wrong)).toContain("soprano");
-    expect(warningsAtRaise(wrong, "| i42/4. V42/IV/8 | iv6/2 |")).toContain("soprano");
-  });
-
-  it("明确的同根主功能标注不能当作局部属", () => {
-    expect(warningsAtRaise(raisedTriad, "| i/4. I/8 | iv6/2 |")).toContain("soprano");
-  });
-
-  it("明确的目标和弦冲突保留诊断", () => {
-    expect(warningsAtRaise(raisedSeventh, "| i42/4. V42/IV/8 | VI/2 |")).toContain("soprano");
-  });
-
-  it("保留有独立解决证据的副属七和弦豁免", () => {
-    // The original i label covers the late arrival of the minor seventh.
-    const score = raisedTriad.replace("A3/2 | G3/2", "A3/4 C4/4 | Bb3/2")
-      .replace("D3/2 | Bb2/2", "D3/4 A2/4 | G2/2");
-    const project = labelled(score, "| i/4. V43/IV/8 | iv/2 |");
-    const context = createHarmonyRuleContext(buildHarmonyAnalysis(project));
-    const motion = context.melodyTransitions({ voiceId: "soprano" })
-      .first(item => item.current.startTick === 1.5 * project.ppq)!;
-    expect(readRaisedMinorThirdIntoDominant(context, motion)).toBe("unsupported");
-    expect(preparesWrittenAppliedSeventh(context, motion)).toBe(true);
-    expect(warningsAt(project, 1.5)).toEqual([]);
-  });
-
-  it.each([
-    ["inferred", false, []],
-    ["inferred", true, ["soprano"]],
-    ["confirmed", false, ["soprano"]],
-  ] as const)("按标注的保留状态核对 %s / locked=%s", (source, locked, expected) => {
-    const project = labelled(raisedTriad, "| i/4. I/8 | iv6/2 |");
-    const middle = project.chordTrack.regions[1];
-    middle.locked = locked;
-    middle.semantics!.interpretations[0].source = source;
-    expect(warningsAt(project, 1.5)).toEqual(expected);
-  });
-
-  it("推导的主读法不覆盖已确认并保留的另一读法", () => {
-    const project = labelled(raisedTriad, "| i/4. V/IV/8 | iv6/2 |");
-    const other = labelled(raisedTriad, "| i/4. I/8 | iv6/2 |");
-    const middle = project.chordTrack.regions[1].semantics!;
-    middle.interpretations[0].source = "inferred";
-    middle.interpretations = [
-      ...middle.interpretations,
-      { ...other.chordTrack.regions[1].semantics!.interpretations[0], id: "retained", source: "confirmed" },
-    ];
-    expect(warningsAt(project, 1.5)).toEqual(["soprano"]);
-  });
-
-  it("保护已确认的属七标注，同时允许选定主读法的枢纽和弦", () => {
-    const project = labelled(raisedInBass, "| i65/4. V65/IV/8 | iv/2 |");
-    const semantics = project.chordTrack.regions[1].semantics!;
-    const entry = semantics.interpretations[0];
-    const retained = {
-      ...entry, id: "retained", source: "confirmed", degree: 1, appliedTarget: undefined,
-      designation: { notationSystem: "spasobin", kind: "primary", primaryFunction: "tonic" },
-    } as const;
-    semantics.interpretations = [entry, retained];
-
-    const context = createHarmonyRuleContext(buildHarmonyAnalysis(project));
-    const motion = context.melodyTransitions({ voiceId: "bass" })
-      .first(item => item.current.startTick === 1.5 * project.ppq)!;
-    expect(preparesWrittenAppliedSeventh(context, motion)).toBe(true);
-    expect(warningsAt(project, 1.5)).toEqual([]);
-
-    entry.source = "inferred";
-    expect(warningsAt(project, 1.5)).toEqual(["bass"]);
+    expect(warningsAtRaise(wrong)).toEqual([]);
+    const harmony = "| i42/4. V42/IV/8 | iv6/2 |";
+    expect(warningsAtRaise(wrong, harmony)).toEqual([]);
+    const project = labelled(wrong, harmony);
+    expect(checkHarmony(project).diagnostics).toContainEqual(expect.objectContaining({
+      ruleId: "resolution.leading-tone", tick: 2 * project.ppq, voiceIds: ["soprano"],
+    }));
   });
 
   it("从标签的局部调取目标拼写并拒绝改根后指向另一调的标签", () => {
@@ -154,6 +95,6 @@ annotations {
     const project = (label: string) => compileScoreText(score.replace("MIDDLE", label)).project;
     expect(warningsAt(project('symbol=V42 localKey="Ab major"'), 1)).toEqual([]);
     expect(warningsAt(project('symbol=V42/VI localKey="C minor"'), 1)).toEqual([]);
-    expect(warningsAt(project("symbol=bV42/VI"), 1)).toEqual(["soprano"]);
+    expect(warningsAt(project("symbol=bV42/VI"), 1)).toEqual([]);
   });
 });

@@ -3,7 +3,6 @@ import { compileScoreText } from "../../../scoreText";
 import { checkHarmony } from "../../registry";
 
 const ruleId = "melody.augmented-interval";
-const warning = { messageKey: ruleId + ".增" };
 const spelling = { messageKey: ruleId + ".structural-spelling", message: expect.stringContaining("B♭") };
 
 function projectFor(entry = "Bb4", goalSeventh = "C#4") {
@@ -57,40 +56,40 @@ describe("Written resolution of the major-mode lowered fifth of iiø7", () => {
   });
 
   it("rejects a temporary change within the altered note, before the resolution", () => {
-    const project = projectFor();
+    const project = projectFor("A#4");
     project.chordTrack.regions = [];
     const startKey = project.keyEvents[0];
     project.keyEvents.push(
       { ...startKey, id: "detour", tick: project.ppq * 1.5, tonic: { step: "C", alter: 0 } },
       { ...startKey, id: "return", tick: project.ppq * 2 },
     );
-    expect(focus(project)).toMatchObject([warning]);
+    expect(focus(project)).not.toContainEqual(expect.objectContaining({ messageKey: spelling.messageKey }));
   });
 
   it("does not use an octave displacement as the seventh's resolution", () => {
-    const project = projectFor("Bb4", "C#5");
+    const project = projectFor("A#4", "C#5");
     project.chordTrack.regions = [];
-    expect(focus(project)).toMatchObject([warning]);
+    expect(focus(project)).not.toContainEqual(expect.objectContaining({ messageKey: spelling.messageKey }));
   });
 
   it("falls back when a manual or whole-track locked identity conflicts", () => {
-    const project = projectFor();
+    const project = projectFor("A#4");
     project.chordTrack.regions[1].identity = structuredClone(project.chordTrack.regions[0].identity);
-    expect(focus(project)).toMatchObject([warning]);
+    expect(focus(project)).not.toContainEqual(expect.objectContaining({ messageKey: spelling.messageKey }));
     for (const region of project.chordTrack.regions) {
       for (const reading of region.semantics!.interpretations) reading.source = "inferred";
     }
-    expect(focus(project)).toEqual([]);
+    expect(focus(project)).toMatchObject([spelling]);
     project.chordTrack.locked = true;
-    expect(focus(project)).toMatchObject([warning]);
+    expect(focus(project)).not.toContainEqual(expect.objectContaining({ messageKey: spelling.messageKey }));
   });
 
   it("does not infer through a marked entering note or an ornamental seventh resolution", () => {
-    const entry = projectFor();
+    const entry = projectFor("A#4");
     entry.satbTracks.find(track => track.voice === "soprano")!.notes[1].nonChordToneRole = "passing";
-    expect(focus(entry)).toMatchObject([warning]);
-    const seventh = projectFor();
+    expect(focus(entry)).not.toContainEqual(expect.objectContaining({ messageKey: spelling.messageKey }));
+    const seventh = projectFor("A#4");
     seventh.satbTracks.find(track => track.voice === "tenor")!.notes[1].nonChordToneRole = "suspension";
-    expect(focus(seventh)).toMatchObject([warning]);
+    expect(focus(seventh)).not.toContainEqual(expect.objectContaining({ messageKey: spelling.messageKey }));
   });
 });
