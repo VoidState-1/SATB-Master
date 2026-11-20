@@ -165,11 +165,14 @@ export function intervalName(interval: WrittenInterval) {
         : difference > 0
           ? "增"
           : "减";
+  const altered = quality === "增" || quality === "减";
+  const alterationCount = quality === "减" && !perfectClass ? -difference - 1 : Math.abs(difference);
+  const prefix = !altered || alterationCount < 2 ? "" : alterationCount === 2 ? "倍" : `${alterationCount}重`;
   return {
     number,
     quality,
-    label: `${quality}${number}度`,
-    altered: quality === "增" || quality === "减",
+    label: `${prefix}${quality}${number}度`,
+    altered,
   };
 }
 
