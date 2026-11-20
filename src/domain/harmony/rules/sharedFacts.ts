@@ -187,8 +187,11 @@ export function buildHarmonyContextFacts(
   const sliceByTick = (tick: number) =>
     analysis.slices.find((slice) => slice.tick <= tick && tick < slice.endTick);
   const sameHarmonyTransitionIds = [
+    // Sustained notes can span a new slice without making a musical motion.
     ...analysis.sliceTransitions
-      .filter((transition) => transition.sameHarmony && transition.contiguous)
+      .filter((transition) =>
+        transition.sameHarmony && transition.contiguous && transition.changedVoiceIds.length > 0,
+      )
       .map((transition) => transition.id),
     ...analysis.melodyTransitions
       .filter((transition) => transition.sameHarmony && transition.contiguous)

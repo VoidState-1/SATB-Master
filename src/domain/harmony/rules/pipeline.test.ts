@@ -188,6 +188,22 @@ describe("共享事实与诊断仲裁", () => {
     );
   });
 
+  it("持续音内重申调号或和弦只切分时间，同和声运动需要声部换音", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = 4 * PPQ;
+    project.keyEvents.push({ ...project.keyEvents[0], id: "same-key", tick: PPQ });
+    project.chordTrack.regions = [region("first", 0, 3 * PPQ), region("last", 3 * PPQ, PPQ)];
+    setLine(project, "soprano", [
+      { ...note("s-c", 0, "C", 5), durationTicks: 2 * PPQ },
+      { ...note("s-e", 2 * PPQ, "E", 5), durationTicks: 2 * PPQ },
+    ]);
+
+    const { sliceTransitions, contextFacts } = buildHarmonyAnalysis(project);
+    expect(sliceTransitions.map(({ current, id }) =>
+      [current.tick, contextFacts.sameHarmonyTransitionIds.includes(id)],
+    )).toEqual([[PPQ, false], [2 * PPQ, true], [3 * PPQ, false]]);
+  });
+
   it.each(["tonic", "dominant", "gap"] as const)("跨短标注的旋律跳进按其间实际和声处理：%s", middle => {
     const project = createEmptyProject();
     project.lengthTicks = 4 * PPQ;
