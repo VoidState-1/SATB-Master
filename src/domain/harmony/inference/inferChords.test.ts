@@ -87,6 +87,27 @@ B: | C#3/4 | D3/4 |
     });
   });
 
+  it("同调重申处切分可写回的和弦，普通重复起奏仍然合并", () => {
+    const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+at 1:3 key C major
+bars 1..1 {
+  S: | E5/4 E5/4 E5/4 E5/4 |
+  A: | C5/1 |
+  T: | G4/1 |
+  B: | C3/1 |
+}`);
+    for (const [fromTick, toTick] of [[0, 4 * PPQ], [PPQ / 2, 3 * PPQ]]) {
+      const result = inferChords(project, { fromTick, toTick });
+      const applied = applyChordInference(project, result, { mode: "fill-gaps" });
+      expect(applied.skipped).toEqual([]);
+      expect(applied.project.chordTrack.regions.map(region => [
+        region.startTick, region.startTick + region.durationTicks, region.identity.root.step,
+      ])).toEqual([[fromTick, 2 * PPQ, "C"], [2 * PPQ, toTick, "C"]]);
+    }
+  });
+
   it("按时间序列合并连续的同一功能，并保留不同功能区段", () => {
     const project = createEmptyProject();
     addHarmony(project);

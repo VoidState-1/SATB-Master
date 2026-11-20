@@ -137,6 +137,7 @@ export function buildChordInferenceRegions(
       index < observations.length &&
       !separateStarts?.has(observations[index].fromTick) &&
       observations[index - 1].toTick === observations[index].fromTick &&
+      observations[index - 1].key.tick === observations[index].key.tick &&
       observations[index - 1].key.mode === observations[index].key.mode &&
       observations[index - 1].key.tonic.step === observations[index].key.tonic.step &&
       observations[index - 1].key.tonic.alter === observations[index].key.tonic.alter &&
