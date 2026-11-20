@@ -15,6 +15,36 @@ bars 1..1 {
   return inferChords(project).regions;
 }
 
+describe("乐句和调性边界两侧的四六", () => {
+  const passing = `satb 1
+key F major
+meter 3/4
+bars 1..1 {
+  S: | F4/4 G4/4 A4/4 |
+  A: | C4/2. |
+  T: | F3/4 E3/4 F3/4 |
+  B: | A2/4 G2/4 F2/4 |
+}`;
+  const pedal = passing.replace("F4/4 G4/4 A4/4", "A4/4 Bb4/4 A4/4")
+    .replace("C4/2.", "C4/4 D4/4 C4/4").replace("F3/4 E3/4 F3/4", "F3/2.")
+    .replace("A2/4 G2/4 F2/4", "F2/2.");
+
+  it.each([{ text: passing, role: "passing64" }, { text: pedal, role: "pedal64" }])(
+    "只用同一句中的两个端点识别 $role", ({ text, role }) => {
+      const project = compileScoreText(text).project;
+      const middle = () => inferChords(project).regions.find(r => r.fromTick <= 960 && 960 < r.toTick);
+      expect(middle()?.selected?.semantics?.cadenceRole).toBe(role);
+      for (const tick of [960, 1440, 1920]) {
+        project.structure.phraseBoundaries = [{ id: "phrase-cut", source: "manual", tick, confidence: "certain" }];
+        expect(middle()?.selected?.semantics?.cadenceRole).not.toBe(role);
+      }
+      project.structure.phraseBoundaries = [];
+      project.keyEvents.push({ ...project.keyEvents[0], id: "new-key-event", tick: 1920 });
+      expect(middle()?.selected?.semantics?.cadenceRole).not.toBe(role);
+    },
+  );
+});
+
 describe("依据相邻和弦与实际低音判断四六用途", () => {
   it("弱拍 D–T64–D 按辅助四六写回主功能", () => {
     const middle = chords("D5/4 E5/4 D5/2", "B4/4 C5/4 B4/2", "G3/1", "G2/1")[1];

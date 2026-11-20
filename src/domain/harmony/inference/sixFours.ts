@@ -234,7 +234,10 @@ export function classifySixFours(
            observations[end].bass?.pitch.octave === observations[end + 1].bass?.pitch.octave) end++;
     const right = triads[end + 1];
     const left = triads[start - 1] ?? omittedPedalAnchor(observations, sets, start, end, middle, right, phraseBoundaries);
-    const role = left && right && roleBetween(left, middle, right, observations[start - 1], observations[start], observations[end + 1]);
+    const before = observations[start - 1], after = observations[end + 1];
+    const role = left && right && before && after && before.key.id === after.key.id &&
+      !phraseBoundaries.some(tick => before.fromTick < tick && tick <= after.fromTick) &&
+      roleBetween(left, middle, right, before, observations[start], after);
     if (role) {
       for (let i = start; i <= end; i++) {
         classified[i] = sets[i].filter(c => c.functionalBaseId !== "K46").map(c =>
