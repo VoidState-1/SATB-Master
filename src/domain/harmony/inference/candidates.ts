@@ -209,7 +209,7 @@ export function createFunctionalCandidate(
   } satisfies ChordInferenceCandidate;
 }
 
-function createFallbackCandidate(
+export function createAbsoluteCandidate(
   observation: ChordInferenceObservation,
   root: (typeof observation.soundingPitchClasses)[number],
   quality: ChordQuality,
@@ -271,7 +271,7 @@ export function buildChordInferenceCandidates(
   if (options.allowAbsoluteFallback) {
     for (const root of observation.soundingPitchClasses) {
       for (const quality of FALLBACK_QUALITIES) {
-        const candidate = createFallbackCandidate(observation, root, quality, options);
+        const candidate = createAbsoluteCandidate(observation, root, quality, options);
         if (candidate) candidates.push(candidate);
       }
     }
