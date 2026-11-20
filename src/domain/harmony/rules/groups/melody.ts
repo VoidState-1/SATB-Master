@@ -19,7 +19,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { chromaticPassingTransitionIds } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
-import { resolvesMinorBassDiminishedSeventh } from "./minorBassDiminishedSeventh";
+import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
 import { isRespeltDoubleDominantSeventh } from "./chromaticDoubleDominant";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { recognizesAugmentedSixthPreparation } from "./chromaticAugmentedSixth";
@@ -202,7 +202,7 @@ function alteredIntervalRule(
       Math.abs(transition.writtenInterval.semitones) === 0 ||
       passing?.has(transition.id) ||
       chain?.has(transition.current.id) ||
-      (expectedQuality === "减" && resolvesMinorBassDiminishedSeventh(context, transition)) ||
+      isMinorSixthChordBassLine(context, transition) ||
       (expectedQuality === "增" && (
         lowerDoubleDominantLeadingTone(context, transition) ||
         preparesDoubleDominantSeventhBass(context, transition) ||

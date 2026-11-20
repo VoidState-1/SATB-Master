@@ -3,21 +3,26 @@ import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi 
 import type { AnalysisKey, AnalysisNote, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 
-// Spasobin, ch. 12 §4(b–c), ex. 12-162: during iv6–V6 the descending
-// diminished seventh can replace the augmented second. The example continues to i.
-export function resolvesMinorBassDiminishedSeventh(context: HarmonyRuleContext, transition: MelodyTransition) {
+// Spasobin, ch. 12 §4(b–c): iv6 can approach V6 by raising the bass
+// sixth in IV6, or by dropping a diminished seventh and resolving to i.
+export function isMinorSixthChordBassLine(context: HarmonyRuleContext, transition: MelodyTransition) {
   const { voiceId, previous, current, contiguous, sameKey, writtenInterval } = transition;
-  if (voiceId !== "bass" || !contiguous || !sameKey || writtenInterval.diatonicSteps !== -6 ||
-      writtenInterval.semitones !== -9 || previous.nonChordToneRole || current.nonChordToneRole) return false;
+  const descendingSeventh = writtenInterval.diatonicSteps === -6 && writtenInterval.semitones === -9;
+  const raisedSixth = writtenInterval.diatonicSteps === 0 && writtenInterval.semitones === 1;
+  if (voiceId !== "bass" || (!descendingSeventh && !raisedSixth) || !contiguous || !sameKey ||
+      previous.nonChordToneRole || current.nonChordToneRole) return false;
 
   const key = context.keyAt(previous.startTick);
-  if (key?.mode !== "minor" ||
-      !pitchClassEquals(previous.pitch, scaleDegreePitchClass(key, 6)) ||
-      !pitchClassEquals(current.pitch, leadingTonePitchClass(key))) return false;
+  if (key?.mode !== "minor" || !pitchClassEquals(previous.pitch, scaleDegreePitchClass(key, 6))) return false;
 
   const next = context.notes({ voiceId, startingAfter: current.startTick }).first()?.note;
-  if (!next || next.startTick !== current.startTick + current.durationTicks || next.nonChordToneRole ||
-      !pitchClassEquals(next.pitch, key.tonic) || toMidi(next.pitch) - toMidi(current.pitch) !== 1) return false;
+  if (!next || next.startTick !== current.startTick + current.durationTicks || next.nonChordToneRole) return false;
+  const leading = leadingTonePitchClass(key);
+  const step = toMidi(next.pitch) - toMidi(current.pitch);
+  if (descendingSeventh) {
+    if (!pitchClassEquals(current.pitch, leading) || !pitchClassEquals(next.pitch, key.tonic) || step !== 1) return false;
+  } else if (!pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 6, 1)) ||
+      !pitchClassEquals(next.pitch, leading) || step !== 2) return false;
 
   if (context.analysis.project.keyEvents.some(event =>
     previous.startTick < event.tick && event.tick <= next.startTick &&
@@ -26,17 +31,17 @@ export function resolvesMinorBassDiminishedSeventh(context: HarmonyRuleContext, 
       !boundary.stale && previous.startTick < boundary.tick && boundary.tick <= next.startTick)) return false;
 
   const soloBass = context.analysis.project.satbTracks.every(track => track.voice === "bass" || !track.notes.length);
-  return supportsTriad(context, key, previous, current.startTick, 4, soloBass) &&
-    supportsTriad(context, key, current, next.startTick, 5, soloBass) &&
-    supportsTriad(context, key, next, next.startTick + 1, 1, soloBass);
+  return supportsTriad(context, key, previous, current.startTick, 4, "minor", soloBass) &&
+    supportsTriad(context, key, current, next.startTick, descendingSeventh ? 5 : 4, "major", soloBass) &&
+    supportsTriad(context, key, next, next.startTick + 1, descendingSeventh ? 1 : 5,
+      descendingSeventh ? "minor" : "major", soloBass);
 }
 
 function supportsTriad(
   context: HarmonyRuleContext, key: AnalysisKey, bass: AnalysisNote,
-  endTick: number, degree: 4 | 5 | 1, soloBass: boolean,
+  endTick: number, degree: 4 | 5 | 1, quality: "major" | "minor", soloBass: boolean,
 ) {
   const root = scaleDegreePitchClass(key, degree);
-  const quality = degree === 5 ? "major" : "minor";
   const tones = chordToneSpellings(root, quality);
   const functionName = degree === 4 ? "subdominant" : degree === 5 ? "dominant" : "tonic";
   return context.slices({ overlapping: { fromTick: bass.startTick, toTick: endTick } }).all(slice => {
@@ -58,7 +63,7 @@ function supportsTriad(
 
     // The printed bass exercise supplies no upper parts. With SATB evidence
     // require the written triad and the stated bass to be the sounding bottom.
-    if (soloBass) return true;
+    if (soloBass) return Object.values(slice.notes).length === 1;
     if (!slice.completeSatb) return false;
     const notes = Object.values(slice.notes);
     const lowest = toMidi(bass.pitch);
