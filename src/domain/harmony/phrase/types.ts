@@ -1,7 +1,9 @@
 import type {
+  CadenceAnnotation,
   ChordRegion,
   KeyEvent,
   MeterEvent,
+  NonChordToneRole,
   PhraseBoundary as ProjectPhraseBoundary,
   PhraseConfidence as ProjectPhraseConfidence,
 } from "../../project/types";
@@ -24,6 +26,7 @@ export interface PhraseEvidence {
     | "metric-support"
     | "new-material"
     | "continuous-following-harmony"
+    | "soprano-opening-reprise"
     | "regular-template-target"
     | "regular-template-boundary"
     | "semantic-ambiguity";
@@ -102,10 +105,13 @@ export interface PhraseAnalysisInput {
       readonly startTick: number;
       readonly durationTicks: number;
       readonly pitch?: SpelledPitch;
+      readonly nonChordToneRole?: NonChordToneRole;
     }[];
   }[];
   readonly chordRegions?: readonly ChordRegion[];
   readonly chordTrack?: {
     readonly regions: readonly ChordRegion[];
+    readonly cadenceAnnotations?: readonly Pick<CadenceAnnotation,
+      "kind" | "stale" | "fromTick" | "toTick">[];
   };
 }

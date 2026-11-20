@@ -25,12 +25,17 @@ import {
   isWrittenStep,
   pitchClassEquals,
   writtenInterval,
-  type KeyLike,
+  spelledPitchEquals,
   type SpelledPitch,
 } from "../../pitch";
 import { eventAtTick, orderedEvents } from "../../time";
 import type { ChordRegion } from "../../project/types";
 import { isCurrentPhraseBoundary, phraseInferenceFingerprint } from "./fingerprint";
+import { reprisedOpeningAfterDominant } from "./reprisedOpening";
+import {
+  followingRegion, measureAt, previousRegion, sameKey,
+  terminalRegionAt, voicesEndingAt, voicesStartingAt,
+} from "./timelineEvidence";
 
 export const REGULAR_PHRASE_POLICY = Object.freeze({
   maxAutomaticPhrases: 3,
@@ -180,15 +185,6 @@ function effectiveRange(project: PhraseAnalysisInput) {
   };
 }
 
-function measureAt(
-  timeline: ReturnType<typeof buildMetricTimeline>,
-  tick: number,
-) {
-  return timeline.measures.find(
-    (measure) => measure.startTick <= tick && tick < measure.endTick,
-  ) ?? timeline.measures.at(-1);
-}
-
 function measureLengthAt(
   timeline: ReturnType<typeof buildMetricTimeline>,
   tick: number,
@@ -220,18 +216,6 @@ function eventTicks(
   );
 }
 
-function voicesEndingAt(project: PhraseAnalysisInput, tick: number) {
-  return project.satbTracks?.filter((track) => track.notes.some(
-    (note) => note.startTick + note.durationTicks === tick,
-  )).length ?? 0;
-}
-
-function voicesStartingAt(project: PhraseAnalysisInput, tick: number) {
-  return project.satbTracks?.filter((track) => track.notes.some(
-    (note) => note.startTick === tick,
-  )).length ?? 0;
-}
-
 function hasSoundAcross(project: PhraseAnalysisInput, tick: number) {
   return project.satbTracks?.some((track) => track.notes.some(
     (note) => note.startTick < tick && note.startTick + note.durationTicks > tick,
@@ -249,28 +233,6 @@ function longestEndingDuration(project: PhraseAnalysisInput, tick: number) {
   return Math.max(0, ...(project.satbTracks?.flatMap((track) => track.notes
     .filter((note) => note.startTick + note.durationTicks === tick)
     .map((note) => note.durationTicks)) ?? []));
-}
-
-function terminalRegionAt(regions: readonly ChordRegion[], tick: number) {
-  return regions.find((region) => region.startTick + region.durationTicks === tick);
-}
-
-function previousRegion(regions: readonly ChordRegion[], region: ChordRegion | undefined) {
-  return region
-    ? regions.find((candidate) => candidate.startTick + candidate.durationTicks === region.startTick)
-    : undefined;
-}
-
-function followingRegion(regions: readonly ChordRegion[], tick: number) {
-  return regions.find((region) => region.startTick === tick);
-}
-
-function sameKey(left: KeyLike, right: KeyLike) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
-
-function sameWrittenPitch(left: SpelledPitch, right: SpelledPitch) {
-  return left.octave === right.octave && pitchClassEquals(left, right);
 }
 
 function sixFourBassPath(
@@ -291,7 +253,7 @@ function sixFourBassPath(
       const endTick = note.startTick + note.durationTicks;
       if (endTick <= coveredTo) continue;
       if (note.startTick > coveredTo || !note.pitch ||
-          (pitch && !sameWrittenPitch(pitch, note.pitch))) {
+          (pitch && !spelledPitchEquals(pitch, note.pitch))) {
         return undefined;
       }
       pitch = note.pitch;
@@ -350,7 +312,7 @@ function isProlongingSixFour(
   if (!bass) return false;
   const { before, during, after } = bass;
   if (role === "pedal64") {
-    return sameWrittenPitch(before, during) && sameWrittenPitch(during, after);
+    return spelledPitchEquals(before, during) && spelledPitchEquals(during, after);
   }
 
   const into = writtenInterval(before, during);
@@ -510,7 +472,16 @@ function candidateAtRatio(
       supportRank[right.facts.support] - supportRank[left.facts.support] ||
       left.snapPriority - right.snapPriority ||
       left.distance - right.distance || left.tick - right.tick);
-  const best = candidates[0];
+  let best = candidates[0];
+  if (!best && targetRatio === "half" && !project.structure?.phraseBoundaries?.some(boundary =>
+    boundary.source === "manual" || boundary.locked)) {
+    for (const item of nearby.sort((left, right) => left.distance - right.distance || left.tick - right.tick)) {
+      const reprise = reprisedOpeningAfterDominant({ project, timeline, regions, scoreStart: range.startTick }, item.tick);
+      if (!reprise) continue;
+      best = { ...item, facts: { ...item.facts, support: "moderate", evidence: [...item.facts.evidence, reprise] } };
+      break;
+    }
+  }
   if (!best) return undefined;
   const ratioLabel = targetRatio === "half"
     ? "1/2"
@@ -620,8 +591,10 @@ export function analyzePhrases(
   const selected = options.includeInferredBoundaries
     ? generated.template.boundaries.filter((candidate) => !knownTicks.has(candidate.tick))
     : [];
-  const inferred = selected.map((candidate) =>
-    inferredBoundaryFromCandidate(candidate, phraseInferenceFingerprint(project)));
+  const inferred = selected.map((candidate) => {
+    const usesReprise = candidate.evidence.some(item => item.code === "soprano-opening-reprise");
+    return inferredBoundaryFromCandidate(candidate, phraseInferenceFingerprint(project, usesReprise));
+  });
   const merged = inferred.length
     ? normalizeBoundaries({
         ...project,

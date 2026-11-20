@@ -1,4 +1,7 @@
+import { confirmedFullCadences, sameKey } from "./timelineEvidence";
 import type { PhraseAnalysisInput, PhraseBoundary } from "./types";
+
+const reprisePrefix = "opening-reprise:";
 
 function stableJson(value: unknown) {
   return JSON.stringify(value);
@@ -17,20 +20,25 @@ function hash(value: string) {
  * 乐句结构依赖节奏、音符、调性与和弦解释，而不依赖工程标题或规则配置。
  * 它只用于判断自动推导结果是否仍可被视为当前输入的产物，不作持久化 ID。
  */
-export function phraseInferenceFingerprint(project: PhraseAnalysisInput) {
+export function phraseInferenceFingerprint(project: PhraseAnalysisInput, usesReprise = false) {
   const chordRegions = project.chordRegions ?? project.chordTrack?.regions ?? [];
   const hasProlongingSixFour = chordRegions.some(({ semantics }) =>
     semantics?.cadenceRole === "passing64" || semantics?.cadenceRole === "pedal64");
-  return hash(
+  const keys = project.keyEvents?.map(({ tick, tonic, mode }) => ({ tick, tonic, mode }))
+    .sort((left, right) => left.tick - right.tick);
+  return (usesReprise ? reprisePrefix : "") + hash(
     stableJson({
       ppq: project.ppq,
       lengthTicks: project.lengthTicks,
       meterEvents: [...(project.meterEvents ?? [])].sort(
         (left, right) => left.tick - right.tick,
       ),
-      keyEvents: hasProlongingSixFour
-        ? project.keyEvents?.map(({ tick, tonic, mode }) => ({ tick, tonic, mode }))
-          .sort((left, right) => left.tick - right.tick)
+      keyEvents: usesReprise
+        ? keys?.filter((key, index) => index === 0 || !sameKey(keys[index - 1], key))
+        : hasProlongingSixFour ? keys : undefined,
+      crossingCadences: usesReprise
+        ? confirmedFullCadences(project).map(({ fromTick, toTick }) => ({ fromTick, toTick }))
+          .sort((left, right) => left.fromTick - right.fromTick || left.toTick - right.toTick)
         : undefined,
       // Keep the written pitch and octave with each note. Both six-four roles use the actual bass.
       satbTracks: [...(project.satbTracks ?? [])]
@@ -64,6 +72,7 @@ export function isCurrentPhraseBoundary(
     boundary.source === "manual" ||
     (!boundary.stale &&
       Boolean(boundary.inferenceFingerprint) &&
-      boundary.inferenceFingerprint === phraseInferenceFingerprint(project))
+      boundary.inferenceFingerprint === phraseInferenceFingerprint(project,
+        boundary.inferenceFingerprint?.startsWith(reprisePrefix)))
   );
 }

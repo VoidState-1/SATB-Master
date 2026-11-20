@@ -4,18 +4,21 @@ import {
 import { pitchClassEquals, toMidi, type SpelledPitchClass } from "../pitch";
 import type { AnalysisNote, AnalysisSlice } from "./analysis";
 
+type WrittenVoicingNote = Pick<AnalysisNote, "pitch" | "nonChordToneRole"> & Partial<Pick<AnalysisNote, "id">>;
+
 /** Check sounding members and explicit roles independently of register. */
 export function soundsCompleteWrittenMembers(
-  tones: readonly SpelledPitchClass[], notes: readonly AnalysisNote[], passingNoteId?: string,
+  tones: readonly SpelledPitchClass[], notes: readonly WrittenVoicingNote[], passingNoteId?: string,
 ) {
-  return notes.every(note => (!note.nonChordToneRole || (note.id === passingNoteId && note.nonChordToneRole === "passing")) &&
+  return notes.every(note => (!note.nonChordToneRole || (passingNoteId !== undefined &&
+    note.id === passingNoteId && note.nonChordToneRole === "passing")) &&
     tones.some(tone => pitchClassEquals(tone, note.pitch))) &&
     tones.every(tone => notes.some(note => pitchClassEquals(note.pitch, tone)));
 }
 
 /** Check the actual bass register, every sounding note and every required spelling. */
 export function soundsCompleteWrittenTones(
-  tones: readonly SpelledPitchClass[], notes: readonly AnalysisNote[], bass: AnalysisNote, passingNoteId?: string,
+  tones: readonly SpelledPitchClass[], notes: readonly WrittenVoicingNote[], bass: Pick<WrittenVoicingNote, "pitch">, passingNoteId?: string,
 ) {
   const lowest = toMidi(bass.pitch);
   return notes.every(note => toMidi(note.pitch) >= lowest) &&
@@ -23,7 +26,7 @@ export function soundsCompleteWrittenTones(
 }
 
 export function soundsCompleteWrittenChord(
-  identity: ChordIdentity, notes: readonly AnalysisNote[], bass: AnalysisNote, passingNoteId?: string,
+  identity: ChordIdentity, notes: readonly WrittenVoicingNote[], bass: Pick<WrittenVoicingNote, "pitch">, passingNoteId?: string,
 ) {
   return pitchClassEquals(bass.pitch, identity.bass) &&
     soundsCompleteWrittenTones(chordIdentityToneSpellings(identity), notes, bass, passingNoteId);
