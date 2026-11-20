@@ -19,6 +19,7 @@ export interface CadenceEvidence {
     | "dominant-to-tonic"
     | "predominant-to-dominant"
     | "predominant-to-tonic"
+    | "dorian-plagal-ending"
     | "dominant-to-alternative"
     | "ends-on-dominant"
     | "cadential64-chain"

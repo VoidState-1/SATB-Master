@@ -9,7 +9,7 @@ import {
   type KeyReference,
 } from "../../chordModel";
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
-import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
+import { leadingTonePitchClass, pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
 import { buildMeasures, measureAtTick, ticksPerBeat, type MeasureInfo } from "../../time";
 import { buildMetricTimeline, compareMetricStrength, metricPositionAt } from "../../rhythm/metric";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
@@ -23,6 +23,7 @@ import { isWrittenAuxiliaryReturn } from "./auxiliaryReturn";
 import { precedingDetachedDeception } from "./detachedDeceptive";
 import { articulatedEndingEvidence } from "./articulatedEnding";
 import { octaveTonicEndingEvidence } from "./octaveTonicEnding";
+import { dorianPlagalEnding } from "./dorianPlagalEnding";
 import type {
   AnalysisChord,
   AnalysisSlice,
@@ -484,10 +485,22 @@ function isImperfectPlagalClosing(
     (inversion === 1 && pitchClassEquals(soprano.pitch, root));
 }
 
+function isAuthenticTailDominant(
+  dominant: CadenceSpanFacts, slices: readonly AnalysisSlice[], localPlagalKey?: KeyReference,
+) {
+  if (!isFifthDegreeDominant(dominant)) return false;
+  if (!localPlagalKey) return true;
+  const frame = slices[dominant.span.sliceIndices.at(-1)!];
+  const leading = leadingTonePitchClass(localPlagalKey);
+  return frame && Object.values(frame.notes).some(note =>
+    !note.nonChordToneRole && pitchClassEquals(note.pitch, leading));
+}
+
 function hasAuthenticTailAnchor(
   analysis: Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById" | "slices" | "phraseSegments">,
   subdominant: CadenceSpanFacts,
   measureFor: (tick: number) => ReturnType<typeof measureAtTick>,
+  localPlagalKey?: KeyReference,
 ) {
   const spans = analysis.harmonySpans;
   const sourceIndex = spans.findIndex(span => span.id === subdominant.span.id);
@@ -496,14 +509,14 @@ function hasAuthenticTailAnchor(
     Object.keys(analysis.slices[sliceIndex].notes).length === 0);
   if (!sourceSpan || hasSilence(sourceSpan)) return false;
 
-  let following = factsFor(analysis, sourceSpan);
+  let following = localPlagalKey ? { ...subdominant, key: localPlagalKey } : factsFor(analysis, sourceSpan);
   for (let index = sourceIndex - 1; index >= 0; index--) {
     const span = spans[index];
     if (span.toTick !== following.span.fromTick || hasSilence(span)) return false;
     const preceding = factsFor(analysis, span);
     if (!connectionIsValid(preceding, following)) return false;
 
-    if (isFifthDegreeDominant(preceding) && following.isTonic) {
+    if (isAuthenticTailDominant(preceding, analysis.slices, localPlagalKey) && following.isTonic) {
       if (following.span.toTick === sourceSpan.fromTick) return true;
       const onset = following.span.fromTick;
       const end = following.span.toTick;
@@ -719,9 +732,10 @@ export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandi
         detachedAuthenticEvidence(previousPrevious, previous, terminal, analysis.slices,
           writtenBeatAt(previous.span.fromTick), measureFor(terminal.span.fromTick)?.startTick));
     const connectsToTerminal = previous && (connectionIsValid(previous, terminal) || landingGap);
+    const dorianPlagal = dorianPlagalEnding(facts, analysis.slices, metricAt, writtenBeatAt);
     // A single applied label can be tonicization. A local V–I needs the
     // bass formula, or an independently established same-key preparation.
-    if (!sameKey(terminal.key, keyAtTick(analysis, terminal.span.fromTick))) {
+    if (!dorianPlagal && !sameKey(terminal.key, keyAtTick(analysis, terminal.span.fromTick))) {
       if (!previous || !isFifthDegreeDominant(previous) || !terminal.isTonic || !connectsToTerminal) continue;
       const rootPositionClosure = isRootPosition(previous) && isRootPosition(terminal) && hasBassFormula(previous, terminal, 5, 1);
       const establishedInvertedClosure = previousPrevious && connectionIsValid(previousPrevious, previous) &&
@@ -753,19 +767,20 @@ export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandi
 
     if (
       previous &&
-      connectionIsValid(previous, terminal) &&
-      previous.isSubdominant &&
-      terminal.isTonic
+      (dorianPlagal || (connectionIsValid(previous, terminal) && previous.isSubdominant && terminal.isTonic))
     ) {
       const dominant = facts.at(-4);
       const firstTonic = previousPrevious;
+      // A borrowed IV can keep its parallel-major label while serving the minor tonic.
+      const localPlagalKey = dorianPlagal?.center === "local" ? terminal.key : undefined;
+      const plagalSource = localPlagalKey ? { ...previous, key: localPlagalKey } : previous;
       if (
         firstTonic?.isTonic &&
-        dominant && isFifthDegreeDominant(dominant) &&
+        dominant && isAuthenticTailDominant(dominant, analysis.slices, localPlagalKey) &&
         (previous.degree === 4 || (previous.degree === 2 && hasBassFormula(previous, terminal, 4, 1))) &&
         writtenBassMatches(previous) && writtenBassMatches(terminal) &&
         connectionIsValid(dominant, firstTonic) &&
-        connectionIsValid(firstTonic, previous) &&
+        connectionIsValid(firstTonic, plagalSource) &&
         completionFor(dominant, firstTonic) === "perfect"
       ) {
         const onset = firstTonic.span.fromTick;
@@ -795,13 +810,21 @@ export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandi
         }
       }
       const lastSourceSlice = analysis.slices[previous.span.sliceIndices.at(-1)!];
-      if (isImperfectPlagalClosing(previous, terminal, lastSourceSlice) &&
-          !hasAuthenticTailAnchor(analysis, previous, measureFor)) {
-        allCandidates.push(candidate(phrase, "full", [previous, terminal], [
+      const independent = dorianPlagal || isImperfectPlagalClosing(previous, terminal, lastSourceSlice);
+      if (independent && !hasAuthenticTailAnchor(analysis, previous, measureFor, localPlagalKey)) {
+        const evidence: CadenceEvidence[] = [
           phraseEvidence,
           { code: "predominant-to-tonic", value: "句末独立变格收束 S -> T" },
           { code: "stable-ending", value: "末端主功能稳定" },
-        ], { form: "plagal", completion: "imperfect", confidenceCap: "probable" }));
+        ];
+        if (dorianPlagal) evidence.push({
+          code: "dorian-plagal-ending", value: dorianPlagal.center === "local"
+            ? "已确立的小调中心内，大下属原位落实小主"
+            : "独立的小属至小主实奏确立多利亚中心，末端原位 IV–i",
+        }, { code: "bass-formula", value: "低音 4 -> 1" });
+        allCandidates.push(candidate(phrase, "full", [previous, terminal], evidence, {
+          form: "plagal", completion: dorianPlagal ? dorianPlagal.completion : "imperfect", confidenceCap: "probable",
+        }));
         continue;
       }
       if (firstTonic?.isTonic && previous.degree === 4 && phrase.endBoundary?.source !== "manual" &&
