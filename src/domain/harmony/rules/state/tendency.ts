@@ -7,7 +7,7 @@ import {
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
-import { readWrittenDominantSeventh } from "../../writtenDominantSeventh";
+import { readDominantSeventhExchange, readWrittenDominantSeventh } from "../../writtenDominantSeventh";
 import { resolvesInVoice } from "../../writtenResolution";
 import { crossesManualPhraseBoundary, resolvesDominantSixthSubstitution } from "../groups/dominantSixthSubstitution";
 import {
@@ -363,16 +363,11 @@ export function leadingToneBecomesNextDominantSeventh(environment: ObligationEnv
 
   const from = dominantSeventhAt(context, source);
   const to = dominantSeventhAt(context, target);
-  if (!from || !to || !pitchClassEquals(from.target, to.root) ||
-      !pitchClassEquals(leading.pitch, from.third)) return false;
-
+  if (!from || !to || !pitchClassEquals(leading.pitch, from.third)) return false;
+  const exchange = readDominantSeventhExchange(source, target, payload.voiceId, from.root);
+  if (!exchange || !pitchClassEquals(exchange.nextRoot, to.root)) return false;
   const nextTonic = { tonic: to.root, mode: payload.targetMode };
-  return obligationFollowsWrittenLeadingTone(environment, source, leading, landing, to.seventh, nextTonic) &&
-    VOICE_ORDER.some(voice => {
-      const seventh = source.notes[voice];
-      return seventh && pitchClassEquals(seventh.pitch, from.seventh) &&
-        resolvesInVoice(source, target, voice, to.third, -1);
-    });
+  return obligationFollowsWrittenLeadingTone(environment, source, leading, landing, to.seventh, nextTonic);
 }
 
 export function innerLeadingToneDescendsToFifth(

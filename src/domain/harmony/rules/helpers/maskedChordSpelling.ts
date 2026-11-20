@@ -6,6 +6,7 @@ import {
 } from "../../../pitch";
 import { VOICE_ORDER, type VoiceId } from "../../../project";
 import type { AnalysisSlice } from "../../analysis";
+import { canOmitDominantFifth } from "../../writtenDominantSeventh";
 
 export interface CompletedVoicing {
   root: SpelledPitchClass;
@@ -17,7 +18,9 @@ const letter = (index: number) => ((index % 7) + 7) % 7;
 
 /** Each written root is derived from an unmasked member. The tested pitch supplies only sound. */
 export function completeVoicings(
-  slice: AnalysisSlice, masked: VoiceId, qualities: readonly ChordQuality[], canSupplyMissingMember = true,
+  slice: AnalysisSlice, masked: VoiceId, qualities: readonly ChordQuality[],
+  { canSupplyMissingMember = true, allowOmittedDominantFifth = false }:
+    { canSupplyMissingMember?: boolean; allowOmittedDominantFifth?: boolean } = {},
 ) {
   const note = slice.notes[masked], bass = slice.notes.bass;
   if (!slice.completeSatb || !note || !bass) return [];
@@ -36,9 +39,12 @@ export function completeVoicings(
       const tones = chordToneSpellings(root, quality);
       if (tones.some((tone, i) => stepIndex(tone.step) !== letter(rootLetter + 2 * i))) continue;
       const member = tones.find(tone => pitchClassValue(tone) === sound);
-      if (!member || !peers.every(pitch => tones.some(tone => pitchClassEquals(pitch, tone))) ||
-          !tones.every(tone => (canSupplyMissingMember && pitchClassEquals(member, tone)) ||
-            peers.some(pitch => pitchClassEquals(pitch, tone)))) continue;
+      if (!member || !peers.every(pitch => tones.some(tone => pitchClassEquals(pitch, tone)))) continue;
+      const omitFifth = allowOmittedDominantFifth && quality === "dominant7" &&
+        canOmitDominantFifth(root, masked === "bass" ? member : bass.pitch, [member, ...peers]);
+      if (!tones.every((tone, index) => (index === 2 && omitFifth) ||
+          (canSupplyMissingMember && pitchClassEquals(member, tone)) ||
+          peers.some(pitch => pitchClassEquals(pitch, tone)))) continue;
       readings.push({ root, quality, member });
     }
   }

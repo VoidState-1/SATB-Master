@@ -1,5 +1,5 @@
 import { chordToneSpellings } from "../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval } from "../pitch";
+import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../pitch";
 import type { VoiceId } from "../project/types";
 import { VOICE_ORDER } from "../project/voice";
 import type { AnalysisSlice } from "./analysis";
@@ -138,11 +138,34 @@ export function readWrittenDominantSeventh(voicing: AnalysisSlice["notes"]) {
     const inversion = ([0, 1, 2, 3] as const).find(index => pitchClassEquals(tones[index], bass.pitch));
     if (inversion === undefined) continue;
     const complete = soundsCompleteWrittenMembers(tones, notes);
-    const omitsOnlyFifth = inversion === 0 &&
-      soundsCompleteWrittenMembers([root, third, seventh], notes) &&
-      notes.filter(note => pitchClassEquals(note.pitch, root)).length === 2;
+    const omitsOnlyFifth = canOmitDominantFifth(root, bass.pitch, notes.map(note => note.pitch)) &&
+      soundsCompleteWrittenMembers([root, third, seventh], notes);
     if (complete || omitsOnlyFifth) {
       return { root, inversion, third, seventh, target: scaleDegreePitchClass({ tonic: root, mode: "major" }, 4) };
+    }
+  }
+}
+
+/** In a four-part root-position V7 the doubled root can replace the fifth.
+ * Callers still have to establish the third and the seventh. */
+export function canOmitDominantFifth(root: SpelledPitchClass, bass: SpelledPitchClass, pitches: readonly SpelledPitchClass[]) {
+  return pitches.length === 4 && pitchClassEquals(root, bass) &&
+    pitches.filter(pitch => pitchClassEquals(pitch, root)).length === 2;
+}
+
+/** In a sequence of dominant sevenths, the old seventh descends to the third of the next chord.
+ * This is independent evidence for the other voice changing from third to seventh. */
+export function readDominantSeventhExchange(
+  before: WrittenFrame, after: WrittenFrame, inspectedVoice: VoiceId, root: SpelledPitchClass,
+) {
+  const [, third, , seventh] = chordToneSpellings(root, "dominant7");
+  const nextRoot = scaleDegreePitchClass({ tonic: root, mode: "major" }, 4);
+  const [, nextThird, , nextSeventh] = chordToneSpellings(nextRoot, "dominant7");
+  for (const voice of VOICE_ORDER) {
+    const departure = before.notes[voice], arrival = after.notes[voice];
+    if (voice !== inspectedVoice && departure && arrival && pitchClassEquals(departure.pitch, seventh) &&
+        resolvesInVoice(before, after, voice, nextThird, -1)) {
+      return { third, nextRoot, nextSeventh, resolvingSeventh: departure, resolvedThird: arrival };
     }
   }
 }

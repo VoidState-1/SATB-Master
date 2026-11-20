@@ -5,6 +5,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { diagnostic, intervalName, noteEvidence, voiceName } from "../helpers/core";
 import { isWrittenLowerNeighborMotion } from "../helpers/writtenLowerNeighborPair";
 import { hasSupportedChromaticPreparation } from "./chromaticUnison";
+import { readDominantSeventhHandoffSpelling } from "./dominantSeventhHandoffSpelling";
 import { readWrittenDominantSpelling } from "./writtenDominantSpelling";
 import { chromaticPassingMotions } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
@@ -38,21 +39,28 @@ function alteredIntervalRule(
   for (const transition of context.melodyTransitions().where(item => item.contiguous)) {
     const named = intervalName(transition.writtenInterval);
     if (augmented && named.quality !== "减") {
-      const spelling = readWrittenDominantSpelling(context, transition);
+      const handoff = readDominantSeventhHandoffSpelling(context, transition);
+      const spelling = handoff ?? readWrittenDominantSpelling(context, transition);
       if (spelling) {
         const notes = [transition.previous, transition.current];
         const expected = [spelling.previous, spelling.current];
         const incorrect = notes.flatMap((note, i) => pitchClassEquals(note.pitch, expected[i])
           ? [] : [`${formatSpelledPitch(note.pitch)} 宜写为 ${formatPitchClass(expected[i])}`]);
         if (incorrect.length) {
+          const evidence = [noteEvidence(transition.previous, "前一音"), noteEvidence(transition.current, "当前音")];
+          if (handoff) evidence.push(
+            noteEvidence(handoff.resolvingSeventh, "另一声部的原七音"),
+            noteEvidence(handoff.resolvedThird, "同次进行解决到新三音"),
+          );
           diagnostics.push(diagnostic(ruleId, transition.current.startTick,
             transition.current.startTick + transition.current.durationTicks, [transition.voiceId], notes,
             "和声性半音的拼写", incorrect.join("，") + "。",
             {
               melodyTransitionId: transition.id,
+              motionSameHarmony: handoff ? false : undefined,
               messageKey: `${ruleId}.structural-spelling`,
               params: { intervalNumber: named.number, quality: named.quality, semitones: 1 },
-              evidence: [noteEvidence(transition.previous, "前一音"), noteEvidence(transition.current, "当前音")],
+              evidence,
             }));
         }
         continue;

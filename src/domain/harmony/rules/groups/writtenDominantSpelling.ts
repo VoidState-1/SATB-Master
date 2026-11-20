@@ -141,7 +141,7 @@ export function readWrittenDominantSpelling(context: HarmonyRuleContext, transit
     .filter(chord => pitchClassEquals(chord.member, target.notes[voiceId]!.pitch));
   if (!goals.length) return;
   const atAttack = completeVoicings(middle, voiceId, dominantQualities,
-    hasPeerAttack(context, middle, voiceId, start));
+    { canSupplyMissingMember: hasPeerAttack(context, middle, voiceId, start) });
   const resolvesToTonic = (chord: CompletedVoicing, goal: CompletedVoicing, requireUnmarked = false) =>
     supportsTonic(middle, target, voiceId, chord, goal.root, requireUnmarked) &&
     resolvesSeventh(context, middle, target, voiceId, chord, goal, requireUnmarked) &&
@@ -152,7 +152,7 @@ export function readWrittenDominantSpelling(context: HarmonyRuleContext, transit
   if (!currentMember) return;
 
   const antecedents = completeVoicings(before, voiceId, tertianQualities,
-    hasPeerAttack(context, before, voiceId, previous.startTick));
+    { canSupplyMissingMember: hasPeerAttack(context, before, voiceId, previous.startTick) });
   const previousMember = agreedMember(antecedents);
   if (previousMember?.step !== currentMember.step ||
       !doublesMoveAgainstAlteration(before, middle, voiceId, previousMember, transition.writtenInterval.semitones)) return;
