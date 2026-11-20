@@ -21,6 +21,7 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { structuralTriadVoicing } from "../helpers/passingTriadVoicing";
 import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { leadingToneForFunction } from "../services/harmony";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
@@ -139,17 +140,18 @@ export function allVoicesSimilarRule(context: HarmonyRuleContext) {
 function triadVoicingFacts(context: HarmonyRuleContext, inversion: 0 | 1 | 2) {
   return context
     .slices()
-    .selectMany((slice) => {
-      const chord = slice.chord;
+    .selectMany((end) => {
+      const chord = end.chord;
       if (
         !chord ||
-        !slice.completeSatb ||
-        context.sliceTransitions({ fromSliceIndex: slice.index }).first()
+        !end.completeSatb ||
+        context.sliceTransitions({ fromSliceIndex: end.index }).first()
           ?.sameHarmony ||
         !isPlainTriad(chord) ||
         chordInversion(chord) !== inversion
       )
         return [];
+      const slice = inversion === 2 ? end : structuralTriadVoicing(context, end);
       const tones = chordIdentityToneSpellings(chord.identity);
       const sounding = activeNotes(slice);
       const { active, counts } = chordToneCounts(
