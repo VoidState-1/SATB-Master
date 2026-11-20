@@ -13,6 +13,7 @@ import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../
 import { buildMeasures, measureAtTick, ticksPerBeat, type MeasureInfo } from "../../time";
 import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
+import { detachedAuthenticEvidence } from "./detachedAuthentic";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
 import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
 import { closingTonicPedalEvidence } from "./tonicPedalEnding";
@@ -594,7 +595,9 @@ export function detectCadences(
       previous.span.toTick < terminal.span.fromTick &&
       (dominantLandingGapEvidence(previous, terminal, analysis.slices, metricAt, analysis.project.ppq) ??
         tonicBassSuspensionEvidence(previous, terminal, analysis.slices, metricAt,
-          writtenBeatAt(previous.span.toTick)));
+          writtenBeatAt(previous.span.toTick)) ??
+        detachedAuthenticEvidence(previousPrevious, previous, terminal, analysis.slices,
+          writtenBeatAt(previous.span.fromTick), measureFor(terminal.span.fromTick)?.startTick));
     const connectsToTerminal = previous && (connectionIsValid(previous, terminal) || landingGap);
     // A single applied label can be tonicization. A local V–I needs the
     // bass formula, or an independently established same-key preparation.
