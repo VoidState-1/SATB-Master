@@ -1,36 +1,27 @@
 import { isWrittenLowerNeighborMotion } from "../helpers/writtenLowerNeighborPair";
 import type { HarmonyAnalysis, MelodyTransition } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
-import { chordIdentityToneSpellings } from "../../../chordModel";
 import {
   formatSpelledPitch,
-  leadingTonePitchClass,
-  pitchClassEquals,
-  scaleDegreePitchClass,
   toMidi,
 } from "../../../pitch";
 import {
   diagnostic,
-  hasExactPitch,
   intervalName,
   noteEvidence,
   voiceName,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { preparesAlteredDominantFifth } from "./alteredDominantFifth";
-import { preparesWrittenAppliedSeventh } from "./chromaticAppliedResolution";
-import { subdominantSeventhBassEntry } from "./heldDoubleDominantContinuation";
+import { hasSupportedChromaticPreparation } from "./chromaticUnison";
 import { chromaticPassingTransitionIds } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
 import { resolvesContextualMinorDominantSixth } from "./dominantSixthSubstitution";
 import { isResolvedDominantSixthBass } from "./resolvedDominantSixthBass";
-import { isRespeltDoubleDominantSeventh, preparesWrittenRespeltDoubleDominant, resolvesRaisedSecondApproach } from "./chromaticDoubleDominant";
-import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
-import { recognizesAugmentedSixthPreparation, resolvesGermanSixthDiminishedThird } from "./chromaticAugmentedSixth";
+import { resolvesRaisedSecondApproach } from "./chromaticDoubleDominant";
+import { resolvesGermanSixthDiminishedThird } from "./chromaticAugmentedSixth";
 import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
-import { lowersSixthInSubdominant } from "./harmonicMajorSubdominant";
 import { sameHarmonyAtMelodicAttack } from "../helpers/motionHarmony";
 
 function validMelodyTransitions(
@@ -147,63 +138,6 @@ export function tritoneRule(context: HarmonyRuleContext) {
   return evaluateMelodyTransitionRule(context, TRITONE_POLICY);
 }
 
-function preparesChromaticDominant(context: HarmonyRuleContext, transition: MelodyTransition) {
-  const { previous, current, writtenInterval } = transition;
-  if (!transition.sameKey || writtenInterval.diatonicSteps !== 0 || Math.abs(writtenInterval.semitones) !== 1) return false;
-  const heldBass = subdominantSeventhBassEntry(context, transition);
-  if (heldBass !== undefined) return heldBass;
-  if (preparesWrittenAppliedSeventh(context, transition)) return true;
-  const targetSlice = context.sliceAt(current.startTick);
-  const target = targetSlice?.chord;
-  if (!targetSlice || !target || target.startTick !== current.startTick) return false;
-  const source = context.sliceAt(current.startTick - 1)?.chord;
-  if (!source || !hasExactPitch(previous, chordIdentityToneSpellings(source.identity)) ||
-      !hasExactPitch(current, chordIdentityToneSpellings(target.identity))) return false;
-  const resolution = context.harmony.primaryInterpretation(target);
-  if (resolution.status !== "resolved") return false;
-  const meaning = resolution.value;
-  const key = meaning.localKey ?? targetSlice.key;
-  const augmentedSixth = target.identity.structure.kind === "augmented-sixth";
-  const kind = meaning.designation?.kind;
-  const targetsDominant = kind === "double-dominant" || kind === "double-dominant-leading-tone" ||
-    (meaning.appliedTarget?.degree === 5 && (kind === "applied-dominant" || kind === "applied-leading-tone"));
-  if (writtenInterval.semitones === -1) {
-    return augmentedSixth && key.mode === "major" &&
-      pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 6, -1));
-  }
-  if (augmentedSixth || targetsDominant)
-    return pitchClassEquals(current.pitch, scaleDegreePitchClass(key, 4, 1));
-
-  if (!meaning.appliedTarget || (kind !== "applied-dominant" && kind !== "applied-leading-tone")) return false;
-  const tonic = scaleDegreePitchClass(key, meaning.appliedTarget.degree);
-  if (!pitchClassEquals(current.pitch, leadingTonePitchClass({ tonic, mode: "major" }))) return false;
-
-  const following = context.notes({ voiceId: transition.voiceId, startingAfter: current.startTick }).first()?.note;
-  const landing = context.sliceAt(target.startTick + target.durationTicks)?.chord;
-  return Boolean(following && landing &&
-    following.startTick === current.startTick + current.durationTicks &&
-    following.startTick === landing.startTick &&
-    !previous.nonChordToneRole && !current.nonChordToneRole && !following.nonChordToneRole &&
-    pitchClassEquals(landing.identity.root, tonic) &&
-    pitchClassEquals(following.pitch, tonic) &&
-    toMidi(following.pitch) === toMidi(current.pitch) + 1);
-}
-
-function lowerDoubleDominantLeadingTone(context: HarmonyRuleContext, transition: MelodyTransition) {
-  if (!transition.sameKey || transition.writtenInterval.diatonicSteps !== 0 ||
-      transition.writtenInterval.semitones !== -1) return false;
-  const proof = readDoubleDominantSeventhLanding(context, transition.current.startTick);
-  return proof?.leading.voiceId === transition.voiceId && proof.leading.note.id === transition.previous.id &&
-    proof.leadingArrival.id === transition.current.id;
-}
-
-function preparesDoubleDominantSeventhBass(context: HarmonyRuleContext, transition: MelodyTransition) {
-  return transition.voiceId === "bass" && transition.sameKey &&
-    transition.writtenInterval.diatonicSteps === 0 && transition.writtenInterval.semitones === -1 &&
-    isDoubleDominantSeventhBassPreparation(context, transition.previous, transition.current);
-}
-
-
 function alteredIntervalRule(
   context: HarmonyRuleContext,
   ruleId: "melody.augmented-interval" | "melody.diminished-interval",
@@ -226,15 +160,7 @@ function alteredIntervalRule(
       (expectedQuality === "减" && resolvesRaisedSecondApproach(context, transition)) ||
       (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
       (expectedQuality === "减" && isWrittenLowerNeighborMotion(context, transition)) ||
-      (expectedQuality === "增" && (
-        preparesAlteredDominantFifth(context, transition) ||
-        lowersSixthInSubdominant(context, transition) ||
-        lowerDoubleDominantLeadingTone(context, transition) ||
-        preparesDoubleDominantSeventhBass(context, transition) ||
-        preparesChromaticDominant(context, transition) ||
-        isRespeltDoubleDominantSeventh(context, transition) ||
-        preparesWrittenRespeltDoubleDominant(context, transition) ||
-        recognizesAugmentedSixthPreparation(context, transition)))
+      (expectedQuality === "增" && hasSupportedChromaticPreparation(context, transition))
     )
       continue;
     const attack = context.sliceAt(transition.current.startTick);
