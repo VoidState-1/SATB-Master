@@ -45,6 +45,45 @@ describe("有准备的延留只在已证实的当前和弦区间生效", () => {
     expect(single.satbTracks.find(track => track.voice === "tenor")!.notes[0].nonChordToneRole).toBeUndefined();
   });
 
+  const appliedNinth: Example = {
+    soprano: "E5/1~ | E5/4 D5/2.", alto: "G4/1 | F#4/1",
+    tenor: "C4/1 | A3/1", bass: "C3/1 | D3/1", harmony: "I/1 | V/V/1",
+  };
+
+  it.each([
+    ["副属大三和弦", appliedNinth],
+    ["第二级小三和弦", { ...appliedNinth, alto: "G4/1 | F4/1", harmony: "I/1 | ii/1" }],
+  ] as const)("单 9–8 可解决到%s", (_name, example) => {
+    const project = fixture(example);
+    expect(project.chordTrack.regions).toHaveLength(2);
+    expect(unclassified(project)).toEqual([]);
+    expect(project.satbTracks.flatMap(t => t.notes).every(n => !n.nonChordToneRole)).toBe(true);
+  });
+
+  it.each<[string, Example]>([
+    ["准备标签与当时实音不合", { ...appliedNinth, harmony: "vi/1 | V/V/1" }],
+    ["解决前被重新起奏", { ...appliedNinth, soprano: "E5/1 | E5/4 D5/2." }],
+    ["解决落在七和弦上", { ...appliedNinth, harmony: "I/1 | V7/V/1" }],
+    ["解决后只有根、三音", { ...appliedNinth, tenor: "C4/1 | D4/1" }],
+    ["低音不在解决和弦的根音上", { ...appliedNinth, bass: "C3/1 | F#3/1" }],
+  ])("%s 时单九音不获豁免", (_name, example) => {
+    expect(unclassified(fixture(example))).toContainEqual(expect.objectContaining({
+      tick: 4, voiceIds: expect.arrayContaining(["soprano"]),
+    }));
+  });
+
+  it("单九音仅豁免延留区间，保留准备以前和解决以后的外音", () => {
+    const project = fixture({
+      soprano: "E5/1~ | E5/4 D5/4 G5/2", alto: "G4/1 | F#4/1",
+      tenor: "B3/2 C4/2 | A3/1", bass: "G3/2 C3/2 | D3/1",
+      harmony: "V/2 I/2 | V/V/1",
+    });
+    expect(unclassified(project)).toEqual([
+      { tick: 0, endTick: 2, voiceIds: ["soprano"] },
+      { tick: 6, endTick: 8, voiceIds: ["soprano"] },
+    ]);
+  });
+
   it("保留解决之后同一主和弦上的其他未解释外音", () => {
     expect(unclassified(fixture({ soprano: "D5/1 | C5/2 F5/2" }))).toEqual([
       { tick: 6, endTick: 8, voiceIds: ["soprano"] },
@@ -161,7 +200,8 @@ describe("有准备的延留只在已证实的当前和弦区间生效", () => {
     ["主和弦覆盖在解决前截断", { harmony: "V7/1 | I/4 r/2." }],
     ["主和弦换到另一和声再解决", { harmony: "V7/1 | I/4 vi/2." }],
     ["准备和弦空缺", { harmony: "r/1 | I/1" }],
-    ["单独 9–8", { tenor: "F4/1 | E4/1", soprano: "D5/1~ | D5/4 C5/2." }],
+    ["只有二度而非九度", { tenor: "F4/1 | E4/1", soprano: "D4/1~ | D4/4 C4/2.", bass: "G3/1 | C4/1" }],
+    ["九音解决时另一声部也改变", { tenor: "F4/1 | C4/4 E4/2.", soprano: "D5/1~ | D5/4 C5/2." }],
     ["强位完整实奏了替代和弦 F/C", { alto: "B4/1 | A4/4 G4/2." }],
     ["准备后的空白跨过整个弱拍", { soprano: "D5/2. E5/4 | C5/1", harmony: "V7/2. r/4 | I/1" }],
   ])("%s 仍由 D.1 报警", (_label, example) => {

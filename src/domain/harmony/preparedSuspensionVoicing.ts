@@ -1,4 +1,5 @@
-import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, writtenInterval, type KeyLike } from "../pitch";
+import { chordToneSpellings } from "../chordModel";
+import { isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type KeyLike } from "../pitch";
 import type { NoteEvent, VoiceId } from "../project/types";
 import { VOICE_ORDER } from "../project/voice";
 import { compareMetricStrength, type MetricPosition } from "../rhythm/metric";
@@ -22,7 +23,7 @@ interface PreparedSuspensionInput {
   readonly key: KeyLike;
   readonly beatTicks: number;
   readonly metricAt: (tick: number) => MetricPosition | undefined;
-  readonly preparationAt: (index: number) => PreparationSupport;
+  readonly preparationAt: (index: number, singleNinth: boolean) => PreparationSupport;
 }
 
 interface SuspensionMotion {
@@ -37,6 +38,7 @@ function findSoundedPreparation(
   onsetTick: number,
   duration: number,
   motions: readonly SuspensionMotion[],
+  singleNinth: boolean,
 ) {
   const prepBass = slices[onsetIndex - 1]?.notes.bass;
   if (!prepBass) return;
@@ -51,7 +53,8 @@ function findSoundedPreparation(
         slice.notes.bass?.id !== prepBass.id ||
         !motions.every(({ voiceId, noteId }) => slice.notes[voiceId]?.id === noteId)) return;
 
-    const support = preparationAt(index);
+    const support = preparationAt(index, singleNinth);
+    if (singleNinth && (support !== "confirmed" || notes.some(note => note.startTick > onsetTick - duration))) return;
     const pitches = notes.map(note => note.pitch);
     const tertian = hasCompleteWrittenTertianVoicing(pitches);
     if (support === "blocked") return;
@@ -79,8 +82,19 @@ function findSoundedPreparation(
   }
 }
 
-/** Verify a synchronous 4–3, optionally with a 9–8, over a newly attacked
- * tonic bass. Durations are measured between real note events, even when
+/** Check a complete root-position major/minor triad in its actual register. */
+function soundedRootTriad(notes: SoundingVoices, bass: SoundingNote) {
+  const pitches = VOICE_ORDER.map(voice => notes[voice]!.pitch);
+  if (pitches.some(pitch => toMidi(pitch) < toMidi(bass.pitch))) return false;
+  return (["major", "minor"] as const).some(quality => {
+    const tones = chordToneSpellings(bass.pitch, quality);
+    return tones.every(tone => pitches.some(pitch => pitchClassEquals(pitch, tone))) &&
+      pitches.every(pitch => tones.some(tone => pitchClassEquals(pitch, tone)));
+  });
+}
+
+/** Verify a prepared tonic 4–3 (possibly doubled by 9–8), or one 9–8
+ * resolving into a complete written root-position triad. Durations are measured between real note events, even when
  * the caller's timeline includes cuts introduced by chord annotations. */
 export function verifyPreparedSuspensionVoicing(input: PreparedSuspensionInput) {
   const { slices, onsetIndex, key, beatTicks, metricAt } = input;
@@ -88,7 +102,7 @@ export function verifyPreparedSuspensionVoicing(input: PreparedSuspensionInput) 
   const bass = onset?.notes.bass;
   const beforeBass = slices[onsetIndex - 1]?.notes.bass;
   if (!onset || !bass || !beforeBass || bass.startTick !== onset.fromTick ||
-      !pitchClassEquals(bass.pitch, key.tonic) || pitchClassEquals(bass.pitch, beforeBass.pitch)) return;
+      pitchClassEquals(bass.pitch, beforeBass.pitch)) return;
   const active = Object.values(onset.notes).filter(note => note !== undefined);
   if (active.length !== VOICE_ORDER.length ||
       hasCompleteWrittenTertianVoicing(active.map(note => note.pitch))) return;
@@ -129,18 +143,21 @@ export function verifyPreparedSuspensionVoicing(input: PreparedSuspensionInput) 
         descent.diatonicSteps !== -1 || descent.semitones >= 0) return;
 
     const steps = writtenInterval(bass.pitch, note.pitch).diatonicSteps;
-    const isFourth = steps >= 3 && steps % 7 === 3 &&
+    const isFourth = pitchClassEquals(bass.pitch, key.tonic) && steps >= 3 && steps % 7 === 3 &&
       pitchClassEquals(note.pitch, scaleDegreePitchClass(key, 4)) &&
       pitchClassEquals(landing.pitch, scaleDegreePitchClass(key, 3));
     const isNinth = steps >= 8 && steps % 7 === 1 &&
-      pitchClassEquals(note.pitch, scaleDegreePitchClass(key, 2)) &&
-      pitchClassEquals(landing.pitch, key.tonic);
+      pitchClassEquals(landing.pitch, bass.pitch);
     if (!isFourth && !isNinth) return;
     motions.push({ voiceId, noteId: note.id, resolutionNoteId: landing.id, figure: isFourth ? "4-3" : "9-8" });
   }
-  if (motions.length > 2 || motions.filter(motion => motion.figure === "4-3").length !== 1) return;
+  const singleNinth = motions.length === 1 && motions[0].figure === "9-8";
+  if (singleNinth) {
+    if (rearticulatedVoiceIds.length || !soundedRootTriad(resolution.notes, bass)) return;
+  } else if (motions.length > 2 || motions.filter(motion => motion.figure === "4-3").length !== 1 ||
+      motions.some(m => m.figure === "9-8" && !pitchClassEquals(onset.notes[m.voiceId]!.pitch, scaleDegreePitchClass(key, 2)))) return;
 
-  const preparation = findSoundedPreparation(input, fromTick, duration, motions);
+  const preparation = findSoundedPreparation(input, fromTick, duration, motions, singleNinth);
   if (!preparation) return;
-  return { fromTick, toTick, ...preparation, resolutionIndex, motions, heldVoiceIds, rearticulatedVoiceIds };
+  return { fromTick, toTick, singleNinth, ...preparation, resolutionIndex, motions, heldVoiceIds, rearticulatedVoiceIds };
 }

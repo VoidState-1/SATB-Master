@@ -29,6 +29,7 @@ function preparationSupport(
   slice: AnalysisSlice,
   onset: AnalysisSlice,
   key: KeyLike,
+  singleNinth: boolean,
 ): PreparationSupport {
   if (!slice.completeSatb || slice.key.id !== onset.key.id) return "blocked";
   const notes = activeNotes(slice);
@@ -36,6 +37,14 @@ function preparationSupport(
   const chord = slice.chord;
   if (!chord) return "surface";
 
+  if (singleNinth) {
+    const tones = chordIdentityToneSpellings(chord.identity);
+    const reading = context.harmony.primaryInterpretation(chord);
+    const prepKey = reading.status === "resolved" ? reading.value.localKey ?? slice.key : slice.key;
+    return sameKey(prepKey, key) && pitchClassEquals(slice.notes.bass!.pitch, chord.identity.bass) &&
+      notes.every(({ note }) => context.harmony.isWrittenChordTone(note, chord)) &&
+      tones.every(tone => notes.some(({ note }) => pitchClassEquals(note.pitch, tone))) ? "confirmed" : "blocked";
+  }
   const localKey = functionalKey(context, slice, 5);
   const { identity } = chord;
   const { structure } = identity;
@@ -51,30 +60,37 @@ function preparationSupport(
 }
 
 /** Limit the score proof to the part of the note that is outside the
- * annotated tonic. The caller leaves all persisted roles untouched. */
+ * annotated harmony. The caller leaves all persisted roles untouched. */
 export function heldSuspensionsAt(context: HarmonyRuleContext, slice: AnalysisSlice): readonly string[] {
   const { chord } = slice;
   const bass = slice.notes.bass;
   if (!chord || !bass || !slice.completeSatb) return [];
-  const key = functionalKey(context, slice, 1);
   const { root, bass: writtenBass, structure } = chord.identity;
-  if (!key || structure.kind !== "tertian" || structure.quality !== key.mode ||
+  if (structure.kind !== "tertian" || (structure.quality !== "major" && structure.quality !== "minor") ||
       structure.alterations.length || structure.extensions.length ||
-      !pitchClassEquals(root, key.tonic) || !pitchClassEquals(root, writtenBass)) return [];
+      !pitchClassEquals(root, bass.pitch) || !pitchClassEquals(root, writtenBass)) return [];
 
   // Use the actual bass attack, since a label can divide a held voicing
   // into several slices without adding any musical attack.
   const onset = context.sliceAt(bass.startTick);
   if (!onset || onset.tick !== bass.startTick) return [];
-  const isSameTonic = (part: AnalysisSlice) => {
+  const tones = chordIdentityToneSpellings(chord.identity);
+  const singleNinth = activeNotes(onset).some(({ note }) => pitchClassEquals(note.pitch, tones[1]));
+  const targetKey = (part: AnalysisSlice) => {
+    if (!singleNinth) return functionalKey(context, part, 1);
+    const reading = part.chord && context.harmony.primaryInterpretation(part.chord);
+    return reading?.status === "resolved" ? reading.value.localKey ?? part.key : part.key;
+  };
+  const key = targetKey(slice);
+  if (!key || (!singleNinth && (structure.quality !== key.mode || !pitchClassEquals(root, key.tonic)))) return [];
+  const isSameTarget = (part: AnalysisSlice) => {
     if (part.key.id !== onset.key.id || !part.chord ||
         !chordIdentityEquals(part.chord.identity, chord.identity)) return false;
-    const localKey = functionalKey(context, part, 1);
+    const localKey = targetKey(part);
     return localKey !== undefined && sameKey(localKey, key);
   };
-  if (!isSameTonic(onset)) return [];
-  const tones = chordIdentityToneSpellings(chord.identity);
-  if (activeNotes(onset).some(({ note }) => note.nonChordToneRole || pitchClassEquals(note.pitch, tones[1])))
+  if (!isSameTarget(onset)) return [];
+  if (activeNotes(onset).some(({ note }) => note.nonChordToneRole))
     return [];
 
   const beatTicks = context.analysis.project.ppq;
@@ -89,15 +105,15 @@ export function heldSuspensionsAt(context: HarmonyRuleContext, slice: AnalysisSl
     key,
     beatTicks,
     metricAt: context.metric.positionAt,
-    preparationAt: index => preparationSupport(context, timeline[index], onset, key),
+    preparationAt: (index, loneNinth) => preparationSupport(context, timeline[index], onset, key, loneNinth),
   });
-  if (!verified || slice.tick < verified.fromTick || slice.endTick > verified.toTick) return [];
+  if (!verified || verified.singleNinth !== singleNinth || slice.tick < verified.fromTick || slice.endTick > verified.toTick) return [];
 
   const prep = timeline[verified.preparationIndex];
   const resolution = timeline[verified.resolutionIndex];
   if (context.analysis.phraseBoundaries.some(boundary =>
     !boundary.stale && prep.tick < boundary.tick && boundary.tick <= verified.toTick,
-  ) || !timeline.slice(onsetIndex, verified.resolutionIndex + 1).every(isSameTonic)) return [];
+  ) || !timeline.slice(onsetIndex, verified.resolutionIndex + 1).every(isSameTarget)) return [];
 
   const resolvedNotes = activeNotes(resolution);
   if (!resolvedNotes.every(({ note }) => !note.nonChordToneRole &&
