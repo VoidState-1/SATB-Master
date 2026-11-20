@@ -79,7 +79,9 @@ function evaluateMelodyTransitionRule(
         {
           params: { semitones: interval },
           motionSameHarmony: policy.id === "melody.large-leap"
-            ? sameHarmonyAtMelodicAttack(context, transition.current.startTick, transition.voiceId) : undefined,
+            ? sameHarmonyAtMelodicAttack(context, transition.current.startTick, transition.voiceId,
+                transition.voiceId === "bass" && writtenName.number === 6 && writtenName.quality === "小")
+            : undefined,
           evidence: [
             noteEvidence(transition.previous, "前一音"),
             noteEvidence(transition.current, "当前音"),
