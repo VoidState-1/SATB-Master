@@ -80,6 +80,7 @@ export function draftForFunctionalTemplate(
     ...(template.appliedTarget
       ? applyFunctionalTarget(draft, functionalTargetForDegree(template.appliedTarget), key.mode)
       : draft),
+    ...(template.alterations ? { alterations: [...template.alterations] } : {}),
     interpretationId: `inferred:${definition.id}:${form}:${expectedInversion}${template.appliedTarget ? "/" + template.appliedTarget : ""}`,
     source: "inferred",
     confidence: "probable",
@@ -122,5 +123,6 @@ export function functionalTemplateKey(
   key: KeyReference,
 ) {
   const target = template.appliedTarget ? `/${template.appliedTarget}` : "";
-  return `${key.tonic.step}:${key.tonic.alter}:${key.mode}:${template.baseId}:${template.form}:${template.expectedInversion}${target}`;
+  const alterations = template.alterations?.map(({ degree, alter }) => `:${degree}(${alter})`).join("") ?? "";
+  return `${key.tonic.step}:${key.tonic.alter}:${key.mode}:${template.baseId}:${template.form}:${template.expectedInversion}${target}${alterations}`;
 }

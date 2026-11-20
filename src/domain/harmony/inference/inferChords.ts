@@ -19,6 +19,7 @@ import { withWrittenPivotSevenths } from "./pivotSevenths";
 import { withAppliedSequences } from "./appliedSequences";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
 import { analyzeChordInferencePaths } from "./sequence";
+import { withRaisedFifthResolutions } from "./raisedFifthResolutions";
 import { chooseNoncadentialTonicSixFours } from "./noncadentialTonicSixFours";
 import { classifySixFours } from "./sixFours";
 import { withPreparedSuspensions } from "./preparedSuspensions";
@@ -153,7 +154,8 @@ export function inferChords(
     observations, lowerNeighbors.candidateSets, options, currentPhraseTicks, project.ppq,
   );
   const pivotSixths = withNeapolitanPivotSixths(observations, upperPassing, localKeys, currentPhraseTicks);
-  const sequence = analyzeChordInferencePaths(observations, pivotSixths);
+  const raisedFifths = withRaisedFifthResolutions(observations, pivotSixths, manualPhraseTicks, meetsMinimumConfidence);
+  const sequence = analyzeChordInferencePaths(observations, raisedFifths);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;

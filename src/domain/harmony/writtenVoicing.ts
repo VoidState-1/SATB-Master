@@ -29,7 +29,7 @@ export function soundsCompleteWrittenChord(
     soundsCompleteWrittenTones(chordIdentityToneSpellings(identity), notes, bass, passingNoteId);
 }
 
-export function soundsDeclaredChord(slice: AnalysisSlice) {
+export function soundsDeclaredChord(slice: Pick<AnalysisSlice, "chord" | "completeSatb" | "notes">) {
   return !!slice.chord && slice.completeSatb && !!slice.notes.bass &&
     soundsCompleteWrittenChord(slice.chord.identity, Object.values(slice.notes), slice.notes.bass);
 }

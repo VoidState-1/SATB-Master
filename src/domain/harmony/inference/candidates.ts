@@ -17,6 +17,7 @@ import {
   fitChordObservation,
   fitRatio,
   isCanonicalTonicFifthOmission,
+  type ChordFitOptions,
 } from "./fit";
 import type {
   ChordInferenceCandidate,
@@ -162,7 +163,7 @@ export function candidateComparator(
 export function createFunctionalCandidate(
   observation: ChordInferenceObservation,
   template: ReturnType<typeof buildFunctionalTemplates>[number],
-  options: ChordInferenceOptions,
+  options: ChordInferenceOptions & Pick<ChordFitOptions, "allowedOmittedChordDegrees">,
 ): ChordInferenceCandidate | undefined {
   const { identity, semantics } = identityForFunctionalTemplate(
     template,
@@ -181,7 +182,7 @@ export function createFunctionalCandidate(
           allowedOmittedChordDegrees:
             options.allowCadentialTonicOmission || canonicalTonicOmission
             ? [5]
-            : undefined,
+            : options.allowedOmittedChordDegrees,
         }
       : options,
   );

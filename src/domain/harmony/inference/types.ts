@@ -1,5 +1,6 @@
 import type {
   ChordIdentity,
+  ChordToneAlteration,
   ChordToneDegree,
   ScaleDegree,
   HarmonySemantics,
@@ -95,6 +96,7 @@ export interface FunctionalChordTemplate {
   readonly form: FunctionalChordForm;
   readonly localKeyPolicy: "current-key";
   readonly expectedInversion: 0 | 1 | 2 | 3;
+  readonly alterations?: readonly ChordToneAlteration[];
 }
 
 export interface ChordInferenceCandidate {

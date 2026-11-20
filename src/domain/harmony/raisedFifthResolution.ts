@@ -5,9 +5,11 @@ import type { AnalysisSlice } from "./analysis";
 import { soundsDeclaredChord } from "./writtenVoicing";
 import { hasWrittenVoicing, resolvesInVoice } from "./writtenResolution";
 
+export type RaisedFifthFrame = Pick<AnalysisSlice, "tick" | "endTick" | "notes" | "key" | "completeSatb" | "chord">;
+
 /** Spasobin §46.4: in root position V7(#5), the raised fifth and the seventh
  * approach the major tonic third from opposite sides. Both parts keep it. */
-export function resolvesRaisedFifthToDoubledThird(source: AnalysisSlice, landing: AnalysisSlice, tonic: SpelledPitchClass) {
+export function resolvesRaisedFifthToDoubledThird(source: RaisedFifthFrame, landing: RaisedFifthFrame, tonic: SpelledPitchClass) {
   const localMajor = { tonic, mode: "major" } as const;
   const root = scaleDegreePitchClass(localMajor, 5);
   const [, leading, , seventh] = chordToneSpellings(root, "dominant7");

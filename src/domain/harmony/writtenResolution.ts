@@ -4,7 +4,7 @@ import type { VoiceId } from "../project";
 import type { AnalysisSlice } from "./analysis";
 import { soundsCompleteWrittenTones } from "./writtenVoicing";
 
-export function hasWrittenVoicing(slice: AnalysisSlice, tones: readonly SpelledPitchClass[]) {
+export function hasWrittenVoicing(slice: Pick<AnalysisSlice, "notes" | "completeSatb">, tones: readonly SpelledPitchClass[]) {
   const bass = slice.notes.bass;
   return !!bass && slice.completeSatb && soundsCompleteWrittenTones(tones, Object.values(slice.notes), bass);
 }
@@ -18,7 +18,9 @@ export function matchesWrittenChord(slice: AnalysisSlice, root: SpelledPitchClas
   return hasWrittenVoicing(slice, chordToneSpellings(root, quality));
 }
 
-export function resolvesInVoice(source: AnalysisSlice, target: AnalysisSlice, voice: VoiceId,
+type WrittenVoiceFrame = Pick<AnalysisSlice, "tick" | "notes">;
+
+export function resolvesInVoice(source: WrittenVoiceFrame, target: WrittenVoiceFrame, voice: VoiceId,
   destination: SpelledPitchClass, direction: -1 | 1) {
   const from = source.notes[voice], to = target.notes[voice];
   if (!from || !to || from.startTick + from.durationTicks !== target.tick || to.startTick !== target.tick ||
