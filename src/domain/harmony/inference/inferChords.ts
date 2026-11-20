@@ -17,6 +17,7 @@ import { analyzeChordInferencePaths } from "./sequence";
 import { classifySixFours } from "./sixFours";
 import { withPreparedSuspensions } from "./preparedSuspensions";
 import { withProlongedHarmony } from "./prolongation";
+import { withSingleVoiceTriadRevoicings } from "./triadRevoicing";
 import { simultaneousNeighborCandidates } from "./simultaneousNeighbors";
 import { inferLocalKeys } from "./localKeys";
 import { inferPhrases, isCurrentPhraseBoundary } from "../phrase";
@@ -127,7 +128,9 @@ export function inferChords(
   const withAlteredDoubleDominants = withDoubleAugmentedFourThree(
     observations, withNeapolitanPivots, manualPhraseTicks, meetsMinimumConfidence,
   );
-  const sequence = analyzeChordInferencePaths(observations, withAlteredDoubleDominants);
+  const revoiced = minimumConfidence === "high" ? withAlteredDoubleDominants :
+    withSingleVoiceTriadRevoicings(observations, withAlteredDoubleDominants, project.ppq, phraseBoundaryTicks);
+  const sequence = analyzeChordInferencePaths(observations, revoiced);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;

@@ -313,6 +313,27 @@ export function fitSimultaneousNeighbors(
   };
 }
 
+export function fitTriadRevoicing(
+  anchor: ChordInferenceCandidate,
+  observation: ChordInferenceObservation,
+  noteIds: readonly string[],
+): ChordInferenceCandidate | undefined {
+  const fit = fitChordObservation(observation, anchor.identity, { allowedOmittedChordDegrees: [5] });
+  if (fit.hardRejected || !fit.spellingConsistent || fit.nonChordToneNoteIds.length ||
+      fit.omittedChordDegrees.length !== 1 || fit.omittedChordDegrees[0] !== 5) return undefined;
+  return {
+    ...anchor,
+    id: `${observation.index}:triad-revoicing:${anchor.id}`,
+    observationIndex: observation.index,
+    fit,
+    score: scoreFor(observation, anchor.identity, fit, anchor.score.functionalTier),
+    confidence: "medium",
+    evidence: [...evidenceFor(fit, true), {
+      kind: "sequence-context", code: "single-voice-triad-revoicing", noteIds,
+    }],
+  };
+}
+
 export function fitProlongedHarmony(
   anchor: ChordInferenceCandidate,
   observation: ChordInferenceObservation,
