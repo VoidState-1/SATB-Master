@@ -5,6 +5,7 @@ import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import { soundsDeclaredChord } from "../../writtenVoicing";
 import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { resolvesRaisedFifthToDoubledThird } from "../../raisedFifthResolution";
 import { hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
 
 function resolvesMember(
@@ -63,9 +64,7 @@ export function preparesAlteredDominantFifth(context: HarmonyRuleContext, motion
   const tonic = scaleDegreePitchClass(fifth, 7, -1);
   const major = chordToneSpellings(tonic, "major");
   const raisesFifth = entry.semitones > 0;
-  if (!pitchClassEquals(landing.pitch, raisesFifth ? major[1] : tonic) ||
-      !(hasWrittenVoicing(arrival, major) ||
-        (!raisesFifth && hasWrittenVoicing(arrival, chordToneSpellings(tonic, "minor"))))) return false;
+  if (!pitchClassEquals(landing.pitch, raisesFifth ? major[1] : tonic)) return false;
 
   const [dominant, third, , seventh] = chordToneSpellings(root, "dominant7");
   const altered = [dominant, third, current.pitch];
@@ -76,6 +75,12 @@ export function preparesAlteredDominantFifth(context: HarmonyRuleContext, motion
     if (slice.key.id !== before.key.id) return false;
     if (hasWrittenVoicing(slice, alteredSeventh)) heardDominantSeventh = true;
     else if (!hasWrittenVoicing(slice, altered)) return false;
+  }
+  if (!hasWrittenVoicing(arrival, major) &&
+      (raisesFifth || !hasWrittenVoicing(arrival, chordToneSpellings(tonic, "minor")))) {
+    const last = alteredSlices.at(-1);
+    return raisesFifth && !!last && alteredSlices.every(slice => labelFitsAlteredDominant(slice, root)) &&
+      resolvesRaisedFifthToDoubledThird(last, arrival, tonic);
   }
   if (heardDominantSeventh || (pitchClassEquals(tonic, arrival.key.tonic) &&
       (!raisesFifth || arrival.key.mode === "major"))) return true;

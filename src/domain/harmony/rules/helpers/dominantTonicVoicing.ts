@@ -4,6 +4,7 @@ import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import { dominantSixthInnerVoices, movesToWrittenTone, resolvesDominantInnerVoice } from "../../dominantSixthMotion";
 import { soundsCompleteWrittenChord } from "../../writtenVoicing";
+import { resolvesRaisedFifthToDoubledThird } from "../../raisedFifthResolution";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 
 function primaryKey(context: HarmonyRuleContext, slice: AnalysisSlice, degree: 1 | 5) {
@@ -80,6 +81,7 @@ export function landsOnIncompleteTonic(context: HarmonyRuleContext, landing: Ana
         !note.nonChordToneRole && note.startTick === landing.tick && toMidi(note.pitch) >= toMidi(bass.pitch),
       )) return false;
 
+  if (key.mode === "major" && resolvesRaisedFifthToDoubledThird(source, landing, key.tonic)) return true;
   if (resolvesWrittenDominantSixth(context, source, landing, key)) return true;
   const previousKey = primaryKey(context, source, 5);
   if (!source.chord || !previousKey || previousKey.mode !== key.mode ||
