@@ -19,6 +19,7 @@ import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
 import { closingTonicPedalEvidence } from "./tonicPedalEnding";
 import { continuesThroughParallelTonic } from "./parallelTonicPivot";
 import { isWrittenAuxiliaryReturn } from "./auxiliaryReturn";
+import { precedingDetachedDeception } from "./detachedDeceptive";
 import { articulatedEndingEvidence } from "./articulatedEnding";
 import type {
   AnalysisChord,
@@ -642,6 +643,12 @@ export function detectCadences(
         facts, dominantIndex, terminal, measureFor(previous.span.fromTick),
         dominantApproach(facts, dominantIndex, gapEvidence),
       );
+      if (landingGap && landingGap.code === "detached-dominant-to-tonic") {
+        const earlier = precedingDetachedDeception(analysis, phrase, facts, measureFor);
+        if (earlier) allCandidates.push(candidate(phrase, "deceptive", [earlier.dominant, earlier.vi], [
+          earlier.evidence, { code: "dominant-to-alternative", value: "本调原位属和弦到六级" },
+        ], { confidenceCap: "probable" }));
+      }
       allCandidates.push(authenticCadence(phrase, approach, terminal, phraseEvidence, landingGap || undefined));
     }
 

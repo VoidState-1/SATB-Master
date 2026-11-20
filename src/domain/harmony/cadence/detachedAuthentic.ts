@@ -1,23 +1,10 @@
 import { chordIdentityInversion, chordIdentityToneSpellings, chordToneSpellings, type KeyReference } from "../../chordModel";
-import { pitchClassEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../pitch";
+import { pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
 import type { AnalysisSlice } from "../analysis";
+import { sameDetachedRhythm, writtenAttack } from "./detachedAttacks";
 import type { CadenceEvidence, CadenceSpanFacts } from "./types";
 
-function writtenAttack(facts: CadenceSpanFacts, required: readonly SpelledPitchClass[]) {
-  const slice = facts.boundarySlice;
-  const bass = slice?.notes.bass;
-  const soprano = slice?.notes.soprano;
-  if (!slice || !bass || !soprano || !facts.chord || slice.endTick !== facts.span.toTick ||
-      !pitchClassEquals(bass.pitch, facts.chord.identity.bass)) return false;
-  const tones = chordIdentityToneSpellings(facts.chord.identity);
-  const notes = Object.values(slice.notes);
-  return required.every(tone => notes.some(note => pitchClassEquals(note.pitch, tone))) &&
-    notes.every(note => note.startTick === slice.tick && note.startTick + note.durationTicks === slice.endTick &&
-      !note.nonChordToneRole && toMidi(note.pitch) >= toMidi(bass.pitch) && toMidi(note.pitch) <= toMidi(soprano.pitch) &&
-      tones.some(tone => pitchClassEquals(tone, note.pitch)));
-}
-
-function matchesDetachedRhythm(
+function hasDetachedAuthenticApproach(
   preparation: CadenceSpanFacts, dominant: CadenceSpanFacts, arrival: AnalysisSlice, key: KeyReference,
   slices: readonly AnalysisSlice[], beatTicks: number | undefined, downbeat: number | undefined,
 ) {
@@ -29,13 +16,7 @@ function matchesDetachedRhythm(
   const pre = preparation.boundarySlice, attack = dominant.boundarySlice;
   if (!pre?.notes.bass || !attack || !arrival.notes.soprano || !pitchClassEquals(arrival.notes.soprano.pitch, key.tonic) ||
       !pitchClassEquals(preparation.key.tonic, key.tonic) || preparation.key.mode !== key.mode ||
-      attack.index !== pre.index + 2 || arrival.index !== attack.index + 2) return false;
-  const firstRest = slices[pre.index + 1], secondRest = slices[attack.index + 1];
-  const duration = attack.endTick - attack.tick, gap = arrival.tick - attack.endTick;
-  if (duration > beatTicks || gap <= 0 || gap > beatTicks || pre.endTick - pre.tick !== duration ||
-      attack.tick - pre.endTick !== gap || firstRest.chord || secondRest.chord ||
-      Object.keys(firstRest.notes).length || Object.keys(secondRest.notes).length ||
-      [pre, firstRest, attack, secondRest].some(slice => slice.key.id !== arrival.key.id)) return false;
+      !sameDetachedRhythm(pre, attack, arrival, slices, beatTicks)) return false;
 
   const [root, third, , seventh] = chordIdentityToneSpellings(dominant.chord.identity);
   return writtenAttack(preparation, chordIdentityToneSpellings(preparation.chord.identity)) &&
@@ -55,7 +36,7 @@ export function detachedAuthenticEvidence(
       chordIdentityInversion(identity) !== 0) return;
   const target = identity.structure;
   if (target.kind !== "tertian" || target.quality !== tonic.key.mode || target.extensions.length || target.alterations.length ||
-      !matchesDetachedRhythm(preparation, dominant, arrival, tonic.key, slices, beatTicks, downbeat) ||
+      !hasDetachedAuthenticApproach(preparation, dominant, arrival, tonic.key, slices, beatTicks, downbeat) ||
       !writtenAttack(tonic, chordIdentityToneSpellings(identity).slice(0, 2))) return;
   return {
     code: "detached-dominant-to-tonic", value: "下属准备与属七以相同节奏起奏、全休，末端强拍落主",
@@ -84,7 +65,7 @@ export function detachedSparseTonicEvidence(
   const motion = writtenInterval(sourceBass.pitch, bass.pitch);
   if (!((motion.diatonicSteps === 3 && motion.semitones === 5) ||
         (motion.diatonicSteps === -4 && motion.semitones === -7)) ||
-      !matchesDetachedRhythm(preparation, dominant, arrival, dominant.key, slices, beatTicks, downbeat)) return;
+      !hasDetachedAuthenticApproach(preparation, dominant, arrival, dominant.key, slices, beatTicks, downbeat)) return;
   return {
     code: "detached-sparse-tonic",
     value: "同型顿奏与全休之后，外声实奏主音，内声实奏三音，三个声部同步收束",

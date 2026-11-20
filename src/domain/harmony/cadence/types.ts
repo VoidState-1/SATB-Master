@@ -26,6 +26,7 @@ export interface CadenceEvidence {
     | "dominant-before-tonic-gap"
     | "detached-dominant-to-tonic"
     | "detached-sparse-tonic"
+    | "detached-deceptive-reprise"
     | "tonic-bass-suspension"
     | "closing-tonic-pedal"
     | "articulated-interior-ending"

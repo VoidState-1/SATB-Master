@@ -9,6 +9,12 @@ import type { CadenceEvidence, CadenceSpanFacts } from "./types";
 
 type MeasureFor = (tick: number) => MeasureInfo | undefined;
 
+export function bassStepsUpToSubmediant(before: AnalysisSlice, arrival: AnalysisSlice) {
+  if (!before.notes.bass || !arrival.notes.bass) return false;
+  const bass = writtenInterval(before.notes.bass.pitch, arrival.notes.bass.pitch);
+  return bass.diatonicSteps === 1 && isWrittenStep(bass);
+}
+
 /** A release with no rest can close an internal clause when all four parts
  * sustain the arrival for a bar and begin a new, shorter rhythm together. */
 export function articulatedEndingEvidence(
@@ -60,9 +66,8 @@ export function articulatedEndingEvidence(
   const [targetRoot, targetThird] = chordIdentityToneSpellings(target);
   const [, leading, , seventh] = chordIdentityToneSpellings(source);
   const expectedRoot = scaleDegreePitchClass(ending.key, ending.isTonic ? 1 : 6);
-  const bass = writtenInterval(before.notes.bass!.pitch, landing.notes.bass!.pitch);
   if (!pitchClassEquals(targetRoot, expectedRoot) ||
-      (!ending.isTonic && (bass.diatonicSteps !== 1 || !isWrittenStep(bass) ||
+      (!ending.isTonic && (!bassStepsUpToSubmediant(before, landing) ||
         arrival.filter(note => pitchClassEquals(note.pitch, targetThird)).length !== 2))) return;
 
   // Verify the leading tone and, when present, the seventh in their own voices.
