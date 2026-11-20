@@ -15,11 +15,14 @@ export function returnsByWrittenStep(first: AnalysisNote, middle: AnalysisNote, 
   return isWrittenStep(step) && Math.sign(step.semitones) === step.diatonicSteps;
 }
 
-export function soundsCompleteWrittenChord(identity: ChordIdentity, notes: readonly AnalysisNote[], bass: AnalysisNote) {
+export function soundsCompleteWrittenChord(
+  identity: ChordIdentity, notes: readonly AnalysisNote[], bass: AnalysisNote, passingNoteId?: string,
+) {
   const tones = chordIdentityToneSpellings(identity);
   const lowest = toMidi(bass.pitch);
   return pitchClassEquals(bass.pitch, identity.bass) &&
-    notes.every(note => !note.nonChordToneRole && toMidi(note.pitch) >= lowest &&
+    notes.every(note => (!note.nonChordToneRole || (note.id === passingNoteId && note.nonChordToneRole === "passing")) &&
+      toMidi(note.pitch) >= lowest &&
       tones.some(tone => pitchClassEquals(tone, note.pitch))) &&
     tones.every(tone => notes.some(note => pitchClassEquals(tone, note.pitch)));
 }
