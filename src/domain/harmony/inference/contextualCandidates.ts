@@ -4,7 +4,7 @@ import {
   withLoweredSupertonics,
 } from "./candidates";
 import { withThirdInversionResolutions } from "./supertonicResolution";
-import { withAppliedDominants } from "./appliedDominants";
+import { withAppliedDominants, withReattackedTonicNinths } from "./appliedDominants";
 import { withAnticipations } from "./anticipations";
 import { buildChordInferenceObservations } from "./observations";
 import { withDiatonicSevenths } from "./diatonicSevenths";
@@ -100,6 +100,7 @@ export function buildContextualChordCandidates(project: ProjectDocument, options
   candidates = withLoweredSupertonics(observations, candidates);
   candidates = withAppliedSequences(observations, candidates, options);
   candidates = withAppliedDominants(observations, candidates, options);
+  candidates = withReattackedTonicNinths(observations, candidates, options, currentPhraseTicks);
 
   candidates = withAnticipations(observations, candidates, options, project.ppq, phraseBoundaryTicks);
   candidates = withPreparedSuspensions(observations, candidates, options, project.ppq, phraseBoundaryTicks);

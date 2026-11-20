@@ -1,6 +1,8 @@
 import { primaryHarmonyInterpretation, type ChordQuality, type ScaleDegree } from "../../chordModel";
 import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../../pitch";
-import { candidateComparator, createFunctionalCandidate } from "./candidates";
+import { compareMetricStrength } from "../../rhythm/metric";
+import { readReattackedTonicNinth } from "../writtenDominantSeventh";
+import { candidateComparator, createFunctionalCandidate, fitPreparedSuspension } from "./candidates";
 import { buildFunctionalTemplates } from "./functionalTemplates";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions, FunctionalChordTemplate } from "./types";
 
@@ -93,6 +95,63 @@ export function withAppliedDominants(
       }
     }
     if (added.length) result[i] = [...sets[i], ...added].sort(candidateComparator);
+  }
+  return result;
+}
+
+/** Recover a tonicization when the resolution triad is established one
+ * event after the dominant's written target bass arrives. */
+export function withReattackedTonicNinths(
+  observations: readonly ChordInferenceObservation[],
+  sets: readonly CandidateSet[],
+  options: ChordInferenceOptions,
+  phraseBoundaryTicks: readonly number[],
+) {
+  const result = sets.slice();
+  for (let i = 0; i + 2 < observations.length; i++) {
+    const [source, onset, settled] = [observations[i], observations[i + 1], observations[i + 2]];
+    if ([onset, settled].some(part => part.key.id !== source.key.id || part.key.mode !== source.key.mode ||
+        !pitchClassEquals(part.key.tonic, source.key.tonic)) ||
+        phraseBoundaryTicks.some(tick => source.fromTick < tick && tick <= settled.fromTick) ||
+        !onset.metric || !settled.metric || onset.metric.level < 2 ||
+        onset.metric.measureNumber !== settled.metric.measureNumber ||
+        settled.metric.beatPosition - onset.metric.beatPosition > 1 ||
+        compareMetricStrength(onset.metric, settled.metric) !== "stronger") continue;
+    const toFrame = ({ fromTick: tick, activeNotes: notes, completeSatb }: ChordInferenceObservation) =>
+      ({ tick, notes, completeSatb });
+    const proof = readReattackedTonicNinth(toFrame(source), toFrame(onset), tick =>
+      tick === settled.fromTick ? toFrame(settled) : undefined);
+    if (!proof || sets[i + 1].some(exactReading)) continue;
+    const { tonic, mode } = proof.key;
+    const anchor = sets[i + 2].find(candidate => exactReading(candidate) && candidate.fit.bassMatchesInversion &&
+      candidate.identity.structure.kind === "tertian" && candidate.identity.structure.quality === mode &&
+      !candidate.identity.structure.extensions.length && !candidate.identity.structure.alterations.length &&
+      pitchClassEquals(candidate.identity.root, tonic) && pitchClassEquals(candidate.identity.bass, tonic));
+    if (!anchor) continue;
+
+    const hasSource = sets[i].some(candidate => exactReading(candidate) && candidate.fit.bassMatchesInversion &&
+      candidate.identity.structure.kind === "tertian" && candidate.identity.structure.quality === "dominant7" &&
+      !candidate.identity.structure.extensions.length && !candidate.identity.structure.alterations.length &&
+      pitchClassEquals(candidate.identity.root, proof.root));
+    const evidence = { kind: "sequence-context" as const, code: "reattacked-tonic-ninth-resolution",
+      noteIds: [proof.repeated.id], details: { arrivalTick: onset.fromTick, confirmationTick: proof.settledTick } };
+    if (!hasSource) {
+      const target = [...tonicizationTargets(settled, [anchor]).keys()][0];
+      if (!target) continue;
+      const template = buildFunctionalTemplates(source.key).find(item =>
+        item.baseId === "D" && item.form === "seventh" && item.expectedInversion === 1);
+      const candidate = template && createFunctionalCandidate(source, { ...template, appliedTarget: target }, options);
+      if (candidate?.confidence !== "high" || !exactReading(candidate) ||
+          !pitchClassEquals(candidate.identity.root, proof.root)) continue;
+      result[i] = [...result[i], { ...candidate, evidence: [...candidate.evidence, evidence] }].sort(candidateComparator);
+    }
+    if (options.allowNonChordToneCandidates === false || options.minConfidence === "high") continue;
+    const candidate = fitPreparedSuspension(anchor, onset, [{ noteId: proof.repeated.id, figure: "9-8" }]);
+    if (!candidate) continue;
+    const fit = { ...candidate.fit, nonChordToneAssignments: { ...candidate.fit.nonChordToneAssignments,
+      [proof.repeated.id]: "suspension" as const } };
+    result[i + 1] = [...result[i + 1], { ...candidate, fit, evidence: [...candidate.evidence, evidence] }]
+      .sort(candidateComparator);
   }
   return result;
 }
