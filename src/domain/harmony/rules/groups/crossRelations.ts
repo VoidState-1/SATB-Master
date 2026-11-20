@@ -3,11 +3,18 @@ import type { RuleConfig } from "../../runtime";
 import { chordIdentityToneSpellings } from "../../../chordModel";
 import { VOICE_ORDER } from "../../../project/voice";
 import { durationToTicksAt } from "../../../time";
-import { formatSpelledPitch, pitchClassEquals } from "../../../pitch";
+import {
+  formatSpelledPitch,
+  pitchClassEquals,
+  scaleDegreePitchClass,
+  stepIndex,
+} from "../../../pitch";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineStatelessRule } from "../defineRule";
 import { diagnostic, hasExactPitch, noteEvidence, voiceName } from "../helpers/core";
 import { bassNeighborAgainstHeldUpper } from "../helpers/heldBassNeighbor";
+import { hasWrittenVoicing } from "../helpers/writtenResolution";
+import { leadingToneForFunction } from "../services/harmony";
 
 function chromaticHarmonyLicenses(
   context: HarmonyRuleContext,
@@ -46,6 +53,79 @@ interface CrossRelationCandidate {
   tick: number;
   endTick: number;
   windowTicks: number;
+  connectionKey?: string;
+}
+
+// §§28.4, 32.4: a correctly spelled applied leading tone still needs
+// same-voice preparation when the previous chord sounds its natural form.
+function transferredLeadingToneConnection(
+  context: HarmonyRuleContext,
+  left: CrossRelationCandidate["left"],
+  right: CrossRelationCandidate["right"],
+  arrival: AnalysisSlice | undefined,
+): string | undefined {
+  const tick = right.note.startTick;
+  if (
+    left.note.startTick + left.note.durationTicks !== tick ||
+    right.note.pitch.alter !== left.note.pitch.alter + 1 ||
+    !arrival?.chord || arrival.chord.startTick !== tick
+  ) return;
+
+  const before = context.sliceAt(tick - 1);
+  if (
+    !before?.chord ||
+    before.notes[left.voiceId]?.id !== left.note.id ||
+    context.analysis.phraseBoundaries.some(boundary => !boundary.stale && boundary.tick === tick)
+  ) return;
+
+  const sourceReading = context.harmony.primaryInterpretation(before.chord);
+  const targetReading = context.harmony.primaryInterpretation(arrival.chord);
+  if (sourceReading.status !== "resolved" || targetReading.status !== "resolved") return;
+
+  const key = targetReading.value.localKey ?? arrival.key;
+  const sourceKey = sourceReading.value.localKey ?? before.key;
+  const leading = leadingToneForFunction(key, targetReading.value);
+  if (
+    key.mode !== sourceKey.mode || !pitchClassEquals(key.tonic, sourceKey.tonic) ||
+    !leading.applied || !pitchClassEquals(leading.tone, right.note.pitch)
+  ) return;
+
+  const { identity } = arrival.chord;
+  if (identity.structure.kind !== "tertian") return;
+
+  const tones = chordIdentityToneSpellings(identity);
+  const { quality } = identity.structure;
+  const leadingMember = quality === "major" || quality === "dominant7" ? tones[1]
+    : quality === "diminished" || quality === "diminished7" || quality === "halfDiminished7" ? tones[0]
+    : undefined;
+  if (!leadingMember || !pitchClassEquals(leadingMember, right.note.pitch)) return;
+
+  const preparation = chordIdentityToneSpellings(before.chord.identity);
+  if (!preparation.every(tone => {
+    const degree = (stepIndex(tone.step) - stepIndex(key.tonic.step) + 7) % 7 + 1;
+    return pitchClassEquals(tone, scaleDegreePitchClass(key, degree));
+  })) return;
+
+  // A doubled degree can rise in its own voice while the other copy leaves.
+  if (VOICE_ORDER.some(voiceId => {
+    const previous = before.notes[voiceId];
+    const current = arrival.notes[voiceId];
+    return previous && current &&
+      pitchClassEquals(previous.pitch, left.note.pitch) &&
+      pitchClassEquals(current.pitch, right.note.pitch);
+  })) return;
+
+  if (
+    !before.notes.bass || !pitchClassEquals(before.notes.bass.pitch, before.chord.identity.bass) ||
+    !arrival.notes.bass || !pitchClassEquals(arrival.notes.bass.pitch, identity.bass) ||
+    !hasWrittenVoicing(before, preparation) || !hasWrittenVoicing(arrival, tones)
+  ) return;
+
+  // Limit the modulation exception to the connection that produced this pair.
+  const sourceSpanId = context.spanAt(tick - 1)?.span.id;
+  const targetSpanId = context.spanAt(tick)?.span.id;
+  if (sourceSpanId && targetSpanId)
+    return context.connections({ sourceSpanId, targetSpanId }).first()?.connection.connectionKey;
 }
 
 function crossRelationCandidates(
@@ -100,12 +180,15 @@ function crossRelationCandidates(
         continue;
       const leftSlice = context.sliceAt(left.note.startTick);
       const rightSlice = context.sliceAt(right.note.startTick);
+      let connectionKey: string | undefined;
       if (
         !simultaneous &&
         (chromaticHarmonyLicenses(context, left.note, leftSlice) ||
           chromaticHarmonyLicenses(context, right.note, rightSlice))
-      )
-        continue;
+      ) {
+        connectionKey = transferredLeadingToneConnection(context, left, right, rightSlice);
+        if (!connectionKey) continue;
+      }
       candidates.push({
         left,
         right,
@@ -113,6 +196,7 @@ function crossRelationCandidates(
         tick: simultaneous ? overlapStart : right.note.startTick,
         endTick: simultaneous ? overlapEnd : rightEnd,
         windowTicks,
+        connectionKey,
       });
     }
   }
@@ -140,6 +224,7 @@ function crossRelationDiagnostic(
     {
       messageKey: `${ruleId}.${kind}`,
       params: { kind, windowTicks: candidate.windowTicks },
+      causeRefs: candidate.connectionKey ? [`${ruleId}|${candidate.connectionKey}`] : undefined,
       evidence: [
         noteEvidence(
           candidate.left.note,
