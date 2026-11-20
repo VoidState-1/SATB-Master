@@ -161,13 +161,16 @@ export function applyChordEditorAction(
 ): ChordDraft {
   const model = createChordEditorModel(draft, keyEvent);
   const mode = draft.localKey?.mode ?? keyEvent.mode;
+  const existingDominantNinth = model.baseId === "D" && model.form === "ninth" && draft.quality === "dominant7";
   switch (action.type) {
     case "select-functional-definition": {
+      if (action.id === "D" && existingDominantNinth) return draft;
       const definition = functionalDefinition(action.id);
       return functionalDefinitionSupportsMode(definition, mode)
         ? applyFunctionalDefinition(draft, definition, mode) : draft;
     }
     case "select-functional-form":
+      if (action.form === "ninth" && existingDominantNinth) return draft;
       return model.baseDefinition
         ? applyFunctionalForm(
             draft,
