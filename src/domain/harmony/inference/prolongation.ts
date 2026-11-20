@@ -54,7 +54,10 @@ export function withProlongedHarmony(
     const duration = middle.toTick - middle.fromTick;
     if (middle.metric.level >= 2 || duration > ppq || duration > before.toTick - before.fromTick) continue;
     if (middle.metric.measureNumber !== after.metric.measureNumber && after.metric.beatPosition !== 0) continue;
-    if (![before, after].every(o => middle.key.mode === o.key.mode && pitchClassEquals(middle.key.tonic, o.key.tonic))) continue;
+    if (before.toTick !== middle.fromTick || middle.toTick !== after.fromTick ||
+        phraseBoundaryTicks.some(tick => before.fromTick < tick && tick <= after.fromTick) ||
+        ![before, after].every(o => middle.key.id === o.key.id && middle.key.mode === o.key.mode &&
+          pitchClassEquals(middle.key.tonic, o.key.tonic))) continue;
     const motion = movingNote(before, middle, after);
     if (!motion) continue;
     // Spasobin §40.1, ex. 40-600. Assign the role only when the other
@@ -62,7 +65,6 @@ export function withProlongedHarmony(
     const inferNeighbor = motion.isNeighbor && options.allowNonChordToneCandidates !== false &&
       (compareMetricStrength(middle.metric, before.metric) === "weaker" ||
         compareMetricStrength(middle.metric, after.metric) === "weaker") &&
-      !phraseBoundaryTicks.some(tick => before.fromTick < tick && tick <= after.fromTick) &&
       !hasCompleteWrittenTertianChord(middle);
     const matches = sets[i - 1].flatMap(left => {
       if (!left.semantics || left.fit.nonChordToneNoteIds.length || !left.fit.spellingConsistent ||

@@ -51,9 +51,32 @@ bars 1..1 {
     for (const tick of [960, 1200, 1440]) {
       project.structure.phraseBoundaries = [{ id: "split", source: "manual", confidence: "certain", tick }];
       const across = inferChords(project).regions;
+      expect(across.flatMap(region => region.selected?.evidence ?? []).map(item => item.code))
+        .not.toContain("prolonged-harmony");
       expect(across.some(region => region.selected?.fit.nonChordToneAssignments[noteId])).toBe(false);
     }
   });
+  it("同调号的新调性事件只在证据窗口内阻断延续", () => {
+    const { project } = compileScoreText(`satb 1
+key C major
+meter 3/4
+bars 1..1 {
+  S: | E5/4 F5/8 E5/8 E5/4 |
+  A: | C4/2. |
+  T: | G3/2. |
+  B: | C3/2. |
+}`);
+    const original = project.keyEvents[0];
+    const result = () => inferChords(project).regions.flatMap(r => r.selected?.evidence ?? []).map(e => e.code);
+    expect(result()).toContain("prolonged-harmony");
+    for (const tick of [960, 1200, 1440]) {
+      project.keyEvents = [original, { ...original, id: "new-key", tick }];
+      expect(result()).not.toContain("prolonged-harmony");
+    }
+    project.keyEvents = [original, { ...original, id: "later-key", tick: 1920 }];
+    expect(result()).toContain("prolonged-harmony");
+  });
+
   it("他声部随弱音重奏时保留和声解释并留空辅助音角色", () => {
     const [region] = run("E5/4 F5/8 E5/8 E5/2", "G3/4 G3/2.");
     expect(region.selected?.fit.nonChordToneNoteIds).toHaveLength(1);
