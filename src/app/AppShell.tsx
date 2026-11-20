@@ -60,10 +60,12 @@ import { midiOutputManager } from "../audio/midiOutput";
 import { toMidi } from "../domain/pitch";
 import { replaceProject } from "../domain/editing";
 import {
+  applyChordInference,
   applyHarmonyInference,
   buildHarmonyAnalysis,
   formatDiagnosticDebugReport,
-  inferHarmony,
+  type ChordInferenceApplyOptions,
+  type HarmonyInferenceResult,
   type HarmonyDiagnostic,
 } from "../domain/harmony";
 import { createEmptyProject, type ProjectDocument } from "../domain/project";
@@ -471,27 +473,9 @@ function AppShell() {
     showNotice(copied ? "已复制问题调试信息" : "复制问题调试信息失败");
   };
 
-  const handleChordInferenceApply = (options: {
-    rangeMode: "selection" | "current-measure" | "project";
-    fromTick: number;
-    toTick: number;
-    mode: "fill-gaps" | "replace-unlocked";
-    allowAbsoluteFallback: boolean;
-    allowIncompleteVoicing: boolean;
-    minConfidence: "high" | "medium" | "low";
-    writeNonChordToneRoles: boolean;
-  }) => {
-    const result = inferHarmony(project, {
-      fromTick: options.fromTick,
-      toTick: options.toTick,
-      allowAbsoluteFallback: options.allowAbsoluteFallback,
-      allowIncompleteVoicing: options.allowIncompleteVoicing,
-      minConfidence: options.minConfidence,
-    });
-    const applied = applyHarmonyInference(project, result, {
-      mode: options.mode,
-      writeNonChordToneRoles: options.writeNonChordToneRoles,
-    });
+  const handleChordInferenceApply = (result: HarmonyInferenceResult, options: ChordInferenceApplyOptions) => {
+    const phraseApplied = options.selection ? undefined : applyHarmonyInference(project, result, options);
+    const applied = phraseApplied ?? applyChordInference(project, result.chordInference, options);
     if (applied.project !== project) history.commit(applied.project);
     const warningText = applied.skipped.length
       ? `，跳过 ${applied.skipped.length} 个区段`
@@ -499,15 +483,16 @@ function AppShell() {
     const roleText = applied.writtenNonChordToneRoleCount
       ? `，写入 ${applied.writtenNonChordToneRoleCount} 个非和弦音角色`
       : "";
-    const phraseTemplateLabel = {
+    const phraseTemplateLabels = {
       single: "单乐句",
       duple: "双乐句",
       triple: "三乐句",
-    }[applied.appliedPhraseTemplate];
-    const phraseText = applied.appliedPhraseBoundaryCount
-      ? `，按${phraseTemplateLabel}处理，生成 ${applied.appliedPhraseBoundaryCount} 个自动边界`
-      : `，按${phraseTemplateLabel}处理`;
-    const unresolvedText = result.chordInference.unresolvedObservationIndices.length
+    };
+    const phraseText = phraseApplied
+      ? `，按${phraseTemplateLabels[phraseApplied.appliedPhraseTemplate]}处理` +
+        (phraseApplied.appliedPhraseBoundaryCount ? `，生成 ${phraseApplied.appliedPhraseBoundaryCount} 个自动边界` : "")
+      : "";
+    const unresolvedText = !options.selection && result.chordInference.unresolvedObservationIndices.length
       ? `，${result.chordInference.unresolvedObservationIndices.length} 个时间片未归类`
       : "";
     showNotice(

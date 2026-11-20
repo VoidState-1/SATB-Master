@@ -18,6 +18,21 @@ function overlaps(left: ChordRegion, right: ChordRegion) {
   );
 }
 
+function chordOverhangs(existing: ChordRegion, replacement: ChordRegion): ChordRegion[] {
+  const existingEnd = existing.startTick + existing.durationTicks;
+  const replacementEnd = replacement.startTick + replacement.durationTicks;
+  const before = existing.startTick < replacement.startTick;
+  return [
+    ...(before ? [{ ...existing, durationTicks: replacement.startTick - existing.startTick }] : []),
+    ...(replacementEnd < existingEnd ? [{
+      ...existing,
+      id: before ? createId("chord") : existing.id,
+      startTick: replacementEnd,
+      durationTicks: existingEnd - replacementEnd,
+    }] : []),
+  ];
+}
+
 function selectedForApply(
   region: ChordInferenceRegion,
   { selection, candidateChoices }: ChordInferenceApplyOptions,
@@ -135,9 +150,8 @@ export function applyChordInference(
     if (options.mode === "replace-unlocked" && overlappers.length > 0) {
       const overlapIds = new Set(overlappers.map((existing) => existing.id));
       candidateProject = cloneProject(next);
-      candidateProject.chordTrack.regions = candidateProject.chordTrack.regions.filter(
-        (existing) => !overlapIds.has(existing.id),
-      );
+      candidateProject.chordTrack.regions = candidateProject.chordTrack.regions.flatMap(existing =>
+        !overlapIds.has(existing.id) ? [existing] : options.selection ? chordOverhangs(existing, proposed) : []);
     }
     const added = addChordRegion(candidateProject, proposed);
     if (added.error) {

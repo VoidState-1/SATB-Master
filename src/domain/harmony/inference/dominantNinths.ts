@@ -143,13 +143,20 @@ export function addDominantNinthAlternatives(
   regions: readonly ChordInferenceRegion[],
   alternate: ReadonlyMap<string, ChordInferenceCandidate>,
 ) {
-  if (!alternate.size) return regions;
   return Object.freeze(regions.map(region => {
     const literal = region.selected;
-    const choice = literal && alternate.get(literal.id);
-    if (!literal || !choice || region.observationIndices.length !== 1) return region;
+    if (!literal || region.observationIndices.length !== 1) return region;
+    const choice = alternate.get(literal.id);
+    if (!choice) {
+      const structure = literal.identity.structure;
+      const isolatedSmallNinth = literal.functionalBaseId === "D" && literal.confidence === "low" &&
+        region.status === "ambiguous" && structure.kind === "tertian" && structure.extensions.includes(9) &&
+        structure.alterations.some(change => change.degree === 9 && change.alter === -1) && written(literal);
+      return isolatedSmallNinth ? { ...region, reviewCandidateIds: [literal.id] } : region;
+    }
     return {
       ...region,
+      reviewCandidateIds: [literal.id, choice.id],
       alternatives: Object.freeze([
         { ...choice, observationIndex: literal.observationIndex },
         ...region.alternatives.filter(item => !chordIdentityEquals(item.identity, choice.identity)),

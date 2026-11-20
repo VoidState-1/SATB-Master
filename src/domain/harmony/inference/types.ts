@@ -121,6 +121,8 @@ export interface ChordInferenceRegion {
   readonly status: ChordInferenceRegionStatus;
   readonly selected?: ChordInferenceCandidate;
   readonly alternatives: readonly ChordInferenceCandidate[];
+  /** Score-supported choices available for explicit application in this region. */
+  readonly reviewCandidateIds?: readonly string[];
   readonly observationIndices: readonly number[];
 }
 

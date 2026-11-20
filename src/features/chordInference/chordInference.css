@@ -4,6 +4,7 @@
 
 .chord-inference-dialog {
   width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
   background: #fbfbf9;
   border-radius: 12px;
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.22), 0 4px 12px rgba(0, 0, 0, 0.06);
@@ -27,6 +28,7 @@
 
 .chord-inference-header {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
@@ -67,10 +69,12 @@
 }
 
 .chord-inference-body {
-  padding: 18px;
+  padding: 18px 18px 0;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   gap: 16px;
+  overflow-y: auto;
 }
 
 /* --- Field Sections --- */
@@ -206,13 +210,87 @@
   color: #262a22;
 }
 
+.chord-inference-preview-title {
+  margin: 0;
+}
+
+.chord-inference-preview-list {
+  display: grid;
+  gap: 8px;
+}
+
+.chord-inference-preview-region {
+  min-width: 0;
+  margin: 0;
+  padding: 5px 8px 8px;
+  border: 1px solid #d5d8d0;
+  border-radius: 6px;
+}
+
+.chord-inference-preview-region legend {
+  padding: 0 4px;
+  color: #43473e;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chord-inference-reading {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: #262923;
+  font-size: 12.5px;
+}
+
+.chord-inference-reading:has(input:checked) {
+  background: #f1f3ed;
+}
+
+.chord-inference-reading input {
+  margin: 2px 0 0;
+  accent-color: #27715c;
+}
+
+.chord-inference-reading small {
+  display: block;
+}
+
+.chord-inference-reading small,
+.chord-inference-preview-action small {
+  color: #55594f;
+  font-size: 11.5px;
+}
+
+.chord-inference-preview-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.chord-inference-preview-action button {
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+}
+
+.chord-inference-preview-action button:disabled {
+  cursor: default;
+  color: #61665b;
+}
+
 /* --- Footer Actions --- */
 .chord-inference-footer {
   display: flex;
+  flex: none;
   justify-content: flex-end;
   align-items: center;
   gap: 10px;
-  margin-top: 4px;
+  margin: 20px 18px 18px;
   padding-top: 14px;
   border-top: 1px solid #edece6;
 }

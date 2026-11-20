@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { WandSparkles, X } from "lucide-react";
+import {
+  inferHarmony, type ChordInferenceApplyOptions, type HarmonyInferenceResult,
+} from "../../domain/harmony/inference";
 import { buildMeasures, measureAtTick } from "../../domain/time";
 import type { ProjectDocument } from "../../domain/project";
+import { ChordInferencePreview } from "./ChordInferencePreview";
 import "./chordInference.css";
 
 export type ChordInferenceRangeMode =
@@ -15,16 +19,7 @@ export interface ChordInferenceDialogOptions {
   selectedNoteIds: ReadonlySet<string>;
   selectedChordIds: ReadonlySet<string>;
   onClose(): void;
-  onApply(options: {
-    rangeMode: ChordInferenceRangeMode;
-    fromTick: number;
-    toTick: number;
-    mode: "fill-gaps" | "replace-unlocked";
-    allowAbsoluteFallback: boolean;
-    allowIncompleteVoicing: boolean;
-    minConfidence: "high" | "medium" | "low";
-    writeNonChordToneRoles: boolean;
-  }): void;
+  onApply(result: HarmonyInferenceResult, options: ChordInferenceApplyOptions): void;
 }
 
 function selectedRange(
@@ -73,6 +68,11 @@ export function ChordInferenceDialog({
     "medium",
   );
   const [writeNonChordToneRoles, setWriteNonChordToneRoles] = useState(false);
+  const [review, setReview] = useState<{
+    result: HarmonyInferenceResult;
+    mode: ChordInferenceApplyOptions["mode"];
+    choices: ReadonlyMap<string, string>;
+  }>();
   const firstControlRef = useRef<HTMLSelectElement>(null);
 
   const selection = useMemo(
@@ -94,6 +94,11 @@ export function ChordInferenceDialog({
       : rangeMode === "current-measure" && measure
         ? { fromTick: measure.startTick, toTick: measure.endTick }
         : { fromTick: 0, toTick: project.lengthTicks };
+  const { fromTick, toTick } = range;
+  const result = useMemo(() => inferHarmony(project, {
+    fromTick, toTick, allowAbsoluteFallback, allowIncompleteVoicing, minConfidence,
+  }), [project, fromTick, toTick, allowAbsoluteFallback, allowIncompleteVoicing, minConfidence]);
+  const candidateChoices = review?.result === result && review.mode === mode ? review.choices : undefined;
 
   useEffect(() => {
     firstControlRef.current?.focus();
@@ -101,15 +106,7 @@ export function ChordInferenceDialog({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    onApply({
-      rangeMode,
-      ...range,
-      mode,
-      allowAbsoluteFallback,
-      allowIncompleteVoicing,
-      minConfidence,
-      writeNonChordToneRoles,
-    });
+    onApply(result, { mode, candidateChoices, writeNonChordToneRoles });
   };
 
   return (
@@ -136,13 +133,14 @@ export function ChordInferenceDialog({
           </button>
         </header>
 
-        <form className="chord-inference-body" onSubmit={submit}>
+        <form className="chord-inference-body" id="chord-inference-form" onSubmit={submit}>
           {/* 推导范围 */}
           <div className="chord-inference-field">
             <span className="chord-inference-field-label">推导范围</span>
             <div className="chord-inference-range-row">
               <select
                 ref={firstControlRef}
+                aria-label="推导范围"
                 className="chord-inference-select"
                 value={rangeMode}
                 onChange={(event) =>
@@ -259,21 +257,35 @@ export function ChordInferenceDialog({
             </div>
           </div>
 
-          {/* 底部按钮 */}
-          <footer className="chord-inference-footer">
-            <button
-              type="button"
-              className="chord-inference-btn-secondary"
-              onClick={onClose}
-            >
-              取消
-            </button>
-            <button type="submit" className="chord-inference-btn-primary">
-              <WandSparkles size={15} aria-hidden="true" />
-              <span>应用推导结果</span>
-            </button>
-          </footer>
+          <ChordInferencePreview
+            project={project}
+            regions={result.chordInference.regions}
+            mode={mode}
+            choices={candidateChoices}
+            onChoose={(regionId, candidateId) => {
+              setReview(previous => {
+                const choices = new Map(previous?.result === result && previous.mode === mode ? previous.choices : undefined);
+                choices.set(regionId, candidateId);
+                return { result, mode, choices };
+              });
+            }}
+            onApplyRegion={(regionId, candidateId) => onApply(result, {
+              mode,
+              selection: new Set([regionId]),
+              candidateChoices: new Map([[regionId, candidateId]]),
+              writeNonChordToneRoles,
+            })}
+          />
         </form>
+        <footer className="chord-inference-footer">
+          <button type="button" className="chord-inference-btn-secondary" onClick={onClose}>
+            取消
+          </button>
+          <button type="submit" form="chord-inference-form" className="chord-inference-btn-primary">
+            <WandSparkles size={15} aria-hidden="true" />
+            <span>应用推导结果</span>
+          </button>
+        </footer>
       </div>
     </div>
   );
