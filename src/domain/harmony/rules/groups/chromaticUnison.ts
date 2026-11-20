@@ -1,6 +1,7 @@
 import { chordIdentityToneSpellings } from "../../../chordModel";
 import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, toMidi } from "../../../pitch";
 import type { MelodyTransition } from "../../analysis";
+import { readWrittenTonicPedalSubmediant } from "../../writtenTonicPedalSubmediant";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasExactPitch } from "../helpers/core";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
@@ -67,6 +68,15 @@ function preparesDoubleDominantSeventhBass(context: HarmonyRuleContext, transiti
 export function hasSupportedChromaticPreparation(context: HarmonyRuleContext, transition: MelodyTransition) {
   const { diatonicSteps, semitones } = transition.writtenInterval;
   if (diatonicSteps !== 0 || Math.abs(semitones) !== 1 || !transition.contiguous || !transition.sameKey) return false;
+  if (transition.voiceId === "alto" || transition.voiceId === "tenor") {
+    const tick = transition.current.startTick;
+    const before = context.sliceAt(tick - 1), after = context.sliceAt(tick);
+    const connection = before && after && readWrittenTonicPedalSubmediant(
+      before, after, context.analysis.project.structure.phraseBoundaries,
+    );
+    if (connection && connection.thirdVoice === transition.voiceId &&
+        connection.fromThird.id === transition.previous.id && connection.toThird.id === transition.current.id) return true;
+  }
   if (preparesAlteredDominantFifth(context, transition) || preparesChromaticDominant(context, transition) ||
       recognizesAugmentedSixthPreparation(context, transition)) return true;
   if (semitones < 0) return lowersSixthInSubdominant(context, transition) ||
