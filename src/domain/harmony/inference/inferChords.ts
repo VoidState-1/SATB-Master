@@ -18,6 +18,7 @@ import { withWrittenPivotSevenths } from "./pivotSevenths";
 import { withAppliedSequences } from "./appliedSequences";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
 import { analyzeChordInferencePaths } from "./sequence";
+import { chooseNoncadentialTonicSixFours } from "./noncadentialTonicSixFours";
 import { classifySixFours } from "./sixFours";
 import { withPreparedSuspensions } from "./preparedSuspensions";
 import { withUpperPassingTones } from "./upperPassing";
@@ -154,7 +155,8 @@ export function inferChords(
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;
-  let { candidateSets: scored, selectedPath } = sequence;
+  let scored = sequence.candidateSets;
+  let selectedPath = chooseNoncadentialTonicSixFours(observations, scored, sequence.selectedPath, currentPhraseTicks);
   if (range.fromTick !== 0 || range.toTick !== project.lengthTicks) {
     const first = observations.findIndex(item => item.toTick > range.fromTick);
     let end = first;
@@ -166,7 +168,7 @@ export function inferChords(
     scored = scored.slice(first, end).map((set, index) =>
       set.map(candidate => ({ ...candidate, observationIndex: index })));
     selectedPath = selectedPath.slice(first, end).map((selected, index) =>
-      selected && scored[index].find(candidate => candidate.id === selected.id));
+      selected && { ...selected, observationIndex: index });
   }
   const regions = buildChordInferenceRegions(visible, scored, selectedPath, lowerNeighbors.withheldStarts);
   return {

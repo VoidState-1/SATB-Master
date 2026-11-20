@@ -5,6 +5,7 @@ import type {
   ChordInferenceWarning,
 } from "./types";
 import { analyzeChordInferencePaths } from "./sequence";
+import { hasNoncadentialTonicProof } from "./noncadentialTonicSixFours";
 
 function sameMeaning(
   left: ChordInferenceCandidate | undefined,
@@ -103,6 +104,7 @@ function regionStatus(
 ): ChordInferenceRegion["status"] {
   if (!selected) return "unclassified";
   const closest = alternatives[0];
+  if (selected.confidence !== "low" && hasNoncadentialTonicProof(selected)) return "resolved";
   if (
     selected.confidence === "low" ||
     (closest && comparisonScore(selected) - comparisonScore(closest) < 12)
@@ -138,6 +140,7 @@ export function buildChordInferenceRegions(
       observations[index - 1].key.mode === observations[index].key.mode &&
       observations[index - 1].key.tonic.step === observations[index].key.tonic.step &&
       observations[index - 1].key.tonic.alter === observations[index].key.tonic.alter &&
+      hasNoncadentialTonicProof(firstSelected) === hasNoncadentialTonicProof(selectedPath[index]) &&
       sameMeaning(firstSelected, selectedPath[index])
     ) {
       indices.push(index);
