@@ -23,6 +23,7 @@ import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
 import { isRespeltDoubleDominantSeventh } from "./chromaticDoubleDominant";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { recognizesAugmentedSixthPreparation } from "./chromaticAugmentedSixth";
+import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
 
 function validMelodyTransitions(
   context: HarmonyRuleContext,
@@ -57,6 +58,7 @@ function evaluateMelodyTransitionRule(
     const interval = Math.abs(transition.writtenInterval.semitones);
     const writtenName = intervalName(transition.writtenInterval);
     if (!policy.matches(interval, writtenName, transition.voiceId)) continue;
+    if (policy.id === "melody.tritone" && isNeapolitanSeventhBassTritone(context, transition)) continue;
     diagnostics.push(
       diagnostic(
         policy.id,
@@ -200,6 +202,7 @@ function alteredIntervalRule(
       !named.altered ||
       named.quality !== expectedQuality ||
       Math.abs(transition.writtenInterval.semitones) === 0 ||
+      isNeapolitanSeventhBassTritone(context, transition) ||
       passing?.has(transition.id) ||
       chain?.has(transition.current.id) ||
       isMinorSixthChordBassLine(context, transition) ||
@@ -406,7 +409,7 @@ export const MELODY_RULES = defineRuleGroup(
     description:
       "检查单声部旋律中是否出现未妥善解决的三全音（增四度或减五度）跳进。",
     rationale:
-      "三全音（Tritone）包含三个全音，是调式内最具张力、最不稳定且最难准确发音的音程。旋律直接进行三全音会导致调性中心模糊或发音突兀；若出现减五度跳进，后续音必须严格反向级进折回。",
+      "三全音跳进需结合声部和后续解决检查。斯波索宾第 47 章允许低音在原位降Ⅱ七到原位属七之间上行增四度或下行减五度。",
     group: "melody",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
