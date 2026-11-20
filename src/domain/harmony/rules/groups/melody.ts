@@ -21,7 +21,7 @@ import { chromaticPassingTransitionIds } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
 import { isResolvedDominantSixthBass } from "./resolvedDominantSixthBass";
-import { isRespeltDoubleDominantSeventh } from "./chromaticDoubleDominant";
+import { isRespeltDoubleDominantSeventh, resolvesRaisedSecondApproach } from "./chromaticDoubleDominant";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { recognizesAugmentedSixthPreparation, resolvesGermanSixthDiminishedThird } from "./chromaticAugmentedSixth";
 import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
@@ -212,6 +212,7 @@ function alteredIntervalRule(
       chain.has(transition.current.id) ||
       isMinorSixthChordBassLine(context, transition) ||
       (expectedQuality === "减" && isResolvedDominantSixthBass(context, transition)) ||
+      (expectedQuality === "减" && resolvesRaisedSecondApproach(context, transition)) ||
       (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
       (expectedQuality === "增" && (
         lowerDoubleDominantLeadingTone(context, transition) ||

@@ -16,7 +16,7 @@ function plainQuality(slice: AnalysisSlice, quality: "diminished7" | "dominant7"
     structure.extensions.length === 0 && structure.alterations.length === 0;
 }
 
-function hasWrittenVoicing(slice: AnalysisSlice, tones: readonly SpelledPitchClass[]) {
+export function hasWrittenVoicing(slice: AnalysisSlice, tones: readonly SpelledPitchClass[]) {
   const notes = activeNotes(slice);
   const bass = slice.notes.bass;
   return !!bass && slice.completeSatb &&
