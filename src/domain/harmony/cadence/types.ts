@@ -31,6 +31,7 @@ export interface CadenceEvidence {
     | "detached-deceptive-reprise"
     | "tonic-bass-suspension"
     | "staged-tonic-arrival"
+    | "closing-tonic-decoration"
     | "closing-tonic-pedal"
     | "closing-tonic-revoicing"
     | "articulated-interior-ending"

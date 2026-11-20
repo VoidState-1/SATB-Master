@@ -12,6 +12,7 @@ import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import { leadingTonePitchClass, pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
 import { buildMeasures, measureAtTick, ticksPerBeat, type MeasureInfo } from "../../time";
 import { buildMetricTimeline, compareMetricStrength, metricPositionAt } from "../../rhythm/metric";
+import { closingTonicDecorationEvidence } from "./closingTonicDecoration";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
 import { detachedAuthenticEvidence, detachedSparseTonicEvidence } from "./detachedAuthentic";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
@@ -372,6 +373,11 @@ function dominantApproach(
   return { path: facts.slice(start, dominantIndex + 1), evidence };
 }
 
+function beginsInsideManualCut(phrase: PhraseSegment, item: CadenceSpanFacts) {
+  return phrase.startBoundary?.source === "manual" && item.span.fromTick === phrase.fromTick &&
+    !item.boundarySlice?.attackVoiceIds.length;
+}
+
 function followsTonicRevoicingRelease(
   slices: readonly AnalysisSlice[],
   terminal: CadenceSpanFacts,
@@ -701,11 +707,9 @@ export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandi
       const sourceKeyEvent = arrivalDominant.boundarySlice?.key.id;
       const withinKeyEvent = (item: CadenceSpanFacts) =>
         item.span.sliceIndices.every(index => analysis.slices[index].key.id === sourceKeyEvent);
-      const beginsInsideManualCut = (item: CadenceSpanFacts) => phrase.startBoundary?.source === "manual" &&
-        item.span.fromTick === phrase.fromTick && !item.boundarySlice?.attackVoiceIds.length;
       if (beat && bar?.startTick === previousPrevious.span.fromTick &&
           compareMetricStrength(metricAt(previous.span.fromTick), metricAt(previousPrevious.span.fromTick)) === "weaker" &&
-          withinKeyEvent(arrivalDominant) && !beginsInsideManualCut(arrivalDominant) &&
+          withinKeyEvent(arrivalDominant) && !beginsInsideManualCut(phrase, arrivalDominant) &&
           followsTonicRevoicingRelease(analysis.slices, terminal, phrase.endBoundary,
             writtenBeatAt(terminal.span.toTick - 1))) {
         const evidence = closingTonicRevoicingEvidence(
@@ -713,10 +717,29 @@ export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandi
         );
         if (evidence) {
           const approach = dominantApproach(facts, facts.length - 4, gapEvidence,
-            item => withinKeyEvent(item) && !beginsInsideManualCut(item));
+            item => withinKeyEvent(item) && !beginsInsideManualCut(phrase, item));
           tonicPedalCandidates.push(authenticCadence(phrase, approach, previousPrevious, phraseEvidence, undefined, {
             path: [previous, terminal],
             evidence,
+          }));
+        }
+      }
+    }
+    if (previousPrevious && previous && isFifthDegreeDominant(previousPrevious) &&
+        connectionIsValid(previousPrevious, previous) && previous.span.toTick < terminal.span.fromTick &&
+        !beginsInsideManualCut(phrase, previousPrevious) && sameKey(previous.key, keyAtTick(analysis, previous.span.fromTick))) {
+      const bar = measureFor(previous.span.fromTick);
+      if (bar?.startTick === previous.span.fromTick && terminal.span.toTick <= bar.endTick &&
+          followsTonicRevoicingRelease(analysis.slices, terminal, phrase.endBoundary,
+            ticksPerBeat(analysis.project.ppq, bar.denominator))) {
+        const evidence = closingTonicDecorationEvidence(previousPrevious, previous, terminal, analysis.slices,
+          metricAt, ticksPerBeat(analysis.project.ppq, bar.denominator));
+        if (evidence) {
+          const approach = dominantApproach(facts, facts.length - 3, gapEvidence,
+            item => !beginsInsideManualCut(phrase, item) &&
+              item.span.sliceIndices.every(index => sameKey(analysis.slices[index].key, previous.boundarySlice?.key)));
+          tonicPedalCandidates.push(authenticCadence(phrase, approach, previous, phraseEvidence, undefined, {
+            path: [terminal], evidence,
           }));
         }
       }
