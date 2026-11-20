@@ -18,6 +18,7 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { chromaticPassingTransitionIds } from "./chromaticPassing";
+import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isRespeltDoubleDominantSeventh } from "./chromaticDoubleDominant";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { recognizesAugmentedSixthPreparation } from "./chromaticAugmentedSixth";
@@ -191,6 +192,7 @@ function alteredIntervalRule(
 ) {
   const diagnostics: RuleDiagnostic[] = [];
   const passing = expectedQuality === "增" ? chromaticPassingTransitionIds(context) : undefined;
+  const chain = expectedQuality === "增" ? halfDiminishedChainArrivals(context) : undefined;
   for (const transition of validMelodyTransitions(context)) {
     const named = intervalName(transition.writtenInterval);
     if (
@@ -198,6 +200,7 @@ function alteredIntervalRule(
       named.quality !== expectedQuality ||
       Math.abs(transition.writtenInterval.semitones) === 0 ||
       passing?.has(transition.id) ||
+      chain?.has(transition.current.id) ||
       (expectedQuality === "增" && (
         lowerDoubleDominantLeadingTone(context, transition) ||
         preparesDoubleDominantSeventhBass(context, transition) ||
