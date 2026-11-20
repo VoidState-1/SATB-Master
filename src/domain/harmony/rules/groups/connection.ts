@@ -20,6 +20,7 @@ import type { ConnectionView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { isAuxiliaryFrenchSixthReturn } from "./auxiliaryAugmentedSixth";
 import { isMajorTonicSixFour, resolvesDoubleAugmentedFourThree } from "../../doubleAugmentedFourThree";
+import { resolvesPreparedDoubleAugmentedFourThree } from "./preparedDoubleAugmentedFourThree";
 
 // Spasobin §30, example 460. The fifth can descend a semitone before
 // the two augmented-sixth endpoints resolve from the French sixth.
@@ -144,7 +145,8 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
         pitchClassEquals(sourceChord.identity.bass, sourceSlice.notes.bass!.pitch) &&
         !context.analysis.phraseBoundaries.some(mark =>
           mark.source === "manual" && sourceSlice.tick < mark.tick && mark.tick <= targetSlice.tick) &&
-        resolvesDoubleAugmentedFourThree(sourceSlice.notes, targetSlice.notes, sourceKey)) continue;
+        (resolvesDoubleAugmentedFourThree(sourceSlice.notes, targetSlice.notes, sourceKey) ||
+          resolvesPreparedDoubleAugmentedFourThree(context, candidate, sourceKey))) continue;
     if (!isDoubleAugmented43 && (isDominant || isCadential64) && lowResolves && highResolves)
       continue;
     if (isGermanToFrenchContinuation(context, candidate, sourceKey)) continue;
