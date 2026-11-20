@@ -40,12 +40,13 @@ function NumberEditor({
 }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
-  const commit = () => {
-    const next = Number(draft);
+  const commit = (input: HTMLInputElement) => {
+    const { valueAsNumber: next, validity } = input;
     if (
       !Number.isFinite(next) ||
-      (min !== undefined && next < min) ||
-      (max !== undefined && next > max)
+      validity.rangeUnderflow ||
+      validity.rangeOverflow ||
+      (step !== undefined && validity.stepMismatch)
     ) {
       setDraft(String(value));
       return;
@@ -62,11 +63,14 @@ function NumberEditor({
       disabled={disabled}
       aria-label={label}
       onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
+      onBlur={(event) => commit(event.currentTarget)}
       onKeyDown={(event) => {
         if (event.key === "Enter") event.currentTarget.blur();
         if (event.key === "Escape") {
-          setDraft(String(value));
+          // Blur runs before React commits the restored draft.
+          const saved = String(value);
+          event.currentTarget.value = saved;
+          setDraft(saved);
           event.currentTarget.blur();
         }
       }}
