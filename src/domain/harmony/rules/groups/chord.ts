@@ -25,6 +25,7 @@ import {
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
+import { beforeMelodicMinorPassingBass } from "../helpers/melodicMinorPassingBass";
 import { hasPairedOuterNeighborBass } from "../helpers/pairedOuterNeighborBass";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { notesWithAnticipationReplacements } from "../helpers/anticipation";
@@ -158,7 +159,8 @@ export function inversionBassRule(context: HarmonyRuleContext) {
   standardChordSliceFacts(context).forEach(({ slice, chord, active }) => {
     const bass = active.find((item) => item.voiceId === "bass");
     if (!bass || pitchClassEquals(bass.note.pitch, chord.identity.bass)) return;
-    if (connectsStructuralBasses(context, chord, bass.note) || hasPairedOuterNeighborBass(context, slice)) return;
+    if (connectsStructuralBasses(context, chord, bass.note) || beforeMelodicMinorPassingBass(context, slice) ||
+        hasPairedOuterNeighborBass(context, slice)) return;
     diagnostics.push(
       diagnostic(
         "chord.inversion-bass",

@@ -3,6 +3,7 @@ import { pitchClassEquals } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import { upperPassingMotion } from "../../upperPassingMotion";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import { beforeMelodicMinorPassingBass } from "./melodicMinorPassingBass";
 import { activeNotes } from "./core";
 
 // Assess the last *structural* four voices when a verified upper passing
@@ -10,6 +11,7 @@ import { activeNotes } from "./core";
 export function structuralTriadVoicing(context: HarmonyRuleContext, end: AnalysisSlice) {
   if (!end.chord || end.attackVoiceIds.length !== 1 ||
       end.notes[end.attackVoiceIds[0]]?.nonChordToneRole !== "passing") return end;
+  if (end.attackVoiceIds[0] === "bass") return beforeMelodicMinorPassingBass(context, end) ?? end;
   const left = context.sliceAt(end.tick - 1), right = context.sliceAt(end.endTick);
   if (!left?.chord || left.chord.id !== end.chord.id || !right?.chord ||
       context.analysis.phraseBoundaries.some(b => left.tick < b.tick && b.tick <= right.tick)) return end;
