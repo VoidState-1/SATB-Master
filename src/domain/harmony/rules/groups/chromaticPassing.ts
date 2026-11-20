@@ -1,10 +1,12 @@
-import { chordIdentityEquals, chordIdentityToneSpellings, type ChordIdentity, type KeyReference } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, type SpelledPitchClass } from "../../../pitch";
-import { VOICE_ORDER } from "../../../project/voice";
-import { sameChordIdentityWithoutBass, type AnalysisSlice, type MelodyTransition } from "../../analysis";
+import { chordIdentityEquals, chordIdentityToneSpellings, chordToneSpellings, type ChordIdentity, type KeyReference } from "../../../chordModel";
+import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { VOICE_ORDER, type VoiceId } from "../../../project";
+import { sameChordIdentityWithoutBass, type AnalysisNote, type AnalysisSlice, type MelodyTransition } from "../../analysis";
 import { soundsCompleteWrittenChord } from "../../writtenNeighbors";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasExactPitch } from "../helpers/core";
+import { matchesWrittenChord, resolvesInVoice } from "../helpers/writtenResolution";
+import { hasWrittenVoicing } from "../state/doubleDominantSeventh";
 
 function writtenDegree(key: KeyReference, pitch: SpelledPitchClass) {
   return (stepIndex(pitch.step) - stepIndex(key.tonic.step) + 7) % 7 + 1;
@@ -94,6 +96,182 @@ function isRaisedTonicThirdPassing(
   });
 }
 
+function sameKey(left: KeyReference, right: KeyReference) {
+  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
+}
+
+function continuousContext(context: HarmonyRuleContext, fromTick: number, to: AnalysisSlice) {
+  return !context.analysis.phraseBoundaries.some(mark =>
+    !mark.stale && fromTick < mark.tick && mark.tick <= to.tick) &&
+    !context.analysis.project.keyEvents.some(event => fromTick < event.tick && event.tick <= to.tick);
+}
+
+function resolvedDegree(context: HarmonyRuleContext, slice: AnalysisSlice, degree: 1 | 5) {
+  const chord = slice.chord;
+  if (!chord || chord.semantics?.interpretations.length !== 1) return;
+  const reading = context.harmony.primaryInterpretation(chord);
+  if (reading.status !== "resolved" || reading.value.degree !== degree ||
+      reading.value.degreeAlteration !== 0 || reading.value.appliedTarget ||
+      reading.value.designation?.kind !== "primary" ||
+      reading.value.designation.primaryFunction !== (degree === 1 ? "tonic" : "dominant")) return;
+  return reading.value.localKey ?? slice.key;
+}
+
+function keyOfCadentialBackbone(context: HarmonyRuleContext, slice: AnalysisSlice, root: SpelledPitchClass) {
+  const bass = slice.notes.bass!;
+  // The same real dominant bass must reach a written V7–I within its measure.
+  const limit = bass.startTick + bass.durationTicks;
+  const dominant = context.sliceAt(limit - 1);
+  const tonic = context.sliceAt(limit);
+  if (!dominant || !tonic || tonic.tick !== limit || !dominant.chord || !tonic.chord ||
+      dominant.chord.startTick !== dominant.tick || tonic.chord.startTick !== limit ||
+      dominant.notes.bass?.id !== bass.id || !pitchClassEquals(bass.pitch, root) ||
+      context.metric.positionAt(dominant.tick)?.measureNumber !== context.metric.positionAt(slice.tick)?.measureNumber ||
+      !continuousContext(context, slice.tick, tonic)) return;
+  const key = resolvedDegree(context, tonic, 1);
+  const domKey = resolvedDegree(context, dominant, 5);
+  if (!key || !domKey || key.mode !== "major" || !sameKey(key, domKey) ||
+      !pitchClassEquals(root, scaleDegreePitchClass(key, 5)) ||
+      !matchesWrittenChord(dominant, root, "dominant7")) return;
+
+  const third = scaleDegreePitchClass(key, 3);
+  const tonicIdentity = plainTriad(key.tonic, "major", key.tonic);
+  if (!chordIdentityEquals(tonic.chord.identity, tonicIdentity) || !tonic.notes.bass ||
+      !pitchClassEquals(tonic.notes.bass.pitch, key.tonic) ||
+      (!hasWrittenVoicing(tonic, chordToneSpellings(key.tonic, "major")) &&
+        !hasWrittenVoicing(tonic, [key.tonic, third]))) return;
+  const tones = chordToneSpellings(root, "dominant7");
+  const leading = VOICE_ORDER.find(voice => pitchClassEquals(dominant.notes[voice]!.pitch, tones[1]))!;
+  const seventh = VOICE_ORDER.find(voice => pitchClassEquals(dominant.notes[voice]!.pitch, tones[3]))!;
+  if (resolvesInVoice(dominant, tonic, leading, key.tonic, 1) &&
+      resolvesInVoice(dominant, tonic, seventh, third, -1)) return key;
+}
+
+function compatibleBackbone(
+  context: HarmonyRuleContext, slice: AnalysisSlice, harmony: ChordIdentity, key: KeyReference,
+) {
+  if (!slice.chord) return true;
+  const labelled = localKey(context, slice);
+  return (slice.chord.semantics?.interpretations.length ?? 0) <= 1 && !!labelled && sameKey(labelled, key) &&
+    chordIdentityEquals(slice.chord.identity, harmony);
+}
+
+function isDiatonicIn(key: KeyReference, note: AnalysisNote) {
+  return pitchClassEquals(note.pitch, scaleDegreePitchClass(key, writtenDegree(key, note.pitch)));
+}
+
+function hasStepwiseEntry(
+  context: HarmonyRuleContext, voice: VoiceId, fromTick: number, left: AnalysisNote,
+  key: KeyReference, harmony: ChordIdentity,
+) {
+  const onset = context.sliceAt(fromTick);
+  if (!onset?.notes[voice] || !fullySoundsTriad(onset, harmony)) return false;
+  const line = context.analysis.notesByVoice[voice].filter(note =>
+    fromTick <= note.startTick && note.startTick <= left.startTick);
+  if (line.length < 2 || line.length > 3 || line[0].id !== onset.notes[voice].id ||
+      line[line.length - 1].id !== left.id) return false;
+  return line.slice(1).every((note, index) => {
+    const prior = line[index];
+    const step = writtenInterval(prior.pitch, note.pitch);
+    return prior.startTick + prior.durationTicks === note.startTick &&
+      step.diatonicSteps === -1 && (step.semitones === -1 || step.semitones === -2) &&
+      isDiatonicIn(key, note) && (!note.nonChordToneRole || note.nonChordToneRole === "passing");
+  });
+}
+
+function loweredThirdPreparingDominant(
+  context: HarmonyRuleContext, source: AnalysisSlice, voiceId: VoiceId, key: KeyReference,
+) {
+  const approach = context.melodyTransitions({ voiceId }).first(motion => motion.current.id === source.notes[voiceId]?.id);
+  if (!approach || !approach.contiguous || !approach.sameKey || approach.current.startTick !== source.tick ||
+      approach.previous.nonChordToneRole || approach.writtenInterval.diatonicSteps !== 0 ||
+      approach.writtenInterval.semitones !== -1 ||
+      !pitchClassEquals(approach.previous.pitch, scaleDegreePitchClass(key, 3))) return;
+  const before = context.sliceAt(source.tick - 1);
+  const sixth = scaleDegreePitchClass(key, 6);
+  if (!before || !continuousContext(context, approach.previous.startTick, source) ||
+      !(matchesWrittenChord(before, sixth, "minor") || matchesWrittenChord(before, sixth, "minor7"))) return;
+  if (VOICE_ORDER.filter(part => pitchClassEquals(before.notes[part]!.pitch, approach.previous.pitch)).length !== 1) return;
+  if (before.chord) {
+    const reading = context.harmony.primaryInterpretation(before.chord);
+    if (before.chord.semantics?.interpretations.length !== 1 || reading.status !== "resolved" ||
+        reading.value.degree !== 6 || reading.value.degreeAlteration !== 0 || reading.value.appliedTarget ||
+        !sameKey(reading.value.localKey ?? before.key, key)) return;
+  }
+  // §41.3, ex. 41-617: lowered III takes the written seventh of DDVII7.
+  return approach.id;
+}
+
+function preparesNinthOnDominant(
+  context: HarmonyRuleContext, voice: VoiceId, fromTick: number, left: AnalysisNote,
+  key: KeyReference, root: SpelledPitchClass,
+) {
+  const preparation = context.sliceAt(fromTick - 1), arrival = context.sliceAt(fromTick);
+  if (!preparation || !arrival || preparation.notes[voice]?.id !== left.id || arrival.notes[voice]?.id !== left.id ||
+      !pitchClassEquals(left.pitch, scaleDegreePitchClass(key, 6)) ||
+      !pitchClassEquals(root, scaleDegreePitchClass(key, 5)) ||
+      (!preparation.notes.bass || !pitchClassEquals(preparation.notes.bass.pitch, scaleDegreePitchClass(key, 4, 1))) ||
+      !matchesWrittenChord(preparation, scaleDegreePitchClass(key, 4, 1), "diminished7")) return;
+  if (preparation.chord) {
+    const reading = context.harmony.primaryInterpretation(preparation.chord);
+    if (reading.status !== "resolved" || preparation.chord.semantics?.interpretations.length !== 1) return;
+    const { degree, degreeAlteration, designation, appliedTarget, localKey } = reading.value;
+    if (degree !== 7 || degreeAlteration !== 0 || !sameKey(localKey ?? preparation.key, key) ||
+        (designation?.kind !== "double-dominant-leading-tone" && designation?.kind !== "applied-leading-tone") ||
+        appliedTarget?.degree !== 5 || appliedTarget.primaryFunction !== "dominant" || appliedTarget.secondaryFunction) return;
+  }
+  const seventh = VOICE_ORDER.find(part =>
+    pitchClassEquals(preparation.notes[part]!.pitch, scaleDegreePitchClass(key, 3, -1)))!;
+  if (!resolvesInVoice(preparation, arrival, "bass", root, 1) ||
+      !resolvesInVoice(preparation, arrival, seventh, scaleDegreePitchClass(key, 2), -1)) return;
+  return { seventhEntry: loweredThirdPreparingDominant(context, preparation, seventh, key) };
+}
+
+/** §41.1b/§41.3: a chromatic step may connect a diatonic passing tone
+ * (or a prepared ninth) to a chord tone over a physically held triad. */
+function readHeldTriadForDescendingPassing(
+  context: HarmonyRuleContext, first: MelodyTransition, second: MelodyTransition,
+) {
+  const { previous: left, current: middle, voiceId } = first;
+  const { current: right } = second;
+  if (first.current.id !== second.previous.id || !first.contiguous || !second.contiguous ||
+      !first.sameKey || !second.sameKey || voiceId === "bass" ||
+      first.writtenInterval.diatonicSteps !== 0 || first.writtenInterval.semitones !== -1 ||
+      second.writtenInterval.diatonicSteps !== -1 || second.writtenInterval.semitones !== -1 ||
+      (left.nonChordToneRole && left.nonChordToneRole !== "passing") || right.nonChordToneRole ||
+      (middle.nonChordToneRole && middle.nonChordToneRole !== "passing")) return;
+  const from = context.sliceAt(middle.startTick - 1);
+  const to = context.sliceAt(right.startTick);
+  if (!from?.completeSatb || !to?.completeSatb) return;
+  const weak = context.metric.positionAt(middle.startTick);
+  if (weak?.role !== "subdivision" || context.metric.compare(context.metric.positionAt(right.startTick), weak) !== "stronger" ||
+      middle.durationTicks > Math.min(left.durationTicks, right.durationTicks)) return;
+
+  const bass = to.notes.bass!;
+  const others = VOICE_ORDER.filter(voice => voice !== voiceId);
+  const held = others.map(voice => to.notes[voice]!);
+  if (held.some(note => note.nonChordToneRole || toMidi(note.pitch) < toMidi(bass.pitch)) ||
+      ![left, middle, right].every(note => toMidi(note.pitch) >= toMidi(bass.pitch))) return;
+  const root = held.find(({ pitch }) => chordToneSpellings(pitch, "major").every(tone =>
+    held.some(note => pitchClassEquals(note.pitch, tone))))?.pitch;
+  if (!root) return;
+  const harmony = plainTriad(root, "major", bass.pitch);
+  const tones = chordToneSpellings(root, "major");
+  if (!hasExactPitch(right, tones) || hasExactPitch(left, tones) || hasExactPitch(middle, tones)) return;
+  const backingStart = Math.max(...held.map(note => note.startTick));
+  const spans = context.slices({ overlapping: { fromTick: backingStart, toTick: right.startTick + 1 } });
+  if (backingStart >= middle.startTick || !continuousContext(context, Math.min(backingStart, left.startTick), to) ||
+      !spans.all(slice => slice.completeSatb && held.every((note, index) => slice.notes[others[index]]?.id === note.id))) return;
+
+  const prepared = left.startTick < backingStart;
+  const key = prepared ? keyOfCadentialBackbone(context, to, root) : localKey(context, to);
+  if (!key || key.mode !== "major" || !isDiatonicIn(key, left) || !isDiatonicIn(key, right) ||
+      !usualChromaticSpelling(key, middle.pitch, false) ||
+      !spans.all(slice => compatibleBackbone(context, slice, harmony, key))) return;
+  if (prepared) return preparesNinthOnDominant(context, voiceId, backingStart, left, key, root);
+  if (hasStepwiseEntry(context, voiceId, backingStart, left, key, harmony)) return { seventhEntry: undefined };
+}
+
 function isChromaticPassing(context: HarmonyRuleContext, first: MelodyTransition, second: MelodyTransition) {
   if (first.current.id !== second.previous.id || !first.contiguous || !second.contiguous ||
       !first.sameKey || !second.sameKey) return false;
@@ -143,8 +321,13 @@ export function chromaticPassingTransitionIds(context: HarmonyRuleContext) {
   const ids = new Set<string>();
   for (const voiceId of VOICE_ORDER) {
     for (const [first, second] of context.melodyTransitions({ voiceId }).window(2)) {
-      if (isChromaticPassing(context, first, second))
+      const supported = readHeldTriadForDescendingPassing(context, first, second);
+      if (supported) {
+        ids.add(first.id);
+        if (supported.seventhEntry) ids.add(supported.seventhEntry);
+      } else if (isChromaticPassing(context, first, second)) {
         ids.add(first.writtenInterval.diatonicSteps === 0 ? first.id : second.id);
+      }
     }
   }
   return ids;
