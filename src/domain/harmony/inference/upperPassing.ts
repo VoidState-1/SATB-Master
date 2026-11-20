@@ -1,6 +1,7 @@
-import { chordIdentityToneSpellings } from "../../chordModel";
+import { chordIdentityToneSpellingForDegree, chordIdentityToneSpellings } from "../../chordModel";
 import { pitchClassEquals } from "../../pitch";
 import { upperPassingMotion } from "../upperPassingMotion";
+import { soundsCompleteWrittenChord } from "../writtenNeighbors";
 import { fitProlongedHarmony } from "./candidates";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
@@ -8,6 +9,12 @@ import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInference
 function exact(candidate: ChordInferenceCandidate) {
   return candidate.fit.bassMatchesInversion && candidate.fit.spellingConsistent &&
     !candidate.fit.nonChordToneNoteIds.length && !candidate.fit.omittedChordDegrees.length;
+}
+
+function soundsComplete(candidate: ChordInferenceCandidate, observation: ChordInferenceObservation) {
+  return !!observation.bass && soundsCompleteWrittenChord(
+    candidate.identity, observationNotes(observation).map(({ note }) => note), observation.bass,
+  );
 }
 
 export function withUpperPassingTones(
@@ -33,8 +40,19 @@ export function withUpperPassingTones(
           !chordIdentityToneSpellings(anchor.identity).some(t => pitchClassEquals(t, motion.after.pitch))) return [];
       const id = motion.note.id;
       const fit = fitProlongedHarmony(anchor, mid, id);
-      // The three held notes must independently retain root, third and fifth.
-      if (!fit || fit.fit.omittedChordDegrees.length) return [];
+      if (!fit) return [];
+      const omitted = fit.fit.omittedChordDegrees;
+      if (omitted.length) {
+        // §38.5: the passing voice can temporarily take away the written root or fifth.
+        // A competing endpoint may change the interpretation of the entire span.
+        const [degree] = omitted;
+        if (omitted.length !== 1 || (degree !== 1 && degree !== 5) ||
+            sets[i - 1].length !== 1 || sets[i + 1].length !== 1 ||
+            !soundsComplete(anchor, left) || !soundsComplete(arrivals[0], right)) return [];
+        const departure = left.activeNotes[mid.attackVoiceIds[0]];
+        const displaced = chordIdentityToneSpellingForDegree(anchor.identity, degree);
+        if (!departure || !displaced || !pitchClassEquals(displaced, departure.pitch)) return [];
+      }
       return [{
         ...fit, fit: { ...fit.fit, nonChordToneAssignments: { [id]: "passing" as const } },
         evidence: [...fit.evidence, { kind: "inferred-nonchord-tone" as const, code: "passing", noteIds: [id] }],
