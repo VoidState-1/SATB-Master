@@ -244,8 +244,9 @@ function validateCadenceAnnotation(
     ["manual", "accepted-candidate"].includes(value.source as string) &&
     ["certain", "probable"].includes(value.confidence as string) &&
     typeof value.locked === "boolean" &&
-    (value.stale === undefined || typeof value.stale === "boolean")
-    &&
+    (value.stale === undefined || typeof value.stale === "boolean") &&
+    (value.observedLandingTick === undefined || (value.source === "accepted-candidate" &&
+      isInteger(value.observedLandingTick, (value.fromTick as number) + 1, (value.toTick as number) - 1))) &&
     (value.kind === "full" || value.completion === undefined) &&
     (value.kind !== "supplementary" || value.form === "plagal") &&
     (value.form !== "plagal" || value.kind !== "deceptive")
@@ -272,7 +273,8 @@ function validateCadenceAnnotations(
   )
     return false;
   return annotations.every((annotation) => {
-    return annotation.stale === true || cadenceChordCoverage(annotation, regions, boundaries).aligned;
+    return annotation.stale === true || annotation.observedLandingTick !== undefined ||
+      cadenceChordCoverage(annotation, regions, boundaries).aligned;
   });
 }
 

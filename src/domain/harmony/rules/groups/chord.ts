@@ -192,8 +192,9 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   const fullCadenceTargets = new Set<string>();
   for (const cadence of context.cadences({ kind: "full" })) {
-    if (cadence.annotation?.stale || cadence.candidate?.unharmonizedLandingTick !== undefined) continue;
-    const targetChord = cadence.spans.at(-1)?.lastSlice.chord;
+    const targetChord = cadence.observedLandingTick === undefined
+      ? cadence.landingSpan?.lastSlice.chord
+      : cadence.landingSpan?.firstSlice.chord;
     if (targetChord) fullCadenceTargets.add(targetChord.id);
   }
   standardChordSliceFacts(context).forEach(

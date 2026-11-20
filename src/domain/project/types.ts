@@ -103,6 +103,8 @@ export type CadenceForm = "authentic" | "plagal";
 export type CadenceCompletion = "perfect" | "imperfect";
 
 export interface CadenceAnnotation {
+  /** Actual cadence onset within a confirmed candidate's range. */
+  observedLandingTick?: number;
   id: string;
   phraseId: string;
   fromTick: number;

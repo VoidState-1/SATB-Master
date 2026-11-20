@@ -24,6 +24,7 @@ import type {
 import { detectCadences } from "./cadence";
 import { cadenceInputs } from "./cadence/projectEvidence";
 import { keyAtTick, sameChordIdentityWithoutBass, sameKey, sameSemanticContext } from "./segments";
+import { reviewObservedCadenceAnnotation } from "./cadence/confirmation";
 import type { CadenceCandidate } from "./cadence";
 import type { CadenceAnnotation as ProjectCadenceAnnotation } from "../project/types";
 import {
@@ -544,7 +545,10 @@ export function buildHarmonyAnalysis(
     connections,
   });
   const cadenceCandidates = detectCadences(inputs);
-  const cadenceAnnotations = snapshot.chordTrack.cadenceAnnotations;
+  const saved = snapshot.chordTrack.cadenceAnnotations;
+  const cadenceAnnotations = saved.some(item => item.observedLandingTick !== undefined)
+    ? Object.freeze(saved.map(annotation => Object.freeze(reviewObservedCadenceAnnotation(annotation, cadenceCandidates))))
+    : saved;
   const cadenceAtTick = new Map<
     number,
     CadenceCandidate | DeepReadonly<ProjectCadenceAnnotation>
@@ -553,7 +557,8 @@ export function buildHarmonyAnalysis(
     cadenceAtTick.set(candidate.fromTick, candidate),
   );
   cadenceAnnotations.forEach((annotation) =>
-    cadenceAtTick.set(annotation.fromTick, annotation),
+    (annotation.observedLandingTick === undefined || !annotation.stale || !cadenceAtTick.has(annotation.fromTick)) &&
+      cadenceAtTick.set(annotation.fromTick, annotation),
   );
 
   return Object.freeze({

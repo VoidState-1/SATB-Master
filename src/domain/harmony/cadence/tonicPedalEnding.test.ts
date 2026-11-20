@@ -34,7 +34,7 @@ describe("正格落主后的持续主音", () => {
     const { project, analysis, recovered } = analyze();
     expect(recovered).toMatchObject({
       kind: "full", form: "authentic", completion: "perfect", confidence: "probable",
-      fromTick: 3 * PPQ, toTick: 8 * PPQ,
+      fromTick: 3 * PPQ, toTick: 8 * PPQ, observedLandingTick: 4 * PPQ,
       evidence: expect.arrayContaining([expect.objectContaining({
         code: "closing-tonic-pedal", refs: expect.arrayContaining(["note-B-3840", "note-S-3840"]),
       })]),

@@ -1,6 +1,8 @@
 import { chordDraftFromIdentity } from "../chordModel";
 import { formatChordIdentity } from "../chords";
 import { analyzePhrases } from "../harmony/phrase";
+import { detectProjectCadences } from "../harmony/cadence/projectEvidence";
+import { reviewObservedCadenceAnnotation } from "../harmony/cadence/confirmation";
 import { validateProject, type ProjectDocument } from "../project";
 import { buildMeasures, eventAtTick, type MeasureInfo } from "../time";
 import { SCORE_VOICES, fail, type ScoreReference, type ScoreVoice } from "./types";
@@ -47,10 +49,13 @@ function annotationLines(project: ProjectDocument, measures: MeasureInfo[], from
       lines.push(`boundary at=${positionText(boundary.tick, measures)} source=${boundary.source} confidence=${boundary.confidence}${boundary.stale ? " stale=true" : ""}`);
   }
   const phrases = analyzePhrases(project, { generateCandidates: false }).segments;
-  for (const cadence of project.chordTrack.cadenceAnnotations) {
+  const candidates = project.chordTrack.cadenceAnnotations.some(item => item.observedLandingTick !== undefined)
+    ? detectProjectCadences(project) : [];
+  for (const saved of project.chordTrack.cadenceAnnotations) {
+    const cadence = reviewObservedCadenceAnnotation(saved, candidates);
     if (!intersects(cadence.fromTick, cadence.toTick, from, to)) continue;
     const phrase = phrases.find((item) => item.id === cadence.phraseId);
-    lines.push(`cadence range=${range(cadence.fromTick, cadence.toTick)} phrase=${phrase ? range(phrase.fromTick, phrase.toTick) : "unresolved"} kind=${cadence.kind}${cadence.form ? ` form=${cadence.form}` : ""}${cadence.completion ? ` completion=${cadence.completion}` : ""} source=${cadence.source} confidence=${cadence.confidence}${cadence.stale ? " stale=true" : ""}${cadence.locked ? " locked=true" : ""}${includeIds ? ` id=${cadence.id}` : ""}`);
+    lines.push(`cadence range=${range(cadence.fromTick, cadence.toTick)} phrase=${phrase ? range(phrase.fromTick, phrase.toTick) : "unresolved"} kind=${cadence.kind}${cadence.form ? ` form=${cadence.form}` : ""}${cadence.completion ? ` completion=${cadence.completion}` : ""} source=${cadence.source} confidence=${cadence.confidence}${cadence.observedLandingTick !== undefined ? ` observedLanding=${positionText(cadence.observedLandingTick, measures)}` : ""}${cadence.stale ? " stale=true" : ""}${cadence.locked ? " locked=true" : ""}${includeIds ? ` id=${cadence.id}` : ""}`);
   }
   for (const track of project.auxiliaryTracks)
     lines.push(`auxiliary ${JSON.stringify(track.name)} notes=${track.notes.length} (not shown in SATB grid)`);

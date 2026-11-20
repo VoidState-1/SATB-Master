@@ -264,7 +264,7 @@ error | warning | suggestion | off
 
 工程级结构 `structure.phraseBoundaries` 保存乐句边界（见 [analysis-inference.md](./analysis-inference.md)）。每个 `PhraseBoundary` 带 `id`、`tick`、`source`（`manual` / `inferred`）、`confidence`、可选 `locked`、自动推导用的 `inferenceFingerprint` 与 `stale` 标记。工程起点和终点由分析端点补全，不要求显式保存。
 
-`chordTrack.cadenceAnnotations` 保存乐句末端的终止式范围标注。每个 `CadenceAnnotation` 带 `id`、`phraseId`、`fromTick`、`toTick`、`kind`（`full` / `half` / `supplementary` / `deceptive`）、可选 `form`（`authentic` / `plagal`）与 `completion`（`perfect` / `imperfect`）、`source`（`manual` / `accepted-candidate`）、`confidence`、`locked` 与 `stale`。
+`chordTrack.cadenceAnnotations` 保存乐句末端的终止式范围标注。确认跨休止、实音无和弦标签或落主后仍有延展的候选时，可选字段 `observedLandingTick` 记录谱面的实际落点。重开工程或重新分析时，程序会核对当前乐句、范围、类型和落点，证据失效的标注显示为待复核。每个 `CadenceAnnotation` 带 `id`、`phraseId`、`fromTick`、`toTick`、`kind`（`full` / `half` / `supplementary` / `deceptive`）、可选 `form`（`authentic` / `plagal`）与 `completion`（`perfect` / `imperfect`）、`source`（`manual` / `accepted-candidate`）、`confidence`、`locked` 与 `stale`。
 
 两者都是可编辑工程数据，遵循以下不变量：
 

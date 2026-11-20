@@ -124,12 +124,11 @@ function cadenceRuleContexts(context: HarmonyRuleContext) {
     .where(
       (cadence) =>
         !cadence.annotation?.stale &&
-        cadence.candidate?.unharmonizedLandingTick === undefined &&
         (cadence.source !== "candidate" || cadence.confidence === "certain"),
     )
     .selectMany((cadence) => {
-    const target = cadence.spans.at(-1);
-    const source = cadence.spans.at(-2);
+    const target = cadence.landingSpan;
+    const source = cadence.precedingSpan;
     if (!target) return [];
     const sourceSlice = source?.lastSlice;
     const targetSlice = target.firstSlice;

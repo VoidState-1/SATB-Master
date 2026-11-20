@@ -253,6 +253,7 @@ function candidate(
     readonly completion?: CadenceCompletion;
     readonly confidenceCap?: CadenceConfidence;
     readonly unharmonizedLanding?: AnalysisSlice;
+    readonly observedLandingTick?: number;
   } = {},
 ): CadenceCandidate {
   const score = scoreFor(kind, phrase, evidence);
@@ -264,7 +265,9 @@ function candidate(
     confidenceRank[evidenceConfidence] > confidenceRank[options.confidenceCap]
       ? options.confidenceCap
       : evidenceConfidence;
+  const observedLandingTick = options.observedLandingTick ?? options.unharmonizedLanding?.tick;
   return {
+    ...(observedLandingTick !== undefined && { observedLandingTick }),
     id: `cadence:${phrase.id}:${kind}:${first.id}:${last.id}` +
       (options.unharmonizedLanding ? `:notes-${options.unharmonizedLanding.tick}` : ""),
     phraseId: phrase.id,
@@ -435,6 +438,9 @@ function authenticCadence(
   return candidate(phrase, "full", path, evidence, {
     form: "authentic",
     completion,
+    observedLandingTick: extension || landingGap?.code === "detached-dominant-to-tonic"
+      ? tonic.span.fromTick
+      : undefined,
     confidenceCap: completion && bassFormula && tonic.span.toTick === phrase.toTick &&
       !landingGap && !extension
       ? undefined
@@ -515,7 +521,7 @@ function hasAuthenticTailAnchor(
 function deceptiveRepriseCandidate(phrase: PhraseSegment, earlier: NonNullable<ReturnType<typeof precedingDetachedDeception>>) {
   return candidate(phrase, "deceptive", [earlier.dominant, earlier.vi], [
     earlier.evidence, { code: "dominant-to-alternative", value: "本调原位属和弦到六级" },
-  ], { confidenceCap: "probable" });
+  ], { confidenceCap: "probable", observedLandingTick: earlier.vi.span.fromTick });
 }
 
 function articulatedInteriorCadences(

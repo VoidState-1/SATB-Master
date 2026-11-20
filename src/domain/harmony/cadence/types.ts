@@ -48,6 +48,8 @@ export interface CadenceCandidate {
   readonly toTick: number;
   /** Actual cadence arrival when no chord span is present at the landing. */
   readonly unharmonizedLandingTick?: number;
+  /** Observed onset when the range alone cannot identify the arrival. */
+  readonly observedLandingTick?: number;
   readonly kind: CadenceKind;
   readonly form?: CadenceForm;
   readonly completion?: CadenceCompletion;

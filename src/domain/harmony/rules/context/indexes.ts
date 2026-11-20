@@ -1,3 +1,4 @@
+import { matchingObservedCadence, observedCadenceLandingTick } from "../../cadence/confirmation";
 import type { NonChordToneRole, VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import { clipHarmonySpan, sliceWithinSpan } from "../../cadence/spanRange";
@@ -123,23 +124,44 @@ export function createHarmonyRuleIndexes(
   const phraseById = new Map(
     analysis.phraseSegments.map((phrase) => [phrase.id, phrase] as const),
   );
-  const spanViewsInRange = (fromTick: number, toTick: number) =>
-    frozenSpanViews.flatMap(view => {
-      const span = clipHarmonySpan(view.span, analysis.slices, fromTick, toTick);
-      if (!span) return [];
-      if (span === view.span) return [view];
-      const slices = span.sliceIndices.map(index => sliceWithinSpan(analysis.slices[index], span));
-      return [Object.freeze({ span, slices: Object.freeze(slices), firstSlice: slices[0], lastSlice: slices[slices.length - 1],
-        chords: Object.freeze(view.chords.filter(chord => span.regionIds.includes(chord.id))) })];
+  function clipSpanView(view: SpanView, fromTick: number, toTick: number): SpanView | undefined {
+    const span = clipHarmonySpan(view.span, analysis.slices, fromTick, toTick);
+    if (!span) return;
+    if (span === view.span) return view;
+    const slices = span.sliceIndices.map(index => sliceWithinSpan(analysis.slices[index], span));
+    return Object.freeze({
+      span, slices: Object.freeze(slices), firstSlice: slices[0], lastSlice: slices[slices.length - 1],
+      chords: Object.freeze(view.chords.filter(chord => span.regionIds.includes(chord.id))),
     });
+  }
+  const spanViewsInRange = (fromTick: number, toTick: number) => {
+    const start = firstIndex(frozenSpanViews, view => view.span.toTick > fromTick);
+    const end = firstIndex(frozenSpanViews, view => view.span.fromTick >= toTick);
+    return frozenSpanViews.slice(start, end).flatMap(view => clipSpanView(view, fromTick, toTick) ?? []);
+  };
   const chordViewsInRange = (fromTick: number, toTick: number) =>
     analysis.project.chordTrack.regions.filter(
       (chord) =>
         chord.startTick < toTick &&
         chord.startTick + chord.durationTicks > fromTick,
     );
+  function cadenceEndpoints(spans: readonly SpanView[], toTick: number, observedTick?: number) {
+    if (observedTick === undefined) {
+      const last = spans.at(-1);
+      return last?.span.toTick === toTick ? { landingSpan: last, precedingSpan: spans.at(-2) } : {};
+    }
+    const index = firstIndex(spans, view => view.span.toTick > observedTick);
+    const sounding = spans[index];
+    return {
+      landingSpan: sounding && sounding.span.fromTick <= observedTick
+        ? clipSpanView(sounding, observedTick, toTick)
+        : undefined,
+      precedingSpan: spans[index - 1],
+    };
+  }
   const candidateViews = analysis.cadenceCandidates.map((candidate) => {
     const spans = spanViewsInRange(candidate.fromTick, candidate.toTick);
+    const observedLandingTick = observedCadenceLandingTick(candidate);
     return Object.freeze({
       id: candidate.id,
       fromTick: candidate.fromTick,
@@ -153,12 +175,15 @@ export function createHarmonyRuleIndexes(
       candidate,
       phrase: phraseById.get(candidate.phraseId),
       spans: Object.freeze(spans),
+      ...cadenceEndpoints(spans, candidate.toTick, observedLandingTick),
+      observedLandingTick,
       chords: Object.freeze(chordViewsInRange(candidate.fromTick, candidate.toTick)),
       evidence: candidate.evidence,
     });
   });
   const annotationViews = analysis.cadenceAnnotations.map((annotation) => {
     const spans = spanViewsInRange(annotation.fromTick, annotation.toTick);
+    const candidate = annotation.stale ? undefined : matchingObservedCadence(annotation, analysis.cadenceCandidates);
     return Object.freeze({
       id: annotation.id,
       fromTick: annotation.fromTick,
@@ -170,16 +195,19 @@ export function createHarmonyRuleIndexes(
       confidence: annotation.confidence,
       source: annotation.source,
       annotation,
+      ...(candidate && { candidate }),
       phrase: phraseById.get(annotation.phraseId),
       spans: Object.freeze(spans),
+      ...(!annotation.stale && cadenceEndpoints(spans, annotation.toTick, annotation.observedLandingTick)),
+      observedLandingTick: annotation.observedLandingTick,
       chords: Object.freeze(chordViewsInRange(annotation.fromTick, annotation.toTick)),
-      evidence: Object.freeze([]),
+      evidence: candidate?.evidence ?? Object.freeze([]),
     });
   });
   const annotatedRangeKeys = new Set(
-    annotationViews.map((view) => `${view.phraseId}:${view.fromTick}:${view.toTick}`),
+    annotationViews.filter(view => view.observedLandingTick === undefined || !view.annotation.stale).map((view) => `${view.phraseId}:${view.fromTick}:${view.toTick}`),
   );
-  const cadenceViews = Object.freeze([
+  const cadenceViews: readonly CadenceView[] = Object.freeze([
     ...annotationViews,
     ...candidateViews.filter(
       (view) =>
@@ -321,9 +349,9 @@ export function createHarmonyRuleIndexes(
     },
     spanAt,
     cadenceAt(tick: number) {
-      return cadenceViews.find(
-        (view) => view.fromTick <= tick && tick < view.toTick,
-      );
+      const overlaps = (view: CadenceView) => view.fromTick <= tick && tick < view.toTick;
+      return cadenceViews.find(view => overlaps(view) && !(view.observedLandingTick !== undefined && view.annotation?.stale)) ??
+        annotationViews.find(overlaps);
     },
     notesStarting(
       source: readonly NoteView[],

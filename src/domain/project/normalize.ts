@@ -3,6 +3,8 @@ import { toMidi } from "../pitch";
 import { cloneProject, getAllPlayableTracks } from "./selectors";
 import type { ProjectDocument } from "./types";
 import { cadenceChordCoverage } from "./cadenceCoverage";
+import { detectProjectCadences } from "../harmony/cadence/projectEvidence";
+import { reviewObservedCadenceAnnotation } from "../harmony/cadence/confirmation";
 
 export function reconcileChordIdentities(project: ProjectDocument) {
   project.chordTrack.regions = project.chordTrack.regions.map((region) => {
@@ -60,8 +62,11 @@ function normalizeDiagnosticPreferences(project: ProjectDocument) {
 
 export function reconcileCadenceAnnotationStaleness(project: ProjectDocument) {
   const regions = project.chordTrack.regions;
+  const candidates = project.chordTrack.cadenceAnnotations.some(item => item.observedLandingTick !== undefined)
+    ? detectProjectCadences(project) : [];
   project.chordTrack.cadenceAnnotations = project.chordTrack.cadenceAnnotations.map(
     (annotation) => {
+      if (annotation.observedLandingTick !== undefined) return reviewObservedCadenceAnnotation(annotation, candidates);
       const active = cadenceChordCoverage(annotation, regions, project.structure.phraseBoundaries).continuous;
       return { ...annotation, stale: !active };
     },

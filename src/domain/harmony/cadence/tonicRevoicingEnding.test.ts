@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { PPQ } from "../../project";
+import { addCadenceAnnotation, addPhraseBoundary } from "../../editing";
+import { PPQ, migrateProject, normalizeProject } from "../../project";
 import { compileScoreText } from "../../scoreText";
 import { buildHarmonyAnalysis } from "../analysis";
+import { checkHarmony } from "../registry";
+import { createHarmonyRuleContext } from "../rules/context/createRuleContext";
+import { annotationFromCadenceCandidate } from "./confirmation";
 import { phraseInferenceFingerprint } from "../phrase";
 
 const major = `satb 1
@@ -60,6 +64,35 @@ describe("属七落主后的外声持续与内声重配", () => {
         code: "closing-tonic-revoicing", refs: expect.arrayContaining([arrival.id, "note-S-3840", "note-B-3840"]),
       })]),
     });
+  });
+
+  it("确认、重开和规则都使用首次落主，失效后取消省五音豁免", () => {
+    const { project } = compileScoreText(major);
+    const { analysis, reading } = inspect(project);
+    const arrival = 4 * PPQ;
+    const unconfirmed = createHarmonyRuleContext(analysis).cadenceAt(arrival);
+    expect(unconfirmed?.landingSpan?.firstSlice.tick).toBe(arrival);
+    expect(unconfirmed?.precedingSpan?.firstSlice.tick).toBe(3 * PPQ);
+    expect(unconfirmed?.spans.at(-1)?.firstSlice.tick).toBe(8 * PPQ);
+
+    const accepted = addCadenceAnnotation(project, annotationFromCadenceCandidate(reading!, "held"));
+    expect(accepted.error).toBeUndefined();
+    const reopened = migrateProject(JSON.parse(JSON.stringify(normalizeProject(accepted.project))))!;
+    const view = (input: typeof project) =>
+      createHarmonyRuleContext(buildHarmonyAnalysis(input)).cadences({ id: "held" }).first();
+    expect(view(reopened)?.landingSpan?.firstSlice.tick).toBe(arrival);
+    expect(view(reopened)?.precedingSpan?.firstSlice.tick).toBe(3 * PPQ);
+    const missingFifth = (input: typeof project) => checkHarmony(input).diagnostics
+      .some(d => d.ruleId === "chord.incomplete-members" && d.tick === arrival);
+    expect(missingFifth(project)).toBe(false);
+    expect(missingFifth(reopened)).toBe(false);
+    expect(checkHarmony(reopened).diagnostics.filter(d => d.ruleId.startsWith("cadence."))).toEqual([]);
+
+    const edited = addPhraseBoundary(reopened, arrival).project;
+    expect(view(edited)?.annotation?.stale).toBe(true);
+    expect(view(edited)?.precedingSpan).toBeUndefined();
+    expect(view(edited)?.landingSpan).toBeUndefined();
+    expect(missingFifth(edited)).toBe(true);
   });
 
   it("局部小调尾部在曲中实际齐收和休止，跨不过去连下句", () => {

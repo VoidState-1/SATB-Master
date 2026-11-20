@@ -1,6 +1,7 @@
 import type { ProjectSnapshot } from "../analysis";
 import { analyzePhrases } from "../phrase/analyze";
 import { buildHarmonySpans, buildSlices } from "../segments";
+import { detectCadences } from "./detect";
 
 export function cadenceInputs(project: ProjectSnapshot) {
   const phraseAnalysis = analyzePhrases(project, { generateCandidates: false });
@@ -11,4 +12,9 @@ export function cadenceInputs(project: ProjectSnapshot) {
     project, phraseSegments: phraseAnalysis.segments, phraseAnalysis, slices, notesByVoice,
     harmonySpans, sliceSpanIds, chordSpanIds, chordById,
   };
+}
+
+/** Read the live cadence evidence without cloning, inference or rule evaluation. */
+export function detectProjectCadences(project: ProjectSnapshot) {
+  return detectCadences(cadenceInputs(project));
 }

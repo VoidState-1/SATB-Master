@@ -154,8 +154,9 @@ export function functionalRetrogressionRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   const halfCadenceEndpoints = new Set<string>();
   for (const cadence of context.cadences({ kind: "half" })) {
-    if (cadence.annotation?.stale) continue;
-    const endpoint = cadence.spans.at(-1)?.lastSlice.chord;
+    const endpoint = cadence.observedLandingTick === undefined
+      ? cadence.landingSpan?.lastSlice.chord
+      : cadence.landingSpan?.firstSlice.chord;
     if (endpoint) halfCadenceEndpoints.add(endpoint.id);
   }
   for (const candidate of context.connections()) {

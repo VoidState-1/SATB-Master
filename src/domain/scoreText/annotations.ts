@@ -12,7 +12,7 @@ const allowedFields = {
   chord: ["at", "duration", "range", "symbol", "role", "localKey", "confidence", "locked", "draft"],
   note: ["role", "velocity", "locked"],
   phrase: ["range"],
-  cadence: ["range", "phrase", "kind", "form", "completion", "confidence", "locked"],
+  cadence: ["range", "phrase", "kind", "form", "completion", "confidence", "locked", "observedLanding"],
 };
 
 function required(spec: ScoreAnnotation, key: string) {
@@ -181,10 +181,15 @@ export function resolveAnnotations(
     if ((kind !== "full" && completion !== undefined) ||
       (form === "plagal" && kind === "deceptive") ||
       (kind === "supplementary" && form !== "plagal")) fail("终止式类型与限定不一致", spec.location);
+    const landing = spec.fields.observedLanding;
+    if (landing !== undefined && options.reference) fail("参考标注不可声明已确认候选的实际落点", spec.location);
+    const observedLandingTick = landing === undefined ? undefined : positionTick(landing, measures, spec.location);
     const cadence: CadenceAnnotation = {
       id: `cadence-${spec.name}`, phraseId: phrase.phraseId, fromTick, toTick, kind,
       ...(form ? { form } : {}), ...(completion ? { completion } : {}),
-      confidence, source: "manual", locked: booleanField(spec.fields.locked, spec.location),
+      confidence, source: landing === undefined ? "manual" : "accepted-candidate",
+      ...(observedLandingTick !== undefined && { observedLandingTick }),
+      locked: booleanField(spec.fields.locked, spec.location),
     };
     if (result.cadences.some((item) => item.fromTick < toTick && fromTick < item.toTick)) fail("终止式范围不能重叠", spec.location);
     if (!options.reference) {

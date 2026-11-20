@@ -53,6 +53,12 @@ export interface CadenceView {
   readonly annotation?: CadenceAnnotation;
   readonly phrase?: PhraseSegment;
   readonly spans: readonly SpanView[];
+  /** Chord span at the arrival, if a chord is present. */
+  readonly landingSpan?: SpanView;
+  /** Last distinct chord span before the arrival, including across a supported rest. */
+  readonly precedingSpan?: SpanView;
+  /** Actual onset when the range alone cannot identify the arrival. */
+  readonly observedLandingTick?: number;
   readonly chords: readonly AnalysisChord[];
   readonly evidence: readonly CadenceCandidate["evidence"][number][];
 }

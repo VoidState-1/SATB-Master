@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { addCadenceAnnotation, addPhraseBoundary } from "../../editing";
+import { migrateProject, normalizeProject, validateProject } from "../../project";
+import { createHarmonyRuleContext } from "../rules/context/createRuleContext";
+import { annotationFromCadenceCandidate } from "./confirmation";
 import { compileScoreText } from "../../scoreText";
 import { buildHarmonyAnalysis } from "../analysis";
 import { phraseInferenceFingerprint } from "../phrase";
@@ -218,4 +222,33 @@ describe("无标签末主只佐证同一组实写重奏中的原位 VI", () => {
     ]);
     expect(z.cadenceCandidates[1].unharmonizedLandingTick).toBe(14400);
   });
+});
+
+it.each([true, false])("给定和盲推共用阻碍确认，给定尾部 I = %s", given => {
+  const raw = sparsePair(q => { if (given) q.H[5] = "I/2."; });
+  const bare = { ...raw, chordTrack: { ...raw.chordTrack, regions: [] } };
+  const input = given ? raw : applyHarmonyInference(bare, { chordInference: inferChords(bare) },
+    { mode: "replace-unlocked", writeNonChordToneRoles: true },
+  ).project;
+  const analysis = buildHarmonyAnalysis(input);
+  const candidate = analysis.cadenceCandidates.find(c => c.kind === "deceptive")!;
+  const unconfirmed = createHarmonyRuleContext(analysis).cadenceAt(5760);
+  expect(unconfirmed?.landingSpan?.firstSlice.tick).toBe(5760);
+  expect(unconfirmed?.precedingSpan?.firstSlice.tick).toBe(4320);
+  const accepted = addCadenceAnnotation(input, annotationFromCadenceCandidate(candidate, "deception"));
+  expect(accepted.error).toBeUndefined();
+  const serialized = JSON.parse(JSON.stringify(normalizeProject(accepted.project)));
+  expect(validateProject(serialized)).toBe(true);
+  const reopened = migrateProject(serialized)!;
+  expect(reopened.chordTrack.cadenceAnnotations[0]).toMatchObject({
+    kind: "deceptive", observedLandingTick: 5760, stale: false,
+  });
+  const query = (project: Doc) =>
+    createHarmonyRuleContext(buildHarmonyAnalysis(project)).cadences({ id: "deception" }).first();
+  expect(query(reopened)?.landingSpan?.firstSlice.tick).toBe(5760);
+  expect(query(reopened)?.precedingSpan?.firstSlice.tick).toBe(4320);
+  const edited = addPhraseBoundary(reopened, 5280).project;
+  expect(query(edited)?.annotation?.stale).toBe(true);
+  expect(query(edited)?.landingSpan).toBeUndefined();
+  expect(query(edited)?.precedingSpan).toBeUndefined();
 });

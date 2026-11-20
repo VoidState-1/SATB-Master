@@ -1,14 +1,16 @@
 import { Check, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createId, type CadenceAnnotation } from "../../domain/project";
 import type { CadenceCandidate } from "../../domain/harmony";
+import { annotationFromCadenceCandidate, reviewObservedCadenceAnnotation } from "../../domain/harmony/cadence/confirmation";
+import { detectProjectCadences } from "../../domain/harmony/cadence/projectEvidence";
 import type { CadenceAnnotationPatch } from "../../domain/editing";
 import { cadenceKindLabels, cadenceRangeKey, cadenceRangeLabel, cadencesOverlappingChord } from "../../components/cadenceRanges";
 
 export function CadenceEditor({
   project,
   selectedChord,
-  candidates = [],
+  candidates,
   onAdd,
   onUpdate,
   onDelete,
@@ -21,7 +23,13 @@ export function CadenceEditor({
   onDelete?: (annotationId: string) => void;
 }) {
   const [selectedRange, selectRange] = useState("");
-  const available = cadencesOverlappingChord(project.chordTrack.cadenceAnnotations, candidates,
+  const annotations = useMemo(() => {
+    const saved = project.chordTrack.cadenceAnnotations;
+    if (!saved.some(item => item.observedLandingTick !== undefined)) return saved;
+    const live = candidates ?? detectProjectCadences(project);
+    return saved.map(item => reviewObservedCadenceAnnotation(item, live));
+  }, [project, candidates]);
+  const available = cadencesOverlappingChord(annotations, candidates ?? [],
     selectedChord.startTick, selectedChord.startTick + selectedChord.durationTicks);
   const selected = available.find(item => cadenceRangeKey(item) === selectedRange) ?? available[0];
   const annotation = selected && "source" in selected ? selected : undefined;
@@ -30,18 +38,7 @@ export function CadenceEditor({
 
   const acceptCandidate = () => {
     if (!candidate || !onAdd) return;
-    onAdd({
-      id: createId("cadence"),
-      phraseId: candidate.phraseId,
-      fromTick: candidate.fromTick,
-      toTick: candidate.toTick,
-      kind: candidate.kind,
-      form: candidate.form,
-      completion: candidate.completion,
-      source: "accepted-candidate",
-      confidence: candidate.confidence === "certain" ? "certain" : "probable",
-      locked: false,
-    });
+    onAdd(annotationFromCadenceCandidate(candidate, createId("cadence")));
   };
 
   const update = (patch: CadenceAnnotationPatch) => {

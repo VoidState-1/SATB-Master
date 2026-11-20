@@ -20,6 +20,8 @@ import {
 import { toMidi } from "./pitch";
 import { keyAtTick } from "./time";
 import { cadenceChordCoverage } from "./project/cadenceCoverage";
+import { detectProjectCadences } from "./harmony/cadence/projectEvidence";
+import { matchingObservedCadence } from "./harmony/cadence/confirmation";
 import { reconcileCadenceAnnotationStaleness } from "./project/normalize";
 
 export interface EditResult {
@@ -458,10 +460,15 @@ function cadenceAnnotationError(
     annotation.toTick <= annotation.fromTick
   )
     return "终止式范围参数无效";
-  if (project.keyEvents.some((event) => event.tick > annotation.fromTick && event.tick < annotation.toTick))
-    return "终止式范围不能跨越调性变化";
-  if (!cadenceChordCoverage(annotation, project.chordTrack.regions, project.structure.phraseBoundaries).continuous)
-    return "终止式范围必须覆盖连续的和弦区域";
+  if (annotation.observedLandingTick !== undefined) {
+    if (!matchingObservedCadence(annotation, detectProjectCadences(project)))
+      return "谱面已不支持该终止式的实际落点";
+  } else {
+    if (project.keyEvents.some(event => annotation.fromTick < event.tick && event.tick < annotation.toTick))
+      return "终止式范围不能跨越调性变化";
+    if (!cadenceChordCoverage(annotation, project.chordTrack.regions, project.structure.phraseBoundaries).continuous)
+      return "终止式范围必须覆盖连续的和弦区域";
+  }
   if (
     project.chordTrack.cadenceAnnotations.some(
       (candidate) =>
@@ -488,7 +495,7 @@ export function addCadenceAnnotation(
   const error = cadenceAnnotationError(project, annotation);
   if (error) return { project, error };
   const next = cloneProject(project);
-  next.chordTrack.cadenceAnnotations.push(annotation);
+  next.chordTrack.cadenceAnnotations.push(annotation.observedLandingTick === undefined ? annotation : { ...annotation, stale: false });
   next.chordTrack.cadenceAnnotations.sort(
     (left, right) => left.fromTick - right.fromTick,
   );
@@ -516,8 +523,21 @@ export function updateCadenceAnnotation(
   if (current.locked && patch.locked !== false)
     return { project, error: "该终止式已锁定" };
   const updated = { ...current, ...patch };
-  const error = cadenceAnnotationError(project, updated, annotationId);
-  if (error) return { project, error };
+  const unlockingOnly = current.locked && patch.locked === false && Object.keys(patch).length === 1;
+  if (!unlockingOnly) {
+    const changedReading = updated.fromTick !== current.fromTick || updated.toTick !== current.toTick ||
+      updated.phraseId !== current.phraseId || updated.kind !== current.kind ||
+      updated.form !== current.form || updated.completion !== current.completion;
+    if (updated.observedLandingTick !== undefined && changedReading &&
+        cadenceChordCoverage(updated, project.chordTrack.regions, project.structure.phraseBoundaries).continuous) {
+      delete updated.observedLandingTick;
+      updated.source = "manual";
+      updated.stale = false;
+    }
+    const error = cadenceAnnotationError(project, updated, annotationId);
+    if (error) return { project, error };
+    if (updated.observedLandingTick !== undefined) updated.stale = false;
+  }
   const next = cloneProject(project);
   const index = next.chordTrack.cadenceAnnotations.findIndex(
     (annotation) => annotation.id === annotationId,
