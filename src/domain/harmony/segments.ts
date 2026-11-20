@@ -1,8 +1,13 @@
-import { chordIdentityToneSpellings, harmonySemanticsConfidence } from "../chordModel";
+import { canonicalJson } from "../canonicalJson";
+import {
+  chordIdentityEqualsWithoutBass,
+  chordIdentityKeyWithoutBass,
+  harmonySemanticsConfidence,
+} from "../chordModel";
 import { pitchClassEquals } from "../pitch";
 import type { HarmonySemantics, VoiceId } from "../project/types";
 import { VOICE_ORDER } from "../project/voice";
-import type { AnalysisChord, AnalysisKey, AnalysisNote, AnalysisSlice, DeepReadonly, HarmonySpan, ProjectSnapshot } from "./analysis";
+import type { AnalysisKey, AnalysisNote, AnalysisSlice, DeepReadonly, HarmonySpan, ProjectSnapshot } from "./analysis";
 
 export function keyAtTick(events: readonly AnalysisKey[], tick: number) {
   let current = events[0];
@@ -32,30 +37,10 @@ export function sameSemanticContext(
   )
     return false;
   // Span 合并依赖完整语义而非粗粒度功能类别，目标、双重解释和持续低音变化都会切断 span。
-  return JSON.stringify(left) === JSON.stringify(right);
+  return canonicalJson(left) === canonicalJson(right);
 }
 
-/** 判断两个和弦实体是否相同，忽略低音与转位。 */
-export function sameChordIdentityWithoutBass(
-  left: AnalysisChord["identity"],
-  right: AnalysisChord["identity"],
-) {
-  if (
-    JSON.stringify(left.structure) !== JSON.stringify(right.structure) ||
-    !pitchClassEquals(left.root, right.root)
-  )
-    return false;
-  const serializeTone = (tone: { step: string; alter: number }) =>
-    `${tone.step}:${tone.alter}`;
-  const leftTones = chordIdentityToneSpellings(left).map(serializeTone).sort();
-  const rightTones = chordIdentityToneSpellings(right)
-    .map(serializeTone)
-    .sort();
-  return (
-    leftTones.length === rightTones.length &&
-    leftTones.every((tone, index) => tone === rightTones[index])
-  );
-}
+export { chordIdentityEqualsWithoutBass as sameChordIdentityWithoutBass } from "../chordModel";
 
 /**
  * 按照所有音符、和弦、调号变更点分割时间轴为分析切片（AnalysisSlice）
@@ -167,15 +152,6 @@ export function buildSlices(project: ProjectSnapshot) {
   return { slices: Object.freeze(slices), notesByVoice };
 }
 
-function chordIdentityKey(region: AnalysisChord) {
-  const identity = region.identity;
-  return JSON.stringify({
-    root: identity.root,
-    structure: identity.structure,
-    tones: chordIdentityToneSpellings(identity),
-  });
-}
-
 export function buildHarmonySpans(slices: readonly AnalysisSlice[]) {
   const groups: AnalysisSlice[][] = [];
   slices.forEach((slice) => {
@@ -186,7 +162,7 @@ export function buildHarmonySpans(slices: readonly AnalysisSlice[]) {
       previous.chord &&
       previous.endTick === slice.tick &&
       sameKey(previous.key, slice.key) &&
-      sameChordIdentityWithoutBass(
+      chordIdentityEqualsWithoutBass(
         previous.chord.identity,
         slice.chord.identity,
       ) &&
@@ -225,7 +201,7 @@ export function buildHarmonySpans(slices: readonly AnalysisSlice[]) {
       toTick: lastSlice.endTick,
       regionIds: Object.freeze(regionIds),
       sliceIndices: Object.freeze(sliceIndices),
-      identityKey: chordIdentityKey(first),
+      identityKey: chordIdentityKeyWithoutBass(first.identity),
       semantics,
       status:
         confidence === "ambiguous" || confidence === "unknown"

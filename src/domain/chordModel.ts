@@ -597,24 +597,40 @@ export function chordDraftFromIdentity(
   };
 }
 
-function structureEquals(left: ChordStructure, right: ChordStructure) {
-  if (left.kind !== right.kind) return false;
-  if (left.kind === "augmented-sixth")
-    return right.kind === "augmented-sixth" && left.variant === right.variant;
-  return (
-    right.kind === "tertian" &&
-    left.quality === right.quality &&
-    left.extensions.join(",") === right.extensions.join(",") &&
-    JSON.stringify(left.alterations) === JSON.stringify(right.alterations)
-  );
+/** Project the written structure in display order, keeping the member arrays ordered. */
+function writtenChordStructure(structure: ChordStructure): ChordStructure {
+  if (structure.kind === "augmented-sixth") {
+    return { kind: structure.kind, variant: structure.variant };
+  }
+  const { kind, quality, extensions, alterations } = structure;
+  return {
+    kind,
+    quality,
+    extensions,
+    alterations: alterations.map(({ degree, alter, tendency }) => ({ degree, alter, tendency })),
+  };
+}
+
+export function chordIdentityEqualsWithoutBass(left: ChordIdentity, right: ChordIdentity) {
+  return pitchClassEquals(left.root, right.root) &&
+    (left.structure === right.structure ||
+      (left.structure.kind === right.structure.kind &&
+        JSON.stringify(writtenChordStructure(left.structure)) === JSON.stringify(writtenChordStructure(right.structure))));
 }
 
 export function chordIdentityEquals(left: ChordIdentity, right: ChordIdentity) {
-  return (
-    structureEquals(left.structure, right.structure) &&
-    pitchClassEquals(left.root, right.root) &&
-    pitchClassEquals(left.bass, right.bass)
-  );
+  return pitchClassEquals(left.bass, right.bass) &&
+    chordIdentityEqualsWithoutBass(left, right);
+}
+
+/** Written identity used by spans and connections, with the traditional debug field order. */
+export function chordIdentityKeyWithoutBass(identity: ChordIdentity) {
+  const { step, alter } = identity.root;
+  return JSON.stringify({
+    root: { step, alter },
+    structure: writtenChordStructure(identity.structure),
+    tones: chordIdentityToneSpellings(identity),
+  });
 }
 
 export function harmonySemanticsCompatibleWithIdentity(
