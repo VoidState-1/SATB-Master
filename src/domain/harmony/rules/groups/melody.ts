@@ -20,6 +20,7 @@ import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { chromaticPassingTransitionIds } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
+import { isResolvedDominantSixthBass } from "./resolvedDominantSixthBass";
 import { isRespeltDoubleDominantSeventh } from "./chromaticDoubleDominant";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { recognizesAugmentedSixthPreparation, resolvesGermanSixthDiminishedThird } from "./chromaticAugmentedSixth";
@@ -59,7 +60,8 @@ function evaluateMelodyTransitionRule(
     const interval = Math.abs(transition.writtenInterval.semitones);
     const writtenName = intervalName(transition.writtenInterval);
     if (!policy.matches(interval, writtenName, transition.voiceId)) continue;
-    if (policy.id === "melody.tritone" && isNeapolitanSeventhBassTritone(context, transition)) continue;
+    if (policy.id === "melody.tritone" && (isNeapolitanSeventhBassTritone(context, transition) ||
+        isResolvedDominantSixthBass(context, transition))) continue;
     diagnostics.push(
       diagnostic(
         policy.id,
@@ -209,6 +211,7 @@ function alteredIntervalRule(
       passing?.has(transition.id) ||
       chain.has(transition.current.id) ||
       isMinorSixthChordBassLine(context, transition) ||
+      (expectedQuality === "减" && isResolvedDominantSixthBass(context, transition)) ||
       (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
       (expectedQuality === "增" && (
         lowerDoubleDominantLeadingTone(context, transition) ||
@@ -413,7 +416,7 @@ export const MELODY_RULES = defineRuleGroup(
     description:
       "检查单声部旋律中是否出现未妥善解决的三全音（增四度或减五度）跳进。",
     rationale:
-      "三全音跳进需结合声部和后续解决检查。斯波索宾第 47 章允许低音在原位降Ⅱ七到原位属七之间上行增四度或下行减五度。",
+      "斯波索宾第 10、18 章允许下属到属六的低音下跳减五度后半音上行至主音。第 47 章另允许原位降Ⅱ七到原位属七的低音上行增四度或下行减五度。",
     group: "melody",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
