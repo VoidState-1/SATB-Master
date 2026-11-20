@@ -1,33 +1,18 @@
 import { chordToneSpellings } from "../../../chordModel";
 import {
   keyEquals, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval,
-  type KeyLike, type SpelledPitchClass,
+  type SpelledPitchClass,
 } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import { matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
-import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
-import { leadingTargetDegree } from "../services/harmony";
-import { leadingToneResolutionKey } from "./leadingToneTarget";
 import type { ObligationEnvironment } from "./obligation";
 import type { LeadingTonePayload } from "./tendency";
+import { allowsWrittenLocalRole } from "./writtenLocalRole";
 
 function rootPositionMajorTriad(frame: AnalysisSlice, root: SpelledPitchClass) {
   const bass = frame.notes.bass;
   return !!bass && pitchClassEquals(bass.pitch, root) && matchesWrittenChord(frame, root, "major");
-}
-
-function allowsLocalRole(rules: HarmonyRuleContext, frame: AnalysisSlice, key: KeyLike, degree: 1 | 5) {
-  const chord = frame.chord;
-  if (!chord?.semantics) return true;
-  const reading = rules.harmony.primaryInterpretation(chord);
-  if (reading.status !== "resolved" || chord.semantics.pedalContext) return false;
-  const meaning = reading.value;
-  if (meaning.source === "inferred" && !chord.locked && !rules.analysis.project.chordTrack.locked) return true;
-  if (leadingTargetDegree(meaning)) {
-    return degree === 5 && keyEquals(leadingToneResolutionKey(frame, rules.harmony), key);
-  }
-  return meaning.degree === degree && !meaning.degreeAlteration && keyEquals(meaning.localKey ?? frame.key, key);
 }
 
 // Called only for complete written four-part voicings.
@@ -51,7 +36,7 @@ export function tenorLeapsToTonicThird(environment: ObligationEnvironment<Leadin
   const key = { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode };
   const dominant = scaleDegreePitchClass(key, 5);
   if (!rootPositionMajorTriad(previous, dominant) || !rootPositionMajorTriad(slice, key.tonic) ||
-      !allowsLocalRole(rules, slice, key, 1)) return false;
+      !allowsWrittenLocalRole(rules, slice, key, 1)) return false;
 
   const before = previous.notes, after = slice.notes;
   const [, dominantThird, dominantFifth] = chordToneSpellings(dominant, "major");
@@ -74,6 +59,6 @@ export function tenorLeapsToTonicThird(environment: ObligationEnvironment<Leadin
   return rules.slices({ overlapping: { fromTick: openedAt.tick, toTick: slice.tick } }).all(frame => {
     const note = frame.notes.tenor;
     return !!note && spelledPitchEquals(note.pitch, tenor) && keyEquals(frame.key, slice.key) &&
-      rootPositionMajorTriad(frame, dominant) && allowsLocalRole(rules, frame, key, 5);
+      rootPositionMajorTriad(frame, dominant) && allowsWrittenLocalRole(rules, frame, key, 5);
   });
 }
