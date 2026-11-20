@@ -198,7 +198,7 @@ function alteredIntervalRule(
 ) {
   const diagnostics: RuleDiagnostic[] = [];
   const passing = expectedQuality === "增" ? chromaticPassingTransitionIds(context) : undefined;
-  const chain = expectedQuality === "增" ? halfDiminishedChainArrivals(context) : undefined;
+  const chain = halfDiminishedChainArrivals(context, expectedQuality);
   for (const transition of validMelodyTransitions(context)) {
     const named = intervalName(transition.writtenInterval);
     if (
@@ -207,7 +207,7 @@ function alteredIntervalRule(
       Math.abs(transition.writtenInterval.semitones) === 0 ||
       isNeapolitanSeventhBassTritone(context, transition) ||
       passing?.has(transition.id) ||
-      chain?.has(transition.current.id) ||
+      chain.has(transition.current.id) ||
       isMinorSixthChordBassLine(context, transition) ||
       (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
       (expectedQuality === "增" && (

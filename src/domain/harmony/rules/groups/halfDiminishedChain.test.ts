@@ -75,8 +75,7 @@ bars 1..2 {
     expect(events(project, leading)).toContainEqual([960, "soprano"]);
   });
 
-  it("separates two respelt thirds from the surrounding written unisons", () => {
-    const project = compileScoreText(`satb 1
+  const respeltScore = `satb 1
 key D major
 meter 2/4
 bars 1..3 {
@@ -84,11 +83,86 @@ bars 1..3 {
   A: | C5/4 C5/4 | Bb4/4 A#4/4 | G#4/4 G#4/4 |
   T: | Eb4/4 D4/4 | Db4/4 B#3/4 | B3/4 A#3/4 |
   B: | A3/4 Ab3/4 | G3/4 F#3/4 | E#3/4 E3/4 |
-}`).project;
-    expect(events(project)).toEqual([[4800, "bass"]]);
-    expect(events(project, "melody.diminished-interval")).toEqual([
-      [2880, "soprano"], [2880, "tenor"],
-    ]);
+}`;
+  const diminished = "melody.diminished-interval";
+  const atRespelling = (p: ProjectDocument) => events(p, diminished).filter(([tick]) => tick === 2880);
+  const reportedThirds = [[2880, "soprano"], [2880, "tenor"]];
+
+  it("accepts both respelt thirds at a whole-chord change in D major", () => {
+    for (const labels of ["", '\nannotations {\nchord seam at=2:2 duration=1/4 symbol=viiø43 localKey="C# major"\n}']) {
+      const project = compileScoreText(respeltScore + labels).project;
+      expect(events(project)).toEqual([[4800, "bass"]]);
+      expect(events(project, diminished)).toEqual([]);
+    }
+  });
+
+  it("follows the diminished fifth into the root when an inner voice carries it", () => {
+    const revoiced = respeltScore.replace("C5/4 C5/4 | Bb4/4 A#4/4 | G#4/4 G#4/4",
+      "Eb5/4 D5/4 | Db5/4 B#4/4 | B4/4 A#4/4").replace("Eb4/4 D4/4 | Db4/4 B#3/4 | B3/4 A#3/4",
+      "C4/4 C4/4 | Bb3/4 A#3/4 | G#3/4 G#3/4");
+    const project = compileScoreText(revoiced).project;
+    expect(atRespelling(project)).toEqual([]);
+    project.satbTracks[3].notes[5].durationTicks /= 2;
+    expect(atRespelling(project)).toEqual([[2880, "soprano"], [2880, "alto"]]);
+  });
+
+  const invalidSeams: [string, (p: ProjectDocument) => void][] = [
+    ["only a partial respelling at the same sounding pitches", p => {
+      p.satbTracks[1].notes[3].pitch = { step: "B", alter: -1, octave: 4 };
+    }],
+    ["octave-displaced inner voice at identical pitch classes", p => { p.satbTracks[1].notes[3].pitch.octave--; }],
+    ["one missing tone after the seam", p => { p.satbTracks[1].notes.splice(4, 1); }],
+    ["non-chord role on the common tone", p => { p.satbTracks[1].notes[3].nonChordToneRole = "passing"; }],
+    ["a manual phrase break", p => {
+      p.structure.phraseBoundaries.push({ id: "split", tick: 2880, source: "manual", confidence: "certain" });
+    }],
+    ["a written key change", p => {
+      p.keyEvents.push({ ...p.keyEvents[0], id: "minor", tick: 2880, mode: "minor" });
+    }],
+    ["a second whole-chord respelling in the same six slots", p => {
+      // Aø7 -> G double-sharp ø7 at identical absolute pitches.
+      p.satbTracks[0].notes[0].pitch = { step: "F", alter: 2, octave: 5 };
+      p.satbTracks[1].notes[0].pitch = { step: "B", alter: 1, octave: 4 };
+      p.satbTracks[2].notes[0].pitch = { step: "D", alter: 1, octave: 4 };
+      p.satbTracks[3].notes[0].pitch = { step: "G", alter: 2, octave: 3 };
+    }],
+  ];
+  it.each(invalidSeams)("keeps both thirds with %s", (_reason, damage) => {
+    const project = compileScoreText(respeltScore).project;
+    damage(project);
+    for (const event of reportedThirds) expect(atRespelling(project)).toContainEqual(event);
+  });
+
+  it.each(["V7", "viiø7"])("keeps both thirds under a conflicting %s annotation", symbol => {
+    const labels = '\nannotations {\nchord seam at=2:2 duration=1/4 symbol=' + symbol + ' localKey="C# major"\n}';
+    expect(atRespelling(compileScoreText(respeltScore + labels).project)).toEqual(reportedThirds);
+  });
+
+  it("keeps both thirds when the respelt arrival is the end of a six-chord chain", () => {
+    const ending = `satb 1
+key C major
+meter 2/4
+bars 1..3 {
+  S: | G5/4 F5/4 | F5/4 Eb5/4 | Eb5/4 C#5/4 |
+  A: | C5/4 C5/4 | Bb4/4 Bb4/4 | Ab4/4 G#4/4 |
+  T: | Eb4/4 D4/4 | Db4/4 C4/4 | Cb4/4 A#3/4 |
+  B: | A3/4 Ab3/4 | G3/4 Gb3/4 | F3/4 E3/4 |
+}`;
+    expect(events(compileScoreText(ending).project, diminished)).toEqual([[4800, "soprano"], [4800, "tenor"]]);
+  });
+
+
+  it("keeps both thirds when the change precedes the first corroborating fourth", () => {
+    const start = `satb 1
+key C major
+meter 2/4
+bars 1..3 {
+  S: | Eb5/4 C#5/4 | C#5/4 B4/4 | B4/4 A4/4 |
+  A: | Ab4/4 G#4/4 | F#4/4 F#4/4 | E4/4 E4/4 |
+  T: | Cb4/4 A#3/4 | A3/4 G#3/4 | G3/4 F#3/4 |
+  B: | F3/4 E3/4 | D#3/4 D3/4 | C#3/4 C3/4 |
+}`;
+    expect(events(compileScoreText(start).project, diminished)).toEqual([[960, "soprano"], [960, "tenor"]]);
   });
 
   it("checks the last half-diminished chord and its real tonic resolution", () => {

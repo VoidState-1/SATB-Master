@@ -49,9 +49,21 @@ function continuesModel(previous: Slot, current: Slot) {
     });
 }
 
+function writtenRootFourth(before: Slot, after: Slot) {
+  return (stepIndex(after.root.step) - stepIndex(before.root.step) + 7) % 7 === 3;
+}
+
+// Without respelling, root and third keep their letter; fifth and seventh
+// descend one letter. At a flat-to-sharp change every arrival shifts one
+// further letter down, at exactly the sounding pitch proved by continuesModel.
+function wholeChordRespelt(before: Slot, after: Slot) {
+  return before.voices.every(({ member, note }, i) =>
+    writtenInterval(note.pitch, after.voices[i].note.pitch).diatonicSteps === (member < 2 ? -1 : -2));
+}
+
 // Spasobin, ch. 56, example 817 and keyboard exercises. Require three
 // two-chord statements and a continuing link beyond every exempt arrival.
-export function halfDiminishedChainArrivals(context: HarmonyRuleContext) {
+export function halfDiminishedChainArrivals(context: HarmonyRuleContext, quality: "增" | "减") {
   const arrivals = new Set<string>();
   for (const slots of context.slices().select(readHalfDiminishedSlot).window(6)) {
     if (!slots.every((slot): slot is Slot => slot !== undefined)) continue;
@@ -59,7 +71,16 @@ export function halfDiminishedChainArrivals(context: HarmonyRuleContext) {
         crossesManualPhraseBoundary(context, slots[0].slice.tick, slots[5].slice.endTick - 1)) continue;
     for (let i = 1; i < slots.length - 1; i++) {
       const before = slots[i - 1], after = slots[i];
-      if ((stepIndex(after.root.step) - stepIndex(before.root.step) + 7) % 7 !== 3) continue;
+      if (quality === "减") {
+        if (i > 1 && wholeChordRespelt(before, after) &&
+            slots.every((slot, j) => j === 0 || j === i || writtenRootFourth(slots[j - 1], slot))) {
+          before.voices.forEach(({ member }, v) => {
+            if (member >= 2) arrivals.add(after.voices[v].note.id);
+          });
+        }
+        continue;
+      }
+      if (!writtenRootFourth(before, after)) continue;
       const voice = before.voices.findIndex(v => v.member === 0);
       const arrival = after.voices[voice].note;
       if (writtenInterval(before.voices[voice].note.pitch, arrival.pitch).diatonicSteps === 0)
