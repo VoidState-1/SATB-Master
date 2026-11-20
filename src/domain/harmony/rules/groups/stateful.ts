@@ -19,7 +19,7 @@ import {
   reattackedLeadingToneResolvesAsChainSeventh,
 } from "./halfDiminishedChain";
 import { homeLeadingToneWasDominantFifth } from "../state/dominantSeventhFifth";
-import { leavesDiatonicSequenceLeadingTone } from "../state/diatonicSequenceLeadingTone";
+import { leavesDiatonicSequenceLeadingTone, resolvesCopiedSeventhFifth } from "../state/diatonicSequenceLeadingTone";
 import {
   chordEvidence,
   chordLabel,
@@ -668,6 +668,9 @@ function leadingToneTransition(
 
   if (attacked && homeLeadingToneWasDominantFifth(environment))
     return decision(environment, "cancel", "home-leading-tone-was-dominant-fifth", debugFacts);
+
+  if (attacked && resolvesCopiedSeventhFifth(environment))
+    return decision(environment, "cancel", "diatonic-sequence-seventh-fifth", debugFacts);
 
   if (attacked && leavesDiatonicSequenceLeadingTone(environment))
     return decision(environment, "cancel", "leading-tone-diatonic-sequence", debugFacts);
