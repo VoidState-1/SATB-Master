@@ -1,5 +1,6 @@
 import { chordIdentityEquals, chordIdentityInversion, chordIdentityToneSpellingForDegree, primaryHarmonyInterpretation, type HarmonySemantics } from "../../chordModel";
 import { isWrittenStep, pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
+import { withAppliedPassingSixFours } from "./appliedPassingSixFour";
 import { fitCadentialRevoicing } from "./candidates";
 import { isCanonicalTonicFifthOmission } from "./fit";
 import { observationNotes } from "./observations";
@@ -282,7 +283,8 @@ export function classifySixFours(
       ? doubleNeighbors[index] : set);
     confirmContinuedCadentialSixFours(observations, bridges, classified, phraseBoundaries, true);
   }
-  return classified.map((set, index) =>
+  const result = classified.map((set, index) =>
     set.length || !doubleNeighbors[index] ? set : doubleNeighbors[index].filter(c => c.functionalBaseId === "D"));
+  return withAppliedPassingSixFours(observations, result, phraseBoundaries);
 }
 
