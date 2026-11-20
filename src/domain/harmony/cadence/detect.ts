@@ -15,6 +15,7 @@ import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
 import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
+import { continuesThroughParallelTonic } from "./parallelTonicPivot";
 import { articulatedEndingEvidence } from "./articulatedEnding";
 import type {
   AnalysisChord,
@@ -507,6 +508,27 @@ function articulatedInteriorCadences(
   return candidates;
 }
 
+function halfEndingContinuesThroughPivot(
+  analysis: Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById" | "slices">,
+  previous: CadenceSpanFacts | undefined,
+  terminal: CadenceSpanFacts,
+  writtenBeatAt: (tick: number) => number | undefined,
+) {
+  if (!previous || !isFifthDegreeDominant(previous) || !isFifthDegreeDominant(terminal) ||
+      !connectionIsValid(previous, terminal)) return false;
+  const index = analysis.harmonySpans.findIndex(span =>
+    span.id === terminal.span.id && span.toTick === terminal.span.toTick,
+  );
+  if (index < 0) return false;
+  const next = analysis.harmonySpans[index + 1], after = analysis.harmonySpans[index + 2];
+  if (!next || !after || analysis.project.structure.phraseBoundaries.some(boundary =>
+    boundary.source === "manual" && terminal.span.toTick < boundary.tick && boundary.tick <= after.fromTick,
+  )) return false;
+  const pivot = factsFor(analysis, next), onward = factsFor(analysis, after);
+  return pivot.isTonic && isFifthDegreeDominant(onward) &&
+    continuesThroughParallelTonic(previous, terminal, pivot, onward, analysis.slices, writtenBeatAt);
+}
+
 export function detectCadences(
   analysis: Pick<
     HarmonyAnalysis,
@@ -681,6 +703,8 @@ export function detectCadences(
         (isFifthDegreeDominant(terminal) && writtenBassMatches(terminal) &&
           (isRootPosition(terminal) || phrase.endBoundary?.source === "manual")))
     ) {
+      if (phrase.endBoundary?.source === "inferred" && terminal.span.toTick < analysis.project.lengthTicks &&
+          halfEndingContinuesThroughPivot(analysis, previous, terminal, writtenBeatAt)) continue;
       const approach = dominantApproach(facts, facts.length - 1, gapEvidence);
       allCandidates.push(
         candidate(
