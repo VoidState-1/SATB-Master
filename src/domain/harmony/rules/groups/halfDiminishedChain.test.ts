@@ -29,8 +29,28 @@ describe("half-diminished seventh chain in ascending fourths", () => {
     }
   });
 
-  it("retains the leading-tone obligation on the same note as an accepted chromatic step", () => {
-    expect(events(example(), leading)).toContainEqual([960, "bass"]);
+  it("recognizes a leading root entering the next seventh during a proven sequence", () => {
+    expect(events(example(), leading)).not.toContainEqual([960, "bass"]);
+    expect(events(compileScoreText(score).project, leading)).not.toContainEqual([960, "bass"]);
+  });
+
+  it("retains the leading obligation if a later voice breaks the sequence", () => {
+    const project = example();
+    project.satbTracks.find(track => track.voice === "tenor")!.notes[4].pitch.octave++;
+    expect(events(project, leading)).toContainEqual([960, "bass"]);
+  });
+
+  it("does not borrow repetitions across an authored phrase boundary", () => {
+    const project = example();
+    project.structure.phraseBoundaries.push({ id: "cut", source: "manual", tick: 3 * project.ppq, confidence: "certain" });
+    expect(events(project, leading)).toContainEqual([960, "bass"]);
+  });
+
+  it("preserves the obligation when the starting chord carries a different interpretation", () => {
+    const project = example();
+    const reading = project.chordTrack.regions[0].semantics!.interpretations[0];
+    reading.degree = 2;
+    expect(events(project, leading)).toContainEqual([960, "bass"]);
   });
 
   const breaks: [string, (p: ProjectDocument) => void][] = [

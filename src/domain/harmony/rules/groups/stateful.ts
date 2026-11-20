@@ -14,6 +14,7 @@ import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass } from "../../analysis";
 import { formatPitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import { writtenSeventhHandoff } from "../state/writtenSeventhHandoff";
+import { leadingRootContinuesInHalfDiminishedChain } from "./halfDiminishedChain";
 import { leavesDiatonicSequenceLeadingTone } from "../state/diatonicSequenceLeadingTone";
 import {
   chordEvidence,
@@ -558,17 +559,16 @@ function leadingToneTransition(
   const attacked = subjectAttacked(environment);
   const transferVoiceIds = leadingToneTransferVoiceIds(environment);
   const sameLeadingContext = sameLeadingToneContext(environment);
-  const currentNote = environment.context.slice.notes[
-    environment.obligation.payload.voiceId
-  ];
+  const { context, obligation: { payload } } = environment;
+  const currentNote = context.slice.notes[payload.voiceId];
   const debugFacts = {
     sameOpenedSpan: sameOpenedSpan(environment),
     sameLeadingToneContext: sameLeadingContext,
     targetUnchanged,
     attacked,
     sourceStillLeading:
-      currentNote?.pitch.step === environment.obligation.payload.leadingStep &&
-      currentNote?.pitch.alter === environment.obligation.payload.leadingAlter,
+      currentNote?.pitch.step === payload.leadingStep &&
+      currentNote?.pitch.alter === payload.leadingAlter,
     transferredVoiceIds: transferVoiceIds,
     ...(currentNote ? { currentNoteId: currentNote.id } : {}),
     ...(currentSpanId(environment)
@@ -577,7 +577,6 @@ function leadingToneTransition(
   } satisfies Record<string, JsonValue>;
 
   if (attacked && targetUnchanged && currentNote) {
-    const { context, obligation: { payload } } = environment;
     const frame = leadingNeighborFrame(context.rules, payload.voiceId, currentNote);
     if (frame && frame.preparation.pitch.step === payload.leadingStep &&
         frame.preparation.pitch.alter === payload.leadingAlter &&
@@ -598,7 +597,6 @@ function leadingToneTransition(
     );
 
   if (attacked && targetUnchanged && currentNote) {
-    const { payload } = environment.obligation;
     const proof = readDoubleDominantSeventhLanding(environment.context.rules, currentNote.startTick);
     if (proof && proof.leading.voiceId === payload.voiceId && proof.leadingArrival.id === currentNote.id &&
         toMidi(proof.leading.note.pitch) === payload.leadingMidi &&
@@ -654,6 +652,11 @@ function leadingToneTransition(
       "leading-tone-context-ended",
       debugFacts,
     );
+
+  if (attacked && leadingRootContinuesInHalfDiminishedChain(
+    environment.context.rules, environment.obligation.openedAt.tick, environment.context.slice, payload.voiceId,
+    { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode },
+  )) return decision(environment, "cancel", "leading-tone-half-diminished-sequence", debugFacts);
 
   if (attacked && leavesDiatonicSequenceLeadingTone(environment))
     return decision(environment, "cancel", "leading-tone-diatonic-sequence", debugFacts);

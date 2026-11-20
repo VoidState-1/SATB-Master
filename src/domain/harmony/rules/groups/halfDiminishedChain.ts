@@ -1,5 +1,6 @@
 import { chordToneSpellings } from "../../../chordModel";
-import { pitchClassEquals, stepIndex, toMidi, writtenInterval } from "../../../pitch";
+import { leadingTonePitchClass, pitchClassEquals, stepIndex, toMidi, writtenInterval, type KeyLike } from "../../../pitch";
+import type { VoiceId } from "../../../project/types";
 import type { AnalysisSlice } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { activeNotes } from "../helpers/core";
@@ -59,6 +60,41 @@ function writtenRootFourth(before: Slot, after: Slot) {
 function wholeChordRespelt(before: Slot, after: Slot) {
   return before.voices.every(({ member, note }, i) =>
     writtenInterval(note.pitch, after.voices[i].note.pitch).diatonicSteps === (member < 2 ? -1 : -2));
+}
+
+/** In a chain of dominant-function sevenths, the next seventh replaces
+ * the expected tonic (Spasobin ch. 56, ex. 817). Verify the actual root
+ * entering the fifth of that next chord in the same part. */
+export function leadingRootContinuesInHalfDiminishedChain(
+  context: HarmonyRuleContext, openedAt: number, arrival: AnalysisSlice, voice: VoiceId, targetKey: KeyLike,
+) {
+  const first = context.analysis.slices[arrival.index - 1];
+  const source = first?.notes[voice];
+  if (!first || first.tick !== openedAt || !source || targetKey.mode !== "major" || first.key.mode !== targetKey.mode ||
+      !pitchClassEquals(first.key.tonic, targetKey.tonic) ||
+      !pitchClassEquals(source.pitch, leadingTonePitchClass(targetKey))) return false;
+  const head = readHalfDiminishedSlot(first);
+  if (!head || !pitchClassEquals(head.root, source.pitch)) return false;
+  // Three statements of the two-chord model distinguish a sequence
+  // from an unresolved leading seventh followed by a single similar chord.
+  const tail = context.analysis.slices.slice(arrival.index, arrival.index + 5);
+  if (tail.length !== 5 || crossesManualPhraseBoundary(context, first.tick, tail[4].endTick - 1)) return false;
+  let previous = head;
+  for (const frame of [first, ...tail]) {
+    if (frame.chord?.semantics) {
+      const reading = context.harmony.primaryInterpretation(frame.chord);
+      if (reading.status !== "resolved" || reading.value.appliedTarget) return false;
+      if (frame === first && (reading.value.degree !== 7 || reading.value.degreeAlteration !== 0 ||
+          (reading.value.designation && reading.value.designation.primaryFunction !== "dominant"))) return false;
+      const key = reading.value.localKey ?? frame.key;
+      if (key.mode !== targetKey.mode || !pitchClassEquals(key.tonic, targetKey.tonic)) return false;
+    }
+    if (frame === first) continue;
+    const next = readHalfDiminishedSlot(frame);
+    if (!next || !continuesModel(previous, next) || !writtenRootFourth(previous, next)) return false;
+    previous = next;
+  }
+  return true;
 }
 
 // Spasobin, ch. 56, example 817 and keyboard exercises. Require three
