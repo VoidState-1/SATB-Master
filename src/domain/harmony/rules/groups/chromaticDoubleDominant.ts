@@ -1,3 +1,4 @@
+import { respeltDegrees, writtenDoubleDominantResolution } from "../helpers/doubleDominantResolution";
 import {
   chordIdentityToneSpellings,
   chordToneSpellings,
@@ -166,17 +167,6 @@ export function resolvesRaisedSecondApproach(context: HarmonyRuleContext, motion
   });
 }
 
-function respeltDegrees(key: KeyReference) {
-  return {
-    tonic: key.tonic,
-    tonicThird: scaleDegreePitchClass(key, 3),
-    raisedSecond: scaleDegreePitchClass(key, 2, 1),
-    raisedFourth: scaleDegreePitchClass(key, 4, 1),
-    sixth: scaleDegreePitchClass(key, 6),
-    dominant: scaleDegreePitchClass(key, 5),
-  };
-}
-
 function readRespeltPreparation(context: HarmonyRuleContext, middle: AnalysisSlice, key: KeyReference) {
   const slice = context.sliceAt(middle.tick - 1);
   const chord = slice?.chord;
@@ -217,28 +207,15 @@ function readRespeltContinuation(
   context: HarmonyRuleContext,
   middle: AnalysisSlice,
   key: KeyReference,
-  { tonic, tonicThird, raisedSecond, raisedFourth, sixth, dominant }: ReturnType<typeof respeltDegrees>,
+  { dominant }: ReturnType<typeof respeltDegrees>,
 ) {
-  const soundingBass = middle.notes.bass;
-  if (!soundingBass || !hasWrittenVoicing(middle, [raisedSecond, raisedFourth, sixth, tonic]) ||
-      (!pitchClassEquals(soundingBass.pitch, raisedFourth) && !pitchClassEquals(soundingBass.pitch, sixth))) return;
   const end = middle.endTick;
   const landing = context.sliceAt(end);
   const chord = landing?.chord;
-  if (!landing || !chord || landing.tick !== end || chord.startTick !== end ||
-      landing.key.id !== middle.key.id || !cadentialSixFourInKey(context, landing, key) ||
-      !hasWrittenVoicing(landing, chordToneSpellings(tonic, "major"))) return;
-
-  const resolvesInVoice = activeNotes(middle).every(({ voiceId, note }) => {
-    const next = landing.notes[voiceId]!;
-    if (pitchClassEquals(note.pitch, tonic)) return spelledPitchEquals(note.pitch, next.pitch);
-    const target = pitchClassEquals(note.pitch, raisedSecond) ? tonicThird : dominant;
-    const semitones = pitchClassEquals(note.pitch, sixth) ? -2 : 1;
-    const motion = writtenInterval(note.pitch, next.pitch);
-    return note.startTick + note.durationTicks === end && next.startTick === end &&
-      pitchClassEquals(next.pitch, target) && motion.diatonicSteps === Math.sign(semitones) && motion.semitones === semitones;
-  });
-  if (!resolvesInVoice) return;
+  if (!landing || !chord || chord.startTick !== end || landing.key.id !== middle.key.id ||
+      !cadentialSixFourInKey(context, landing, key)) return;
+  const resolution = writtenDoubleDominantResolution(middle, landing, key);
+  if (!resolution || !pitchClassEquals(middle.notes[resolution.voiceId]!.pitch, resolution.previous)) return;
   const dominantTick = chord.startTick + chord.durationTicks;
   const arrival = readRootDominant(context, dominantTick, key, middle.key.id, dominant);
   if (arrival) return { landing, landingChord: chord, arrival };

@@ -157,13 +157,18 @@ describe("D.1/D.2: dominant preparation with a written raised second", () => {
       alto:"D4/4 F4/4 E4/4 E4/4",
       preparation:"ii6", landing:"V", bass:"Bb2/4 B2/4 C3/2",
     });
-    const wrong = make({
-      soprano:"G4/4 Ab4/4 A4/4 G4/4",
-    });
+    const risingSeventh = { soprano:"G4/4 Ab4/4 A4/4 G4/4" };
+    const cadential = make(risingSeventh);
+    const pedal = make({ ...risingSeventh, landing:"I64 role=pedal64" });
     const seventhWarnings = (project: ProjectDocument) => diagnostics(project).filter(d =>
       d.ruleId === "resolution.chord-seventh" && d.noteIds.includes("note-S-960"));
     expect(seventhWarnings(correct)).toEqual([]);
-    expect(seventhWarnings(wrong).map(d=>[d.tick,d.severity])).toEqual([[1920,"warning"]]);
+    expect(seventhWarnings(cadential)).toEqual([]);
+    expect(diagnostics(cadential)).toContainEqual(expect.objectContaining({
+      ruleId: "melody.augmented-interval", tick: 1920,
+      voiceIds: ["soprano"], message: expect.stringContaining("A♭4 宜写为 G♯"),
+    }));
+    expect(seventhWarnings(pedal).map(d=>[d.tick,d.severity])).toEqual([[1920,"warning"]]);
   });
 });
 

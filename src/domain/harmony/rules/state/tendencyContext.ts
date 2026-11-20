@@ -125,11 +125,11 @@ export function sameLeadingToneContext(
 
 export function sameSeventhContext(
   environment: ObligationEnvironment<SeventhPayload>,
+  currentChord = environment.context.slice.chord,
 ) {
   if (!environment.context.transitionFromPrevious?.contiguous) return false;
 
   const sourceChord = openedSourceChord(environment);
-  const currentChord = environment.context.slice.chord;
   if (!sourceChord || !currentChord) return false;
 
   if (!pitchClassEquals(sourceChord.identity.root, currentChord.identity.root))

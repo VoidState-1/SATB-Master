@@ -37,7 +37,8 @@ function chromaticSpellingDiagnostic(
   const { previous, current, voiceId } = transition;
   // An established chordal reading takes precedence over a conjectured passing note.
   const handoff = readDominantSeventhHandoffSpelling(context, transition);
-  const spelling = handoff ?? readWrittenStructuralSpelling(context, transition);
+  const structural = handoff ? undefined : readWrittenStructuralSpelling(context, transition);
+  const spelling = handoff ?? structural;
   const correction = corrections.get(transition.id);
   if (!spelling && !correction) return;
   const notes = [previous, current];
@@ -56,8 +57,8 @@ function chromaticSpellingDiagnostic(
       noteEvidence(handoff.resolvedThird, "同次进行解决到新三音"),
     );
     return diagnostic(AUGMENTED, current.startTick, current.startTick + current.durationTicks,
-      [voiceId], notes, "和声性半音的拼写", incorrect.join("，") + "。", {
-        ...options, motionSameHarmony: handoff ? false : undefined,
+      [voiceId], notes, "和声性半音的拼写", incorrect.join("，") + "。" + (structural?.reason ?? ""), {
+        ...options, motionSameHarmony: handoff ? false : structural?.motionSameHarmony,
         messageKey: `${AUGMENTED}.structural-spelling`, evidence,
       });
   }

@@ -10,6 +10,7 @@ import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import { readDominantSeventhExchange, readWrittenDominantSeventh } from "../../writtenDominantSeventh";
 import { resolvesInVoice } from "../../writtenResolution";
 import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
+import { readDoubleDominantResolution } from "../helpers/doubleDominantResolution";
 import { resolvesDominantSixthSubstitution } from "../groups/dominantSixthSubstitution";
 import {
   keyEquals,
@@ -33,7 +34,7 @@ import type { SpanView } from "../context/views";
 import { leadingToneResolutionKey, writtenLocalLeadingToneKey } from "./leadingToneTarget";
 import { dominantNinthTone, writtenDominantNinthResolves } from "../../writtenDominantNinth";
 import { preparedSeventhEntries } from "./preparedSeventh";
-import { openedSourceChord, openedSourceNote, supportsTendencyResolutionRules } from "./tendencyContext";
+import { openedSourceChord, openedSourceNote, sameSeventhContext, supportsTendencyResolutionRules } from "./tendencyContext";
 import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
 import { majorMediantToSubdominant } from "../groups/majorMediant";
 import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneNeighbor";
@@ -543,11 +544,25 @@ function passingDominantSeventhAscends(environment: ObligationEnvironment<Sevent
     carriesPassingBass(context, dominant, target);
 }
 
+function respeltDoubleDominantSeventhAscends(environment: ObligationEnvironment<SeventhPayload>) {
+  const { context: { previous: source, slice: target, rules }, obligation: { payload } } = environment;
+  if (!source?.chord) return false;
+  const structure = source.chord.identity.structure;
+  const departure = source.notes[payload.voiceId];
+  if (structure.kind !== "tertian" || structure.quality !== "diminished7" ||
+      structure.extensions.length || structure.alterations.length ||
+      !departure || toMidi(departure.pitch) !== payload.seventhMidi) return false;
+
+  const resolution = readDoubleDominantResolution(rules, source, target);
+  // A previous harmony can still own an obligation on this same pitch and voice.
+  return resolution?.voiceId === payload.voiceId && sameSeventhContext(environment, source.chord);
+}
+
 export function chordSeventhResolves(
   environment: ObligationEnvironment<SeventhPayload>,
 ) {
   return resolvesDownward(environment, environment.obligation.payload.seventhMidi) ||
-    passingDominantSeventhAscends(environment);
+    passingDominantSeventhAscends(environment) || respeltDoubleDominantSeventhAscends(environment);
 }
 
 export function dominantNinthResolves(
