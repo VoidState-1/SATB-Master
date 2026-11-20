@@ -65,7 +65,9 @@ export function normalizeBuiltinDiagnostic(
     !validateDiagnosticReferences(item, references).ok
   )
     return undefined;
-  const { pairMotion: _pairMotion, motionSameHarmony: _motionSameHarmony, ...report } = item;
+  const {
+    pairMotion: _pairMotion, motionSameHarmony: _motionSameHarmony, melodyTransitionId: _melodyTransitionId, ...report
+  } = item;
   const normalized: HarmonyDiagnostic = {
     ...report,
     id: stableRootCauseKey(item),

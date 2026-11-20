@@ -5,7 +5,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { diagnostic, intervalName, noteEvidence, voiceName } from "../helpers/core";
 import { isWrittenLowerNeighborMotion } from "../helpers/writtenLowerNeighborPair";
 import { hasSupportedChromaticPreparation } from "./chromaticUnison";
-import { chromaticPassingTransitionIds } from "./chromaticPassing";
+import { chromaticPassingMotions } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
 import { resolvesContextualMinorDominantSixth } from "./dominantSixthSubstitution";
@@ -32,7 +32,7 @@ function alteredIntervalRule(
   const ruleId = augmented ? "melody.augmented-interval" : "melody.diminished-interval";
   const supportsMotion = augmented ? hasSupportedChromaticPreparation : hasSupportedDiminishedMotion;
   const diagnostics: RuleDiagnostic[] = [];
-  const passing = augmented ? chromaticPassingTransitionIds(context) : undefined;
+  const passing = augmented ? chromaticPassingMotions(context) : undefined;
   const chain = halfDiminishedChainArrivals(context, expectedQuality);
   for (const transition of context.melodyTransitions().where(item => item.contiguous)) {
     const named = intervalName(transition.writtenInterval);
@@ -41,7 +41,7 @@ function alteredIntervalRule(
       named.quality !== expectedQuality ||
       Math.abs(transition.writtenInterval.semitones) === 0 ||
       isNeapolitanSeventhBassTritone(context, transition) ||
-      passing?.has(transition.id) ||
+      passing?.supported.has(transition.id) ||
       chain.has(transition.current.id) ||
       isMinorSixthChordBassLine(context, transition) ||
       supportsMotion(context, transition)
@@ -53,6 +53,10 @@ function alteredIntervalRule(
     const contextualDominantOnset = attack && attack.notes.bass?.startTick === attack.tick &&
       attack.notes.soprano?.startTick === attack.tick &&
       resolvesContextualMinorDominantSixth(attack, context);
+    const correction = passing?.corrections.get(transition.id);
+    const message = correction
+      ? `单声部半音经过时，${formatSpelledPitch(correction.note.pitch)} 建议写为同音高的 ${formatSpelledPitch(correction.spelling)}。`
+      : `${voiceName(context.analysis, transition.voiceId)}的 ${formatSpelledPitch(transition.previous.pitch)} 到 ${formatSpelledPitch(transition.current.pitch)} 构成${named.label}。`;
     diagnostics.push(
       diagnostic(
         ruleId,
@@ -60,13 +64,14 @@ function alteredIntervalRule(
         transition.current.startTick + transition.current.durationTicks,
         [transition.voiceId],
         [transition.previous, transition.current],
-        "旋律出现增减音程",
-        `${voiceName(context.analysis, transition.voiceId)}的 ${formatSpelledPitch(transition.previous.pitch)} 到 ${formatSpelledPitch(transition.current.pitch)} 构成${named.label}。`,
+        correction ? "半音经过音的拼写" : "旋律出现增减音程",
+        message,
         {
-          motionSameHarmony: contextualDominantOnset
+          melodyTransitionId: correction ? transition.id : undefined,
+          motionSameHarmony: correction || contextualDominantOnset
             ? sameHarmonyAtMelodicAttack(context, transition.current.startTick, transition.voiceId)
             : undefined,
-          messageKey: `${ruleId}.${named.quality}`,
+          messageKey: correction ? `${ruleId}.passing-spelling` : `${ruleId}.${named.quality}`,
           params: {
             intervalNumber: named.number,
             quality: named.quality,

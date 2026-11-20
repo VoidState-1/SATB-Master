@@ -1,7 +1,8 @@
 import { chordIdentityEquals, chordIdentityToneSpellings, chordToneSpellings, type ChordIdentity, type KeyReference } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { enharmonicSpellings, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import { VOICE_ORDER, type VoiceId } from "../../../project";
 import { sameChordIdentityWithoutBass, type AnalysisNote, type AnalysisSlice, type MelodyTransition } from "../../analysis";
+import { hasCompleteWrittenTertianVoicing } from "../../writtenTertian";
 import { soundsCompleteWrittenChord } from "../../writtenNeighbors";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { hasExactPitch } from "../helpers/core";
@@ -273,42 +274,47 @@ function readHeldTriadForDescendingPassing(
   if (hasStepwiseEntry(context, voiceId, backingStart, left, key, harmony)) return { seventhEntry: undefined };
 }
 
-function isChromaticPassing(context: HarmonyRuleContext, first: MelodyTransition, second: MelodyTransition) {
+interface PassingSpellingCorrection {
+  note: AnalysisNote;
+  spelling: AnalysisNote["pitch"];
+}
+
+function readChromaticPassingSpelling(context: HarmonyRuleContext, first: MelodyTransition, second: MelodyTransition): "usual" | PassingSpellingCorrection | undefined {
   if (first.current.id !== second.previous.id || !first.contiguous || !second.contiguous ||
-      !first.sameKey || !second.sameKey) return false;
+      !first.sameKey || !second.sameKey) return;
   const a = first.writtenInterval, b = second.writtenInterval;
   if (Math.abs(a.semitones) !== 1 || a.semitones !== b.semitones ||
       a.diatonicSteps + b.diatonicSteps !== a.semitones ||
-      (a.diatonicSteps !== 0 && b.diatonicSteps !== 0)) return false;
+      (a.diatonicSteps !== 0 && b.diatonicSteps !== 0)) return;
   const left = first.previous;
   const middle = first.current;
   const right = second.current;
   if ((middle.nonChordToneRole && middle.nonChordToneRole !== "passing") ||
-      left.nonChordToneRole || right.nonChordToneRole) return false;
+      left.nonChordToneRole || right.nonChordToneRole) return;
   const meter = context.metric.positionAt(middle.startTick);
-  if (!meter || meter.confidence === "ambiguous" || meter.role === "downbeat") return false;
+  if (!meter || meter.confidence === "ambiguous" || meter.role === "downbeat") return;
   const from = context.sliceAt(middle.startTick - 1);
   const via = context.sliceAt(middle.startTick);
   const to = context.sliceAt(right.startTick);
-  if (!from || !to || !via) return false;
+  if (!from || !to || !via) return;
   const key = localKey(context, from);
   const landingKey = localKey(context, to);
   const middleKey = via.chord ? localKey(context, via) : key;
-  if (!key || ![middleKey, landingKey].every(k => k && k.mode === key.mode && pitchClassEquals(k.tonic, key.tonic))) return false;
-  if (![left, right].every(n => pitchClassEquals(n.pitch, scaleDegreePitchClass(key, writtenDegree(key, n.pitch)))) ||
-      !usualChromaticSpelling(key, middle.pitch, a.semitones > 0)) return false;
-  if (isRaisedTonicThirdPassing(context, first, second, from, to, key)) return true;
-  if (!from.chord || !to.chord) return false;
+  if (!key || ![middleKey, landingKey].every(k => k && k.mode === key.mode && pitchClassEquals(k.tonic, key.tonic))) return;
+  if (![left, right].every(note => isDiatonicIn(key, note))) return;
+  const usual = usualChromaticSpelling(key, middle.pitch, a.semitones > 0);
+  if (usual && isRaisedTonicThirdPassing(context, first, second, from, to, key)) return "usual";
+  if (!from.chord || !to.chord) return;
   if (!hasExactPitch(left, chordIdentityToneSpellings(from.chord.identity)) ||
-      !hasExactPitch(right, chordIdentityToneSpellings(to.chord.identity))) return false;
+      !hasExactPitch(right, chordIdentityToneSpellings(to.chord.identity))) return;
 
   // 此处只判断旋律写法。三个伴随声部持续时，纵切也可能构成变化和弦。
   const harmony = from.chord.identity;
   const tones = chordIdentityToneSpellings(harmony);
-  if (hasExactPitch(middle, tones)) return false;
+  if (hasExactPitch(middle, tones)) return;
   const otherVoices = VOICE_ORDER.filter(voice => voice !== first.voiceId);
   const slices = context.slices({ overlapping: { fromTick: middle.startTick, toTick: right.startTick } });
-  return slices.toArray().every(slice =>
+  const heldAccompaniment = slices.all(slice =>
     (!slice.chord || sameChordIdentityWithoutBass(slice.chord.identity, harmony)) &&
     otherVoices.every(voice => {
       const before = from.notes[voice];
@@ -316,20 +322,47 @@ function isChromaticPassing(context: HarmonyRuleContext, first: MelodyTransition
       return before && now && spelledPitchEquals(before.pitch, now.pitch) && hasExactPitch(before, tones);
     }),
   );
+  if (!heldAccompaniment) return;
+  if (usual) return "usual";
+
+  // §41.3 also allows spellings suggested by the sounding harmony. Identify a
+  // contrary spelling only in an isolated weak passing line between written chords.
+  if (meter.confidence !== "certain" || meter.level >= 2 ||
+      middle.durationTicks > Math.min(left.durationTicks, right.durationTicks) ||
+      !continuousContext(context, left.startTick, to) ||
+      !matchesWrittenEndpoint(from) || !matchesWrittenEndpoint(to) ||
+      hasCompleteWrittenTertianVoicing(Object.values(via.notes).map(note => note.pitch)) ||
+      !slices.all(slice => otherVoices.every(voice =>
+        slice.notes[voice]?.id === from.notes[voice]?.id))) return;
+  const otherStep = middle.pitch.step === left.pitch.step ? right.pitch.step : left.pitch.step;
+  const spelling = enharmonicSpellings(middle.pitch).find(pitch =>
+    pitch.step === otherStep && usualChromaticSpelling(key, pitch, a.semitones > 0));
+  if (spelling) return { note: middle, spelling };
 }
 
-export function chromaticPassingTransitionIds(context: HarmonyRuleContext) {
-  const ids = new Set<string>();
+function matchesWrittenEndpoint(slice: AnalysisSlice) {
+  const chord = slice.chord;
+  return !!chord && !!slice.notes.bass && pitchClassEquals(slice.notes.bass.pitch, chord.identity.bass) &&
+    hasWrittenVoicing(slice, chordIdentityToneSpellings(chord.identity));
+}
+
+export function chromaticPassingMotions(context: HarmonyRuleContext) {
+  const supported = new Set<string>();
+  const corrections = new Map<string, PassingSpellingCorrection>();
   for (const voiceId of VOICE_ORDER) {
     for (const [first, second] of context.melodyTransitions({ voiceId }).window(2)) {
-      const supported = readHeldTriadForDescendingPassing(context, first, second);
-      if (supported) {
-        ids.add(first.id);
-        if (supported.seventhEntry) ids.add(supported.seventhEntry);
-      } else if (isChromaticPassing(context, first, second)) {
-        ids.add(first.writtenInterval.diatonicSteps === 0 ? first.id : second.id);
+      const held = readHeldTriadForDescendingPassing(context, first, second);
+      if (held) {
+        supported.add(first.id);
+        if (held.seventhEntry) supported.add(held.seventhEntry);
+        continue;
       }
+      const spelling = readChromaticPassingSpelling(context, first, second);
+      if (!spelling) continue;
+      const unison = first.writtenInterval.diatonicSteps === 0 ? first : second;
+      if (spelling === "usual") supported.add(unison.id);
+      else corrections.set(unison.id, spelling);
     }
   }
-  return ids;
+  return { supported, corrections };
 }

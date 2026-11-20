@@ -208,6 +208,8 @@ export type RuleDiagnostic = Omit<
   pairMotion?: { voiceExchange: boolean; bassStepUp: boolean };
   /** 同和声例外在本条诊断所指的连接上是否成立。 */
   motionSameHarmony?: boolean;
+  /** 确知诊断对应的旋律连接时，例外只使用本次起奏的证据。 */
+  melodyTransitionId?: string;
 };
 
 export type RuleSkipReason =

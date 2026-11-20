@@ -40,6 +40,12 @@ function transitionIdsFor(
   diagnostic: RuleDiagnostic,
   analysis: HarmonyAnalysis,
 ) {
+  if (diagnostic.melodyTransitionId !== undefined) {
+    const attack = analysis.sliceTransitions.find(transition => transition.current.tick === diagnostic.tick);
+    const slice = new Set(attack ? [attack.id] : []);
+    const melody = new Set([diagnostic.melodyTransitionId]);
+    return { slice, melody, all: new Set([...slice, ...melody]) };
+  }
   const noteIds = new Set(diagnostic.noteIds);
   const overlapsTick = (tick: number) =>
     diagnostic.tick === diagnostic.endTick
