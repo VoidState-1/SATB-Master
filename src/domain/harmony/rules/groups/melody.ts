@@ -17,6 +17,7 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import { subdominantSeventhBassEntry } from "./heldDoubleDominantContinuation";
 import { chromaticPassingTransitionIds } from "./chromaticPassing";
 import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
@@ -143,6 +144,8 @@ export function tritoneRule(context: HarmonyRuleContext) {
 function preparesChromaticDominant(context: HarmonyRuleContext, transition: MelodyTransition) {
   const { previous, current, writtenInterval } = transition;
   if (!transition.sameKey || writtenInterval.diatonicSteps !== 0 || Math.abs(writtenInterval.semitones) !== 1) return false;
+  const heldBass = subdominantSeventhBassEntry(context, transition);
+  if (heldBass !== undefined) return heldBass;
   const targetSlice = context.sliceAt(current.startTick);
   const target = targetSlice?.chord;
   if (!targetSlice || !target || target.startTick !== current.startTick) return false;
