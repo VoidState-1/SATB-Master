@@ -19,6 +19,7 @@ import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
 import { resolvesContextualMinorDominantSixth } from "./dominantSixthSubstitution";
 import { isResolvedDominantSixthBass } from "./resolvedDominantSixthBass";
+import { resolvesDominantSeventhEntry } from "./resolvedDominantSeventhEntry";
 import { resolvesRaisedSecondApproach } from "./chromaticDoubleDominant";
 import { resolvesGermanSixthDiminishedThird } from "./chromaticAugmentedSixth";
 import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
@@ -157,6 +158,7 @@ function alteredIntervalRule(
       chain.has(transition.current.id) ||
       isMinorSixthChordBassLine(context, transition) ||
       (expectedQuality === "减" && isResolvedDominantSixthBass(context, transition)) ||
+      (expectedQuality === "减" && resolvesDominantSeventhEntry(context, transition)) ||
       (expectedQuality === "减" && resolvesRaisedSecondApproach(context, transition)) ||
       (expectedQuality === "减" && resolvesGermanSixthDiminishedThird(context, transition)) ||
       (expectedQuality === "减" && isWrittenLowerNeighborMotion(context, transition)) ||
