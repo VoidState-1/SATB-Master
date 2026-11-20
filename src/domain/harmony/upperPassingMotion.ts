@@ -4,7 +4,7 @@ import { compareMetricStrength, type MetricPosition } from "../rhythm/metric";
 import type { AnalysisSlice } from "./analysis";
 import { hasCompleteWrittenTertianVoicing } from "./writtenTertian";
 
-interface PassingFrame {
+export interface UpperPassingFrame {
   fromTick: number;
   toTick: number;
   key: AnalysisSlice["key"];
@@ -14,7 +14,10 @@ interface PassingFrame {
 
 // Spasobin §38.1–4. Follow one written line from chord tone to chord tone;
 // at the intervening weak attack all three other note events must still sound.
-export function upperPassingMotion(left: PassingFrame, middle: PassingFrame, right: PassingFrame, ppq: number) {
+export function upperPassingMotion(
+  left: UpperPassingFrame, middle: UpperPassingFrame, right: UpperPassingFrame, ppq: number,
+  { allowHeldDeparture = false, allowCompleteSonority = false } = {},
+) {
   if (left.toTick !== middle.fromTick || middle.toTick !== right.fromTick ||
       middle.metric?.confidence !== "certain" || middle.metric.level >= 2 ||
       right.metric?.confidence !== "certain" ||
@@ -36,7 +39,8 @@ export function upperPassingMotion(left: PassingFrame, middle: PassingFrame, rig
       middle.activeNotes[v]!.nonChordToneRole))) return;
   const before = left.activeNotes[voice]!, note = middle.activeNotes[voice]!, after = right.activeNotes[voice]!;
   if (before.nonChordToneRole || after.nonChordToneRole || (note.nonChordToneRole && note.nonChordToneRole !== "passing") ||
-      before.startTick !== left.fromTick || before.startTick + before.durationTicks !== note.startTick ||
+      (!allowHeldDeparture && before.startTick !== left.fromTick) ||
+      before.startTick + before.durationTicks !== note.startTick ||
       note.startTick + note.durationTicks !== right.fromTick || after.startTick !== right.fromTick ||
       note.durationTicks > ppq || note.durationTicks > before.durationTicks) return;
   const into = writtenInterval(before.pitch, note.pitch), out = writtenInterval(note.pitch, after.pitch);
@@ -44,6 +48,6 @@ export function upperPassingMotion(left: PassingFrame, middle: PassingFrame, rig
   if (!isWrittenStep(into) || !isWrittenStep(out) || into.diatonicSteps !== out.diatonicSteps ||
       Math.sign(into.semitones) !== into.diatonicSteps || Math.sign(out.semitones) !== out.diatonicSteps ||
       !pitchClassEquals(note.pitch, scaleDegreePitchClass(middle.key, degree)) ||
-      hasCompleteWrittenTertianVoicing(VOICE_ORDER.map(v => middle.activeNotes[v]!.pitch))) return;
+      (!allowCompleteSonority && hasCompleteWrittenTertianVoicing(VOICE_ORDER.map(v => middle.activeNotes[v]!.pitch)))) return;
   return { note, after };
 }

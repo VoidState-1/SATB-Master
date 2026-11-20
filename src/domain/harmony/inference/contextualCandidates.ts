@@ -105,7 +105,10 @@ export function buildContextualChordCandidates(project: ProjectDocument, options
   candidates = withPreparedSuspensions(observations, candidates, options, project.ppq, phraseBoundaryTicks);
   candidates = withProlongedHarmony(observations, candidates, options, project.ppq, phraseBoundaryTicks);
   const doubleNeighbors = simultaneousNeighborCandidates(observations, candidates, options, project.ppq, phraseBoundaryTicks);
-  candidates = classifySixFours(observations, candidates, minimumConfidence !== "high", currentPhraseTicks, doubleNeighbors);
+  candidates = classifySixFours(
+    observations, candidates, minimumConfidence !== "high", currentPhraseTicks, doubleNeighbors,
+    minimumConfidence !== "high" && options.allowNonChordToneCandidates !== false ? project.ppq : undefined,
+  );
 
   candidates = withDeceptiveDominants(observations, candidates, options, project.ppq, phraseBoundaryTicks);
   candidates = withDominantSixthSubstitutions(observations, candidates, meetsMinimumConfidence, manualPhraseTicks);

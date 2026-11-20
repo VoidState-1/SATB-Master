@@ -1,3 +1,4 @@
+import { decoratedPassingVoicing } from "../helpers/structuralTriadVoicing";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import type { NonChordToneRole, VoiceId } from "../../../project/types";
@@ -129,7 +130,8 @@ export function passingToneRule(context: HarmonyRuleContext) {
     const currentSlice = neighborhood.attackSlice;
     const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
     if (!previous || !next || !currentSlice.chord) continue;
-    if (readHeldChromaticPassing(context, voiceId, previous, note, next)) continue;
+    if (readHeldChromaticPassing(context, voiceId, previous, note, next) ||
+        decoratedPassingVoicing(context, currentSlice)?.noteIds.includes(note.id)) continue;
     const entering = writtenInterval(previous.pitch, note.pitch);
     const leaving = writtenInterval(note.pitch, next.pitch);
     const valid =

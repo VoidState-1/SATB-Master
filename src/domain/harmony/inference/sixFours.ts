@@ -2,6 +2,7 @@ import { chordIdentityEquals, chordIdentityInversion, chordIdentityToneSpellingF
 import { isWrittenStep, pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
 import { withAppliedPassingSixFours } from "./appliedPassingSixFour";
 import { fitCadentialRevoicing } from "./candidates";
+import { decoratedPassingSixFour } from "./decoratedPassingSixFour";
 import { isCanonicalTonicFifthOmission } from "./fit";
 import { observationNotes } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation } from "./types";
@@ -223,6 +224,7 @@ export function classifySixFours(
   observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[], acceptMedium = true,
   phraseBoundaries: readonly number[] = [],
   doubleNeighbors: readonly CandidateSet[] = [],
+  passingOrnamentPpq?: number,
 ) {
   const triads = sets.map(primaryTriad);
   const classified = sets.slice();
@@ -239,12 +241,20 @@ export function classifySixFours(
     const role = left && right && before && after && before.key.id === after.key.id &&
       !phraseBoundaries.some(tick => before.fromTick < tick && tick <= after.fromTick) &&
       roleBetween(left, middle, right, before, observations[start], after);
-    if (role) {
+    const anchor = observations[start - 2], anchorTriad = triads[start - 2];
+    const ornament = !role && passingOrnamentPpq && start === end && anchor && anchorTriad && before &&
+      right && after && !sets[start - 1].length &&
+      !phraseBoundaries.some(tick => anchor.fromTick < tick && tick <= after.fromTick)
+      ? decoratedPassingSixFour(anchorTriad, middle, right, anchor, before, observations[start], after, passingOrnamentPpq)
+      : undefined;
+    const nonCadentialRole = role || (ornament && "passing64");
+    if (nonCadentialRole) {
+      if (ornament) classified[start - 1] = [ornament];
       for (let i = start; i <= end; i++) {
         classified[i] = sets[i].filter(c => c.functionalBaseId !== "K46").map(c =>
           c === triads[i] && c.semantics
-            ? { ...c, semantics: { ...c.semantics, cadenceRole: role },
-                evidence: [...c.evidence, { kind: "sequence-context", code: role }] }
+            ? { ...c, semantics: { ...c.semantics, cadenceRole: nonCadentialRole },
+                evidence: [...c.evidence, { kind: "sequence-context", code: nonCadentialRole }] }
             : c);
       }
     } else {
