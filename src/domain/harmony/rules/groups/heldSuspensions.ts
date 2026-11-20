@@ -1,16 +1,14 @@
 import { chordIdentityEquals, chordIdentityToneSpellings } from "../../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass, type KeyLike } from "../../../pitch";
+import { keyEquals, pitchClassEquals, scaleDegreePitchClass, type KeyLike } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import {
   verifyPreparedSuspensionVoicing,
   type PreparationSupport,
 } from "../../preparedSuspensionVoicing";
+import { preparedNinthOverDominantSeventh } from "../../writtenDominantNinth";
+import { soundsDeclaredChord } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { activeNotes } from "../helpers/core";
-
-function sameKey(left: KeyLike, right: KeyLike) {
-  return left.mode === right.mode && pitchClassEquals(left.tonic, right.tonic);
-}
 
 function functionalKey(context: HarmonyRuleContext, slice: AnalysisSlice, degree: 1 | 5) {
   const chord = slice.chord;
@@ -41,14 +39,14 @@ function preparationSupport(
     const tones = chordIdentityToneSpellings(chord.identity);
     const reading = context.harmony.primaryInterpretation(chord);
     const prepKey = reading.status === "resolved" ? reading.value.localKey ?? slice.key : slice.key;
-    return sameKey(prepKey, key) && pitchClassEquals(slice.notes.bass!.pitch, chord.identity.bass) &&
+    return keyEquals(prepKey, key) && pitchClassEquals(slice.notes.bass!.pitch, chord.identity.bass) &&
       notes.every(({ note }) => context.harmony.isWrittenChordTone(note, chord)) &&
       tones.every(tone => notes.some(({ note }) => pitchClassEquals(note.pitch, tone))) ? "confirmed" : "blocked";
   }
   const localKey = functionalKey(context, slice, 5);
   const { identity } = chord;
   const { structure } = identity;
-  if (!localKey || !sameKey(localKey, key) || structure.kind !== "tertian" ||
+  if (!localKey || !keyEquals(localKey, key) || structure.kind !== "tertian" ||
       structure.quality !== "dominant7" || structure.alterations.length || structure.extensions.length ||
       !pitchClassEquals(identity.root, scaleDegreePitchClass(key, 5)) ||
       !pitchClassEquals(slice.notes.bass!.pitch, identity.bass)) return "blocked";
@@ -59,6 +57,28 @@ function preparationSupport(
     : "surface";
 }
 
+function heldNinthOverDominantSeventh(context: HarmonyRuleContext, slice: AnalysisSlice) {
+  const { chord, notes: { bass } } = slice;
+  if (!chord || bass?.startTick !== slice.tick) return [];
+  const key = functionalKey(context, slice, 5);
+  if (!key || !pitchClassEquals(chord.identity.root, scaleDegreePitchClass(key, 5))) return [];
+  const before = context.sliceAt(slice.tick - 1), landing = context.sliceAt(slice.endTick);
+  if (!before?.chord || !landing?.chord || !soundsDeclaredChord(before) ||
+      !keyEquals(before.key, slice.key) || !keyEquals(landing.key, slice.key) ||
+      !chordIdentityEquals(chord.identity, landing.chord.identity) ||
+      context.analysis.phraseBoundaries.some(boundary =>
+        boundary.source === "manual" && !boundary.stale && before.tick < boundary.tick && boundary.tick <= landing.tick)) return [];
+  const landingKey = functionalKey(context, landing, 5);
+  const preparation = context.harmony.primaryInterpretation(before.chord);
+  const preparationKey = preparation.status === "resolved" ? preparation.value.localKey ?? before.key : before.key;
+  if (!landingKey || !keyEquals(key, landingKey) || !keyEquals(key, preparationKey)) return [];
+  const noteId = preparedNinthOverDominantSeventh(
+    chord.identity, before.notes, slice.notes, landing.notes, slice.tick, landing.tick,
+    context.metric.positionAt(slice.tick), context.metric.positionAt(landing.tick),
+  );
+  return noteId ? [noteId] : [];
+}
+
 /** Limit the score proof to the part of the note that is outside the
  * annotated harmony. The caller leaves all persisted roles untouched. */
 export function heldSuspensionsAt(context: HarmonyRuleContext, slice: AnalysisSlice): readonly string[] {
@@ -66,6 +86,8 @@ export function heldSuspensionsAt(context: HarmonyRuleContext, slice: AnalysisSl
   const bass = slice.notes.bass;
   if (!chord || !bass || !slice.completeSatb) return [];
   const { root, bass: writtenBass, structure } = chord.identity;
+  if (structure.kind === "tertian" && structure.quality === "dominant7")
+    return heldNinthOverDominantSeventh(context, slice);
   if (structure.kind !== "tertian" || (structure.quality !== "major" && structure.quality !== "minor") ||
       structure.alterations.length || structure.extensions.length ||
       !pitchClassEquals(root, bass.pitch) || !pitchClassEquals(root, writtenBass)) return [];
@@ -87,7 +109,7 @@ export function heldSuspensionsAt(context: HarmonyRuleContext, slice: AnalysisSl
     if (part.key.id !== onset.key.id || !part.chord ||
         !chordIdentityEquals(part.chord.identity, chord.identity)) return false;
     const localKey = targetKey(part);
-    return localKey !== undefined && sameKey(localKey, key);
+    return localKey !== undefined && keyEquals(localKey, key);
   };
   if (!isSameTarget(onset)) return [];
   if (activeNotes(onset).some(({ note }) => note.nonChordToneRole))

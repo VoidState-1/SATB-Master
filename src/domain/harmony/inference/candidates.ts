@@ -1,18 +1,23 @@
 import {
   chordIdentityToneSpellings,
+  chordIdentityEquals,
   chordToneSpellings,
   primaryHarmonyInterpretation,
   type ChordIdentity,
   type ChordQuality,
 } from "../../chordModel";
-import { pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
+import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass, writtenInterval } from "../../pitch";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
+import { dominantNinthTone } from "../writtenDominantNinth";
 import {
   buildFunctionalTemplates,
+  dominantNinthTemplates,
   functionalTemplateKey,
   functionalTier,
   identityForFunctionalTemplate,
+  smallNinthAlteration,
 } from "./functionalTemplates";
+import { soundingBass } from "./observations";
 import {
   fitChordObservation,
   fitRatio,
@@ -160,6 +165,22 @@ export function candidateComparator(
   );
 }
 
+function isRootPositionNinthFit(
+  observation: ChordInferenceObservation, identity: ChordIdentity, fit: ReturnType<typeof fitChordObservation>,
+) {
+  if (observation.soundingPitchClasses.length !== 4 || fit.omittedChordDegrees.length ||
+      fit.nonChordToneNoteIds.length) return false;
+  const bass = soundingBass(observation);
+  const ninth = dominantNinthTone(identity);
+  if (!bass || !ninth || !pitchClassEquals(bass, identity.root)) return false;
+  return Object.values(observation.activeNotes).some(note => {
+    if (pitchClassValue(note.pitch) !== pitchClassValue(ninth)) return false;
+    const interval = writtenInterval(bass, note.pitch);
+    return interval.semitones > 12 &&
+      (!pitchClassEquals(note.pitch, ninth) || interval.diatonicSteps >= 8);
+  });
+}
+
 export function createFunctionalCandidate(
   observation: ChordInferenceObservation,
   template: ReturnType<typeof buildFunctionalTemplates>[number],
@@ -187,6 +208,7 @@ export function createFunctionalCandidate(
       : options,
   );
   if (fit.hardRejected) return undefined;
+  if (template.form === "ninth" && !isRootPositionNinthFit(observation, identity, fit)) return undefined;
   // The raised leading tone anchors this minor-key reading. An enharmonic
   // pivot with a respelled root cannot establish the same local DVII.
   if (template.baseId === "DVII" && observation.key.mode === "minor" &&
@@ -195,6 +217,11 @@ export function createFunctionalCandidate(
       ))
     return undefined;
   const score = scoreFor(observation, identity, fit, template.appliedTarget ? 1 : functionalTier(template.baseId));
+  // The existing, literal large-ninth path stays eligible at high confidence.
+  // A newly inferred small ninth stays reviewable until the score supports it.
+  const needsNinthEvidence = template.form === "ninth" &&
+    (!fit.spellingConsistent || template.alterations?.some(alteration => alteration.degree === 9));
+  const confidence = needsNinthEvidence ? "low" : confidenceFor(score, fit);
   return {
     id: `${observation.index}:${functionalTemplateKey(template, observation.key)}`,
     observationIndex: observation.index,
@@ -203,7 +230,7 @@ export function createFunctionalCandidate(
     functionalBaseId: template.baseId,
     fit,
     score,
-    confidence: confidenceFor(score, fit),
+    confidence,
     evidence: observation.localKey
       ? [...evidenceFor(fit, true), { kind: "sequence-context", code: "local-key-cadence" }]
       : evidenceFor(fit, true),
@@ -215,6 +242,7 @@ export function createAbsoluteCandidate(
   root: (typeof observation.soundingPitchClasses)[number],
   quality: ChordQuality,
   options: ChordInferenceOptions,
+  ninthAlteration?: 0 | -1,
 ) {
   const tones = chordToneSpellings(root, quality);
   const bass = observation.bass &&
@@ -230,15 +258,17 @@ export function createAbsoluteCandidate(
     structure: {
       kind: "tertian",
       quality,
-      extensions: [],
-      alterations: [],
+      extensions: ninthAlteration === undefined ? [] : [9],
+      alterations: ninthAlteration === -1 ? [smallNinthAlteration] : [],
     },
   };
   const fit = fitChordObservation(observation, identity, options);
   if (fit.hardRejected) return undefined;
+  if (ninthAlteration !== undefined && (!fit.spellingConsistent ||
+      !isRootPositionNinthFit(observation, identity, fit))) return undefined;
   const score = scoreFor(observation, identity, fit, 4);
   return {
-    id: `${observation.index}:absolute:${root.step}:${root.alter}:${quality}`,
+    id: `${observation.index}:absolute:${root.step}:${root.alter}:${quality}${ninthAlteration === undefined ? "" : `:9:${ninthAlteration}`}`,
     observationIndex: observation.index,
     identity,
     fit,
@@ -253,6 +283,7 @@ export function buildChordInferenceCandidates(
   options: ChordInferenceOptions = {},
 ) {
   const functionalCandidates: ChordInferenceCandidate[] = buildFunctionalTemplates(observation.key)
+    .flatMap(template => template.form === "ninth" ? dominantNinthTemplates : [template])
     .map((template) => createFunctionalCandidate(observation, template, options))
     .filter((candidate): candidate is ChordInferenceCandidate => !!candidate);
 
@@ -274,6 +305,16 @@ export function buildChordInferenceCandidates(
       for (const quality of FALLBACK_QUALITIES) {
         const candidate = createAbsoluteCandidate(observation, root, quality, options);
         if (candidate) candidates.push(candidate);
+      }
+    }
+    const bass = observation.bass?.pitch;
+    if (bass) {
+      const root = { step: bass.step, alter: bass.alter };
+      for (const ninth of [0, -1] as const) {
+        const candidate = createAbsoluteCandidate(observation, root, "dominant7", options, ninth);
+        if (candidate && !functionalCandidates.some(item => chordIdentityEquals(item.identity, candidate.identity))) {
+          candidates.push(candidate);
+        }
       }
     }
   }

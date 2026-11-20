@@ -2,6 +2,7 @@ import {
   applyFunctionalDefinition,
   applyFunctionalTarget,
   FUNCTIONAL_BASE_DEFINITIONS,
+  functionalDefinition,
   type FunctionalBaseDefinition,
   type FunctionalBaseId,
   type FunctionalChordForm,
@@ -17,6 +18,17 @@ import {
 } from "../../chordModel";
 import type { KeyEvent } from "../../project";
 import type { FunctionalChordTemplate } from "./types";
+
+const largeDominantNinth: FunctionalChordTemplate = {
+  baseId: "D", definition: functionalDefinition("D"), form: "ninth",
+  localKeyPolicy: "current-key", expectedInversion: 0,
+};
+export const smallNinthAlteration = { degree: 9, alter: -1 } as const;
+const smallDominantNinth: FunctionalChordTemplate = {
+  ...largeDominantNinth, alterations: [smallNinthAlteration],
+};
+
+export const dominantNinthTemplates = [largeDominantNinth, smallDominantNinth] as const;
 
 function inversionsFor(
   definition: FunctionalBaseDefinition,

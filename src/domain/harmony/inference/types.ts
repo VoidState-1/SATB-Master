@@ -162,6 +162,8 @@ export interface ChordInferenceOptions {
 export interface ChordInferenceApplyOptions {
   readonly mode: "fill-gaps" | "replace-unlocked";
   readonly selection?: ReadonlySet<string>;
+  /** Explicit choices of the recommendation, or a reviewed alternative for a single observation. */
+  readonly candidateChoices?: ReadonlyMap<string, string>;
   readonly writeNonChordToneRoles?: boolean;
 }
 

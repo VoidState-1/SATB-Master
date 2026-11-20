@@ -1,5 +1,6 @@
 import type { ProjectDocument } from "../../project";
 import { buildContextualChordCandidates } from "./contextualCandidates";
+import { addDominantNinthAlternatives } from "./dominantNinths";
 import { chooseNoncadentialTonicSixFours } from "./noncadentialTonicSixFours";
 import { buildChordInferenceRegions, warningsForRegions } from "./segmentation";
 import { analyzeChordInferencePaths } from "./sequence";
@@ -41,7 +42,8 @@ export function inferChords(
       ],
     };
   }
-  const { observations, candidates, currentPhraseTicks, withheldStarts } = buildContextualChordCandidates(project, options);
+  const { observations, candidates, currentPhraseTicks, withheldStarts, ninthAlternatives } =
+    buildContextualChordCandidates(project, options);
   const sequence = analyzeChordInferencePaths(observations, candidates);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
@@ -61,7 +63,9 @@ export function inferChords(
     selectedPath = selectedPath.slice(first, end).map((selected, index) =>
       selected && { ...selected, observationIndex: index });
   }
-  const regions = buildChordInferenceRegions(visible, scored, selectedPath, withheldStarts);
+  const regions = addDominantNinthAlternatives(
+    buildChordInferenceRegions(visible, scored, selectedPath, withheldStarts), ninthAlternatives,
+  );
   return {
     sourceRevision: 0,
     range,

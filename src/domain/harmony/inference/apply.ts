@@ -20,11 +20,17 @@ function overlaps(left: ChordRegion, right: ChordRegion) {
 
 function selectedForApply(
   region: ChordInferenceRegion,
-  selection: ReadonlySet<string> | undefined,
+  { selection, candidateChoices }: ChordInferenceApplyOptions,
 ) {
-  if (!region.selected) return false;
-  if (selection) return selection.has(region.id);
-  return region.status === "resolved";
+  if (selection && !selection.has(region.id)) return;
+  const choice = candidateChoices?.get(region.id);
+  if (choice !== undefined) {
+    if (region.selected?.id === choice) return region.selected;
+    // Alternatives in a merged region may only fit one of its observations.
+    if (region.observationIndices.length === 1) return region.alternatives.find(candidate => candidate.id === choice);
+    return;
+  }
+  return selection || region.status === "resolved" ? region.selected : undefined;
 }
 
 function regionFromCandidate(
@@ -71,9 +77,10 @@ export function applyChordInference(
   options: ChordInferenceApplyOptions,
 ): ChordInferenceApplyResult {
   const warnings: ChordInferenceWarning[] = [];
-  const selectedRegions = result.regions.filter((region) =>
-    selectedForApply(region, options.selection),
-  );
+  const selectedRegions = result.regions.flatMap(region => {
+    const candidate = selectedForApply(region, options);
+    return candidate ? [{ region, candidate }] : [];
+  });
   if (selectedRegions.length === 0)
     return {
       project,
@@ -82,7 +89,7 @@ export function applyChordInference(
       writtenNonChordToneRoleCount: 0,
     };
   if (project.chordTrack.locked) {
-    for (const region of selectedRegions)
+    for (const { region } of selectedRegions)
       addWarning(warnings, {
         code: "locked-chord",
         fromTick: region.fromTick,
@@ -98,10 +105,9 @@ export function applyChordInference(
   }
 
   let next = cloneProject(project);
-  const appliedRegions: ChordInferenceRegion[] = [];
+  const appliedRegions: typeof selectedRegions = [];
   let writtenNonChordToneRoleCount = 0;
-  for (const region of selectedRegions) {
-    const candidate = region.selected!;
+  for (const { region, candidate } of selectedRegions) {
     const proposed = regionFromCandidate(region, candidate);
     const overlappers = next.chordTrack.regions.filter((existing) =>
       overlaps(existing, proposed),
@@ -144,12 +150,12 @@ export function applyChordInference(
       continue;
     }
     next = added.project;
-    appliedRegions.push(region);
+    appliedRegions.push({ region, candidate });
   }
 
   if (options.writeNonChordToneRoles) {
-    for (const region of appliedRegions) {
-      const assignments = region.selected?.fit.nonChordToneAssignments ?? {};
+    for (const { region, candidate } of appliedRegions) {
+      const assignments = candidate.fit.nonChordToneAssignments;
       for (const [noteId, role] of Object.entries(assignments)) {
         const track = next.satbTracks.find((candidate) =>
           candidate.notes.some((note) => note.id === noteId),
