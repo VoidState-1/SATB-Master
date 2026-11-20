@@ -17,19 +17,26 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { ConnectionView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { isGermanToFrenchVoicing } from "./augmentedSixthContinuation";
+import { isGermanToFrenchVoicing, isItalianToFrenchVoicing } from "./augmentedSixthContinuation";
 import { isAuxiliaryFrenchSixthReturn } from "./auxiliaryAugmentedSixth";
 import { isMajorTonicSixFour, resolvesDoubleAugmentedFourThree } from "../../doubleAugmentedFourThree";
 import { resolvesPreparedDoubleAugmentedFourThree } from "./preparedDoubleAugmentedFourThree";
 
-function isGermanToFrenchContinuation(
+function continuesInFrenchVoicing(
   context: HarmonyRuleContext, link: ConnectionView, key: KeyLike,
 ) {
-  if (!isGermanToFrenchVoicing(context, link.sourceBoundary, link.targetBoundary, key)) return false;
+  const { sourceBoundary, targetBoundary } = link;
+  const german = isGermanToFrenchVoicing(context, sourceBoundary, targetBoundary, key);
+  if (!german && !isItalianToFrenchVoicing(context, sourceBoundary, targetBoundary, key)) return false;
   // Let the outgoing connection check the actual endpoint resolution.
   const next = context.spanNeighborhood(link.target).outgoing;
-  return !!next?.connection.contiguous && next.connection.sameKey && next.targetBoundary.completeSatb &&
-    next.sourceBoundary.endTick === next.targetBoundary.tick;
+  if (!next?.connection.contiguous || !next.connection.sameKey || !next.targetBoundary.completeSatb ||
+      next.sourceBoundary.endTick !== next.targetBoundary.tick) return false;
+  if (german) return true;
+  const frenchNotes = activeNotes(targetBoundary);
+  return link.target.slices.every(slice => frenchNotes.every(({ voiceId, note }) =>
+    slice.notes[voiceId]?.id === note.id,
+  ));
 }
 
 export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
@@ -117,7 +124,7 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
           resolvesPreparedDoubleAugmentedFourThree(context, candidate, sourceKey))) continue;
     if (!isDoubleAugmented43 && (isDominant || isCadential64) && lowResolves && highResolves)
       continue;
-    if (isGermanToFrenchContinuation(context, candidate, sourceKey)) continue;
+    if (continuesInFrenchVoicing(context, candidate, sourceKey)) continue;
     if (!isDominant && !isCadential64 &&
         isAuxiliaryFrenchSixthReturn(context, candidate, sourceKey)) continue;
 
