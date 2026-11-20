@@ -1,3 +1,4 @@
+import { canonicalJson } from "../canonicalJson";
 import { compileScore, parseScoreText, positionTick } from "../scoreText";
 import { buildMeasures } from "../time";
 import { locateSourceBeats } from "./sourceAnchors";
@@ -7,12 +8,8 @@ export * from "./types";
 export { parseAuditPackage, parseAuditFeedback, parseAuditProject } from "./parse";
 export * from "./questions";
 
-/** 排除对象字段顺序差异; 内容变化会产生新指纹, 不使用不稳定的工程/DOM ID。 */
-export function canonicalAuditJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalAuditJson).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.entries(value).filter(([, v]) => v !== undefined).sort(([a], [b]) => a.localeCompare(b, "en")).map(([k, v]) => `${JSON.stringify(k)}:${canonicalAuditJson(v)}`).join(",")}}`;
-  return JSON.stringify(value);
-}
+export { canonicalJson as canonicalAuditJson };
+
 function atAuditLocation<T>(location: string, action: () => T): T {
   try { return action(); }
   catch (error) { throw new Error(`${location}: ${error instanceof Error ? error.message : "审计输入无效"}`); }
@@ -25,7 +22,7 @@ export async function bindAuditPackage(pkg: AuditPackage, hash: (text: string) =
     if (c.source.beatAnchors?.length) {
       atAuditLocation(`${c.id}/source.beatAnchors`, () => locateSourceBeats(c.source.beatAnchors!, buildMeasures(project)));
     }
-    const fingerprint = await hash(canonicalAuditJson(c.project ? { id: c.id, project: c.project, source: c.source } : { id: c.id, score: c.score, source: c.source }));
+    const fingerprint = await hash(canonicalJson(c.project ? { id: c.id, project: c.project, source: c.source } : { id: c.id, score: c.score, source: c.source }));
     const items = await Promise.all(c.items.map(async (item) => {
       const itemProject = structuredClone(item.project ?? project);
       const measures = buildMeasures(itemProject);
@@ -40,11 +37,11 @@ export async function bindAuditPackage(pkg: AuditPackage, hash: (text: string) =
         if (start >= end || start < 0 || end > itemProject.lengthTicks) throw new Error("标注范围越界或为空");
         return { ...entry, fromTick: start, toTick: end };
       }));
-      return { item, project: itemProject, fromTick, toTick, noteIds, annotations, fingerprint: await hash(canonicalAuditJson({ fingerprint, item })) };
+      return { item, project: itemProject, fromTick, toTick, noteIds, annotations, fingerprint: await hash(canonicalJson({ fingerprint, item })) };
     }));
     return { data: c, fingerprint, project, items };
   }));
-  return { data: pkg, cases, fingerprint: await hash(canonicalAuditJson(pkg)) };
+  return { data: pkg, cases, fingerprint: await hash(canonicalJson(pkg)) };
 }
 
 export function blankReview(): ReviewRecord { return { decision: "pending", attribution: "uncertain", comment: "" }; }

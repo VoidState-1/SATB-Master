@@ -1,3 +1,4 @@
+import { canonicalJson } from "../../../canonicalJson";
 import { chordIdentityToneSpellings, identityContainsWrittenPitchClass } from "../../../chordModel";
 import { pitchClassEquals, type SpelledPitchClass } from "../../../pitch";
 import { sameChordIdentityWithoutBass, type AnalysisChord } from "../../analysis";
@@ -59,7 +60,7 @@ function sameResolutionInterpretation(
     const resolution = rules.harmony.primaryInterpretation(chord);
     if (resolution.status !== "resolved") return undefined;
     const interpretation = resolution.value;
-    return JSON.stringify({
+    return canonicalJson({
       localKey: interpretation.localKey ?? null,
       degree: interpretation.degree,
       degreeAlteration: interpretation.degreeAlteration,
