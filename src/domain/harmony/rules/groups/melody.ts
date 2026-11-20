@@ -25,7 +25,7 @@ import { halfDiminishedChainArrivals } from "./halfDiminishedChain";
 import { isMinorSixthChordBassLine } from "./minorSixthChordBass";
 import { resolvesContextualMinorDominantSixth } from "./dominantSixthSubstitution";
 import { isResolvedDominantSixthBass } from "./resolvedDominantSixthBass";
-import { isRespeltDoubleDominantSeventh, resolvesRaisedSecondApproach } from "./chromaticDoubleDominant";
+import { isRespeltDoubleDominantSeventh, preparesWrittenRespeltDoubleDominant, resolvesRaisedSecondApproach } from "./chromaticDoubleDominant";
 import { readDoubleDominantSeventhLanding, isDoubleDominantSeventhBassPreparation } from "../state/doubleDominantSeventh";
 import { recognizesAugmentedSixthPreparation, resolvesGermanSixthDiminishedThird } from "./chromaticAugmentedSixth";
 import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
@@ -229,6 +229,7 @@ function alteredIntervalRule(
         preparesDoubleDominantSeventhBass(context, transition) ||
         preparesChromaticDominant(context, transition) ||
         isRespeltDoubleDominantSeventh(context, transition) ||
+        preparesWrittenRespeltDoubleDominant(context, transition) ||
         recognizesAugmentedSixthPreparation(context, transition)))
     )
       continue;

@@ -219,3 +219,66 @@ export function resolvesRaisedSecondApproach(context: HarmonyRuleContext, motion
       writtenInterval(note.pitch, resolved.pitch).semitones === (pitchClassEquals(note.pitch, raisedFourth) ? 1 : -2);
   });
 }
+
+/** §28.5, examples 28-427/428. The written #II may take the seventh's
+ * place in a double-dominant preparation. Check the original voices even
+ * when there is no chord annotation on that sonority. */
+export function preparesWrittenRespeltDoubleDominant(context: HarmonyRuleContext, transition: MelodyTransition) {
+  const { previous, current, voiceId, writtenInterval: entry } = transition;
+  if (!transition.contiguous || !transition.sameKey || previous.nonChordToneRole ||
+      entry.diatonicSteps !== 0 || entry.semitones !== 1) return false;
+  const tick = current.startTick;
+  const before = context.sliceAt(tick - 1);
+  const middle = context.sliceAt(tick);
+  if (!before?.chord || !middle || middle.chord || middle.tick !== tick ||
+      before.notes[voiceId]?.id !== previous.id || middle.notes[voiceId]?.id !== current.id ||
+      !chordIdentityToneSpellings(before.chord.identity).some(tone => pitchClassEquals(previous.pitch, tone))) return false;
+
+  const key = middle.key;
+  const preparation = context.harmony.primaryInterpretation(before.chord);
+  if (key.mode !== "major" || before.key.id !== key.id || preparation.status === "ambiguous" ||
+      (preparation.status === "resolved" && !sameKey(preparation.value.localKey ?? before.key, key))) return false;
+  const raisedSecond = scaleDegreePitchClass(key, 2, 1);
+  const raisedFourth = scaleDegreePitchClass(key, 4, 1);
+  const sixth = scaleDegreePitchClass(key, 6);
+  const tonic = key.tonic;
+  const dominant = scaleDegreePitchClass(key, 5);
+  if (!pitchClassEquals(current.pitch, raisedSecond) && !pitchClassEquals(current.pitch, raisedFourth)) return false;
+  if (!hasWrittenVoicing(middle, [raisedSecond, raisedFourth, sixth, tonic]) ||
+      (!pitchClassEquals(middle.notes.bass!.pitch, raisedFourth) && !pitchClassEquals(middle.notes.bass!.pitch, sixth))) return false;
+
+  const end = middle.endTick;
+  const landing = context.sliceAt(end);
+  if (!landing?.chord || landing.tick !== end || landing.chord.startTick !== end ||
+      landing.key.id !== key.id || !cadentialSixFourInKey(context, landing, key) ||
+      !hasWrittenVoicing(landing, chordToneSpellings(tonic, "major"))) return false;
+  const third = scaleDegreePitchClass(key, 3);
+  const resolvesInVoice = activeNotes(middle).every(({ voiceId: voice, note }) => {
+    const next = landing.notes[voice]!;
+    if (pitchClassEquals(note.pitch, tonic)) return spelledPitchEquals(note.pitch, next.pitch);
+    const target = pitchClassEquals(note.pitch, raisedSecond) ? third : dominant;
+    const semitones = pitchClassEquals(note.pitch, sixth) ? -2 : 1;
+    const motion = writtenInterval(note.pitch, next.pitch);
+    return note.startTick + note.durationTicks === end && next.startTick === end &&
+      pitchClassEquals(next.pitch, target) && motion.diatonicSteps === Math.sign(semitones) && motion.semitones === semitones;
+  });
+  if (!resolvesInVoice) return false;
+
+  const dominantTick = landing.chord.startTick + landing.chord.durationTicks;
+  const after = context.sliceAt(dominantTick);
+  const chord = after?.chord;
+  if (!after || !chord || after.tick !== dominantTick || chord.startTick !== dominantTick ||
+      after.key.id !== key.id || !after.notes.bass ||
+      !pitchClassEquals(after.notes.bass.pitch, dominant) || !pitchClassEquals(chord.identity.bass, dominant) ||
+      !pitchClassEquals(chord.identity.root, dominant) ||
+      context.phraseAt(before.tick)?.id !== context.phraseAt(dominantTick)?.id) return false;
+  const reading = context.harmony.primaryInterpretation(chord);
+  const structure = chord.identity.structure;
+  if (reading.status !== "resolved" || reading.value.appliedTarget || reading.value.degree !== 5 ||
+      !sameKey(reading.value.localKey ?? after.key, key) || structure.kind !== "tertian" ||
+      structure.extensions.length || structure.alterations.length ||
+      (structure.quality !== "major" && structure.quality !== "dominant7")) return false;
+  const tones = chordToneSpellings(dominant, structure.quality);
+  return hasWrittenVoicing(after, tones) || (structure.quality === "dominant7" &&
+    hasWrittenVoicing(after, tones.filter((_, index) => index !== 2)));
+}
