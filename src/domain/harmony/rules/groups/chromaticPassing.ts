@@ -395,15 +395,14 @@ function readChromaticPassingSpelling(context: HarmonyRuleContext, first: Melody
   if (!heldAccompaniment) return;
   if (usual) return "usual";
 
-  // §41.3 also allows spellings suggested by the sounding harmony. Identify a
-  // contrary spelling only in an isolated weak passing line between written chords.
+  // §41.3 permits chordal spellings in parallel motion. Reattacking the same
+  // written pitch does not add a moving voice. Respect explicit nonchord roles.
   if (meter.confidence !== "certain" || meter.level >= 2 ||
       middle.durationTicks > Math.min(left.durationTicks, right.durationTicks) ||
       !continuousContext(context, left.startTick, to) ||
       !soundsDeclaredChord(from) || !soundsDeclaredChord(to) ||
       hasCompleteWrittenTertianVoicing(Object.values(via.notes).map(note => note.pitch)) ||
-      !slices.all(slice => otherVoices.every(voice =>
-        slice.notes[voice]?.id === from.notes[voice]?.id))) return;
+      !slices.all(slice => otherVoices.every(voice => !slice.notes[voice]?.nonChordToneRole))) return;
   return passingSpellingCorrection(key, left, middle, right, direction > 0);
 }
 
