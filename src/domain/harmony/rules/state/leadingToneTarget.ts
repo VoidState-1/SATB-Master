@@ -5,8 +5,8 @@ import {
 } from "../../../pitch";
 import { VOICE_ORDER } from "../../../project";
 import { readWrittenDominantSeventh } from "../../writtenDominantSeventh";
-import { allowsWrittenTertianIdentity, matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
-import { readCompleteWrittenChord, soundsCompleteWrittenMembers, soundsCompleteWrittenTones } from "../../writtenVoicing";
+import { allowsWrittenTertianIdentity, hasWrittenVoicing, matchesWrittenChord, resolvesInVoice } from "../../writtenResolution";
+import { readCompleteWrittenChord, readSoundingTertianIdentity, soundsCompleteWrittenMembers, soundsCompleteWrittenTones } from "../../writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { nextWrittenVoicingChange } from "../helpers/writtenVoicingChange";
 import type { AnalysisSlice } from "../../analysis";
@@ -134,11 +134,51 @@ function writtenLeadingHarmony(slice: AnalysisSlice, key: KeyLike) {
   ].some(tones => soundsCompleteWrittenMembers(tones, notes));
 }
 
+function isUnlockedInferredChord(rules: HarmonyRuleContext, chord: NonNullable<AnalysisSlice["chord"]>) {
+  if (chord.locked || rules.analysis.project.chordTrack.locked) return false;
+  const reading = rules.harmony.primaryInterpretation(chord);
+  return reading.status === "resolved" && reading.value.source === "inferred";
+}
+
+function writtenDiminishedSeventhTarget(
+  rules: HarmonyRuleContext, slice: AnalysisSlice, root: SpelledPitchClass,
+): KeyLike | undefined {
+  const tones = chordToneSpellings(root, "diminished7");
+  const motion = nextWrittenVoicingChange(rules, slice, frame =>
+    (!frame.chord || isUnlockedInferredChord(rules, frame.chord)) && hasWrittenVoicing(frame, tones));
+  if (!motion) return;
+
+  const { landing } = motion;
+  const identity = readCompleteWrittenChord(landing);
+  const structure = identity?.structure;
+  if (!identity || structure?.kind !== "tertian" ||
+      (structure.quality !== "major" && structure.quality !== "minor") ||
+      structure.extensions.length || structure.alterations.length) return;
+  const target = { tonic: identity.root, mode: structure.quality };
+  if (pitchClassEquals(root, leadingTonePitchClass(target)) && allowsObservedTarget(rules, landing, target)) return target;
+}
+
 export function leadingToneSourceKey(rules: HarmonyRuleContext, slice: AnalysisSlice): KeyLike | undefined {
   const observed = writtenLocalLeadingToneKey(rules, slice);
   if (observed) return observed;
   const key = leadingToneResolutionKey(slice, rules.harmony);
-  if (slice.chord) return hasHarmonicLeadingTone(slice.chord.identity, key) ? key : undefined;
+  const chord = slice.chord;
+  if (chord) {
+    const { identity } = chord;
+    if (identity.structure.kind === "tertian" && identity.structure.quality === "diminished7" &&
+        isUnlockedInferredChord(rules, chord)) {
+      const written = readSoundingTertianIdentity(slice);
+      if (written?.structure.kind === "tertian" && written.structure.quality === "diminished7" &&
+          !pitchClassEquals(written.root, identity.root)) {
+        // The spellings of a complete diminished seventh distinguish its root
+        // from an enharmonically equivalent inferred rotation.
+        if (hasHarmonicLeadingTone(written, key)) return key;
+        if (hasHarmonicLeadingTone(written, slice.key)) return slice.key;
+        return writtenDiminishedSeventhTarget(rules, slice, written.root);
+      }
+    }
+    return hasHarmonicLeadingTone(identity, key) ? key : undefined;
+  }
 
   // In a melody-only exercise the key signature supplies the teaching target.
   // A rest in one or more parts of a harmonized exercise is a different case.
