@@ -25,6 +25,7 @@ export interface CadenceEvidence {
     | "dominant-neighbor-prolongation"
     | "dominant-before-tonic-gap"
     | "tonic-bass-suspension"
+    | "articulated-interior-ending"
     | "bass-formula"
     | "metric-support"
     | "soprano-tonic"

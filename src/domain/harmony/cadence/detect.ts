@@ -10,11 +10,12 @@ import {
 } from "../../chordModel";
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
-import { buildMeasures, measureAtTick, ticksPerBeat } from "../../time";
+import { buildMeasures, measureAtTick, ticksPerBeat, type MeasureInfo } from "../../time";
 import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
 import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
+import { articulatedEndingEvidence } from "./articulatedEnding";
 import type {
   AnalysisChord,
   AnalysisSlice,
@@ -479,6 +480,33 @@ function hasAuthenticTailAnchor(
   return false;
 }
 
+function articulatedInteriorCadences(
+  phrase: PhraseSegment,
+  facts: readonly CadenceSpanFacts[],
+  slices: readonly AnalysisSlice[],
+  measureFor: (tick: number) => MeasureInfo | undefined,
+) {
+  if (phrase.startBoundary?.source === "manual" || phrase.endBoundary?.source === "manual") return [];
+  const candidates: CadenceCandidate[] = [];
+  for (let index = 1; index < facts.length - 1; index++) {
+    const previous = facts[index - 1], ending = facts[index], following = facts[index + 1];
+    const deceptive = ending.family === "tonic" && ending.degree === 6;
+    if (!(ending.isTonic || deceptive) || !isFifthDegreeDominant(previous) ||
+        !connectionIsValid(previous, ending) || !connectionIsValid(ending, following)) continue;
+    const evidence = articulatedEndingEvidence(phrase, previous, ending, following, slices, measureFor);
+    if (!evidence) continue;
+    if (deceptive) {
+      candidates.push(candidate(phrase, "deceptive", [previous, ending], [
+        evidence,
+        { code: "dominant-to-alternative", value: "当前调性 D -> VI" },
+      ], { confidenceCap: "probable" }));
+    } else {
+      candidates.push(authenticCadence(phrase, dominantApproach(facts, index - 1), ending, evidence));
+    }
+  }
+  return candidates;
+}
+
 export function detectCadences(
   analysis: Pick<
     HarmonyAnalysis,
@@ -486,6 +514,7 @@ export function detectCadences(
   >,
 ): readonly CadenceCandidate[] {
   const allCandidates: CadenceCandidate[] = [];
+  const interiorCandidates: CadenceCandidate[] = [];
   let measures: ReturnType<typeof buildMeasures> | undefined;
   const measureFor = (tick: number) => measureAtTick(measures ??= buildMeasures(analysis.project), tick);
   const writtenBeatAt = (tick: number) => {
@@ -500,6 +529,7 @@ export function detectCadences(
     if (phrase.confidence === "ambiguous") continue;
     const facts = spansForPhrase(analysis, phrase)
       .map((span) => factsFor(analysis, span));
+    interiorCandidates.push(...articulatedInteriorCadences(phrase, facts, analysis.slices, measureFor));
     const terminal = facts.at(-1);
     if (!terminal || terminal.interpretationStatus !== "resolved") continue;
     const terminalRole = terminal.span.semantics?.cadenceRole;
@@ -663,5 +693,10 @@ export function detectCadences(
       );
     }
   }
-  return Object.freeze(resolveConflicts(allCandidates));
+  // An existing cadence at the same landing still owns its structural evidence.
+  const knownLandings = new Set(allCandidates.map(item => `${item.phraseId}:${item.toTick}`));
+  return Object.freeze(resolveConflicts([
+    ...allCandidates,
+    ...interiorCandidates.filter(item => !knownLandings.has(`${item.phraseId}:${item.toTick}`)),
+  ]));
 }
