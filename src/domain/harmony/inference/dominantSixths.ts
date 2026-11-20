@@ -17,7 +17,7 @@ import {
 } from "../dominantSixthMotion";
 import { candidateComparator, createFunctionalCandidate, fitDominantSixthSubstitution } from "./candidates";
 import { isCanonicalTonicFifthOmission } from "./fit";
-import { observationNotes } from "./observations";
+import { observationNotes, writtenFrame } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, FunctionalChordTemplate } from "./types";
 
 type CandidateSet = readonly ChordInferenceCandidate[];
@@ -90,9 +90,9 @@ function contextualFifthResolution(
     if (!context || (context.applied ? source.localKey || following.localKey || landing.localKey
       : !source.localKey || !pitchClassEquals(source.key.tonic, context.tonic) || source.key.mode !== "minor")) return false;
     return contextualMinorSixthResolvesToFifth(
-      { tick: source.fromTick, notes: source.activeNotes },
-      { tick: following.fromTick, notes: following.activeNotes },
-      { tick: landing.fromTick, notes: landing.activeNotes },
+      writtenFrame(source),
+      writtenFrame(following),
+      writtenFrame(landing),
       context.tonic, context.applied,
     );
   });

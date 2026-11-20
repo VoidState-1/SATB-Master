@@ -2,7 +2,7 @@ import { chordIdentityEquals, chordIdentityInversion, primaryHarmonyInterpretati
 import { pitchClassEquals, toMidi } from "../../pitch";
 import { supportsPairedNeighborMotion, writtenNeighborsOverHeldBass } from "../writtenNeighbors";
 import { fitSimultaneousNeighbors } from "./candidates";
-import { observationNotes } from "./observations";
+import { observationNotes, writtenFrame } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
 
 type CandidateSet = readonly ChordInferenceCandidate[];
@@ -26,10 +26,6 @@ function supportedAnchor(candidate: ChordInferenceCandidate) {
 function orderedVoicing(observation: Observation) {
   const pitches = observationNotes(observation).map(({ note }) => toMidi(note.pitch));
   return pitches.every((pitch, i) => i === 0 || pitches[i - 1] > pitch);
-}
-
-function frame(observation: Observation) {
-  return { tick: observation.fromTick, completeSatb: observation.completeSatb, notes: observation.activeNotes };
 }
 
 function supportsPairedMotion(left: Observation, middle: Observation, ids: readonly string[]) {
@@ -66,7 +62,7 @@ export function simultaneousNeighborCandidates(
           next.functionalBaseId === anchor.functionalBaseId &&
           JSON.stringify(next.semantics) === JSON.stringify(anchor.semantics) &&
           chordIdentityEquals(next.identity, anchor.identity))) return [];
-      const notes = writtenNeighborsOverHeldBass(anchor.identity, frame(left), frame(middle), frame(right));
+      const notes = writtenNeighborsOverHeldBass(anchor.identity, writtenFrame(left), writtenFrame(middle), writtenFrame(right));
       if (notes?.length !== 2 || !supportsPairedMotion(left, middle, notes)) return [];
       const candidate = fitSimultaneousNeighbors(anchor, middle, notes);
       return candidate ? [candidate] : [];

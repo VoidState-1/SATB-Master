@@ -1,7 +1,8 @@
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
 import { pitchClassEquals } from "../../pitch";
-import { resolvesRaisedFifthToDoubledThird, type RaisedFifthFrame } from "../raisedFifthResolution";
+import { resolvesRaisedFifthToDoubledThird } from "../raisedFifthResolution";
 import { candidateComparator, createFunctionalCandidate } from "./candidates";
+import { writtenFrame } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, FunctionalChordTemplate } from "./types";
 
 const raisedDominant: FunctionalChordTemplate = {
@@ -19,16 +20,6 @@ const rootTonic: FunctionalChordTemplate = {
   localKeyPolicy: "current-key",
   expectedInversion: 0,
 };
-
-function writtenFrame(observation: ChordInferenceObservation): RaisedFifthFrame {
-  return {
-    tick: observation.fromTick,
-    endTick: observation.toTick,
-    notes: observation.activeNotes,
-    key: observation.key,
-    completeSatb: observation.completeSatb,
-  };
-}
 
 function withResolutionEvidence(set: readonly ChordInferenceCandidate[], candidate: ChordInferenceCandidate) {
   return [...set.filter(existing => existing.id !== candidate.id), {

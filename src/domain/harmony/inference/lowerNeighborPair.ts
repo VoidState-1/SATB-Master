@@ -1,7 +1,8 @@
 import { chordIdentityEquals, chordIdentityToneSpellings } from "../../chordModel";
 import { pitchClassEquals, pitchClassValue } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
-import { writtenLowerNeighborPair, type LowerNeighborFrame } from "../writtenLowerNeighborPair";
+import { writtenLowerNeighborPair } from "../writtenLowerNeighborPair";
+import { writtenFrame } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions } from "./types";
 
 type CandidateSet = readonly ChordInferenceCandidate[];
@@ -9,13 +10,6 @@ type CandidateSet = readonly ChordInferenceCandidate[];
 function exact(candidate: ChordInferenceCandidate) {
   const { fit } = candidate;
   return fit.spellingConsistent && !fit.nonChordToneNoteIds.length && !fit.omittedChordDegrees.length;
-}
-
-function frame(observation: ChordInferenceObservation): LowerNeighborFrame {
-  return {
-    tick: observation.fromTick, endTick: observation.toTick, notes: observation.activeNotes,
-    completeSatb: observation.completeSatb, key: observation.key, metric: observation.metric,
-  };
 }
 
 export function withWrittenLowerNeighborPairs(
@@ -42,7 +36,7 @@ export function withWrittenLowerNeighborPairs(
         !chordIdentityEquals(anchor.identity, returning.identity) ||
         JSON.stringify(anchor.semantics) !== JSON.stringify(returning.semantics)) return existing;
     const noteIds = writtenLowerNeighborPair(dominant.identity, anchor.identity,
-      [frame(preparation), frame(departure), frame(upper), frame(lower), frame(arrival)], boundaries);
+      [writtenFrame(preparation), writtenFrame(departure), writtenFrame(upper), writtenFrame(lower), writtenFrame(arrival)], boundaries);
     if (!noteIds) return existing;
     const tones = chordIdentityToneSpellings(identity);
     if (!pitchClassEquals(identity.bass, lower.activeNotes.bass!.pitch) ||

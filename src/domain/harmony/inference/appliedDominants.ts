@@ -4,6 +4,7 @@ import { compareMetricStrength } from "../../rhythm/metric";
 import { readReattackedTonicNinth } from "../writtenDominantSeventh";
 import { candidateComparator, createFunctionalCandidate, fitPreparedSuspension } from "./candidates";
 import { buildFunctionalTemplates } from "./functionalTemplates";
+import { writtenFrame } from "./observations";
 import type { ChordInferenceCandidate, ChordInferenceObservation, ChordInferenceOptions, FunctionalChordTemplate } from "./types";
 
 type CandidateSet = readonly ChordInferenceCandidate[];
@@ -117,10 +118,8 @@ export function withReattackedTonicNinths(
         onset.metric.measureNumber !== settled.metric.measureNumber ||
         settled.metric.beatPosition - onset.metric.beatPosition > 1 ||
         compareMetricStrength(onset.metric, settled.metric) !== "stronger") continue;
-    const toFrame = ({ fromTick: tick, activeNotes: notes, completeSatb }: ChordInferenceObservation) =>
-      ({ tick, notes, completeSatb });
-    const proof = readReattackedTonicNinth(toFrame(source), toFrame(onset), tick =>
-      tick === settled.fromTick ? toFrame(settled) : undefined);
+    const proof = readReattackedTonicNinth(writtenFrame(source), writtenFrame(onset), tick =>
+      tick === settled.fromTick ? writtenFrame(settled) : undefined);
     if (!proof || sets[i + 1].some(exactReading)) continue;
     const { tonic, mode } = proof.key;
     const anchor = sets[i + 2].find(candidate => exactReading(candidate) && candidate.fit.bassMatchesInversion &&

@@ -125,6 +125,18 @@ export function buildChordInferenceObservations(
   return Object.freeze(observations);
 }
 
+/** Project an inference observation onto the timed four-voice data used by written-motion checks. */
+export function writtenFrame(observation: ChordInferenceObservation) {
+  return {
+    tick: observation.fromTick,
+    endTick: observation.toTick,
+    notes: observation.activeNotes,
+    key: observation.key,
+    completeSatb: observation.completeSatb,
+    metric: observation.metric,
+  };
+}
+
 export function observationNotes(
   observation: ChordInferenceObservation,
 ) {
