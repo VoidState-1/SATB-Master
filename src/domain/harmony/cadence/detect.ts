@@ -10,10 +10,11 @@ import {
 } from "../../chordModel";
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import { pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
-import { buildMeasures, measureAtTick } from "../../time";
+import { buildMeasures, measureAtTick, ticksPerBeat } from "../../time";
 import { buildMetricTimeline, metricPositionAt } from "../../rhythm/metric";
 import { dominantNeighborEvidence } from "./dominantNeighbors";
 import { dominantLandingGapEvidence } from "./dominantLandingGap";
+import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
 import type {
   AnalysisChord,
   AnalysisSlice,
@@ -382,6 +383,7 @@ function authenticCadence(
   approach: DominantApproach,
   tonic: CadenceSpanFacts,
   landingEvidence: CadenceEvidence,
+  landingGap?: CadenceEvidence,
 ) {
   const dominant = approach.path.at(-1)!;
   const completion = completionFor(dominant, tonic);
@@ -390,6 +392,7 @@ function authenticCadence(
   const evidence: CadenceEvidence[] = [
     landingEvidence,
     ...approach.evidence,
+    ...(landingGap ? [landingGap] : []),
     { code: "dominant-to-tonic", value: "当前调性 D -> T" },
   ];
   if (approach.path[0].isCadential64) evidence.push({ code: "cadential64-chain", value: "K46 -> D -> T" });
@@ -400,7 +403,7 @@ function authenticCadence(
     form: "authentic",
     completion,
     confidenceCap: completion && bassFormula && tonic.span.toTick === phrase.toTick &&
-      !approach.evidence.some(item => item.code === "dominant-before-tonic-gap")
+      !landingGap
       ? undefined
       : "probable",
   });
@@ -485,6 +488,10 @@ export function detectCadences(
   const allCandidates: CadenceCandidate[] = [];
   let measures: ReturnType<typeof buildMeasures> | undefined;
   const measureFor = (tick: number) => measureAtTick(measures ??= buildMeasures(analysis.project), tick);
+  const writtenBeatAt = (tick: number) => {
+    const measure = measureFor(tick);
+    return measure && ticksPerBeat(analysis.project.ppq, measure.denominator);
+  };
   let metricTimeline: ReturnType<typeof buildMetricTimeline> | undefined;
   const metricAt = (tick: number) => metricPositionAt(metricTimeline ??= buildMetricTimeline(analysis.project), tick);
   const gapEvidence = (left: CadenceSpanFacts, right: CadenceSpanFacts) =>
@@ -510,7 +517,9 @@ export function detectCadences(
     const landingGap = previous && terminal.isTonic && isFifthDegreeDominant(previous) &&
       previous.interpretationStatus === "resolved" && sameKey(previous.key, terminal.key) &&
       previous.span.toTick < terminal.span.fromTick &&
-      dominantLandingGapEvidence(previous, terminal, analysis.slices, metricAt, analysis.project.ppq);
+      (dominantLandingGapEvidence(previous, terminal, analysis.slices, metricAt, analysis.project.ppq) ??
+        tonicBassSuspensionEvidence(previous, terminal, analysis.slices, metricAt,
+          writtenBeatAt(previous.span.toTick)));
     const connectsToTerminal = previous && (connectionIsValid(previous, terminal) || landingGap);
     // A single applied label can be tonicization. A local V–I needs the
     // bass formula, or an independently established same-key preparation.
@@ -535,8 +544,7 @@ export function detectCadences(
         facts, dominantIndex, terminal, measureFor(previous.span.fromTick),
         dominantApproach(facts, dominantIndex, gapEvidence),
       );
-      const supported = landingGap ? { ...approach, evidence: [...approach.evidence, landingGap] } : approach;
-      allCandidates.push(authenticCadence(phrase, supported, terminal, phraseEvidence));
+      allCandidates.push(authenticCadence(phrase, approach, terminal, phraseEvidence, landingGap || undefined));
     }
 
     if (

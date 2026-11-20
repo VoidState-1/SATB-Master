@@ -24,6 +24,7 @@ export interface CadenceEvidence {
     | "cadential64-chain"
     | "dominant-neighbor-prolongation"
     | "dominant-before-tonic-gap"
+    | "tonic-bass-suspension"
     | "bass-formula"
     | "metric-support"
     | "soprano-tonic"
