@@ -47,10 +47,10 @@ describe("four written parts resolve an inverted dominant seventh", () => {
     expect(warnings(score(["B4 C5", "G4 G4", "D4 C4", "F3 Eb3"], "Eb minor"))).toHaveLength(0);
   });
 
-  it("rejects a fresh key event at the landing even when the written key is repeated", () => {
+  it("continues the same written key through a reminder at the actual landing", () => {
     const p = score();
     p.keyEvents.push({ ...p.keyEvents[0], id: "new-key", tick: p.ppq });
-    expect(warnings(p)).toHaveLength(1);
+    expect(warnings(p)).toHaveLength(0);
   });
 
   it("accepts a sounding identity alone and the literal root degree in the home key", () => {
@@ -72,17 +72,42 @@ describe("four written parts resolve an inverted dominant seventh", () => {
   });
 
   it.each<[string, string[]]>([
-    ["missing seventh", ["G#4 A4", "E4 E4", "B3 A3", "E3 C3"]],
-    ["seventh in the wrong octave", ["G#4 A4", "E4 E4", "B3 A3", "D3 C2"]],
-    ["leading pitch rises an octave too far", ["G#4 A5", "E4 E4", "B3 A3", "D3 C3"]],
-    ["different voices deliver the third and root", ["G#4 E5", "E4 A4", "B3 A3", "D3 C3"]],
     ["enharmonic source", ["Ab4 A4", "E4 E4", "B3 A3", "D3 C3"]],
     ["enharmonic landing", ["G#4 A4", "E4 E4", "B3 G##3", "D3 C3"]],
-    ["root changes register", ["G#5 A5", "E4 E5", "B3 A3", "D3 C3"]],
     ["root position to a six-four", ["G#4 A4", "D4 C4", "B3 A3", "E2 E2"]],
     ["rest in another part", ["r A4", "E4 E4", "B3 A3", "D3 C3"]],
   ])("%s retains the written-key warning", (_name, lines) => {
     expect(warnings(score(lines))).toHaveLength(1);
+  });
+
+  it("recognizes the complete major triad when the seventh is absent and undeclared", () => {
+    expect(warnings(score(["G#4 A4", "E4 E4", "B3 A3", "E3 C3"]))).toHaveLength(0);
+    const p = annotated();
+    p.chordTrack.regions[0].identity.bass.step = "E";
+    p.satbTracks.find(t => t.voice === "bass")!.notes[0].pitch.step = "E";
+    expect(warnings(p)).toHaveLength(1);
+  });
+
+  it("retains E.2 for the wrongly displaced seventh when the local third resolves", () => {
+    const p = annotated();
+    p.satbTracks.find(t => t.voice === "bass")!.notes[1].pitch.octave = 2;
+    expect(warnings(p)).toHaveLength(0);
+    expect(warnings(p, "bass", 1, "resolution.chord-seventh")).toHaveLength(1);
+  });
+
+  it.each([
+    ["its octave is wrong", ["G#4 A5", "E4 E4", "B3 A3", "D3 C3"]],
+    ["another part supplies the tonic", ["G#4 E5", "E4 A4", "B3 A3", "D3 C3"]],
+  ])("reports the real local leading part if %s", (_name, lines) => {
+    const p = score(lines);
+    expect(warnings(p)).toHaveLength(0);
+    expect(warnings(p, "soprano")).toMatchObject([{ params: { key: "A minor", leadingTone: "G♯" } }]);
+  });
+
+  it("reads the tonic when another member changes register", () => {
+    const p = score(["G#5 A5", "E4 E5", "B3 A3", "D3 C3"]);
+    expect(warnings(p)).toHaveLength(0);
+    expect(warnings(p, "soprano")).toHaveLength(0);
   });
 
   it("keeps the same-note obligation opened over a previous harmony", () => {

@@ -30,7 +30,7 @@ import type {
 } from "./obligation";
 import { hasExactPitch, noteEvidence } from "../helpers/core";
 import type { SpanView } from "../context/views";
-import { leadingToneResolutionKey } from "./leadingToneTarget";
+import { leadingToneResolutionKey, writtenLocalLeadingToneKey } from "./leadingToneTarget";
 import { dominantNinthTone, writtenDominantNinthResolves } from "../../writtenDominantNinth";
 import { preparedSeventhEntries } from "./preparedSeventh";
 import { openedSourceChord, openedSourceNote, supportsTendencyResolutionRules } from "./tendencyContext";
@@ -84,7 +84,8 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
     const { slice, previous, transitionFromPrevious } = context;
     const chord = slice.chord;
     if (!supportsTendencyResolutionRules(context, chord)) return [];
-    const targetKey = leadingToneResolutionKey(slice, context.rules.harmony);
+    const writtenLocalKey = writtenLocalLeadingToneKey(context.rules, slice);
+    const targetKey = writtenLocalKey ?? leadingToneResolutionKey(slice, context.rules.harmony);
     const { tonic: targetTonic, mode: targetMode } = targetKey;
     const leadingTone = leadingTonePitchClass(targetKey);
     if (chord && !identityContainsWrittenPitchClass(chord.identity, leadingTone)) return [];
@@ -92,7 +93,7 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
     const previousChord = previous?.chord;
     const canStartOnHeldNote = chord && previousChord && transitionFromPrevious?.contiguous &&
       transitionFromPrevious.sameKey && !identityContainsWrittenPitchClass(previousChord.identity, leadingTone);
-    const voices = canStartOnHeldNote ? VOICE_ORDER : moment.attackedVoiceIds;
+    const voices = writtenLocalKey || canStartOnHeldNote ? VOICE_ORDER : moment.attackedVoiceIds;
     return voices.flatMap((voiceId) => {
       const note = slice.notes[voiceId];
       if (!note || !pitchClassEquals(note.pitch, leadingTone)) return [];
