@@ -13,7 +13,7 @@ import type { VoiceId } from "../../../project/types";
 import { sameChordIdentityWithoutBass } from "../../analysis";
 import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import {
-  currentSpanId, openedSourceNote, openedSpanId, receivingVoiceIds,
+  currentSpanId, leadingTargetUnchanged, openedSourceNote, openedSpanId, receivingVoiceIds,
   sameLeadingToneContext, sameSeventhContext, seventhTransferVoiceIds,
 } from "../state/tendencyContext";
 import {
@@ -54,7 +54,6 @@ import {
   leadingToneBecomesNextDominantSeventh,
   leadingToneDescendsInMajorDeceptiveMotion,
   leadingToneDescendsFromMediant,
-  leadingTargetUnchanged,
   leadingToneResolves,
   leadingToneSource,
   supportsTendencyResolutionRules,
@@ -678,7 +677,7 @@ export const STATEFUL_RULES = defineRuleGroup(
     catalogNumber: "E.3",
     label: "属九音未解决",
     description:
-      "检查属九和弦中的九音是否在同一声部向下二度级进解决至主和弦的五音。",
+      "检查九音是否在原声部下行解决至主和弦五音，或在同根属七中按教材方式解决。",
     rationale:
       "九和弦的九音是不协和度极高的音，在传统和声中必须顺应声学重力向下二度级进解决到主和弦的五音，不可反向上行或跳进脱离。",
     group: "resolution",

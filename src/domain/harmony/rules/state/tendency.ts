@@ -29,6 +29,8 @@ import type {
 import { hasExactPitch, noteEvidence } from "../helpers/core";
 import type { SpanView } from "../context/views";
 import { leadingToneResolutionKey } from "./leadingToneTarget";
+import { dominantNinthTone, writtenDominantNinthResolves } from "../../writtenDominantNinth";
+import { openedSourceChord, openedSourceNote } from "./tendencyContext";
 import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
 import { majorMediantToSubdominant } from "../groups/majorMediant";
 import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneNeighbor";
@@ -164,20 +166,21 @@ export const dominantNinthSource: ObligationSource<DominantNinthPayload> = {
   id: "source.dominant-ninth-attacks",
   requires: ["written-pitches", "chords"],
   collect({ context, moment }) {
-    const chord = context.slice.chord;
-    if (
-      !chord ||
-      !supportsTendencyResolutionRules(context, chord) ||
-      chord.identity.structure.kind !== "tertian" ||
-      chord.identity.structure.quality !== "dominant7" ||
-      !chord.identity.structure.extensions.includes(9)
-    )
-      return [];
-    const tones = chordIdentityToneSpellings(chord.identity);
-    return moment.attackedVoiceIds.flatMap((voiceId) => {
-      const note = context.slice.notes[voiceId];
-      if (!note || !tones[4] || !pitchClassEquals(note.pitch, tones[4]))
-        return [];
+    const { slice, previous, transitionFromPrevious } = context;
+    const chord = slice.chord;
+    const ninth = chord && dominantNinthTone(chord.identity);
+    if (!chord || !ninth || !supportsTendencyResolutionRules(context, chord)) return [];
+    const previousChord = previous?.chord;
+    const previousNinth = previousChord && dominantNinthTone(previousChord.identity);
+    const sameNinth = previousChord && previousNinth && pitchClassEquals(previousNinth, ninth) &&
+      pitchClassEquals(previousChord.identity.root, chord.identity.root);
+    const entered = transitionFromPrevious?.contiguous && transitionFromPrevious.sameKey &&
+      !sameNinth;
+    const voices = entered ? VOICE_ORDER : moment.attackedVoiceIds;
+    return voices.flatMap((voiceId) => {
+      const note = slice.notes[voiceId];
+      if (!note || !pitchClassEquals(note.pitch, ninth) ||
+          (!moment.attackedVoiceIds.includes(voiceId) && previous?.notes[voiceId]?.id !== note.id)) return [];
       return [
         {
           partitionKey: `voice:${voiceId}`,
@@ -244,21 +247,10 @@ function currentNote<Payload extends VoiceObligationPayload>(
   return environment.context.slice.notes[environment.obligation.payload.voiceId];
 }
 
-function sourceNote<Payload extends VoiceObligationPayload>(
-  environment: ObligationEnvironment<Payload>,
-) {
-  const id = environment.obligation.openedBy.noteIds?.[0];
-  return id
-    ? environment.context.rules
-        .notes()
-        .first(({ note }) => note.id === id)?.note
-    : undefined;
-}
-
 export function transitionEvidence<Payload extends VoiceObligationPayload>(
   environment: ObligationEnvironment<Payload>,
 ) {
-  const source = sourceNote(environment);
+  const source = openedSourceNote(environment);
   const current = currentNote(environment);
   return {
     source,
@@ -275,17 +267,6 @@ export function transitionEvidence<Payload extends VoiceObligationPayload>(
         : {}),
     } satisfies SubjectRefs,
   };
-}
-
-export function leadingTargetUnchanged(
-  environment: ObligationEnvironment<LeadingTonePayload>,
-) {
-  const payload = environment.obligation.payload;
-  return (
-    environment.context.slice.key.tonic.step === payload.sourceKeyStep &&
-    environment.context.slice.key.tonic.alter === payload.sourceKeyAlter &&
-    environment.context.slice.key.mode === payload.sourceKeyMode
-  );
 }
 
 export function leadingToneResolves(
@@ -577,7 +558,10 @@ export function chordSeventhResolves(
 export function dominantNinthResolves(
   environment: ObligationEnvironment<DominantNinthPayload>,
 ) {
-  return resolvesDownward(environment, environment.obligation.payload.ninthMidi);
+  const source = openedSourceChord(environment), from = openedSourceNote(environment);
+  const target = environment.context.slice.chord, to = currentNote(environment);
+  return !!source && !!target && !!from && !!to &&
+    writtenDominantNinthResolves(source.identity, target.identity, from.pitch, to.pitch);
 }
 
 export function alteredToneResolves(

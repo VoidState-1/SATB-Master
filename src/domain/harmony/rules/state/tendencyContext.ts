@@ -5,7 +5,7 @@ import { sameChordIdentityWithoutBass, type AnalysisChord } from "../../analysis
 import { sameFunctionalReading } from "../../functionalReading";
 import type { JsonValue, RuleStepContext } from "../../runtime";
 import type { ObligationEnvironment } from "./obligation";
-import { leadingTargetUnchanged, type LeadingTonePayload, type SeventhPayload, type VoiceObligationPayload } from "./tendency";
+import type { LeadingTonePayload, SeventhPayload, VoiceObligationPayload } from "./tendency";
 
 export function openedSourceNote<Payload extends JsonValue>(
   environment: ObligationEnvironment<Payload>,
@@ -48,6 +48,14 @@ export function currentSpanId<Payload extends JsonValue>(
   environment: ObligationEnvironment<Payload>,
 ) {
   return environment.context.rules.spanAt(environment.moment.tick)?.span.id;
+}
+
+export function leadingTargetUnchanged(
+  environment: ObligationEnvironment<LeadingTonePayload>,
+) {
+  const { sourceKeyStep, sourceKeyAlter, sourceKeyMode } = environment.obligation.payload;
+  const { tonic, mode } = environment.context.slice.key;
+  return tonic.step === sourceKeyStep && tonic.alter === sourceKeyAlter && mode === sourceKeyMode;
 }
 
 function sameResolutionInterpretation(

@@ -6,6 +6,7 @@ import { chordEvidence, chordLabel, diagnostic, noteEvidence } from "../helpers/
 import { mergeDiagnosticEvidence, obligationDiagnosticContext, type ObligationDecision, type ObligationEnvironment } from "./obligation";
 import type { AlteredTonePayload, DominantNinthPayload, LeadingTonePayload, SeventhPayload, VoiceObligationPayload } from "./tendency";
 import { currentSpanId, openedSourceChord, openedSourceNote, openedSpanId } from "./tendencyContext";
+import { dominantNinthTone } from "../../writtenDominantNinth";
 
 interface ResolutionReport {
   ruleId: "resolution.leading-tone" | "resolution.chord-seventh" | "resolution.dominant-ninth" | "resolution.altered-tone";
@@ -146,14 +147,15 @@ export function dominantNinthDiagnostic(
   const current = environment.context.slice.notes[payload.voiceId];
   const targetChord = environment.context.slice.chord;
   if (!source || !sourceChord || !current || !targetChord) return undefined;
-  const sourceTones = chordIdentityToneSpellings(sourceChord.identity);
+  const ninth = dominantNinthTone(sourceChord.identity);
+  if (!ninth) return undefined;
   const resolution = toMidi(current.pitch) - payload.ninthMidi;
   return reportResolution(environment, decision, {
     ruleId: "resolution.dominant-ninth",
     source,
     current,
     title: "属九音未级进下行解决",
-    message: `${chordLabel(sourceChord)} 的九音 ${formatPitchClass(sourceTones[4])} 应在离开属九和弦时级进下行到目标和弦音。`,
+    message: `${chordLabel(sourceChord)} 的九音 ${formatPitchClass(ninth)} 未按书写下行解决到目标和弦。`,
     chordIds: [sourceChord.id, targetChord.id],
     params: {
       resolutionSemitones: resolution,
