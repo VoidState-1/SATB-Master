@@ -10,6 +10,7 @@ import { withDiatonicSevenths } from "./diatonicSevenths";
 import { withDeceptiveDominants } from "./deceptiveDominants";
 import { withDominantSixthSubstitutions } from "./dominantSixths";
 import { withDoubleAugmentedFourThree } from "./doubleAugmentedFourThree";
+import { withNeapolitanPivotSixths } from "./neapolitanPivotSixths";
 import { withNeapolitanPivotDominants } from "./neapolitanPivotDominants";
 import { withPassingTonicSevenths } from "./passingTonicSevenths";
 import { withLeadingSeventhIntoConfirmedKey } from "./leadingSeventhIntoConfirmedKey";
@@ -151,7 +152,8 @@ export function inferChords(
   const upperPassing = withUpperPassingTones(
     observations, lowerNeighbors.candidateSets, options, currentPhraseTicks, project.ppq,
   );
-  const sequence = analyzeChordInferencePaths(observations, upperPassing);
+  const pivotSixths = withNeapolitanPivotSixths(observations, upperPassing, localKeys, currentPhraseTicks);
+  const sequence = analyzeChordInferencePaths(observations, pivotSixths);
   // Solve in musical context, but aggregate evidence and write regions only
   // for the requested half-open range. A selection can split a held note.
   let visible: readonly ChordInferenceObservation[] = observations;

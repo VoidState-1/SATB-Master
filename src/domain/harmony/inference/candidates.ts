@@ -469,6 +469,17 @@ export function fitCadentialRevoicing(anchor: ChordInferenceCandidate, observati
   };
 }
 
+export function createLoweredSupertonic(
+  item: ChordInferenceObservation, quality: "major" | "major7", inversion: 0 | 1 | 2 | 3,
+) {
+  return createFunctionalCandidate(item, {
+    baseId: "SII", localKeyPolicy: "current-key",
+    definition: { ...functionalDefinition("SII"), degreeAlteration: -1, minorDegreeAlteration: -1,
+      quality: () => quality },
+    form: quality === "major7" ? "seventh" : "triad", expectedInversion: inversion,
+  }, {});
+}
+
 /** Spasobin §47.5–6 distinguishes root-position flat II and its major seventh
  * from the familiar first-inversion triad. Their characteristic continuation
  * supplies the predominant reading, including a seventh added to the triad. */
@@ -498,12 +509,7 @@ export function withLoweredSupertonics(
       if (inversion === 1) leadsToDominant = true;
       continue;
     }
-    const lowered = createFunctionalCandidate(item, {
-      baseId: "SII", localKeyPolicy: "current-key",
-      definition: { ...functionalDefinition("SII"), degreeAlteration: -1, minorDegreeAlteration: -1,
-        quality: () => quality },
-      form: quality === "major7" ? "seventh" : "triad", expectedInversion: inversion as 0 | 1 | 2 | 3,
-    }, {});
+    const lowered = createLoweredSupertonic(item, quality, inversion as 0 | 1 | 2 | 3);
     if (!lowered?.fit.spellingConsistent) continue;
     leadsToDominant = true;
     result[i] = [...sets[i], { ...lowered, id: lowered.id + ":lowered",
