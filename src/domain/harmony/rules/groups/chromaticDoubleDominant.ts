@@ -1,6 +1,7 @@
 import {
   chordIdentityToneSpellings,
   chordToneSpellings,
+  type FunctionalTarget,
   type KeyReference,
 } from "../../../chordModel";
 import {
@@ -8,6 +9,7 @@ import {
   scaleDegreePitchClass,
   spelledPitchEquals,
   writtenInterval,
+  type SpelledPitchClass,
 } from "../../../pitch";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
@@ -220,6 +222,84 @@ export function resolvesRaisedSecondApproach(context: HarmonyRuleContext, motion
   });
 }
 
+function respeltDegrees(key: KeyReference) {
+  return {
+    tonic: key.tonic,
+    tonicThird: scaleDegreePitchClass(key, 3),
+    raisedSecond: scaleDegreePitchClass(key, 2, 1),
+    raisedFourth: scaleDegreePitchClass(key, 4, 1),
+    sixth: scaleDegreePitchClass(key, 6),
+    dominant: scaleDegreePitchClass(key, 5),
+  };
+}
+
+function readRespeltPreparation(context: HarmonyRuleContext, middle: AnalysisSlice, key: KeyReference) {
+  const slice = context.sliceAt(middle.tick - 1);
+  const chord = slice?.chord;
+  if (!slice || !chord || slice.key.id !== middle.key.id) return;
+  const reading = context.harmony.primaryInterpretation(chord);
+  if (reading.status === "ambiguous" ||
+      (reading.status === "resolved" && !sameKey(reading.value.localKey ?? slice.key, key))) return;
+  return { slice, chord, reading, tones: chordIdentityToneSpellings(chord.identity) };
+}
+
+function readRootDominant(
+  context: HarmonyRuleContext,
+  tick: number,
+  key: KeyReference,
+  keyId: AnalysisSlice["key"]["id"],
+  dominant: SpelledPitchClass,
+) {
+  const slice = context.sliceAt(tick);
+  const chord = slice?.chord;
+  const bass = slice?.notes.bass;
+  if (!slice || !chord || !bass || slice.tick !== tick || chord.startTick !== tick ||
+      slice.key.id !== keyId ||
+      ![bass.pitch, chord.identity.bass, chord.identity.root].every(pitch => pitchClassEquals(pitch, dominant))) return;
+  const reading = context.harmony.primaryInterpretation(chord);
+  const structure = chord.identity.structure;
+  if (reading.status !== "resolved" || reading.value.appliedTarget || reading.value.degree !== 5 ||
+      !sameKey(reading.value.localKey ?? slice.key, key) || structure.kind !== "tertian" ||
+      structure.extensions.length || structure.alterations.length ||
+      (structure.quality !== "major" && structure.quality !== "dominant7")) return;
+  const tones = chordToneSpellings(dominant, structure.quality);
+  if (hasWrittenVoicing(slice, tones)) return { slice, reading: reading.value, omitsFifth: false };
+  if (structure.quality === "dominant7" && hasWrittenVoicing(slice, [tones[0], tones[1], tones[3]])) {
+    return { slice, reading: reading.value, omitsFifth: true };
+  }
+}
+
+function readRespeltContinuation(
+  context: HarmonyRuleContext,
+  middle: AnalysisSlice,
+  key: KeyReference,
+  { tonic, tonicThird, raisedSecond, raisedFourth, sixth, dominant }: ReturnType<typeof respeltDegrees>,
+) {
+  const soundingBass = middle.notes.bass;
+  if (!soundingBass || !hasWrittenVoicing(middle, [raisedSecond, raisedFourth, sixth, tonic]) ||
+      (!pitchClassEquals(soundingBass.pitch, raisedFourth) && !pitchClassEquals(soundingBass.pitch, sixth))) return;
+  const end = middle.endTick;
+  const landing = context.sliceAt(end);
+  const chord = landing?.chord;
+  if (!landing || !chord || landing.tick !== end || chord.startTick !== end ||
+      landing.key.id !== middle.key.id || !cadentialSixFourInKey(context, landing, key) ||
+      !hasWrittenVoicing(landing, chordToneSpellings(tonic, "major"))) return;
+
+  const resolvesInVoice = activeNotes(middle).every(({ voiceId, note }) => {
+    const next = landing.notes[voiceId]!;
+    if (pitchClassEquals(note.pitch, tonic)) return spelledPitchEquals(note.pitch, next.pitch);
+    const target = pitchClassEquals(note.pitch, raisedSecond) ? tonicThird : dominant;
+    const semitones = pitchClassEquals(note.pitch, sixth) ? -2 : 1;
+    const motion = writtenInterval(note.pitch, next.pitch);
+    return note.startTick + note.durationTicks === end && next.startTick === end &&
+      pitchClassEquals(next.pitch, target) && motion.diatonicSteps === Math.sign(semitones) && motion.semitones === semitones;
+  });
+  if (!resolvesInVoice) return;
+  const dominantTick = chord.startTick + chord.durationTicks;
+  const arrival = readRootDominant(context, dominantTick, key, middle.key.id, dominant);
+  if (arrival) return { landing, landingChord: chord, arrival };
+}
+
 /** §28.5, examples 28-427/428. The written #II may take the seventh's
  * place in a double-dominant preparation. Check the original voices even
  * when there is no chord annotation on that sonority. */
@@ -228,57 +308,94 @@ export function preparesWrittenRespeltDoubleDominant(context: HarmonyRuleContext
   if (!transition.contiguous || !transition.sameKey || previous.nonChordToneRole ||
       entry.diatonicSteps !== 0 || entry.semitones !== 1) return false;
   const tick = current.startTick;
-  const before = context.sliceAt(tick - 1);
   const middle = context.sliceAt(tick);
-  if (!before?.chord || !middle || middle.chord || middle.tick !== tick ||
-      before.notes[voiceId]?.id !== previous.id || middle.notes[voiceId]?.id !== current.id ||
-      !chordIdentityToneSpellings(before.chord.identity).some(tone => pitchClassEquals(previous.pitch, tone))) return false;
+  if (!middle || middle.chord || middle.tick !== tick || middle.notes[voiceId]?.id !== current.id) return false;
 
   const key = middle.key;
-  const preparation = context.harmony.primaryInterpretation(before.chord);
-  if (key.mode !== "major" || before.key.id !== key.id || preparation.status === "ambiguous" ||
-      (preparation.status === "resolved" && !sameKey(preparation.value.localKey ?? before.key, key))) return false;
-  const raisedSecond = scaleDegreePitchClass(key, 2, 1);
-  const raisedFourth = scaleDegreePitchClass(key, 4, 1);
-  const sixth = scaleDegreePitchClass(key, 6);
-  const tonic = key.tonic;
-  const dominant = scaleDegreePitchClass(key, 5);
-  if (!pitchClassEquals(current.pitch, raisedSecond) && !pitchClassEquals(current.pitch, raisedFourth)) return false;
-  if (!hasWrittenVoicing(middle, [raisedSecond, raisedFourth, sixth, tonic]) ||
-      (!pitchClassEquals(middle.notes.bass!.pitch, raisedFourth) && !pitchClassEquals(middle.notes.bass!.pitch, sixth))) return false;
+  if (key.mode !== "major") return false;
+  const preparation = readRespeltPreparation(context, middle, key);
+  if (!preparation || preparation.slice.notes[voiceId]?.id !== previous.id ||
+      !preparation.tones.some(tone => pitchClassEquals(previous.pitch, tone))) return false;
+  const degrees = respeltDegrees(key);
+  if (!pitchClassEquals(current.pitch, degrees.raisedSecond) && !pitchClassEquals(current.pitch, degrees.raisedFourth)) return false;
+  const continuation = readRespeltContinuation(context, middle, key, degrees);
+  return !!continuation &&
+    context.phraseAt(preparation.slice.tick)?.id === context.phraseAt(continuation.arrival.slice.tick)?.id;
+}
 
-  const end = middle.endTick;
-  const landing = context.sliceAt(end);
-  if (!landing?.chord || landing.tick !== end || landing.chord.startTick !== end ||
-      landing.key.id !== key.id || !cadentialSixFourInKey(context, landing, key) ||
-      !hasWrittenVoicing(landing, chordToneSpellings(tonic, "major"))) return false;
-  const third = scaleDegreePitchClass(key, 3);
-  const resolvesInVoice = activeNotes(middle).every(({ voiceId: voice, note }) => {
-    const next = landing.notes[voice]!;
-    if (pitchClassEquals(note.pitch, tonic)) return spelledPitchEquals(note.pitch, next.pitch);
-    const target = pitchClassEquals(note.pitch, raisedSecond) ? third : dominant;
-    const semitones = pitchClassEquals(note.pitch, sixth) ? -2 : 1;
-    const motion = writtenInterval(note.pitch, next.pitch);
-    return note.startTick + note.durationTicks === end && next.startTick === end &&
-      pitchClassEquals(next.pitch, target) && motion.diatonicSteps === Math.sign(semitones) && motion.semitones === semitones;
+function targetsDominant(target: FunctionalTarget | undefined) {
+  return target?.degree === 5 && target.primaryFunction === "dominant" && !target.secondaryFunction;
+}
+
+function hasSingleInterpretation(slice: AnalysisSlice) {
+  return slice.chord?.semantics?.interpretations.length === 1;
+}
+
+function hasMemberRulePreparation(
+  preparation: NonNullable<ReturnType<typeof readRespeltPreparation>>,
+  source: AnalysisSlice,
+  key: KeyReference,
+  degrees: ReturnType<typeof respeltDegrees>,
+) {
+  const { slice, chord, reading, tones } = preparation;
+  if (reading.status !== "resolved" || !hasSingleInterpretation(slice) || reading.value.degreeAlteration !== 0 ||
+      !slice.notes.bass || !pitchClassEquals(slice.notes.bass.pitch, chord.identity.bass) ||
+      !hasWrittenVoicing(slice, tones)) return false;
+
+  const { root, structure } = chord.identity;
+  if (structure.kind !== "tertian" || structure.extensions.length || structure.alterations.length) return false;
+  const { designation, appliedTarget, degree } = reading.value;
+  if (targetsDominant(appliedTarget)) {
+    return (designation?.kind === "double-dominant" || designation?.kind === "applied-dominant") &&
+      degree === 5 && structure.quality === "dominant7" &&
+      pitchClassEquals(root, scaleDegreePitchClass(key, 2));
+  }
+  if (appliedTarget || designation?.primaryFunction !== "subdominant" ||
+      !(degree === 4 && structure.quality === "major" ||
+        degree === 2 && (structure.quality === "minor" || structure.quality === "minor7")) ||
+      !pitchClassEquals(root, scaleDegreePitchClass(key, degree))) return false;
+
+  const fourth = scaleDegreePitchClass(key, 4);
+  return activeNotes(source).some(({ voiceId, note }) => {
+    const previous = slice.notes[voiceId];
+    return previous && pitchClassEquals(previous.pitch, fourth) &&
+      pitchClassEquals(note.pitch, degrees.raisedFourth) &&
+      writtenInterval(previous.pitch, note.pitch).semitones === 1;
   });
-  if (!resolvesInVoice) return false;
+}
 
-  const dominantTick = landing.chord.startTick + landing.chord.durationTicks;
-  const after = context.sliceAt(dominantTick);
-  const chord = after?.chord;
-  if (!after || !chord || after.tick !== dominantTick || chord.startTick !== dominantTick ||
-      after.key.id !== key.id || !after.notes.bass ||
-      !pitchClassEquals(after.notes.bass.pitch, dominant) || !pitchClassEquals(chord.identity.bass, dominant) ||
-      !pitchClassEquals(chord.identity.root, dominant) ||
-      context.phraseAt(before.tick)?.id !== context.phraseAt(dominantTick)?.id) return false;
+/** A labelled DDVII with a proved #II may satisfy the two written member checks. */
+export function respeltDoubleDominantMember(context: HarmonyRuleContext, source: AnalysisSlice) {
+  const chord = source.chord;
+  if (!chord || !hasSingleInterpretation(source) || source.tick !== chord.startTick ||
+      source.endTick !== chord.startTick + chord.durationTicks) return;
+  const key = respeltSeventhKey(context, source);
+  if (!key) return;
   const reading = context.harmony.primaryInterpretation(chord);
-  const structure = chord.identity.structure;
-  if (reading.status !== "resolved" || reading.value.appliedTarget || reading.value.degree !== 5 ||
-      !sameKey(reading.value.localKey ?? after.key, key) || structure.kind !== "tertian" ||
-      structure.extensions.length || structure.alterations.length ||
-      (structure.quality !== "major" && structure.quality !== "dominant7")) return false;
-  const tones = chordToneSpellings(dominant, structure.quality);
-  return hasWrittenVoicing(after, tones) || (structure.quality === "dominant7" &&
-    hasWrittenVoicing(after, tones.filter((_, index) => index !== 2)));
+  if (reading.status !== "resolved") return;
+  const { degree, degreeAlteration, designation, appliedTarget } = reading.value;
+  if (degree !== 7 || degreeAlteration !== 0 || designation?.primaryFunction !== "dominant" ||
+      (appliedTarget ? !targetsDominant(appliedTarget) : designation.kind !== "double-dominant-leading-tone")) return;
+
+  const degrees = respeltDegrees(key);
+  const preparation = readRespeltPreparation(context, source, key);
+  if (!preparation || !hasMemberRulePreparation(preparation, source, key, degrees)) return;
+  const continuation = readRespeltContinuation(context, source, key, degrees);
+  if (!continuation) return;
+  const { landing, landingChord, arrival } = continuation;
+  if (landing.endTick !== landingChord.startTick + landingChord.durationTicks ||
+      !hasSingleInterpretation(landing) || !hasSingleInterpretation(arrival.slice) ||
+      context.analysis.phraseBoundaries.some(boundary =>
+        !boundary.stale && preparation.slice.tick < boundary.tick && boundary.tick <= arrival.slice.tick)) return;
+
+  const landingReading = context.harmony.primaryInterpretation(landingChord);
+  if (landingReading.status !== "resolved" || landingReading.value.appliedTarget ||
+      landingReading.value.degree !== 1 || landingReading.value.degreeAlteration !== 0 ||
+      arrival.reading.degreeAlteration !== 0 || arrival.reading.designation?.kind !== "primary" ||
+      arrival.reading.designation.primaryFunction !== "dominant") return;
+  if (arrival.omitsFifth && activeNotes(arrival.slice)
+    .filter(({ note }) => pitchClassEquals(note.pitch, degrees.dominant)).length !== 2) return;
+
+  const written = activeNotes(source).find(({ note }) => pitchClassEquals(note.pitch, degrees.raisedSecond));
+  if (written) return { noteId: written.note.id, seventh: chordIdentityToneSpellings(chord.identity)[3] };
 }

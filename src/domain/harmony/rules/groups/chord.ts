@@ -36,6 +36,7 @@ import { leadingToneForFunction } from "../services/harmony";
 import { diatonicSequenceAtMiddleArrival } from "../state/diatonicSequenceLeadingTone";
 import { resolvesDominantSixthSubstitution } from "./dominantSixthSubstitution";
 import { heldSuspensionsAt } from "./heldSuspensions";
+import { respeltDoubleDominantMember } from "./chromaticDoubleDominant";
 
 interface ChordSliceFact {
   slice: HarmonyAnalysis["slices"][number];
@@ -87,7 +88,10 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
       if (unresolved.length === 1 && unresolved[0].voiceId === "soprano" &&
           resolvesDominantSixthSubstitution(slice, context)) return;
       const confirmed = heldSuspensionsAt(context, slice);
-      const outside = unresolved.filter(({ note }) => !confirmed.includes(note.id));
+      const respelt = respeltDoubleDominantMember(context, slice);
+      const outside = unresolved.filter(({ note }) =>
+        note.id !== respelt?.noteId && !confirmed.includes(note.id),
+      );
       if (outside.length === 0) return;
       diagnostics.push(
         diagnostic(
@@ -234,6 +238,10 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
           chordIdentityToneSpellingForDegree(chord.identity, 5)!,
         );
       if (isCadentialTonicFifthOmission) return;
+      if (missing.length === 1) {
+        const respelt = respeltDoubleDominantMember(context, slice);
+        if (respelt && pitchClassEquals(missing[0], respelt.seventh)) return;
+      }
       diagnostics.push(
         diagnostic(
           "chord.incomplete-members",
@@ -650,7 +658,7 @@ export const CHORD_RULES = defineRuleGroup(
     group: "chord",
     defaultSeverity: "warning",
     requires: ["written-pitches", "chords"],
-    dependencyScope: "chord",
+    dependencyScope: "phrase",
     supportedExceptionContexts: ["nonchord-tone", "pedal-point"],
     evaluate: unclassifiedNonchordToneRule,
   }),
