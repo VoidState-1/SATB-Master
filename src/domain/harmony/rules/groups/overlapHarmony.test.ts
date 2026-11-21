@@ -8,7 +8,7 @@ const rule = "voice-leading.overlap";
 function atSecondBeat(
   project: ProjectDocument, strict = false, voices = ["alto", "soprano"],
 ) {
-  const policy = strict ? { [rule]: { "same-harmony": "strict", "voice-exchange": "strict" } } as const : {};
+  const policy = strict ? { [rule]: { "same-harmony": "strict" } } as const : {};
   return checkHarmony(project, undefined, {}, policy).diagnostics
     .filter(diagnostic => diagnostic.ruleId === rule && diagnostic.tick === PPQ &&
       voices.every(voice => diagnostic.voiceIds.some(id => id === voice)))
@@ -38,36 +38,36 @@ describe("同度分开时的声部超越证据", () => {
     expect(atSecondBeat(expandsUnison({ harmony }))).toEqual([warning]);
   });
 
-  it("出发缺少实际大三音时保留原例外判断", () => {
+  it("出发和声不完整时仍报告越界", () => {
     const project = expandsUnison({ tenor: "G3/4 C4/4 G3/4 B3/4" });
     expect(atSecondBeat(project, true)).toEqual([warning]);
-    expect(atSecondBeat(project)).toEqual([]);
+    expect(atSecondBeat(project)).toEqual([warning]);
   });
 
-  it("到达低音与主六实奏不符时保留原例外判断", () => {
+  it("到达低音与主六标签不符时仍报告越界", () => {
     const project = expandsUnison({ bass: "G2/4 Eb3/4 E3/2" });
     expect(atSecondBeat(project, true)).toEqual([warning]);
-    expect(atSecondBeat(project)).toEqual([]);
+    expect(atSecondBeat(project)).toEqual([warning]);
   });
 
-  it("显式局部属功能反证主六时不升级", () => {
+  it("局部属功能解释不使相邻连接的豁免生效", () => {
     const project = expandsUnison();
     const interpretation = project.chordTrack.regions[0].semantics!.interpretations[0];
     interpretation.localKey = { tonic: { step: "F", alter: 0 }, mode: "major" };
     interpretation.degree = 5;
     interpretation.designation = { notationSystem: "spasobin", kind: "primary", primaryFunction: "dominant" };
     expect(atSecondBeat(project, true)).toEqual([warning]);
-    expect(atSecondBeat(project)).toEqual([]);
+    expect(atSecondBeat(project)).toEqual([warning]);
   });
 
-  it("保留手动句界处的原例外判断", () => {
+  it("手动句界处仍检查实际越界", () => {
     const project = expandsUnison();
     project.structure.phraseBoundaries.push({ id: "boundary", tick: PPQ, source: "manual", confidence: "certain" });
-    expect(atSecondBeat(project)).toEqual([]);
+    expect(atSecondBeat(project)).toEqual([warning]);
   });
 });
 
-it.each(["K46", "r"])("终止四六接属七只越二度时，沿用原默认政策 %s", label => {
+it.each(["K46", "r"])("终止四六接属七只越二度时仍报告越界 %s", label => {
   const project = compileScoreText(`satb 1
 key G major
 meter 4/4
@@ -80,10 +80,10 @@ bars 1..1 {
 }`).project;
   const pair = ["tenor", "bass"];
   expect(atSecondBeat(project, true, pair)).toEqual([warning]);
-  expect(atSecondBeat(project, false, pair)).toEqual([]);
+  expect(atSecondBeat(project, false, pair)).toEqual([warning]);
 });
 
-it("汇入同度的连接沿用原默认政策", () => {
+it("汇入同度的换和弦不借用下一连接的豁免", () => {
   const project = compileScoreText(`satb 1
 key C major
 meter 4/4
@@ -95,19 +95,21 @@ bars 1..1 {
  H: | V7/4 I/2. |
 }`).project;
   expect(atSecondBeat(project, true)).toEqual([warning]);
-  expect(atSecondBeat(project)).toEqual([]);
+  expect(atSecondBeat(project)).toEqual([warning]);
+  project.chordTrack.regions = [];
+  expect(atSecondBeat(project)).toEqual([warning]);
 });
 
-it("完整同和弦中跨八度交换仍有默认豁免", () => {
+it.each(["I/4 I6/2", "r/2."])("完整同和弦跨八度换位遵守默认和严格配置 %s", harmony => {
   const project = compileScoreText(`satb 1
 key C major
 meter 3/4
 bars 1..1 {
- S: | G4/4 E6/2 |
+ S: | G4/4 C6/2 |
  A: | E4/4 G5/2 |
  T: | C4/4 C5/2 |
- B: | C3/2. |
- H: | I/2. |
+ B: | C3/4 E3/2 |
+ H: | ${harmony} |
 }`).project;
   expect(atSecondBeat(project, true)).toEqual([{ ...warning, endTick: 3 * PPQ }]);
   expect(atSecondBeat(project)).toEqual([]);
@@ -145,20 +147,20 @@ it("越过大九度的 IV→iii 由完整实奏取证", () => {
   expect(atSecondBeat(subdominantToMediant("IV/4 iii/4 I6/2"))).toEqual([warning]);
 });
 
-it("两个实奏实体虽不同，标签相冲突时沿用原例外", () => {
+it("标签相冲突的两个不同实奏实体仍报告越界", () => {
   const project = subdominantToMediant("IV/4 I6/4 I6/2");
   expect(atSecondBeat(project, true)).toEqual([warning]);
-  expect(atSecondBeat(project)).toEqual([]);
+  expect(atSecondBeat(project)).toEqual([warning]);
 });
 
-it("替代解释未决时沿用原例外", () => {
+it("替代解释未决时仍报告实奏越界", () => {
   const project = subdominantToMediant("IV/4 iii/4 I6/2");
   project.chordTrack.regions[1].semantics!.interpretations[0].confidence = "ambiguous";
   expect(atSecondBeat(project, true)).toEqual([warning]);
-  expect(atSecondBeat(project)).toEqual([]);
+  expect(atSecondBeat(project)).toEqual([warning]);
 });
 
-it("真实换和弦但只越三度时，沿用原默认政策", () => {
+it("真实换和弦只越三度时仍报告越界", () => {
   const project = compileScoreText(`satb 1
 key C major
 meter 4/4
@@ -170,7 +172,7 @@ bars 1..1 {
  H: | I/4 iii/4 I6/2 |
 }`).project;
   expect(atSecondBeat(project, true)).toEqual([warning]);
-  expect(atSecondBeat(project)).toEqual([]);
+  expect(atSecondBeat(project)).toEqual([warning]);
 });
 
 
@@ -206,7 +208,7 @@ bars 1..1 {
 it.each([
   ["增七度实响十二个半音", "G#5", "B#4", "D#4 G#3 E4", "G#2/4 E3/2", "E5 B4", "III"],
   ["减八度实响只有十一个半音", "Ab5", "Cb5", "Eb4 C4 F4", "Ab2/4 F3/2", "F5 C5", "iv"],
-])("%s 时都不能取八度反证", (_, soprano, alto, tenor, bass, nextAlto, label) => {
+])("%s 时仍检查实际越界", (_, soprano, alto, tenor, bass, nextAlto, label) => {
   const quarterNotes = (pitches: string) => pitches.split(" ").map(pitch => `${pitch}/4`).join(" ");
   const project = compileScoreText(`satb 1
 key C major
@@ -219,7 +221,27 @@ bars 1..1 {
  H: | I/4 r/4 ${label}/2 |
 }`).project;
   expect(atSecondBeat(project, true)).toEqual([warning]);
-  expect(atSecondBeat(project)).toEqual([]);
+  expect(atSecondBeat(project)).toEqual([warning]);
+});
+
+it("汇入同度的换和弦不借用上一连接的豁免", () => {
+  const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | F5/4 F4/4 G4/2 |
+ A: | D4/2 G4/2 |
+ T: | B3/2 E3/2 |
+ B: | G2/2 C3/2 |
+ H: | V7/2 I/2 |
+}`);
+  const match = expect.objectContaining({
+    ruleId: rule, tick: 2 * PPQ, endTick: 4 * PPQ, severity: "warning",
+    voiceIds: ["alto", "soprano"],
+  });
+  expect(checkHarmony(project).diagnostics).toContainEqual(match);
+  project.chordTrack.regions = [];
+  expect(checkHarmony(project).diagnostics).toContainEqual(match);
 });
 
 it.each(["E5/4 D5/4", "D5/2"])("两个实写和弦之间的超越不借用前一和弦的换位 %s", alto => {

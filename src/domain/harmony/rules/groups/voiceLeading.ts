@@ -15,7 +15,6 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { overlapSameHarmony } from "../helpers/overlapHarmony";
 import { isCadentialContraryOctave } from "./cadentialContraryOctaves";
 import {
   SIMULTANEOUS_CROSS_RELATION_RULE,
@@ -40,7 +39,7 @@ interface VoicePairRulePolicy {
   message: string;
   matches(fact: VoicePairTransitionFact, transition: SliceTransition): boolean;
   delayedInterval?: (interval: VoicePairTransitionFact["currentInterval"]) => boolean;
-  sameHarmony?(transition: SliceTransition, fact: VoicePairTransitionFact): boolean | undefined;
+  sameHarmony?(transition: SliceTransition): boolean;
 }
 
 function isPerfectOctave(interval: VoicePairTransitionFact["currentInterval"]) {
@@ -81,7 +80,7 @@ function evaluateVoicePairRule(
           policy.title,
           delayed ? "两声部依次作下行级进，延留解决后重现相同的纯音程。" : policy.message,
           {
-            motionSameHarmony: policy.sameHarmony?.(transition, fact),
+            motionSameHarmony: policy.sameHarmony?.(transition),
             ...(delayed ? { params: { suspensionEntryTick: delayed.entryTick } } : {
               pairMotion: {
                 voiceExchange: fact.voiceExchange,
@@ -182,7 +181,8 @@ export function hiddenOctaveRule(context: HarmonyRuleContext) {
 export function voiceOverlapRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.overlap",
-    sameHarmony: (transition, fact) => overlapSameHarmony(context, transition, fact),
+    // Only the two slices compared for overlap can establish this exemption.
+    sameHarmony: transition => sameHarmonyOnTransition(transition, context.harmony),
     title: "声部重叠",
     message: "当前声部进入了相邻声部上一位置所占据的音域。",
     matches: (fact) => {
