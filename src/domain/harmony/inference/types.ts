@@ -46,6 +46,12 @@ export interface ChordInferenceEvidence {
   readonly code: string;
   readonly noteIds?: readonly string[];
   readonly details?: Readonly<Record<string, string | number | boolean>>;
+  /** Functional hypotheses tied to their own enharmonic identity. */
+  readonly enharmonicReadings?: readonly {
+    readonly identity: ChordIdentity;
+    readonly semantics: HarmonySemantics;
+    readonly key: KeyReference;
+  }[];
 }
 
 export interface ChordInferenceObservation {
@@ -103,7 +109,7 @@ export interface ChordInferenceCandidate {
   readonly id: string;
   readonly observationIndex: number;
   readonly identity: ChordIdentity;
-  /** Absolute fallback candidates intentionally have no functional semantics. */
+  /** A written identity can be established before its function is confirmed. */
   readonly semantics?: HarmonySemantics;
   readonly functionalBaseId?: FunctionalBaseId;
   readonly fit: ChordFitAssessment;
@@ -135,7 +141,8 @@ export interface ChordInferenceWarning {
     | "locked-note"
     | "overlap"
     | "key-boundary"
-    | "low-confidence";
+    | "low-confidence"
+    | "function-unresolved";
   readonly fromTick?: number;
   readonly toTick?: number;
   readonly message: string;

@@ -185,6 +185,14 @@ export function warningsForRegions(
         toTick: region.toTick,
         message: "该时间区间存在接近的和声解释，未作为默认结果应用",
       });
+    else if (region.selected && !region.selected.semantics &&
+        region.selected.evidence.some(item => item.code === "written-enharmonic-identity"))
+      warnings.push({
+        code: "function-unresolved",
+        fromTick: region.fromTick,
+        toTick: region.toTick,
+        message: "已识别谱面实写和弦，功能解释待复核",
+      });
   }
   return Object.freeze(warnings);
 }

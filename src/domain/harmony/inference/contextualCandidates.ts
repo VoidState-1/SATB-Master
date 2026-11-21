@@ -16,6 +16,7 @@ import { withNeapolitanPivotDominants } from "./neapolitanPivotDominants";
 import { withPassingTonicSevenths } from "./passingTonicSevenths";
 import { withLeadingSeventhIntoConfirmedKey } from "./leadingSeventhIntoConfirmedKey";
 import { withWholeWrittenTriadRespellings } from "./wholeWrittenTriadRespellings";
+import { withContextualWrittenRespellings } from "./writtenRespellings";
 import { withWrittenPivotSevenths } from "./pivotSevenths";
 import { withAppliedSequences } from "./appliedSequences";
 import { withRaisedFifthResolutions } from "./raisedFifthResolutions";
@@ -138,6 +139,7 @@ export function buildContextualChordCandidates(project: ProjectDocument, options
   candidates = withNeapolitanPivotSixths(observations, candidates, localKeys, currentPhraseTicks);
   candidates = withRaisedFifthResolutions(observations, candidates, manualPhraseTicks, meetsMinimumConfidence);
   candidates = withSpelledSeventhsOverItalian(observations, candidates, currentPhraseTicks, project.ppq, options);
+  candidates = withContextualWrittenRespellings(observations, candidates, options, currentPhraseTicks);
   const ninths = withDominantNinths(observations, candidates, manualPhraseTicks, options);
   return { observations, candidates: ninths.candidates, currentPhraseTicks,
     withheldStarts: lowerNeighbors.withheldStarts, ninthAlternatives: ninths.alternate };
