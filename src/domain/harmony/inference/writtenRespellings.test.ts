@@ -57,6 +57,26 @@ bars 1..2 {
   B: | D3/4 G#2/4 | Bb2/4 Eb3/4 |
 }`;
 
+const staggeredDoubleDominant = `satb 1
+key D major
+meter 3/4
+bars 1..3 {
+  S: | B4/4 B4/2         | A4/4 G4/2   | F#4/2. |
+  A: | G4/4 E#4/2        | F#4/4 E4/2  | A3/2.  |
+  T: | D4/4 D4/4 D4/4    | D4/4 C#4/2  | D4/2.  |
+  B: | G3/4 G#3/4 A3/4   | A3/4 A2/2   | D3/2.  |
+}`;
+
+function labelledDoubleDominant(score: string, landing = "K46", start = "2:1") {
+  return compileScoreText(score + `
+annotations {
+  chord prep range=[1:1,1:2) symbol=IV
+  chord source range=[1:2,1:3) symbol=DDVII7
+  ${landing ? `chord landing range=[${start},2:2) symbol=${landing}` : ""}
+  chord dominant range=[2:2,3:1) symbol=V7
+}`).project;
+}
+
 function diagnosticsAt(project: ReturnType<typeof compileScoreText>["project"], tick: number) {
   return checkHarmony(project).diagnostics.filter(d => d.tick === tick && rules.has(d.ruleId));
 }
@@ -234,6 +254,55 @@ bars 1..2 {
     const augmented = (result: typeof legal) => checkHarmony(result.applied).diagnostics.some(d =>
       d.ruleId === "melody.augmented-interval" && d.tick === result.applied.ppq && d.voiceIds.includes("soprano"));
     expect([augmented(legal), augmented(wrongSpelling)]).toEqual([false, true]);
+  });
+
+  it("低音先到、共同音重奏时，按最早完整落点保留重属导七的实写许可", () => {
+    const legal = infer(staggeredDoubleDominant, 1);
+    expect(legal.chord?.identity).toMatchObject({
+      root: pitch("G", 1), bass: pitch("G", 1), structure: { quality: "diminished7" },
+    });
+    expect(legal.region?.selected?.functionalBaseId).toBe("DDVII");
+    expect(legal.region?.selected?.evidence).toContainEqual(expect.objectContaining({
+      code: "written-double-dominant-into-six-four", details: {
+        firstArrivalTick: 2 * legal.tick, landingTick: 3 * legal.tick,
+      },
+    }));
+    expect(legal.diagnostics).toEqual([]);
+    expect(legal.applied.chordTrack.regions.some(c => c.startTick === 2 * legal.tick)).toBe(false);
+    for (const landing of ["", "K46"]) {
+      const project = labelledDoubleDominant(staggeredDoubleDominant, landing);
+      expect(diagnosticsAt(project, project.ppq)).toEqual([]);
+    }
+    const fromBassArrival = labelledDoubleDominant(staggeredDoubleDominant, "K46", "1:3");
+    expect(diagnosticsAt(fromBassArrival, fromBassArrival.ppq)).toEqual([]);
+  });
+
+  it.each([
+    ["互换解决声部", staggeredDoubleDominant.replace("| A4/4 G4/2", "| F#4/4 G4/2").replace("| F#4/4 E4/2", "| A4/4 E4/2")],
+    ["低音错八度", staggeredDoubleDominant.replace("G#3/4 A3/4", "G#3/4 A2/4").replace("| A3/4 A2/2", "| A2/4 A2/2")],
+    ["等候声部有休止", staggeredDoubleDominant.replace("E#4/2", "E#4/4 r/4")],
+    ["先绕行再到预期终点", staggeredDoubleDominant.replace("B4/4 B4/2", "B4/4 B4/4 C5/8 B4/8")],
+  ])("%s时不借后续终止四六保留重属功能", (_reason, score) => {
+    const played = infer(score, 1);
+    expect(played.chord?.identity.root).toEqual(pitch("E", 1));
+    expect(played.chord?.semantics).toBeUndefined();
+    const project = labelledDoubleDominant(score);
+    expect(diagnosticsAt(project, project.ppq).map(d => d.ruleId).sort()).toEqual([
+      "chord.incomplete-members", "chord.unclassified-nonchord-tone",
+    ]);
+  });
+
+  it("显式冲突标签或错开的人工句界禁止借用实写许可", () => {
+    const conflicting = labelledDoubleDominant(staggeredDoubleDominant, "I64 role=pedal64");
+    expect(diagnosticsAt(conflicting, conflicting.ppq)).toHaveLength(2);
+    const conflictingBridge = labelledDoubleDominant(staggeredDoubleDominant, "I64 role=pedal64", "1:3");
+    expect(diagnosticsAt(conflictingBridge, conflictingBridge.ppq)).toHaveLength(2);
+    const cut = labelledDoubleDominant(staggeredDoubleDominant);
+    cut.structure.phraseBoundaries = [{
+      id: "cut", tick: cut.ppq * 2, source: "manual", confidence: "certain",
+    }];
+    expect(diagnosticsAt(cut, cut.ppq)).toHaveLength(2);
+    expect(inferChords(cut).regions.find(r => r.fromTick === cut.ppq)?.selected?.functionalBaseId).not.toBe("DDVII");
   });
 
   it.each([["E3", 0], ["Fb3", 3], ["F3", 3]])("手工 I6 配 %s 继续按实写检查", (bass, count) => {

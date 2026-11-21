@@ -139,7 +139,7 @@ export function buildContextualChordCandidates(project: ProjectDocument, options
   candidates = withNeapolitanPivotSixths(observations, candidates, localKeys, currentPhraseTicks);
   candidates = withRaisedFifthResolutions(observations, candidates, manualPhraseTicks, meetsMinimumConfidence);
   candidates = withSpelledSeventhsOverItalian(observations, candidates, currentPhraseTicks, project.ppq, options);
-  candidates = withContextualWrittenRespellings(observations, candidates, options, currentPhraseTicks);
+  candidates = withContextualWrittenRespellings(observations, candidates, options, currentPhraseTicks, manualPhraseTicks);
   const ninths = withDominantNinths(observations, candidates, manualPhraseTicks, options);
   return { observations, candidates: ninths.candidates, currentPhraseTicks,
     withheldStarts: lowerNeighbors.withheldStarts, ninthAlternatives: ninths.alternate };

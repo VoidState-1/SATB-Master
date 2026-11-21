@@ -39,7 +39,7 @@ bars 1..1 {
 annotations {
  chord prep range=[1:1,1:2) symbol=${preparation}
  ${source ? `chord dd range=[1:2,1:3) symbol=${source}` : ""}
- chord landing range=[1:3,1:4) symbol=${landing}
+ ${landing ? `chord landing range=[1:3,1:4) symbol=${landing}` : ""}
  ${dominant ? `chord target range=[1:4,2:1) symbol=${dominant}` : ""}
  ${noteRole}
 }`).project;
@@ -72,6 +72,14 @@ const firstInversion: Example = {
 describe("D.1/D.2: dominant preparation with a written raised second", () => {
   it("accepts the explicit DDVII functional label", () => {
     expect(memberWarnings(make())).toEqual([]);
+  });
+
+  it("accepts an unlabelled K46 only with a written fourth resolving into the dominant", () => {
+    expect(memberWarnings(make({ landing: "" }))).toEqual([]);
+    expectBoth(make({
+      landing: "",
+      alto: "D4/4 F4/4 F4/4 C4/4", tenor: "D3/4 D3/4 C3/4 E3/4",
+    }));
   });
 
   it("also accepts the explicit vii°7/V spelling of DDVII", () => {

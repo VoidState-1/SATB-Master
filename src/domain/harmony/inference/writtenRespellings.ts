@@ -8,7 +8,9 @@ import {
   keyEquals, leadingTonePitchClass, pitchClassEquals, pitchClassValue, scaleDegreePitchClass, spelledPitchEquals, toMidi,
 } from "../../pitch";
 import { readWrittenProlongation } from "../writtenProlongation";
-import { hasWrittenVoicing, resolvesLeadingSeventhToDoubledThird, writtenDoubleDominantResolution } from "../writtenResolution";
+import {
+  hasWrittenVoicing, resolvesLeadingSeventhToDoubledThird, writtenCadentialSixFourExit, writtenDoubleDominantWindow,
+} from "../writtenResolution";
 import { readSoundingTertianIdentity } from "../writtenVoicing";
 import { createAbsoluteCandidate, createFunctionalCandidate } from "./candidates";
 import { observationNotes, resolvesTone, writtenFrame } from "./observations";
@@ -39,7 +41,15 @@ function connected(left: Observation, right: Observation, boundaries: readonly n
     !boundaries.some(tick => left.fromTick < tick && tick <= right.fromTick);
 }
 
-function supportedDoubleDominant(reading: Candidate, source: Observation, target: Observation) {
+function* followingWrittenFrames(frames: readonly Observation[], index: number) {
+  for (let i = index + 1; i < frames.length; i++) yield { ...writtenFrame(frames[i]), index: i };
+}
+
+function supportedDoubleDominant(
+  reading: Candidate, frames: readonly Observation[], sets: readonly CandidateSet[], i: number,
+  boundaries: readonly number[], manualBoundaries: readonly number[],
+): Evidence | undefined {
+  const source = frames[i];
   const { identity, semantics } = reading;
   if (!semantics || identity.structure.kind !== "tertian" || identity.structure.quality !== "diminished7" ||
       !source.bass || !pitchClassEquals(source.bass.pitch, identity.bass)) return;
@@ -48,11 +58,23 @@ function supportedDoubleDominant(reading: Candidate, source: Observation, target
   if ((kind !== "double-dominant-leading-tone" && kind !== "applied-leading-tone") ||
       (appliedTarget?.degree ?? (kind === "double-dominant-leading-tone" ? 5 : undefined)) !== 5) return;
   const key = localKey ?? source.key;
-  if (!keyEquals(key, target.key) || !pitchClassEquals(identity.root, scaleDegreePitchClass(key, 4, 1))) return;
-  const resolution = writtenDoubleDominantResolution(writtenFrame(source), writtenFrame(target), key);
+  if (!keyEquals(key, source.key) || !pitchClassEquals(identity.root, scaleDegreePitchClass(key, 4, 1))) return;
+  const resolution = writtenDoubleDominantWindow({ ...writtenFrame(source), index: i },
+    followingWrittenFrames(frames, i), key, manualBoundaries);
   if (!resolution) return;
   const note = source.activeNotes[resolution.voiceId];
-  if (note && pitchClassEquals(note.pitch, resolution.previous)) return note.id;
+  if (!note || !pitchClassEquals(note.pitch, resolution.previous)) return;
+  const { landing } = resolution;
+  if (landing.index === i + 1) {
+    if (!connected(source, frames[landing.index], boundaries)) return;
+  } else {
+    if (sets[landing.index].some(c => c.semantics?.cadenceRole === "passing64" || c.semantics?.cadenceRole === "pedal64") ||
+        !writtenCadentialSixFourExit(landing, followingWrittenFrames(frames, landing.index), key, manualBoundaries)) return;
+  }
+  return {
+    kind: "sequence-context", code: "written-double-dominant-into-six-four", noteIds: [note.id],
+    details: { firstArrivalTick: Math.min(...resolution.arrivalTicks.values()), landingTick: landing.tick },
+  };
 }
 
 /** The already established V of a local key can receive its own vii°7.
@@ -245,7 +267,7 @@ function contextForDiminished(
  * Competing function belongs to the spelling from which it was derived. */
 export function withContextualWrittenRespellings(
   frames: readonly Observation[], sets: readonly CandidateSet[],
-  options: ChordInferenceOptions, boundaries: readonly number[],
+  options: ChordInferenceOptions, boundaries: readonly number[], manualBoundaries: readonly number[],
 ) {
   if (options.minConfidence === "high") return sets;
   return sets.map((existing, i) => {
@@ -271,15 +293,11 @@ export function withContextualWrittenRespellings(
     // The complete spelling can describe the surface while the four voices
     // establish the textbook reading of the written ♯II as the seventh of DDvii°7.
     const target = frames[i + 1];
-    if (target && connected(source, target, boundaries)) {
-      const supported = readings.flatMap(reading => {
-        const noteId = supportedDoubleDominant(reading, source, target);
-        return noteId ? [{ ...reading, evidence: [...reading.evidence, {
-          kind: "sequence-context" as const, code: "written-double-dominant-into-six-four", noteIds: [noteId],
-        }] }] : [];
-      });
-      if (supported.length) return supported;
-    }
+    const supported = readings.flatMap(reading => {
+      const resolution = supportedDoubleDominant(reading, frames, sets, i, boundaries, manualBoundaries);
+      return resolution ? [{ ...reading, evidence: [...reading.evidence, resolution] }] : [];
+    });
+    if (supported.length) return supported;
 
     const literal = createAbsoluteCandidate(source, identity.root, identity.structure.quality, {});
     if (!literal || !fullFit(literal) || !literal.fit.spellingConsistent) return existing;

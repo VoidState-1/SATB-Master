@@ -1,6 +1,6 @@
 import { chordToneSpellings, type ChordQuality, type KeyReference } from "../chordModel";
 import {
-  isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, toMidi,
+  isWrittenStep, keyDeclarationEquals, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, toMidi,
   writtenInterval, type SpelledPitchClass,
 } from "../pitch";
 import { VOICE_ORDER, type VoiceId } from "../project";
@@ -70,35 +70,104 @@ export function respeltDegrees(key: KeyReference) {
 }
 
 type WrittenResolutionFrame = Pick<AnalysisSlice, "tick" | "endTick" | "notes" | "completeSatb">;
+type KeyedResolutionFrame = WrittenResolutionFrame & Pick<AnalysisSlice, "key">;
 
 // Spasobin §28, ex. 28-423/427. The leading seventh of V may write its
 // seventh as ♯II in root position or first inversion before K64.
-export function writtenDoubleDominantResolution(
-  source: WrittenResolutionFrame, target: WrittenResolutionFrame, key: KeyReference,
+function doubleDominantWindow<T extends WrittenResolutionFrame>(
+  source: T, following: Iterable<T>, key: KeyReference,
 ) {
-  if (key.mode !== "major" || !source.completeSatb || !target.completeSatb || source.endTick !== target.tick) return;
+  if (key.mode !== "major" || !source.completeSatb) return;
   const { tonic, tonicThird, raisedSecond, raisedFourth, sixth, dominant } = respeltDegrees(key);
   const bass = source.notes.bass!.pitch;
-  if ((!pitchClassEquals(bass, raisedFourth) && !pitchClassEquals(bass, sixth)) ||
-      !pitchClassEquals(target.notes.bass!.pitch, dominant)) return;
+  if (!pitchClassEquals(bass, raisedFourth) && !pitchClassEquals(bass, sixth)) return;
 
   const loweredThird = scaleDegreePitchClass(key, 3, -1);
   const voiceId = VOICE_ORDER.find(voice => {
     const pitch = source.notes[voice]!.pitch;
     return pitchClassEquals(pitch, loweredThird) || pitchClassEquals(pitch, raisedSecond);
   });
-  if (!voiceId || !hasWrittenVoicing(source, [raisedFourth, sixth, tonic, source.notes[voiceId]!.pitch]) ||
-      !hasWrittenVoicing(target, [tonic, tonicThird, dominant]) ||
-      !resolvesMaskedStep(source, target, voiceId, raisedSecond, tonicThird, 1)) return;
+  if (!voiceId || !hasWrittenVoicing(source, [raisedFourth, sixth, tonic, source.notes[voiceId]!.pitch])) return;
 
-  for (const voice of VOICE_ORDER) {
-    if (voice === voiceId) continue;
-    const pitch = source.notes[voice]!.pitch;
-    if (pitchClassEquals(pitch, tonic)) {
-      if (!keepsWrittenMember(source, target, voice)) return;
-    } else if (!resolvesInVoice(source, target, voice, dominant, pitchClassEquals(pitch, raisedFourth) ? 1 : -1)) return;
+  let previous = source;
+  const arrivalTicks = new Map<VoiceId, number>();
+  for (const target of following) {
+    if (!target.completeSatb || previous.endTick !== target.tick) return;
+    const lowest = toMidi(target.notes.bass!.pitch);
+    for (const voice of VOICE_ORDER) {
+      const note = target.notes[voice]!;
+      if (note.nonChordToneRole || toMidi(note.pitch) < lowest) return;
+      if (keepsWrittenMember(previous, target, voice)) continue;
+      const original = source.notes[voice]!.pitch;
+      if (arrivalTicks.has(voice) || pitchClassEquals(original, tonic)) return;
+      const resolves = voice === voiceId
+        ? resolvesMaskedStep(previous, target, voice, raisedSecond, tonicThird, 1)
+        : resolvesInVoice(previous, target, voice, dominant, pitchClassEquals(original, raisedFourth) ? 1 : -1);
+      if (!resolves) return;
+      arrivalTicks.set(voice, target.tick);
+    }
+    if (arrivalTicks.size === 3) {
+      if (pitchClassEquals(target.notes.bass!.pitch, dominant) && hasWrittenVoicing(target, [tonic, tonicThird, dominant]))
+        return { voiceId, previous: raisedSecond, current: tonicThird, landing: target, arrivalTicks };
+      return;
+    }
+    previous = target;
   }
-  return { voiceId, previous: raisedSecond, current: tonicThird };
+}
+
+export function writtenDoubleDominantResolution(
+  source: WrittenResolutionFrame, target: WrittenResolutionFrame, key: KeyReference,
+) {
+  const result = doubleDominantWindow(source, [target], key);
+  if (result) return { voiceId: result.voiceId, previous: result.previous, current: result.current };
+}
+
+function* withinWrittenPhrase<T extends KeyedResolutionFrame>(
+  source: T, following: Iterable<T>, manualBoundaries: readonly number[],
+) {
+  let previous = source;
+  for (const frame of following) {
+    if (previous.endTick !== frame.tick || !keyDeclarationEquals(source.key, frame.key) ||
+        manualBoundaries.some(tick => previous.tick < tick && tick <= frame.tick)) return;
+    yield frame;
+    previous = frame;
+  }
+}
+
+/** Start with the complete departure and stop at the first complete arrival.
+ * A voice can reattack its original pitch or its arrival in the same register. */
+export function writtenDoubleDominantWindow<T extends KeyedResolutionFrame>(
+  source: T, following: Iterable<T>, key: KeyReference, manualBoundaries: readonly number[],
+) {
+  return doubleDominantWindow(source, withinWrittenPhrase(source, following, manualBoundaries), key);
+}
+
+/** Recognize an unlabelled cadential six-four by its written arrival on V
+ * and the fourth's resolution. The voicing may redistribute during the 64. */
+export function writtenCadentialSixFourExit<T extends KeyedResolutionFrame>(
+  landing: T, following: Iterable<T>, key: KeyReference, manualBoundaries: readonly number[],
+) {
+  const { tonic, tonicThird, dominant } = respeltDegrees(key);
+  const triad = [tonic, tonicThird, dominant];
+  const bass = landing.notes.bass;
+  if (!bass || !pitchClassEquals(bass.pitch, dominant) || !hasWrittenVoicing(landing, triad)) return;
+  const [root, third, fifth, seventh] = chordToneSpellings(dominant, "dominant7");
+  let previous = landing;
+  for (const frame of withinWrittenPhrase(landing, following, manualBoundaries)) {
+    const low = frame.notes.bass;
+    if (!low || !pitchClassEquals(low.pitch, dominant)) return;
+    if (spelledPitchEquals(low.pitch, bass.pitch) && hasWrittenVoicing(frame, triad)) {
+      previous = frame;
+      continue;
+    }
+    if ((hasWrittenVoicing(frame, [root, third, fifth]) ||
+         hasWrittenVoicing(frame, [root, third, fifth, seventh]) ||
+         (hasWrittenVoicing(frame, [root, third, seventh]) &&
+          VOICE_ORDER.filter(voice => pitchClassEquals(frame.notes[voice]!.pitch, root)).length === 2)) &&
+        VOICE_ORDER.some(voice => pitchClassEquals(previous.notes[voice]!.pitch, tonic) &&
+          resolvesInVoice(previous, frame, voice, third, -1))) return frame;
+    return;
+  }
 }
 
 /** §22.3: the leading seventh's root and third rise, while its fifth and seventh

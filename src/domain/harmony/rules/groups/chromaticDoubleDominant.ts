@@ -1,4 +1,4 @@
-import { respeltDegrees, writtenDoubleDominantResolution } from "../helpers/doubleDominantResolution";
+import { respeltDegrees } from "../helpers/doubleDominantResolution";
 import {
   chordIdentityToneSpellings,
   chordToneSpellings,
@@ -15,7 +15,7 @@ import {
 } from "../../../pitch";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { hasWrittenVoicing } from "../../writtenResolution";
+import { hasWrittenVoicing, writtenCadentialSixFourExit, writtenDoubleDominantWindow } from "../../writtenResolution";
 import { activeNotes } from "../helpers/core";
 
 function respeltSeventhKey(context: HarmonyRuleContext, middle: AnalysisSlice) {
@@ -203,22 +203,50 @@ function readRootDominant(
   }
 }
 
+/** The first annotated slice may be an endpoint. An intervening label
+ * cannot be skipped to reach a later one. */
+function* throughFirstChord(context: HarmonyRuleContext, tick: number) {
+  for (let slice = context.sliceAt(tick); slice; slice = context.sliceAt(slice.endTick)) {
+    yield slice;
+    if (slice.chord) return;
+  }
+}
+
+function* throughCadentialEntry(context: HarmonyRuleContext, tick: number, key: KeyReference) {
+  let landingChordId: string | undefined;
+  for (let slice = context.sliceAt(tick); slice; slice = context.sliceAt(slice.endTick)) {
+    if (landingChordId ? slice.chord?.id !== landingChordId :
+        slice.chord && !cadentialSixFourInKey(context, slice, key)) return;
+    landingChordId ??= slice.chord?.id;
+    yield slice;
+  }
+}
+
 function readRespeltContinuation(
   context: HarmonyRuleContext,
   middle: AnalysisSlice,
   key: KeyReference,
   { dominant }: ReturnType<typeof respeltDegrees>,
 ) {
-  const end = middle.endTick;
-  const landing = context.sliceAt(end);
-  const chord = landing?.chord;
-  if (!landing || !chord || chord.startTick !== end || landing.key.id !== middle.key.id ||
-      !cadentialSixFourInKey(context, landing, key)) return;
-  const resolution = writtenDoubleDominantResolution(middle, landing, key);
+  const manualBoundaries = context.analysis.phraseBoundaries
+    .filter(boundary => boundary.source === "manual" && !boundary.stale).map(boundary => boundary.tick);
+  const resolution = writtenDoubleDominantWindow(middle, throughCadentialEntry(context, middle.endTick, key),
+    key, manualBoundaries);
   if (!resolution || !pitchClassEquals(middle.notes[resolution.voiceId]!.pitch, resolution.previous)) return;
-  const dominantTick = chord.startTick + chord.durationTicks;
-  const arrival = readRootDominant(context, dominantTick, key, middle.key.id, dominant);
-  if (arrival) return { landing, landingChord: chord, arrival };
+  const { landing } = resolution;
+  if (landing.chord) {
+    const chord = landing.chord;
+    if ((chord.startTick !== landing.tick && chord.startTick !== resolution.arrivalTicks.get("bass")) ||
+        landing.endTick !== chord.startTick + chord.durationTicks ||
+        !hasSingleInterpretation(landing) || !cadentialSixFourInKey(context, landing, key)) return;
+    const reading = context.harmony.primaryInterpretation(chord);
+    if (reading.status !== "resolved" || reading.value.appliedTarget || reading.value.degree !== 1 ||
+        reading.value.degreeAlteration !== 0) return;
+    return readRootDominant(context, landing.endTick, key, middle.key.id, dominant);
+  }
+
+  const exit = writtenCadentialSixFourExit(landing, throughFirstChord(context, landing.endTick), key, manualBoundaries);
+  if (exit) return readRootDominant(context, exit.tick, key, middle.key.id, dominant);
 }
 
 /** §28.5, examples 28-427/428. The written #II may take the seventh's
@@ -281,18 +309,13 @@ export function respeltDoubleDominantMember(context: HarmonyRuleContext, source:
   const degrees = respeltDegrees(key);
   const preparation = readRespeltPreparation(context, source, key);
   if (!preparation || !hasMemberRulePreparation(preparation, source, key, degrees)) return;
-  const continuation = readRespeltContinuation(context, source, key, degrees);
-  if (!continuation) return;
-  const { landing, landingChord, arrival } = continuation;
-  if (landing.endTick !== landingChord.startTick + landingChord.durationTicks ||
-      !hasSingleInterpretation(landing) || !hasSingleInterpretation(arrival.slice) ||
+  const arrival = readRespeltContinuation(context, source, key, degrees);
+  if (!arrival || !hasSingleInterpretation(arrival.slice) ||
       context.analysis.phraseBoundaries.some(boundary =>
-        !boundary.stale && preparation.slice.tick < boundary.tick && boundary.tick <= arrival.slice.tick)) return;
+        boundary.source === "manual" && !boundary.stale &&
+        preparation.slice.tick < boundary.tick && boundary.tick <= arrival.slice.tick)) return;
 
-  const landingReading = context.harmony.primaryInterpretation(landingChord);
-  if (landingReading.status !== "resolved" || landingReading.value.appliedTarget ||
-      landingReading.value.degree !== 1 || landingReading.value.degreeAlteration !== 0 ||
-      arrival.reading.degreeAlteration !== 0 || arrival.reading.designation?.kind !== "primary" ||
+  if (arrival.reading.degreeAlteration !== 0 || arrival.reading.designation?.kind !== "primary" ||
       arrival.reading.designation.primaryFunction !== "dominant") return;
   if (arrival.omitsFifth && activeNotes(arrival.slice)
     .filter(({ note }) => pitchClassEquals(note.pitch, degrees.dominant)).length !== 2) return;
