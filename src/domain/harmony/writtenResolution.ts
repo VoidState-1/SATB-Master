@@ -1,5 +1,8 @@
-import { chordToneSpellings, type ChordQuality } from "../chordModel";
-import { isWrittenStep, pitchClassEquals, writtenInterval, type SpelledPitchClass } from "../pitch";
+import { chordToneSpellings, type ChordQuality, type KeyReference } from "../chordModel";
+import {
+  isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, stepIndex, toMidi,
+  writtenInterval, type SpelledPitchClass,
+} from "../pitch";
 import { VOICE_ORDER, type VoiceId } from "../project";
 import type { AnalysisSlice } from "./analysis";
 import { soundsCompleteWrittenTones } from "./writtenVoicing";
@@ -36,6 +39,66 @@ export function resolvesInVoice(source: WrittenVoiceFrame, target: WrittenVoiceF
   const step = writtenInterval(from.pitch, to.pitch);
   return step.diatonicSteps === direction &&
     (step.semitones === direction || (direction === -1 && step.semitones === -2));
+}
+
+export function resolvesMaskedStep(
+  from: WrittenVoiceFrame, to: WrittenVoiceFrame, voice: VoiceId, expectedFrom: SpelledPitchClass,
+  destination: SpelledPitchClass, semitones: -1 | 1,
+) {
+  const start = from.notes[voice]!, end = to.notes[voice]!;
+  return !start.nonChordToneRole && !end.nonChordToneRole && start.startTick + start.durationTicks === to.tick &&
+    end.startTick === to.tick && pitchClassEquals(end.pitch, destination) &&
+    (stepIndex(destination.step) - stepIndex(expectedFrom.step) + 7) % 7 === (semitones + 7) % 7 &&
+    toMidi(end.pitch) - toMidi(start.pitch) === semitones;
+}
+
+export function keepsWrittenMember(from: WrittenVoiceFrame, to: WrittenVoiceFrame, voice: VoiceId) {
+  const start = from.notes[voice]!, end = to.notes[voice]!;
+  return !start.nonChordToneRole && !end.nonChordToneRole && spelledPitchEquals(start.pitch, end.pitch) &&
+    (start.id === end.id || (start.startTick + start.durationTicks === to.tick && end.startTick === to.tick));
+}
+
+export function respeltDegrees(key: KeyReference) {
+  return {
+    tonic: key.tonic,
+    tonicThird: scaleDegreePitchClass(key, 3),
+    raisedSecond: scaleDegreePitchClass(key, 2, 1),
+    raisedFourth: scaleDegreePitchClass(key, 4, 1),
+    sixth: scaleDegreePitchClass(key, 6),
+    dominant: scaleDegreePitchClass(key, 5),
+  };
+}
+
+type WrittenResolutionFrame = Pick<AnalysisSlice, "tick" | "endTick" | "notes" | "completeSatb">;
+
+// Spasobin §28, ex. 28-423/427. The leading seventh of V may write its
+// seventh as ♯II in root position or first inversion before K64.
+export function writtenDoubleDominantResolution(
+  source: WrittenResolutionFrame, target: WrittenResolutionFrame, key: KeyReference,
+) {
+  if (key.mode !== "major" || !source.completeSatb || !target.completeSatb || source.endTick !== target.tick) return;
+  const { tonic, tonicThird, raisedSecond, raisedFourth, sixth, dominant } = respeltDegrees(key);
+  const bass = source.notes.bass!.pitch;
+  if ((!pitchClassEquals(bass, raisedFourth) && !pitchClassEquals(bass, sixth)) ||
+      !pitchClassEquals(target.notes.bass!.pitch, dominant)) return;
+
+  const loweredThird = scaleDegreePitchClass(key, 3, -1);
+  const voiceId = VOICE_ORDER.find(voice => {
+    const pitch = source.notes[voice]!.pitch;
+    return pitchClassEquals(pitch, loweredThird) || pitchClassEquals(pitch, raisedSecond);
+  });
+  if (!voiceId || !hasWrittenVoicing(source, [raisedFourth, sixth, tonic, source.notes[voiceId]!.pitch]) ||
+      !hasWrittenVoicing(target, [tonic, tonicThird, dominant]) ||
+      !resolvesMaskedStep(source, target, voiceId, raisedSecond, tonicThird, 1)) return;
+
+  for (const voice of VOICE_ORDER) {
+    if (voice === voiceId) continue;
+    const pitch = source.notes[voice]!.pitch;
+    if (pitchClassEquals(pitch, tonic)) {
+      if (!keepsWrittenMember(source, target, voice)) return;
+    } else if (!resolvesInVoice(source, target, voice, dominant, pitchClassEquals(pitch, raisedFourth) ? 1 : -1)) return;
+  }
+  return { voiceId, previous: raisedSecond, current: tonicThird };
 }
 
 /** §22.3: the leading seventh's root and third rise, while its fifth and seventh

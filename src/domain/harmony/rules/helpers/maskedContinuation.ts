@@ -1,6 +1,6 @@
 import { chordToneSpellings, QUALITY_INTERVALS, type ChordQuality } from "../../../chordModel";
 import {
-  keyEquals, pitchClassEquals, spelledPitchEquals, stepIndex, toMidi, type SpelledPitchClass,
+  keyEquals, pitchClassEquals, type SpelledPitchClass,
 } from "../../../pitch";
 import { VOICE_ORDER, type VoiceId } from "../../../project";
 import type { AnalysisSlice, MelodyTransition } from "../../analysis";
@@ -8,6 +8,8 @@ import { keyAtTick } from "../../segments";
 import { doublesMoveAgainstAlteration } from "../../writtenResolution";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { agreedMember, agreesWithExplicitIdentity, completeVoicings } from "./maskedChordSpelling";
+
+export { keepsWrittenMember, resolvesMaskedStep } from "../../writtenResolution";
 
 const tertianQualities = Object.keys(QUALITY_INTERVALS) as ChordQuality[];
 
@@ -61,21 +63,4 @@ export function writtenMemberAt(
   frame: AnalysisSlice, voice: VoiceId, masked: VoiceId, member: SpelledPitchClass,
 ) {
   return voice === masked ? member : frame.notes[voice]!.pitch;
-}
-
-export function resolvesMaskedStep(
-  from: AnalysisSlice, to: AnalysisSlice, voice: VoiceId, expectedFrom: SpelledPitchClass,
-  destination: SpelledPitchClass, semitones: -1 | 1,
-) {
-  const start = from.notes[voice]!, end = to.notes[voice]!;
-  return !start.nonChordToneRole && !end.nonChordToneRole && start.startTick + start.durationTicks === to.tick &&
-    end.startTick === to.tick && pitchClassEquals(end.pitch, destination) &&
-    (stepIndex(destination.step) - stepIndex(expectedFrom.step) + 7) % 7 === (semitones + 7) % 7 &&
-    toMidi(end.pitch) - toMidi(start.pitch) === semitones;
-}
-
-export function keepsWrittenMember(from: AnalysisSlice, to: AnalysisSlice, voice: VoiceId) {
-  const start = from.notes[voice]!, end = to.notes[voice]!;
-  return !start.nonChordToneRole && !end.nonChordToneRole && spelledPitchEquals(start.pitch, end.pitch) &&
-    (start.id === end.id || (start.startTick + start.durationTicks === to.tick && end.startTick === to.tick));
 }
