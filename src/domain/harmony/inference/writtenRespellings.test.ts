@@ -27,6 +27,16 @@ bars 1..6 {
   B: | A2/2 | F#3/4 Eb3/8 D3/8 | Eb3/2 | Ab2/2 | Bb2/2 | Eb3/2 |
 }`;
 
+const leadingSeventhIntoLocalDominant = `satb 1
+key Eb major
+meter 2/4
+bars 1..5 {
+  S: | Eb5/2 | F#5/2 | G5/4 Eb5/4 | D5/2 | C5/2  |
+  A: | G4/2  | C5/2  | B4/4 G4/4  | G4/2 | G4/2  |
+  T: | Bb3/2 | Eb4/2 | D4/4 Eb4/4 | F4/2 | Eb4/2 |
+  B: | Eb3/2 | A2/2  | B2/4 B2/4  | B2/2 | C3/2  |
+}`;
+
 const revoicedTriad = `satb 1
 key C minor
 meter 2/4
@@ -107,23 +117,76 @@ describe("等音候选以完整实写身份写回", () => {
     expect(oldSpelling.respelling).toBeUndefined();
   });
 
-  it("实写属和弦随低音换位，保留已确立的原调和等音那不勒斯读法", () => {
+  it("实写导减七的两上两下解决支持已确认的局部属功能", () => {
+    const played = infer(leadingSeventhIntoLocalDominant, 2);
+    expect(played.chord?.identity).toMatchObject({ root: pitch("F", 1), bass: pitch("A") });
+    expect(played.region?.selected?.functionalBaseId).toBe("DDVII");
+    expect(played.chord?.semantics?.interpretations[0]).toMatchObject({
+      localKey: { tonic: pitch("C"), mode: "minor" },
+      appliedTarget: { degree: 5 }, designation: { kind: "double-dominant-leading-tone" },
+    });
+    expect(played.inference.warnings.some(w => w.fromTick === played.tick && w.code === "function-unresolved")).toBe(false);
+    expect(played.diagnostics).toEqual([]);
+    expect(checkHarmony(played.applied).diagnostics.some(d =>
+      d.tick === 2 * played.tick && d.ruleId === "chord.doubled-leading-tone")).toBe(false);
+
+    const wrongSpelling = infer(leadingSeventhIntoLocalDominant.replace("F#5/2", "Gb5/2"), 2);
+    const wrongMotion = infer(leadingSeventhIntoLocalDominant.replace("| Eb4/2 | D4", "| Eb3/2 | D4"), 2);
+    const target = (result: typeof played) => result.applied.chordTrack.regions.find(chord => chord.startTick === 2 * played.tick);
+    expect(target(played)?.identity).toMatchObject({ root: pitch("G"), bass: pitch("B") });
+    for (const wrong of [wrongSpelling, wrongMotion]) {
+      expect(wrong.region?.selected?.evidence.some(e => e.code === "written-leading-seventh-into-local-dominant")).toBe(false);
+      expect(target(wrong)?.identity).toEqual(target(played)?.identity);
+    }
+    expect(wrongMotion.chord?.identity).toEqual(played.chord?.identity);
+    expect(wrongMotion.chord?.semantics).toBeUndefined();
+  });
+
+  it("同一实写低音换位保留原调属读法，新调增六出口使功能待复核", () => {
     const played = infer(revoicedTriad, 9.5);
     expect(played.chord?.identity).toMatchObject({
       root: pitch("C", 1), bass: pitch("E", 1), structure: { quality: "major" },
     });
     expect(played.chord?.semantics?.interpretations[0]).toMatchObject({
       localKey: { tonic: pitch("F", 1), mode: "minor" }, degree: 5,
-      designation: { kind: "primary", primaryFunction: "dominant" },
+      designation: { kind: "primary", primaryFunction: "dominant" }, confidence: "ambiguous",
     });
     expect(played.respelling?.enharmonicReadings).toMatchObject([{
       identity: { root: pitch("D", -1), bass: pitch("F") },
       semantics: { interpretations: [{ designation: { kind: "neapolitan" } }] },
     }]);
     expect(played.diagnostics).toEqual([]);
+    expect(played.region?.selected?.evidence.some(e => e.code === "written-neapolitan-pivot-to-german-sixth")).toBe(true);
+    expect(played.inference.warnings.some(w => w.fromTick === played.tick && w.code === "function-unresolved")).toBe(true);
+    expect(checkHarmony(played.applied).diagnostics.filter(d => d.tick >= played.tick &&
+      d.tick < played.tick + played.project.ppq &&
+      ["chord.doubled-leading-tone", "resolution.leading-tone"].includes(d.ruleId))).toEqual([]);
     const reattack = infer(revoicedTriad.replace("G#5/2", "G#5/4. G#5/8"), 9.5);
     expect(reattack.chord?.identity).toEqual(played.chord?.identity);
     expect(reattack.chord?.semantics).toBeUndefined();
+    const wrongExit = infer(revoicedTriad.replace("Ab5/8 G5/8 G5/4", "Ab5/8 G4/8 G4/4"), 9.5);
+    expect(wrongExit.chord?.identity).toEqual(played.chord?.identity);
+    expect(wrongExit.chord?.semantics).toBeUndefined();
+  });
+
+  it("同音型返回前调时保留属功能，真实重复导音和错解仍然报告", () => {
+    const returns = revoicedTriad.replace("Ab5/8 G5/8 G5/4", "A5/2")
+      .replace("| C5/2", "| C#5/2").replace("| Eb4/2", "| F#4/2")
+      .replace("F#3/8 G3/8 G3/4", "F#3/2");
+    const played = infer(returns, 9.5);
+    const wrong = infer(returns.replace(/\| F#4\/2 *\|\n  B:/, "| C#4/2 |\n  B:"), 9.5);
+    for (const result of [played, wrong]) {
+      expect(result.chord?.semantics?.interpretations[0]).toMatchObject({
+        localKey: { tonic: pitch("F", 1), mode: "minor" }, degree: 5, confidence: "probable",
+      });
+      expect(result.region?.selected?.evidence.some(e => e.code === "written-dominant-bass-revoicing")).toBe(true);
+      expect(checkHarmony(result.applied).diagnostics).toContainEqual(expect.objectContaining({
+        tick: result.tick, ruleId: "chord.doubled-leading-tone",
+      }));
+    }
+    const failedTenor = (result: typeof played) => checkHarmony(result.applied).diagnostics.some(d =>
+      d.tick === 10 * result.project.ppq && d.ruleId === "resolution.leading-tone" && d.voiceIds.includes("tenor"));
+    expect([failedTenor(played), failedTenor(wrong)]).toEqual([false, true]);
   });
 
   it.each([false, true])("绝对回退=%s 时低音换位仍可按实写写回", allowAbsoluteFallback => {

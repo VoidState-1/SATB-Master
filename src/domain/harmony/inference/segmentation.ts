@@ -1,3 +1,4 @@
+import { harmonySemanticsConfidence } from "../../chordModel";
 import type {
   ChordInferenceCandidate,
   ChordInferenceObservation,
@@ -185,7 +186,8 @@ export function warningsForRegions(
         toTick: region.toTick,
         message: "该时间区间存在接近的和声解释，未作为默认结果应用",
       });
-    else if (region.selected && !region.selected.semantics &&
+    else if (region.selected &&
+        (!region.selected.semantics || harmonySemanticsConfidence(region.selected.semantics) === "ambiguous") &&
         region.selected.evidence.some(item => item.code === "written-enharmonic-identity"))
       warnings.push({
         code: "function-unresolved",

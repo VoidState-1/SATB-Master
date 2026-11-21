@@ -104,7 +104,7 @@ export function writtenDoubleDominantResolution(
 /** §22.3: the leading seventh's root and third rise, while its fifth and seventh
  * descend. The two middle members meet on the third of the receiving tonic. */
 export function resolvesLeadingSeventhToDoubledThird(
-  source: AnalysisSlice, target: AnalysisSlice,
+  source: WrittenResolutionFrame, target: WrittenResolutionFrame,
   sourceTones: readonly SpelledPitchClass[], tonicTones: readonly SpelledPitchClass[],
 ) {
   const destinations = [tonicTones[0], tonicTones[1], tonicTones[1], tonicTones[2]];

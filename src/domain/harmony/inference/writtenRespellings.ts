@@ -1,12 +1,14 @@
 import {
   chordIdentityEquals, chordIdentityEqualsWithoutBass, chordIdentityInversion,
-  chordIdentityToneSpellings, primaryHarmonyInterpretation,
-  type ChordIdentity,
+  chordIdentityToneSpellings, chordToneSpellings, primaryHarmonyInterpretation,
+  type ChordIdentity, type KeyReference,
 } from "../../chordModel";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { keyEquals, leadingTonePitchClass, pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
+import {
+  keyEquals, leadingTonePitchClass, pitchClassEquals, pitchClassValue, scaleDegreePitchClass, spelledPitchEquals, toMidi,
+} from "../../pitch";
 import { readWrittenProlongation } from "../writtenProlongation";
-import { writtenDoubleDominantResolution } from "../writtenResolution";
+import { hasWrittenVoicing, resolvesLeadingSeventhToDoubledThird, writtenDoubleDominantResolution } from "../writtenResolution";
 import { readSoundingTertianIdentity } from "../writtenVoicing";
 import { createAbsoluteCandidate, createFunctionalCandidate } from "./candidates";
 import { observationNotes, resolvesTone, writtenFrame } from "./observations";
@@ -53,9 +55,47 @@ function supportedDoubleDominant(reading: Candidate, source: Observation, target
   if (note && pitchClassEquals(note.pitch, resolution.previous)) return note.id;
 }
 
+/** The already established V of a local key can receive its own vii°7.
+ * The arrival's label and all four original voices must agree. */
+function leadingSeventhIntoLocalDominant(
+  literal: Candidate, source: Observation, arrival: Observation, arrivals: CandidateSet,
+) {
+  const key = arrival.localKey;
+  if (!key || (source.localKey && !keyEquals(source.localKey, key)) ||
+      literal.identity.structure.kind !== "tertian" || literal.identity.structure.quality !== "diminished7") return;
+  const exact = arrivals.filter(candidate => candidate.semantics && candidate.fit.spellingConsistent && fullFit(candidate));
+  if (exact.length !== 1) return;
+  const [dominant] = exact;
+  const target = dominant.identity;
+  const tonic = scaleDegreePitchClass(key, 5);
+  if (dominant.functionalBaseId !== "D" || !pitchClassEquals(target.root, tonic) ||
+      target.structure.kind !== "tertian" || target.structure.quality !== "major" ||
+      target.structure.extensions.length || target.structure.alterations.length ||
+      chordIdentityInversion(target) > 1 || !arrival.bass || !pitchClassEquals(target.bass, arrival.bass.pitch)) return;
+  const meaning = primaryHarmonyInterpretation(dominant.semantics!);
+  if (!meaning.localKey || !keyEquals(meaning.localKey, key) || meaning.appliedTarget ||
+      dominant.semantics?.cadenceRole || dominant.semantics?.pedalContext) return;
+
+  const lead = leadingTonePitchClass({ tonic, mode: "major" });
+  const targetTones = chordToneSpellings(tonic, "major");
+  if (!pitchClassEquals(lead, literal.identity.root) || !hasWrittenVoicing(writtenFrame(arrival), targetTones) ||
+      !resolvesLeadingSeventhToDoubledThird(writtenFrame(source), writtenFrame(arrival),
+        chordIdentityToneSpellings(literal.identity), targetTones)) return;
+  const candidate = createFunctionalCandidate({ ...source, key: { ...source.key, ...key }, localKey: key }, {
+    baseId: "DDVII", definition: functionalDefinition("DDVII"), form: "seventh", localKeyPolicy: "current-key",
+    expectedInversion: chordIdentityInversion(literal.identity),
+  }, {});
+  if (!candidate || !chordIdentityEquals(candidate.identity, literal.identity)) return;
+  return { ...candidate, confidence: "medium" as const, evidence: [...candidate.evidence, {
+    kind: "sequence-context" as const, code: "written-leading-seventh-into-local-dominant",
+    noteIds: observationNotes(source).map(({ note }) => note.id),
+    details: { arrivalTick: arrival.fromTick },
+  }] };
+}
+
 /** Independently confirmed prior key, followed by the same three upper
  * events and a written bass revoicing of its dominant. */
-function continuedDominant(
+function priorDominantReading(
   literal: Candidate, frames: readonly Observation[], sets: readonly CandidateSet[],
   i: number, boundaries: readonly number[],
 ) {
@@ -82,7 +122,79 @@ function continuedDominant(
     baseId: "D", definition: functionalDefinition("D"), form: "triad", localKeyPolicy: "current-key",
     expectedInversion: chordIdentityInversion(literal.identity),
   }, {});
-  if (reading && chordIdentityEquals(reading.identity, literal.identity)) return reading;
+  if (reading?.semantics && chordIdentityEquals(reading.identity, literal.identity)) return { reading, localKey };
+}
+
+function returnsToPriorKey(source: Observation, arrival: Observation, oldKey: KeyReference) {
+  const tones = chordToneSpellings(oldKey.tonic, oldKey.mode);
+  const bass = arrival.bass;
+  return !!bass && (!arrival.localKey || keyEquals(arrival.localKey, oldKey)) &&
+    [tones[0], tones[1]].some(tone => pitchClassEquals(tone, bass.pitch)) &&
+    hasWrittenVoicing(writtenFrame(arrival), tones) &&
+    resolvesTone(source, arrival, leadingTonePitchClass(oldKey), oldKey.tonic, 1);
+}
+
+/** The equal-sounding N6 reading has its own forward evidence: one written
+ * respelling into the German sixth, then contrary resolution to tonic 64. */
+function neapolitanPivotExit(
+  reading: Candidate, source: Observation, sixth: Observation, landing: Observation,
+) {
+  const key = source.key;
+  if (reading.functionalBaseId !== "N6" || key.mode !== "minor" ||
+      !keyEquals(key, sixth.key) || !keyEquals(key, landing.key) ||
+      !source.bass || !sixth.bass || !landing.bass) return;
+  const tonic = chordToneSpellings(key.tonic, key.mode);
+  const flatSixth = scaleDegreePitchClass(key, 6);
+  const raisedFourth = scaleDegreePitchClass(key, 4, 1);
+  const dominant = scaleDegreePitchClass(key, 5);
+  if (!pitchClassEquals(sixth.bass.pitch, raisedFourth) || !pitchClassEquals(landing.bass.pitch, dominant) ||
+      !hasWrittenVoicing(writtenFrame(sixth), [flatSixth, tonic[0], tonic[1], raisedFourth]) ||
+      !hasWrittenVoicing(writtenFrame(landing), tonic) ||
+      !resolvesTone(source, sixth, source.bass.pitch, raisedFourth, 1) ||
+      !resolvesTone(sixth, landing, raisedFourth, dominant, 1) ||
+      !resolvesTone(sixth, landing, flatSixth, dominant, -1) ||
+      !resolvesTone(sixth, landing, tonic[0], tonic[0], 0) ||
+      !resolvesTone(sixth, landing, tonic[1], tonic[1], 0)) return;
+  const respelt = observationNotes(source).find(({ voiceId, note }) => {
+    const next = sixth.activeNotes[voiceId];
+    return next && pitchClassEquals(next.pitch, flatSixth) &&
+      toMidi(note.pitch) === toMidi(next.pitch) && !spelledPitchEquals(note.pitch, next.pitch);
+  });
+  if (respelt) return {
+    kind: "sequence-context" as const, code: "written-neapolitan-pivot-to-german-sixth",
+    noteIds: [respelt.note.id], details: { sixthTick: sixth.fromTick, tonicSixFourTick: landing.fromTick },
+  };
+}
+
+function dominantRevoicing(
+  literal: Candidate, readings: CandidateSet, frames: readonly Observation[],
+  sets: readonly CandidateSet[], i: number, boundaries: readonly number[],
+): Candidate | undefined {
+  const [source, next, landing] = frames.slice(i, i + 3);
+  if (!next || !connected(source, next, boundaries)) return;
+  const prior = priorDominantReading(literal, frames, sets, i, boundaries);
+  if (!prior) return;
+  const { reading, localKey } = prior;
+  const semantics = reading.semantics;
+  if (!semantics) return;
+  if (returnsToPriorKey(source, next, localKey)) return { ...reading, confidence: "medium", evidence: [
+    ...reading.evidence, { kind: "sequence-context", code: "written-dominant-bass-revoicing",
+      details: { arrivalTick: next.fromTick } },
+  ] };
+  if (!landing || !connected(next, landing, boundaries)) return;
+  const neapolitan = readings.find(candidate => candidate.functionalBaseId === "N6");
+  const pivot = neapolitan && neapolitanPivotExit(neapolitan, source, next, landing);
+  if (!pivot) return;
+  return {
+    ...literal,
+    confidence: "medium",
+    score: { ...literal.score, functionalTier: 3 },
+    semantics: {
+      ...semantics,
+      interpretations: [{ ...primaryHarmonyInterpretation(semantics), confidence: "ambiguous" }],
+    },
+    evidence: [...literal.evidence, ...reading.evidence.filter(item => item.code === "local-key-cadence"), pivot],
+  };
 }
 
 /** Keep a heard diminished-seventh-to-seventh exit as evidence. The two
@@ -171,10 +283,11 @@ export function withContextualWrittenRespellings(
 
     const literal = createAbsoluteCandidate(source, identity.root, identity.structure.quality, {});
     if (!literal || !fullFit(literal) || !literal.fit.spellingConsistent) return existing;
-    const functional = continuedDominant(literal, frames, sets, i, boundaries);
-    if (functional) return [{ ...functional, confidence: "medium" as const, evidence: [...functional.evidence, proof, {
-      kind: "sequence-context" as const, code: "written-dominant-bass-revoicing",
-    }] }];
+    const leadingSeventh = target && connected(source, target, boundaries)
+      ? leadingSeventhIntoLocalDominant(literal, source, target, sets[i + 1])
+      : undefined;
+    const contextual = leadingSeventh ?? dominantRevoicing(literal, readings, frames, sets, i, boundaries);
+    if (contextual) return [{ ...contextual, evidence: [...contextual.evidence, proof] }];
     const context = identity.structure.quality === "diminished7" &&
       contextForDiminished(literal, frames, i, boundaries);
     return [{
