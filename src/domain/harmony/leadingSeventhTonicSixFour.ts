@@ -1,8 +1,7 @@
 import { chordToneSpellings, primaryHarmonyInterpretation } from "../chordModel";
-import { keyEquals, isWrittenStep, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, writtenInterval } from "../pitch";
-import { VOICE_ORDER } from "../project/voice";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass } from "../pitch";
 import type { AnalysisSlice } from "./analysis";
-import { matchesWrittenChord, resolvesInVoice } from "./writtenResolution";
+import { matchesWrittenChord, resolvesInVoice, resolvesLeadingSeventhToDoubledThird } from "./writtenResolution";
 
 function inWrittenKey(slice: AnalysisSlice, key: AnalysisSlice["key"]) {
   const reading = slice.chord?.semantics && primaryHarmonyInterpretation(slice.chord.semantics);
@@ -34,13 +33,5 @@ export function resolvesLeadingSeventhToPassingTonic(
   const sourceTones = chordToneSpellings(leading, quality);
   if (!pitchClassEquals(source.notes.bass!.pitch, sourceTones[3])) return false;
 
-  const destinations = [tonicTones[0], tonicTones[1], tonicTones[1], tonicTones[2]];
-  return VOICE_ORDER.every(voice => {
-    const from = source.notes[voice]!, to = tonic.notes[voice]!;
-    const degree = sourceTones.findIndex(tone => pitchClassEquals(tone, from.pitch));
-    const direction = degree < 2 ? 1 : -1;
-    const step = writtenInterval(from.pitch, to.pitch);
-    return from.startTick + from.durationTicks === tonic.tick && to.startTick === tonic.tick &&
-      pitchClassEquals(to.pitch, destinations[degree]) && isWrittenStep(step) && step.diatonicSteps === direction;
-  });
+  return resolvesLeadingSeventhToDoubledThird(source, tonic, sourceTones, tonicTones);
 }

@@ -1,5 +1,5 @@
 import { chordToneSpellings, type ChordQuality } from "../chordModel";
-import { pitchClassEquals, writtenInterval, type SpelledPitchClass } from "../pitch";
+import { isWrittenStep, pitchClassEquals, writtenInterval, type SpelledPitchClass } from "../pitch";
 import { VOICE_ORDER, type VoiceId } from "../project";
 import type { AnalysisSlice } from "./analysis";
 import { soundsCompleteWrittenTones } from "./writtenVoicing";
@@ -36,6 +36,23 @@ export function resolvesInVoice(source: WrittenVoiceFrame, target: WrittenVoiceF
   const step = writtenInterval(from.pitch, to.pitch);
   return step.diatonicSteps === direction &&
     (step.semitones === direction || (direction === -1 && step.semitones === -2));
+}
+
+/** §22.3: the leading seventh's root and third rise, while its fifth and seventh
+ * descend. The two middle members meet on the third of the receiving tonic. */
+export function resolvesLeadingSeventhToDoubledThird(
+  source: AnalysisSlice, target: AnalysisSlice,
+  sourceTones: readonly SpelledPitchClass[], tonicTones: readonly SpelledPitchClass[],
+) {
+  const destinations = [tonicTones[0], tonicTones[1], tonicTones[1], tonicTones[2]];
+  return VOICE_ORDER.every(voice => {
+    const from = source.notes[voice], to = target.notes[voice];
+    if (!from || !to || from.startTick + from.durationTicks !== source.endTick || to.startTick !== source.endTick) return false;
+    const member = sourceTones.findIndex(tone => pitchClassEquals(from.pitch, tone));
+    if (member < 0 || !pitchClassEquals(to.pitch, destinations[member])) return false;
+    const motion = writtenInterval(from.pitch, to.pitch);
+    return isWrittenStep(motion) && motion.diatonicSteps === (member < 2 ? 1 : -1);
+  });
 }
 
 /** §32.4c. A doubled chromatically altered degree leaves in contrary stepwise motion. */

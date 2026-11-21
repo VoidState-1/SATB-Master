@@ -32,6 +32,7 @@ import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { leadingToneForFunction } from "../services/harmony";
+import { receivesDoubledLocalTonicThird } from "./doubledLocalTonicThird";
 import { diatonicSequenceAtMiddleArrival } from "../state/diatonicSequenceLeadingTone";
 import { resolvesDominantSixthSubstitution } from "./dominantSixthSubstitution";
 import { landsOnIncompleteTonic } from "../helpers/dominantTonicVoicing";
@@ -309,8 +310,10 @@ export function doubledLeadingToneRule(context: HarmonyRuleContext) {
     },
     allowsRepetition: ({ slice, chord }, { tone, applied }) => {
       const { structure, root, bass } = chord.identity;
+      if (applied) return false;
+      if (receivesDoubledLocalTonicThird(context, slice, tone)) return true;
       // Chapter 26 §8, example 26–378: the repeated root is copied from the sequence model.
-      return !applied && structure.kind === "tertian" && structure.quality === "diminished" &&
+      return structure.kind === "tertian" && structure.quality === "diminished" &&
         pitchClassEquals(root, tone) && pitchClassEquals(root, bass) &&
         Boolean(diatonicSequenceAtMiddleArrival(slice, context));
     },
@@ -686,7 +689,7 @@ export const CHORD_RULES = defineRuleGroup(
     group: "chord",
     defaultSeverity: "error",
     requires: ["written-pitches", "chords"],
-    dependencyScope: "chord",
+    dependencyScope: "phrase",
     evaluate: doubledLeadingToneRule,
   }),
   defineStatelessRule({
