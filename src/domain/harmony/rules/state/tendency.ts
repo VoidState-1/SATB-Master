@@ -6,7 +6,7 @@ import {
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
-import { readDominantSeventhExchange, readWrittenDominantSeventh } from "../../writtenDominantSeventh";
+import { readWrittenDominantSeventh, readWrittenDominantSeventhHandoff } from "../../writtenDominantSeventh";
 import { resolvesInVoice } from "../../writtenResolution";
 import { inheritedLeadingToneKeyAtRotation } from "./writtenLeadingToneTransfer";
 import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
@@ -365,14 +365,12 @@ export function leadingToneBecomesNextDominantSeventh(environment: ObligationEnv
   const leading = source?.notes[payload.voiceId];
   const landing = target.notes[payload.voiceId];
   if (!source || !leading || !landing || !context.transitionFromPrevious?.contiguous ||
-      source.key.id !== target.key.id || leading.startTick + leading.durationTicks !== target.tick) return false;
-  const motion = writtenInterval(leading.pitch, landing.pitch);
-  if (motion.semitones !== -1 || motion.diatonicSteps !== 0) return false;
+      source.key.id !== target.key.id) return false;
 
   const from = dominantSeventhAt(context, source);
   const to = dominantSeventhAt(context, target);
-  if (!from || !to || !pitchClassEquals(leading.pitch, from.third)) return false;
-  const exchange = readDominantSeventhExchange(source, target, payload.voiceId, from.root);
+  if (!from || !to) return false;
+  const exchange = readWrittenDominantSeventhHandoff(source, target, payload.voiceId, from.root);
   if (!exchange || !pitchClassEquals(exchange.nextRoot, to.root)) return false;
   const nextTonic = { tonic: to.root, mode: payload.targetMode };
   return obligationFollowsWrittenLeadingTone(environment, source, leading, landing, to.seventh, nextTonic);

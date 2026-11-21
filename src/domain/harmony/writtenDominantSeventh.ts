@@ -142,6 +142,19 @@ export function readDominantSeventhExchange(
   }
 }
 
+/** Confirm both written semitone lines at the same attack. */
+export function readWrittenDominantSeventhHandoff(
+  before: WrittenFrame, after: WrittenFrame, voice: VoiceId, root: SpelledPitchClass,
+) {
+  const departure = before.notes[voice], arrival = after.notes[voice];
+  if (!departure || !arrival || endOf(departure) !== after.tick || arrival.startTick !== after.tick) return;
+  const motion = writtenInterval(departure.pitch, arrival.pitch);
+  if (motion.semitones !== -1 || motion.diatonicSteps !== 0) return;
+  const exchange = readDominantSeventhExchange(before, after, voice, root);
+  if (exchange && pitchClassEquals(departure.pitch, exchange.third) &&
+      pitchClassEquals(arrival.pitch, exchange.nextSeventh)) return exchange;
+}
+
 /** The doubled-root V7 can omit its fifth. Confirm its actual root-position
  * destination and the separate third, seventh and retained root lines.
  * A tied leading tone may settle one written frame after the bass. */

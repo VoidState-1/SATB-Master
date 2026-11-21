@@ -2,6 +2,7 @@ import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
 import {
   chordIdentityToneSpellings,
   type FunctionalFamily,
+  type FunctionalTarget,
 } from "../../../chordModel";
 import type { RuleDiagnostic } from "../../runtime";
 import type {
@@ -44,6 +45,7 @@ import { ornamentsPreparedSeventh } from "../state/preparedSeventh";
 import { readDoubleDominantSeventhLanding } from "../state/doubleDominantSeventh";
 import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
 import { isProvenHeldDoubleDominantContinuation } from "./heldDoubleDominantContinuation";
+import { writtenAppliedDominantMotion } from "./appliedDominantMotion";
 import { exchangesSupertonicSeventhWithRoot, seventhLeapsToUnlabelledSixFour } from "./supertonicSeventhExchange";
 import {
   defineObligationRule,
@@ -75,7 +77,7 @@ type SecondaryDominantState = {
   sourceSpanId: string;
   sourceChordId: string;
   sourceToTick: number;
-  targetDegree: number;
+  targetDegree: FunctionalTarget["degree"];
   targetPrimaryFunction: FunctionalFamily;
   targetSecondaryFunction?: FunctionalFamily;
 };
@@ -531,23 +533,44 @@ export function secondaryDominantStateStep(
 ): RuleStepResult {
   const diagnostics: RuleDiagnostic[] = [];
   const outgoing: RuleStateEnvelope[] = [];
+  let prolonged = false;
   if (context.isSpanStart && context.span) {
     const currentSpan = context.span;
+    const incomingConnection = context.rules.connections({
+      targetSpanId: currentSpan.id,
+    }).first();
+    const connection = incomingConnection?.connection;
     incoming.forEach((state) => {
       const payload = state.payload as SecondaryDominantState;
-      const incomingConnection = context.rules.connections({
-        targetSpanId: currentSpan.id,
-      }).first();
-      const connection = incomingConnection?.connection;
+      const target: FunctionalTarget = {
+        degree: payload.targetDegree,
+        primaryFunction: payload.targetPrimaryFunction,
+        secondaryFunction: payload.targetSecondaryFunction,
+      };
+      const motion = incomingConnection?.source.span.id === payload.sourceSpanId
+        ? writtenAppliedDominantMotion(context.rules, incomingConnection, target)
+        : undefined;
+      const chord = context.slice.chord;
+      if (motion === "prolongation" && chord) {
+        prolonged = true;
+        outgoing.push({
+          ...state,
+          subjectRefs: { chordIds: [chord.id], spanIds: [currentSpan.id] },
+          payload: {
+            ...payload,
+            sourceSpanId: currentSpan.id,
+            sourceChordId: chord.id,
+            sourceToTick: currentSpan.toTick,
+          },
+        });
+        return;
+      }
+      if (motion === "target-transfer") return;
       const resolves = functionalTargetMatches(
         context.analysis,
         payload.sourceSpanId,
         currentSpan.id,
-        {
-          degree: payload.targetDegree as 1 | 2 | 3 | 4 | 5 | 6 | 7,
-          primaryFunction: payload.targetPrimaryFunction,
-          secondaryFunction: payload.targetSecondaryFunction,
-        },
+        target,
       );
       const allowedCadential64 =
         payload.targetPrimaryFunction === "dominant" &&
@@ -611,6 +634,7 @@ export function secondaryDominantStateStep(
       ? sourceResolution.value
       : undefined;
   if (
+    !prolonged &&
     context.isSpanStart &&
     context.span &&
     sourceInterpretation?.appliedTarget
