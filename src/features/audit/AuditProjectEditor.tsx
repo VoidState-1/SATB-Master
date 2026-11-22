@@ -144,7 +144,7 @@ export function AuditProjectEditor({ initialProject, originalProject, selected, 
     </div>
     {showProperties && <fieldset className="audit-project-properties" disabled={readOnly}><legend>选中对象属性</legend>
       <SelectionInspector project={project} selectedNote={editor.selectedNote} selectedChord={editor.selectedChord} selectedChordIds={editor.selectedChordIds} selectedChordCount={editor.selectedChordIds.size}
-        developerMode={false} chordBrush={editor.chordBrush} playheadTick={playhead} cadenceCandidates={[]}
+        developerMode={false} chordBrush={editor.chordBrush} playheadTick={playhead}
         onUpdateNote={commands.handleUpdateNote} onUpdateChord={commands.handleUpdateChord} onDeleteChords={commands.handleDeleteChords} onUpdateChordBrush={commands.handleUpdateChordBrush}
         onAddCadenceAnnotation={commands.handleAddCadenceAnnotation} onUpdateCadenceAnnotation={commands.handleUpdateCadenceAnnotation} onDeleteCadenceAnnotation={commands.handleDeleteCadenceAnnotation} />
     </fieldset>}
