@@ -6,15 +6,13 @@ import {
 import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
-import { readWrittenDominantSeventh, readWrittenDominantSeventhHandoff } from "../../writtenDominantSeventh";
-import { resolvesInVoice } from "../../writtenResolution";
-import { inheritedLeadingToneKeyAtRotation } from "./writtenLeadingToneTransfer";
-import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
-import { readDoubleDominantResolution } from "../helpers/doubleDominantResolution";
-import { resolvesDominantSixthSubstitution } from "../groups/dominantSixthSubstitution";
+import { readWrittenDominantSeventh, readWrittenDominantSeventhHandoff } from "../../facts/dominantMotion";
+import { resolvesInVoice } from "../../facts/tendencyResolution";
+import { crossesManualPhraseBoundary, hasExactPitch, noteEvidence } from "../helpers/core";
+import { readDoubleDominantResolution } from "../helpers/chordVoicing";
+import { resolvesDominantSixthSubstitution } from "../groups/support/doubleDominant";
 import {
   keyEquals,
-  leadingTonePitchClass,
   pitchClassEquals,
   scaleDegreePitchClass,
   spelledPitchEquals,
@@ -29,15 +27,18 @@ import type {
   ObligationSource,
   SubjectRefs,
 } from "./obligation";
-import { hasExactPitch, noteEvidence } from "../helpers/core";
 import type { SpanView } from "../context/views";
-import { leadingToneSourceKey } from "./leadingToneTarget";
-import { dominantNinthTone, writtenDominantNinthResolves } from "../../writtenDominantNinth";
-import { preparedSeventhEntries } from "./preparedSeventh";
-import { openedSourceChord, openedSourceNote, sameSeventhContext, supportsTendencyResolutionRules } from "./tendencyContext";
-import { hasMajorDeceptiveLeadingToneMotion } from "./majorDeceptiveLeadingTone";
-import { supportsWrittenInnerLeadingToneDescent } from "./writtenInnerLeadingTone";
-import { accentedOrnamentOverWrittenTriad, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneNeighbor";
+import { dominantNinthTone, writtenDominantNinthResolves } from "../../facts/dominantMotion";
+import { preparedSeventhEntries } from "./seventhState";
+import {
+  openedSourceChord,
+  openedSourceNote,
+  sameSeventhContext,
+  supportsTendencyResolutionRules,
+  currentSpanRefs,
+} from "./tendencyContext";
+import { hasMajorDeceptiveLeadingToneMotion, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneTargets";
+import { supportsWrittenInnerLeadingToneDescent } from "./leadingToneTransfers";
 
 export { supportsTendencyResolutionRules } from "./tendencyContext";
 
@@ -71,69 +72,6 @@ export type AlteredTonePayload = VoiceObligationPayload & {
   readonly degree: 5 | 9 | 11 | 13;
   readonly tendency: "up" | "down";
   readonly alteredMidi: number;
-};
-
-function currentSpanRefs(context: RuleStepContext) {
-  const spanId = context.rules.spanAt(context.slice.tick)?.span.id;
-  return spanId ? { spanIds: [spanId] } : {};
-}
-
-export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
-  id: "source.leading-tone-attacks",
-  requires: ["written-pitches"],
-  collect({ context, moment }) {
-    const { slice, previous, transitionFromPrevious } = context;
-    const chord = slice.chord;
-    if (!supportsTendencyResolutionRules(context, chord)) return [];
-    const targetKey = leadingToneSourceKey(context.rules, slice) ?? inheritedLeadingToneKeyAtRotation(context);
-    if (!targetKey) return [];
-    const { tonic: targetTonic, mode: targetMode } = targetKey;
-    const leadingTone = leadingTonePitchClass(targetKey);
-
-    // A sustained note can acquire a tendency when the harmony changes under
-    // it (for instance the seventh of Imaj7 becomes the third of V).
-    const heldLeading = previous && transitionFromPrevious?.contiguous && transitionFromPrevious.sameKey &&
-      VOICE_ORDER.some(voice => {
-        const note = slice.notes[voice];
-        return note && previous.notes[voice]?.id === note.id && pitchClassEquals(note.pitch, leadingTone);
-      });
-    const previousTarget = heldLeading && supportsTendencyResolutionRules(context, previous.chord)
-      ? leadingToneSourceKey(context.rules, previous) : undefined;
-    const canStartHeld = heldLeading && (!previousTarget || !keyEquals(previousTarget, targetKey));
-    const voices = canStartHeld ? VOICE_ORDER : moment.attackedVoiceIds;
-    return voices.flatMap((voiceId) => {
-      const note = slice.notes[voiceId];
-      if (!note || note.nonChordToneRole || !pitchClassEquals(note.pitch, leadingTone)) return [];
-      if (!moment.attackedVoiceIds.includes(voiceId) && previous?.notes[voiceId]?.id !== note.id) return [];
-      if (moment.attackedVoiceIds.includes(voiceId)) {
-        const frame = leadingNeighborFrame(context.rules, voiceId, note);
-        if (frame && (ornamentsSameLeadingHarmony(context.rules, frame) ||
-            accentedOrnamentOverWrittenTriad(context.rules, frame))) return [];
-      }
-      return [
-        {
-          partitionKey: `voice:${voiceId}|target:${targetTonic.step}:${targetTonic.alter}`,
-          payload: {
-            voiceId,
-            leadingMidi: toMidi(note.pitch),
-            leadingStep: leadingTone.step,
-            leadingAlter: leadingTone.alter,
-            targetStep: targetTonic.step,
-            targetAlter: targetTonic.alter,
-            targetMode,
-            sourceKeyStep: context.slice.key.tonic.step,
-            sourceKeyAlter: context.slice.key.tonic.alter,
-            sourceKeyMode: context.slice.key.mode,
-          },
-          subjectRefs: {
-            voiceIds: [voiceId],
-            noteIds: [note.id],
-            ...currentSpanRefs(context),
-          },
-        },
-      ];
-    });
-  },
 };
 
 export const chordSeventhSource: ObligationSource<SeventhPayload> = {

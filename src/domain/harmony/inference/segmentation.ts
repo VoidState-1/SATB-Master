@@ -5,8 +5,8 @@ import type {
   ChordInferenceRegion,
   ChordInferenceWarning,
 } from "./types";
-import { analyzeChordInferencePaths } from "./sequence";
-import { hasNoncadentialTonicProof } from "./noncadentialTonicSixFours";
+import { analyzeChordInferencePaths } from "./scoring";
+import { hasNoncadentialTonicProof } from "./sixFours";
 import { keyEquals } from "../../pitch";
 
 function sameMeaning(

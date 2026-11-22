@@ -9,11 +9,14 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { isResolvedDominantSixthBass } from "./resolvedDominantSixthBass";
-import { isNeapolitanSeventhBassTritone } from "./neapolitanSeventhBass";
+import { isResolvedDominantSixthBass } from "./support/appliedAndDeceptive";
+import { isNeapolitanSeventhBassTritone } from "./support/chordSpellingAndDiatonic";
 import { sameHarmonyAtMelodicAttack } from "../helpers/motionHarmony";
-import { previousSeventhInTritoneTransfer } from "./dominantSeventhTritone";
-import { augmentedIntervalRule, diminishedIntervalRule } from "./alteredMelodicIntervals";
+import {
+  previousSeventhInTritoneTransfer,
+  augmentedIntervalRule,
+  diminishedIntervalRule,
+} from "./support/chromaticPassing";
 
 export { augmentedIntervalRule, diminishedIntervalRule };
 

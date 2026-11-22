@@ -6,7 +6,7 @@ import {
   correctionChord,
   correctionNote,
   setCorrectionVoice,
-} from "../../rule-engine-correction/fixtures";
+} from "../../testing/fixtures/harmonyProject";
 import { createHarmonyAnalysisService } from "./harmony";
 import { createMetricAnalysisService } from "./metric";
 import { createPitchAnalysisService } from "./pitch";

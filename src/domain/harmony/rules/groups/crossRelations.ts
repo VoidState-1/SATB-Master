@@ -13,8 +13,8 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineStatelessRule } from "../defineRule";
 import { diagnostic, hasExactPitch, noteEvidence, voiceName } from "../helpers/core";
-import { bassNeighborAgainstHeldUpper } from "../helpers/heldBassNeighbor";
-import { soundsDeclaredChord } from "../../writtenVoicing";
+import { bassNeighborAgainstHeldUpper } from "../helpers/ornaments";
+import { soundsDeclaredChord } from "../../facts/writtenVoicing";
 import { leadingToneForFunction } from "../services/harmony";
 
 function chromaticHarmonyLicenses(

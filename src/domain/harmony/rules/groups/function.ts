@@ -7,7 +7,7 @@ import {
 } from "../../../pitch";
 import type { AnalysisSlice } from "../../analysis";
 import { chordEvidence, chordLabel, diagnostic } from "../helpers/core";
-import { majorMediantToSubdominant } from "./majorMediant";
+import { majorMediantToSubdominant } from "./support/chordSpellingAndDiatonic";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 

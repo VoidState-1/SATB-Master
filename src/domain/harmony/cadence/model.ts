@@ -1,0 +1,144 @@
+import type {
+  CadenceAnnotation as ProjectCadenceAnnotation,
+  CadenceCompletion as ProjectCadenceCompletion,
+  CadenceForm as ProjectCadenceForm,
+  CadenceKind as ProjectCadenceKind,
+} from "../../project/types";
+import type { HarmonySpan, AnalysisChord, AnalysisSlice } from "../analysis";
+import type { KeyReference } from "../../chordModel";
+
+export type CadenceKind = ProjectCadenceKind;
+export type CadenceForm = ProjectCadenceForm;
+export type CadenceCompletion = ProjectCadenceCompletion;
+export type CadenceConfidence = "certain" | "probable" | "ambiguous";
+
+export interface CadenceEvidence {
+  readonly code:
+    | "phrase-boundary"
+    | "dominant-to-tonic"
+    | "predominant-to-dominant"
+    | "predominant-to-tonic"
+    | "dorian-plagal-ending"
+    | "dominant-to-alternative"
+    | "ends-on-dominant"
+    | "cadential64-chain"
+    | "dominant-neighbor-prolongation"
+    | "dominant-before-tonic-gap"
+    | "detached-dominant-to-tonic"
+    | "detached-sparse-tonic"
+    | "octave-tonic-ending"
+    | "detached-deceptive-reprise"
+    | "tonic-bass-suspension"
+    | "staged-tonic-arrival"
+    | "closing-tonic-decoration"
+    | "closing-tonic-pedal"
+    | "closing-tonic-revoicing"
+    | "articulated-interior-ending"
+    | "bass-formula"
+    | "metric-support"
+    | "soprano-tonic"
+    | "stable-ending"
+    | "ambiguous-semantics";
+  readonly value: string;
+  readonly refs?: readonly string[];
+}
+
+export interface CadenceCandidate {
+  readonly id: string;
+  readonly phraseId: string;
+  readonly fromTick: number;
+  readonly toTick: number;
+  /** Actual cadence arrival when no chord span is present at the landing. */
+  readonly unharmonizedLandingTick?: number;
+  /** Observed onset when the range alone cannot identify the arrival. */
+  readonly observedLandingTick?: number;
+  readonly kind: CadenceKind;
+  readonly form?: CadenceForm;
+  readonly completion?: CadenceCompletion;
+  readonly confidence: CadenceConfidence;
+  readonly score: number;
+  readonly spanIds: readonly string[];
+  readonly chordIds: readonly string[];
+  readonly evidence: readonly CadenceEvidence[];
+  readonly alternatives?: readonly CadenceCandidate[];
+}
+
+export type CadenceAnnotation = ProjectCadenceAnnotation;
+
+export interface CadenceSpanFacts {
+  readonly span: HarmonySpan;
+  readonly key: KeyReference;
+  readonly chord?: AnalysisChord;
+  readonly boundarySlice?: AnalysisSlice;
+  readonly family?: "tonic" | "subdominant" | "dominant";
+  readonly degree?: number;
+  readonly isTonic?: boolean;
+  readonly isDominant?: boolean;
+  readonly isSubdominant?: boolean;
+  readonly isCadential64: boolean;
+  readonly isStable?: boolean;
+  readonly interpretationStatus: "resolved" | "ambiguous" | "unavailable";
+}
+
+export function observedCadenceLandingTick(candidate: CadenceCandidate) {
+  return candidate.observedLandingTick ?? candidate.unharmonizedLandingTick;
+}
+
+export function matchingObservedCadence(annotation: CadenceAnnotation, candidates: readonly CadenceCandidate[]) {
+  if (annotation.observedLandingTick === undefined || annotation.source !== "accepted-candidate") return;
+  return candidates.find(candidate =>
+    candidate.confidence !== "ambiguous" && observedCadenceLandingTick(candidate) === annotation.observedLandingTick &&
+    candidate.fromTick === annotation.fromTick && candidate.toTick === annotation.toTick &&
+    candidate.phraseId === annotation.phraseId && candidate.kind === annotation.kind &&
+    candidate.form === annotation.form && candidate.completion === annotation.completion,
+  );
+}
+
+export function reviewObservedCadenceAnnotation(
+  annotation: CadenceAnnotation, candidates: readonly CadenceCandidate[],
+): CadenceAnnotation {
+  if (annotation.observedLandingTick === undefined) return annotation;
+  const stale = !matchingObservedCadence(annotation, candidates);
+  return annotation.stale === stale ? annotation : { ...annotation, stale };
+}
+
+export function annotationFromCadenceCandidate(candidate: CadenceCandidate, id: string): CadenceAnnotation {
+  const { phraseId, fromTick, toTick, kind, form, completion } = candidate;
+  const observedLandingTick = observedCadenceLandingTick(candidate);
+  return { id, phraseId, fromTick, toTick, kind, form, completion,
+    ...(observedLandingTick !== undefined && { observedLandingTick }),
+    source: "accepted-candidate", confidence: candidate.confidence === "certain" ? "certain" : "probable", locked: false,
+  };
+}
+
+export function sliceWithinSpan(slice: AnalysisSlice, span: HarmonySpan): AnalysisSlice {
+  const tick = Math.max(slice.tick, span.fromTick);
+  const endTick = Math.min(slice.endTick, span.toTick);
+  if (tick === slice.tick && endTick === slice.endTick) return slice;
+  return {
+    ...slice, tick, endTick,
+    attackVoiceIds: tick === slice.tick ? slice.attackVoiceIds : [],
+    continuity: tick === slice.tick ? slice.continuity : "continuous",
+  };
+}
+
+/** Keep the source span ID for navigation while exposing only the part inside a cadence. */
+export function clipHarmonySpan(
+  span: HarmonySpan,
+  slices: readonly AnalysisSlice[],
+  start: number,
+  end: number,
+): HarmonySpan | undefined {
+  const fromTick = Math.max(start, span.fromTick);
+  const toTick = Math.min(end, span.toTick);
+  if (fromTick >= toTick) return undefined;
+  if (fromTick === span.fromTick && toTick === span.toTick) return span;
+  const part = span.sliceIndices.map(index => slices[index])
+    .filter(slice => slice.tick < toTick && fromTick < slice.endTick);
+  if (!part.length || part[0].tick > fromTick || part[part.length - 1].endTick < toTick) return undefined;
+  return {
+    ...span, fromTick, toTick,
+    sliceIndices: part.map(slice => slice.index),
+    regionIds: [...new Set(part.flatMap(slice => slice.chord ? [slice.chord.id] : []))],
+  };
+}

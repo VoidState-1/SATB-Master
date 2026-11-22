@@ -1,5 +1,12 @@
-import { ALTERED_DOMINANT_FIFTH_RESOLUTION_RULE } from "./alteredDominantFifthResolution";
-import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
+import { ALTERED_DOMINANT_FIFTH_RESOLUTION_RULE } from "./support/doubleDominant";
+import {
+  crossesManualPhraseBoundary,
+  activeNotes,
+  chordEvidence,
+  chordLabel,
+  diagnostic,
+  noteEvidence,
+} from "../helpers/core";
 import { chordIdentityToneSpellings } from "../../../chordModel";
 import type { RuleDiagnostic } from "../../runtime";
 import { VOICE_ORDER } from "../../../project/voice";
@@ -10,20 +17,16 @@ import {
   toMidi,
   type KeyLike,
 } from "../../../pitch";
-import {
-  activeNotes,
-  chordEvidence,
-  chordLabel,
-  diagnostic,
-  noteEvidence,
-} from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { ConnectionView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { isGermanToFrenchVoicing, isItalianToFrenchVoicing } from "./augmentedSixthContinuation";
-import { isAuxiliaryAugmentedSixthReturn } from "./auxiliaryAugmentedSixth";
-import { isMajorTonicSixFour, resolvesDoubleAugmentedFourThree } from "../../doubleAugmentedFourThree";
-import { resolvesPreparedDoubleAugmentedFourThree } from "./preparedDoubleAugmentedFourThree";
+import {
+  isGermanToFrenchVoicing,
+  isItalianToFrenchVoicing,
+  isAuxiliaryAugmentedSixthReturn,
+  resolvesPreparedDoubleAugmentedFourThree,
+} from "./support/augmentedSixth";
+import { isMajorTonicSixFour, resolvesDoubleAugmentedFourThree } from "../../facts/dominantMotion";
 
 function continuesInFrenchVoicing(
   context: HarmonyRuleContext, link: ConnectionView, key: KeyLike,

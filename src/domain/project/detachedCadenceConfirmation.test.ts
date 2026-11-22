@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { addCadenceAnnotation, addChordRegion, addPhraseBoundary, deleteCadenceAnnotation, deleteChordRegions, updateCadenceAnnotation, updateNote } from "../editing";
 import { applyHarmonyInference, buildHarmonyAnalysis, checkHarmony, inferChords } from "../harmony";
-import { annotationFromCadenceCandidate } from "../harmony/cadence/confirmation";
+import { annotationFromCadenceCandidate } from "../harmony/cadence/model";
 import { createHarmonyRuleContext } from "../harmony/rules/context/createRuleContext";
 import { buildMidi } from "../midi";
 import { buildMusicXml } from "../musicxml";

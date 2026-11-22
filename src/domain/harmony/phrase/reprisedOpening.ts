@@ -7,7 +7,7 @@ import type { ChordRegion } from "../../project/types";
 import { VOICE_ORDER } from "../../project/voice";
 import { metricPositionAt, type MetricTimeline } from "../../rhythm/metric";
 import { eventAtTick, orderedEvents } from "../../time";
-import { soundsCompleteWrittenChord } from "../writtenVoicing";
+import { soundsCompleteWrittenChord } from "../facts/writtenVoicing";
 import {
   confirmedFullCadences, followingRegion, measureAt, previousRegion, sameKey,
   terminalRegionAt, voicesEndingAt, voicesStartingAt,

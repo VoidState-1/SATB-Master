@@ -23,22 +23,26 @@ import {
   hasExactPitch,
   noteEvidence,
 } from "../helpers/core";
-import { chordSliceFacts, type ChordSliceFact } from "../helpers/chordSliceFacts";
-import { structuralTriadVoicing, triadOrnaments } from "../helpers/structuralTriadVoicing";
-import { continuesCompleteSeventh } from "../helpers/seventhRevoicing";
-import { beforeMelodicMinorPassingBass } from "../helpers/melodicMinorPassingBass";
-import { pairedOuterNeighbors } from "../helpers/pairedOuterNeighborBass";
+import {
+  chordSliceFacts,
+  type ChordSliceFact,
+  structuralTriadVoicing,
+  triadOrnaments,
+  landsOnIncompleteTonic,
+} from "../helpers/chordVoicing";
+import { continuesCompleteSeventh } from "../helpers/motionHarmony";
+import {
+  beforeMelodicMinorPassingBass,
+  pairedOuterNeighbors,
+  notesWithAnticipationReplacements,
+} from "../helpers/ornaments";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { notesWithAnticipationReplacements } from "../helpers/anticipation";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { leadingToneForFunction } from "../services/harmony";
-import { receivesDoubledLocalTonicThird } from "./doubledLocalTonicThird";
-import { diatonicSequenceAtMiddleArrival } from "../state/diatonicSequenceLeadingTone";
-import { resolvesDominantSixthSubstitution } from "./dominantSixthSubstitution";
-import { landsOnIncompleteTonic } from "../helpers/dominantTonicVoicing";
-import { heldSuspensionsAt } from "./heldSuspensions";
-import { preparedCadentialPair } from "./preparedCadentialPair";
-import { respeltDoubleDominantMember } from "./chromaticDoubleDominant";
+import { receivesDoubledLocalTonicThird } from "./support/appliedAndDeceptive";
+import { diatonicSequenceAtMiddleArrival } from "../state/leadingToneTargets";
+import { resolvesDominantSixthSubstitution, respeltDoubleDominantMember } from "./support/doubleDominant";
+import { heldSuspensionsAt, preparedCadentialPair } from "./support/suspensionsAndVoiceLeading";
 
 export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];

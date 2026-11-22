@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-const sources = import.meta.glob("./groups/*.ts", {
+const sources = import.meta.glob(["./groups/*.ts", "./groups/support/*.ts"], {
   eager: true,
   query: "?raw",
   import: "default",
@@ -96,7 +96,7 @@ describe("规则 evaluator 架构", () => {
   it("规则组不再导入旧 analysis 导航入口", () => {
     for (const { filename, source } of groupSources()) {
       const analysisImports = [...source.matchAll(
-        /import\s+(?:type\s+)?{([\s\S]*?)}\s+from\s+["']\.\.\/\.\.\/analysis["']/g,
+        /import\s+(?:type\s+)?{([^}]*?)}\s+from\s+["'](?:\.\.\/){2,3}analysis["']/g,
       )].map((match) => match[1]).join("\n");
       expect(analysisImports, filename).not.toMatch(
         /\b(?:analysisKeyAtTick|harmonySpanAtTick|harmonySpanAtSlice|previousSlice|nextSlice|walkSlices|walkSpans|previousAttack|nextAttack)\b/,

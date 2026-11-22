@@ -2,7 +2,7 @@ import { chordDraftFromIdentity } from "../chordModel";
 import { formatChordIdentity } from "../chords";
 import { analyzePhrases } from "../harmony/phrase";
 import { detectProjectCadences } from "../harmony/cadence/projectEvidence";
-import { reviewObservedCadenceAnnotation } from "../harmony/cadence/confirmation";
+import { reviewObservedCadenceAnnotation } from "../harmony/cadence/model";
 import { validateProject, type ProjectDocument } from "../project";
 import { buildMeasures, eventAtTick, type MeasureInfo } from "../time";
 import { SCORE_VOICES, fail, type ScoreReference, type ScoreVoice } from "./types";

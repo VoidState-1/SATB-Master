@@ -1,16 +1,149 @@
-import { chordIdentityEquals, chordIdentityInversion, chordIdentityToneSpellingForDegree, primaryHarmonyInterpretation, type HarmonySemantics } from "../../chordModel";
-import { keyDeclarationEquals, keyEquals, isWrittenStep, pitchClassEquals, toMidi, writtenInterval } from "../../pitch";
-import { withAppliedPassingSixFours } from "./appliedPassingSixFour";
-import { fitCadentialRevoicing } from "./candidates";
-import { decoratedPassingSixFour } from "./decoratedPassingSixFour";
-import { isCanonicalTonicFifthOmission } from "./fit";
-import { observationNotes } from "./observations";
-import type { ChordInferenceCandidate, ChordInferenceObservation } from "./types";
+import {
+  chordIdentityEquals,
+  chordIdentityInversion,
+  primaryHarmonyInterpretation,
+  chordIdentityToneSpellingForDegree,
+  type HarmonySemantics,
+  chordIdentityToneSpellings,
+} from "../../chordModel";
+import {
+  keyDeclarationEquals,
+  isWrittenStep,
+  pitchClassEquals,
+  scaleDegreePitchClass,
+  spelledPitchEquals,
+  writtenInterval,
+  type SpelledPitch,
+  keyEquals,
+  toMidi,
+} from "../../pitch";
+import { soundingBass, observationNotes } from "./observations";
+import type {
+  ChordInferenceCandidate as Candidate,
+  ChordInferenceObservation,
+  ChordInferenceCandidate,
+} from "./types";
+import { decoratedPassingSixFourMotion } from "../facts/prolongation";
+import { fitProlongedHarmony, fitCadentialRevoicing, fitFifthOmissionRevoicing } from "./candidates";
+import { isCanonicalTonicFifthOmission, hasCompleteWrittenTertianChord } from "./scoring";
+import { soundsCompleteWrittenChord } from "../facts/writtenVoicing";
+import { VOICE_ORDER } from "../../project/voice";
+import { compareMetricStrength } from "../../rhythm/metric";
 
-type CandidateSet = readonly ChordInferenceCandidate[];
+type AppliedPassingSixFourCandidateSet = readonly Candidate[];
+
+function exactTriad(candidate: Candidate) {
+  const { structure } = candidate.identity;
+  return candidate.fit.spellingConsistent && candidate.fit.bassMatchesInversion &&
+    !candidate.fit.nonChordToneNoteIds.length && !candidate.fit.omittedChordDegrees.length &&
+    structure.kind === "tertian" && (structure.quality === "major" || structure.quality === "minor") &&
+    !structure.extensions.length && !structure.alterations.length;
+}
+
+function step(from: SpelledPitch, to: SpelledPitch, direction: number) {
+  const movement = writtenInterval(from, to);
+  return isWrittenStep(movement) && movement.diatonicSteps === direction && Math.sign(movement.semitones) === direction;
+}
+
+/** Spasobin §13.2–3, ex. 13-168 and 170. The bass exchanges the local tonic
+ * and third with an upper part while the fifth stays. In ex. 13-172 the
+ * first-inversion triad doubles its fifth, a third below the leading tone. */
+function hasPassingVoices(left: ChordInferenceObservation, mid: ChordInferenceObservation, right: ChordInferenceObservation, anchor: Candidate) {
+  const a = soundingBass(left), b = soundingBass(mid), c = soundingBass(right);
+  if (!a || !b || !c) return false;
+  const direction = writtenInterval(a, b).diatonicSteps;
+  if (!step(a, b, direction) || !step(b, c, direction)) return false;
+  const tonic = anchor.identity.root;
+  const fifth = scaleDegreePitchClass({ tonic, mode: "major" }, 5);
+  let exchange = false, common = false, leadingLine = false;
+  for (const voice of ["soprano", "alto", "tenor"] as const) {
+    const from = left.activeNotes[voice]!.pitch, via = mid.activeNotes[voice]!.pitch, to = right.activeNotes[voice]!.pitch;
+    if (pitchClassEquals(from, c) && pitchClassEquals(via, b) && pitchClassEquals(to, a) &&
+        step(from, via, -direction) && step(via, to, -direction)) exchange = true;
+    if (pitchClassEquals(from, fifth) && spelledPitchEquals(from, via) && spelledPitchEquals(from, to)) common = true;
+    const rootPositionTone = direction > 0 ? from : to;
+    const firstInversionTone = direction > 0 ? to : from;
+    const semitone = writtenInterval(rootPositionTone, via);
+    if (pitchClassEquals(rootPositionTone, tonic) && semitone.diatonicSteps === -1 && semitone.semitones === -1) {
+      const third = writtenInterval(firstInversionTone, via);
+      if (spelledPitchEquals(firstInversionTone, rootPositionTone) ||
+          (pitchClassEquals(firstInversionTone, fifth) && third.diatonicSteps === 2 && third.semitones === 4)) leadingLine = true;
+    }
+  }
+  return exchange && common && leadingLine;
+}
+
+function weakPassingPosition(left: ChordInferenceObservation, middle: ChordInferenceObservation, right: ChordInferenceObservation) {
+  const start = middle.metric, end = right.metric;
+  if (!start || !end || start.confidence !== "certain" || end.confidence !== "certain" ||
+      (start.role !== "weak-beat" && start.role !== "subdivision")) return false;
+  if (start.measureNumber === end.measureNumber) return end.beatPosition - start.beatPosition <= 1;
+  const previous = left.metric;
+  if (end.role !== "downbeat" || end.measureNumber !== start.measureNumber + 1 ||
+      previous?.measureNumber !== start.measureNumber || previous.confidence !== "certain") return false;
+  const beats = start.beatPosition - previous.beatPosition;
+  return beats > 0 && (end.tick - start.tick) * beats <= start.tick - previous.tick;
+}
+
+export function withAppliedPassingSixFours(
+  frames: readonly ChordInferenceObservation[], sets: readonly AppliedPassingSixFourCandidateSet[], boundaries: readonly number[],
+) {
+  return sets.map((set, index) => {
+    const left = frames[index - 1], middle = frames[index], right = frames[index + 1];
+    if (!left || !right || left.toTick !== middle.fromTick || middle.toTick !== right.fromTick ||
+        !weakPassingPosition(left, middle, right) ||
+        [left, right].some(frame => !keyDeclarationEquals(frame.key, middle.key)) ||
+        boundaries.some(tick => left.fromTick < tick && tick <= right.fromTick)) return set;
+    return set.map(candidate => {
+      if (!candidate.semantics || candidate.semantics.cadenceRole || !exactTriad(candidate) ||
+          candidate.identity.structure.kind !== "tertian" || candidate.identity.structure.quality !== "major" ||
+          chordIdentityInversion(candidate.identity) !== 2) return candidate;
+      const reading = primaryHarmonyInterpretation(candidate.semantics);
+      const target = reading.appliedTarget;
+      if (!target || target.secondaryFunction || reading.degree !== 5 || reading.degreeAlteration !== 0 ||
+          reading.designation?.primaryFunction !== "dominant") return candidate;
+      const anchor = (c: Candidate) => {
+        if (!c.semantics || c.semantics.cadenceRole || !exactTriad(c)) return false;
+        const value = primaryHarmonyInterpretation(c.semantics);
+        return !value.appliedTarget && value.degree === target.degree && value.degreeAlteration === 0 &&
+          value.designation?.primaryFunction === target.primaryFunction &&
+          pitchClassEquals(candidate.identity.root, scaleDegreePitchClass({ tonic: c.identity.root, mode: "major" }, 5));
+      };
+      const before = sets[index - 1].find(anchor), after = sets[index + 1].find(anchor);
+      if (!before || !after || before.functionalBaseId !== after.functionalBaseId ||
+          !chordIdentityEquals({ ...before.identity, bass: after.identity.bass }, after.identity)) return candidate;
+      const inversions = [chordIdentityInversion(before.identity), chordIdentityInversion(after.identity)];
+      if (!inversions.includes(0) || !inversions.includes(1) || !hasPassingVoices(left, middle, right, before)) return candidate;
+      return { ...candidate, semantics: { ...candidate.semantics, cadenceRole: "passing64" as const },
+        evidence: [...candidate.evidence, { kind: "sequence-context" as const, code: "passing64" }] };
+    });
+  });
+}
+
+export function decoratedPassingSixFour(
+  left: ChordInferenceCandidate, middle: ChordInferenceCandidate, right: ChordInferenceCandidate,
+  before: ChordInferenceObservation, ornament: ChordInferenceObservation,
+  sixFour: ChordInferenceObservation, after: ChordInferenceObservation, ppq: number,
+) {
+  const motion = decoratedPassingSixFourMotion(
+    { ...before, identity: left.identity }, ornament, { ...sixFour, identity: middle.identity },
+    { ...after, identity: right.identity }, ppq,
+  );
+  if (!motion) return;
+  const id = motion.note.id;
+  const fit = fitProlongedHarmony(left, ornament, id);
+  if (!fit) return;
+  return {
+    ...fit,
+    fit: { ...fit.fit, nonChordToneAssignments: { [id]: "passing" as const } },
+    evidence: [...fit.evidence, { kind: "inferred-nonchord-tone" as const, code: "passing", noteIds: [id] }],
+  };
+}
+
+type SixFoursCandidateSet = readonly ChordInferenceCandidate[];
 type SixFourRole = Extract<HarmonySemantics["cadenceRole"], "passing64" | "pedal64">;
 
-function primaryTriad(candidates: CandidateSet) {
+function primaryTriad(candidates: SixFoursCandidateSet) {
   return candidates.find(c =>
     c.semantics && !primaryHarmonyInterpretation(c.semantics).appliedTarget &&
     (c.functionalBaseId === "T" || c.functionalBaseId === "t" ||
@@ -29,7 +162,7 @@ function rootDominant(c: ChordInferenceCandidate) {
 
 function resolvesToDominant(
   first: ChordInferenceObservation, last: ChordInferenceObservation, next: ChordInferenceObservation,
-  candidates: CandidateSet, fullClose: boolean,
+  candidates: SixFoursCandidateSet, fullClose: boolean,
 ) {
   if (!first.metric || !next.metric || first.metric.confidence !== "certain" || next.metric.confidence !== "certain" ||
       first.metric.level <= next.metric.level || !last.bass || !next.bass ||
@@ -51,7 +184,7 @@ function resolvesToDominant(
 }
 
 function dominantContinuesToTonic(
-  observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[], start: number,
+  observations: readonly ChordInferenceObservation[], sets: readonly SixFoursCandidateSet[], start: number,
   phraseEnd?: number,
 ) {
   const key = observations[start].key;
@@ -98,7 +231,7 @@ function completeWithActualBass(observation: ChordInferenceObservation) {
   );
 }
 
-function tonicSixFourPair(candidates: CandidateSet) {
+function tonicSixFourPair(candidates: SixFoursCandidateSet) {
   const tonic = candidates.find(c => (c.functionalBaseId === "T" || c.functionalBaseId === "t") &&
     chordIdentityInversion(c.identity) === 2);
   const cadential = tonic && candidates.find(c => c.functionalBaseId === "K46" &&
@@ -116,8 +249,8 @@ function tonicSixFourPair(candidates: CandidateSet) {
 }
 
 function confirmContinuedCadentialSixFours(
-  observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[],
-  classified: CandidateSet[], phraseBoundaries: readonly number[], doubleBridgesOnly = false,
+  observations: readonly ChordInferenceObservation[], sets: readonly SixFoursCandidateSet[],
+  classified: SixFoursCandidateSet[], phraseBoundaries: readonly number[], doubleBridgesOnly = false,
 ) {
   const pairs = sets.map(tonicSixFourPair);
   for (let start = 0; start + 1 < pairs.length; start++) {
@@ -189,7 +322,7 @@ function realizesWrittenSixFourResolution(
 
 // A tripled-root tonic can establish the pedal before a complete IV64–I return.
 function omittedPedalAnchor(
-  observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[],
+  observations: readonly ChordInferenceObservation[], sets: readonly SixFoursCandidateSet[],
   start: number, end: number, middle: ChordInferenceCandidate, right: ChordInferenceCandidate | undefined,
   boundaries: readonly number[],
 ) {
@@ -221,9 +354,9 @@ function omittedPedalAnchor(
 
 /** Recognize a complete weak six-four between two presentations of the same harmony. */
 export function classifySixFours(
-  observations: readonly ChordInferenceObservation[], sets: readonly CandidateSet[], acceptMedium = true,
+  observations: readonly ChordInferenceObservation[], sets: readonly SixFoursCandidateSet[], acceptMedium = true,
   phraseBoundaries: readonly number[] = [],
-  doubleNeighbors: readonly CandidateSet[] = [],
+  doubleNeighbors: readonly SixFoursCandidateSet[] = [],
   passingOrnamentPpq?: number,
 ) {
   const triads = sets.map(primaryTriad);
@@ -298,3 +431,161 @@ export function classifySixFours(
   return withAppliedPassingSixFours(observations, result, phraseBoundaries);
 }
 
+type Observation = ChordInferenceObservation;
+type NoncadentialTonicSixFoursCandidateSet = readonly ChordInferenceCandidate[];
+const evidenceCode = "tonic-six-four-before-stronger-predominant";
+
+export function hasNoncadentialTonicProof(candidate?: ChordInferenceCandidate) {
+  return candidate?.evidence.some(item => item.code === evidenceCode) ?? false;
+}
+
+function isLocalComplete(candidate: ChordInferenceCandidate, observation: Observation) {
+  const { fit, semantics } = candidate;
+  if (!semantics || !observation.completeSatb || !observation.bass ||
+      !fit.spellingConsistent || !fit.bassMatchesInversion ||
+      fit.omittedChordDegrees.length || fit.nonChordToneNoteIds.length) return false;
+  const { appliedTarget, localKey } = primaryHarmonyInterpretation(semantics);
+  return !appliedTarget && (!localKey || keyEquals(localKey, observation.key)) &&
+    soundsCompleteWrittenChord(candidate.identity, observationNotes(observation).map(item => item.note), observation.bass);
+}
+
+function isTonic(candidate: ChordInferenceCandidate) {
+  return candidate.functionalBaseId === "T" || candidate.functionalBaseId === "t";
+}
+
+function startsPredominant(candidate: ChordInferenceCandidate) {
+  const base = candidate.functionalBaseId;
+  return base === "S" || base === "s" || base === "SII";
+}
+
+/** Spasobin §§9.3–4 and 13.1–2. A weak, complete tonic six-four with
+ * an immediate bass step out to a stronger, complete predominant has
+ * local evidence for the tonic reading. Keep the original K46 fit visible. */
+export function chooseNoncadentialTonicSixFours(
+  observations: readonly Observation[], candidateSets: readonly NoncadentialTonicSixFoursCandidateSet[],
+  selected: readonly (ChordInferenceCandidate | undefined)[], phraseTicks: readonly number[],
+) {
+  return selected.map((current, index) => {
+    const set = candidateSets[index];
+    if (!current || set.length !== 2 || index === 0 || index + 1 >= observations.length) return current;
+    const tonic = set.find(isTonic), cadential = set.find(candidate => candidate.functionalBaseId === "K46");
+    if (!tonic || !cadential || tonic.confidence === "low" || tonic.semantics?.cadenceRole ||
+        chordIdentityInversion(tonic.identity) !== 2 ||
+        !chordIdentityEquals(tonic.identity, cadential.identity)) return current;
+    const [left, middle, right] = observations.slice(index - 1, index + 2);
+    if (!keyDeclarationEquals(left.key, middle.key) || !keyDeclarationEquals(middle.key, right.key) ||
+        left.toTick !== middle.fromTick || middle.toTick !== right.fromTick ||
+        !left.bass || !middle.bass || !right.bass ||
+        phraseTicks.some(tick => left.fromTick < tick && tick < right.toTick) ||
+        middle.metric?.confidence !== "certain" || middle.metric.level > 1 ||
+        right.metric?.confidence !== "certain" || right.metric.level <= middle.metric.level ||
+        !isWrittenStep(writtenInterval(middle.bass.pitch, right.bass.pitch)) ||
+        ![tonic, cadential].every(candidate => isLocalComplete(candidate, middle))) return current;
+    // Do not reinterpret the last slice of a continuing six-four as a new chord.
+    if (candidateSets[index - 1].some(candidate => chordIdentityEquals(candidate.identity, tonic.identity))) return current;
+    if (!spelledPitchEquals(left.bass.pitch, middle.bass.pitch) &&
+        !isWrittenStep(writtenInterval(left.bass.pitch, middle.bass.pitch))) return current;
+    const [before, after] = [candidateSets[index - 1], candidateSets[index + 1]];
+    if (before.length !== 1 || !isLocalComplete(before[0], left) || after.length !== 1 ||
+        !startsPredominant(after[0]) || !isLocalComplete(after[0], right)) return current;
+    return {
+      ...tonic,
+      evidence: [...tonic.evidence, {
+        kind: "sequence-context" as const, code: evidenceCode,
+        noteIds: [middle.bass.id, right.bass.id],
+        details: { arrivalTick: right.fromTick, predominant: after[0].functionalBaseId! },
+      }],
+    };
+  });
+}
+
+function completeRevoicingSide(
+  middle: ChordInferenceObservation,
+  side: ChordInferenceObservation | undefined,
+  boundaries: readonly number[],
+) {
+  if (!side?.completeSatb || !side.bass || side.soundingPitchClasses.length !== middle.soundingPitchClasses.length + 1 ||
+      !keyDeclarationEquals(side.key, middle.key) ||
+      Boolean(side.localKey) !== Boolean(middle.localKey)) return undefined;
+  const [before, after] = side.fromTick < middle.fromTick ? [side, middle] : [middle, side];
+  const seam = after.fromTick;
+  if (before.toTick !== seam ||
+      boundaries.some(tick => before.fromTick < tick && tick < after.toTick)) return undefined;
+
+  const moving = VOICE_ORDER.filter(voice => side.activeNotes[voice]?.id !== middle.activeNotes[voice]?.id);
+  if (moving.length !== 1 || moving[0] === "bass") return undefined;
+  const voice = moving[0];
+  const earlier = before.activeNotes[voice];
+  const later = after.activeNotes[voice];
+  if (!earlier || !later || earlier.startTick + earlier.durationTicks !== seam || later.startTick !== seam)
+    return undefined;
+  const steps = Math.abs(writtenInterval(earlier.pitch, later.pitch).diatonicSteps);
+  if (steps < 2 || steps > 5) return undefined;
+
+  const notes = observationNotes(side);
+  const bass = toMidi(side.bass.pitch);
+  if (notes.some(({ note, voiceId }) => {
+    const sustained = middle.activeNotes[voiceId];
+    return note.nonChordToneRole || toMidi(note.pitch) < bass ||
+      (voiceId !== voice && (!sustained || !spelledPitchEquals(note.pitch, sustained.pitch)));
+  }) || !hasCompleteWrittenTertianChord(side)) return undefined;
+  return side === before ? { notes, fifth: earlier, replacement: later } :
+    { notes, fifth: later, replacement: earlier };
+}
+
+/** Use the written fifth in one adjacent voicing. Keep the omission in the fit. */
+export function withSingleVoiceRevoicings(
+  observations: readonly ChordInferenceObservation[],
+  sets: readonly (readonly ChordInferenceCandidate[])[],
+  ppq: number,
+  phraseBoundaryTicks: readonly number[],
+  seventhBoundaryTicks: readonly number[],
+) {
+  return sets.map((existing, index) => {
+    const middle = observations[index];
+    const seventh = middle.soundingPitchClasses.length === 3;
+    if (existing.length || !middle.completeSatb || !middle.bass ||
+        (!seventh && middle.soundingPitchClasses.length !== 2) ||
+        (seventh && hasCompleteWrittenTertianChord(middle)) || middle.toTick - middle.fromTick > ppq)
+      return existing;
+    const bass = toMidi(middle.bass.pitch);
+    if (observationNotes(middle).some(({ note }) => note.nonChordToneRole || toMidi(note.pitch) < bass))
+      return existing;
+
+    const sides = [index - 1, index + 1].flatMap(neighbor => {
+      const evidence = completeRevoicingSide(middle, observations[neighbor],
+        seventh ? seventhBoundaryTicks : phraseBoundaryTicks);
+      return evidence ? [{ ...evidence, neighbor, candidates: sets[neighbor] }] : [];
+    });
+    const recovered = new Map<string, ChordInferenceCandidate>();
+    for (const { candidates, fifth, replacement, neighbor } of sides) {
+      // A partial seventh can continue an established chord on a weaker attack.
+      // A following full statement may contradict that reading, but cannot establish it retroactively.
+      if (seventh && (neighbor >= index ||
+          compareMetricStrength(observations[neighbor].metric, middle.metric) !== "stronger")) continue;
+      for (const anchor of candidates) {
+        const { root, structure } = anchor.identity;
+        if (!anchor.semantics || anchor.confidence !== "high" ||
+            structure.kind !== "tertian" || structure.extensions.length || structure.alterations.length)
+          continue;
+        if (seventh) {
+          const kind = primaryHarmonyInterpretation(anchor.semantics).designation?.kind;
+          if ((kind !== "primary" && kind !== "side-degree") || anchor.semantics.alternatives?.length ||
+              (structure.quality !== "dominant7" && structure.quality !== "minor7" && structure.quality !== "major7") ||
+              anchor.fit.omittedChordDegrees.length || anchor.fit.nonChordToneNoteIds.length ||
+              !anchor.fit.spellingConsistent || !pitchClassEquals(anchor.identity.bass, middle.bass.pitch) ||
+              !pitchClassEquals(root, replacement.pitch)) continue;
+        } else if ((structure.quality !== "major" && structure.quality !== "minor") ||
+            !pitchClassEquals(root, anchor.identity.bass) || !pitchClassEquals(root, middle.bass.pitch)) continue;
+        const tones = chordIdentityToneSpellings(anchor.identity);
+        if (!pitchClassEquals(fifth.pitch, tones[2]) ||
+            !sides.every(({ notes }) => notes.every(({ note }) =>
+              tones.some(tone => pitchClassEquals(tone, note.pitch))))) continue;
+        const candidate = fitFifthOmissionRevoicing(anchor, middle, [fifth.id, replacement.id],
+          seventh ? "seventh" : "triad");
+        if (candidate) recovered.set(JSON.stringify(candidate.semantics), candidate);
+      }
+    }
+    return recovered.size ? [...recovered.values()] : existing;
+  });
+}

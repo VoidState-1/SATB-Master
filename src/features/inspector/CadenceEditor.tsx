@@ -2,7 +2,7 @@ import { Check, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { createId, type CadenceAnnotation } from "../../domain/project";
 import type { CadenceCandidate } from "../../domain/harmony";
-import { annotationFromCadenceCandidate, reviewObservedCadenceAnnotation } from "../../domain/harmony/cadence/confirmation";
+import { annotationFromCadenceCandidate, reviewObservedCadenceAnnotation } from "../../domain/harmony/cadence/model";
 import { detectProjectCadences } from "../../domain/harmony/cadence/projectEvidence";
 import type { CadenceAnnotationPatch } from "../../domain/editing";
 import { cadenceKindLabels, cadenceRangeKey, cadenceRangeLabel, cadencesOverlappingChord } from "../../components/cadenceRanges";

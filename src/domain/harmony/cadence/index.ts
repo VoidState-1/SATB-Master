@@ -8,4 +8,4 @@ export type {
   CadenceForm,
   CadenceKind,
   CadenceSpanFacts,
-} from "./types";
+} from "./model";

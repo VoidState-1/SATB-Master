@@ -1,4 +1,4 @@
-import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
+import { crossesManualPhraseBoundary, chordEvidence, diagnostic, noteEvidence } from "../helpers/core";
 import {
   chordIdentityToneSpellings,
   type FunctionalFamily,
@@ -21,32 +21,34 @@ import {
 import {
   alteredToneDiagnostic, dominantNinthDiagnostic, leadingToneDiagnostic, seventhDiagnostic,
 } from "../state/resolutionDiagnostics";
-import { writtenSeventhHandoff } from "../state/writtenSeventhHandoff";
+import {
+  writtenSeventhHandoff,
+  ornamentsPreparedSeventh,
+  readDoubleDominantSeventhLanding,
+} from "../state/seventhState";
 import {
   leadingRootContinuesInHalfDiminishedChain,
   reattackedLeadingToneResolvesAsChainSeventh,
-} from "./halfDiminishedChain";
-import { transfersLeadingToneInWrittenDominant } from "../state/writtenLeadingToneTransfer";
-import { leavesDiatonicSequenceLeadingTone } from "../state/diatonicSequenceLeadingTone";
-import { tenorLeapsToTonicThird } from "../state/tenorThirdLeap";
-import { leadingToneReachesTonicThroughNinth } from "../state/leadingToneTonicNinth";
+  exchangesSupertonicSeventhWithRoot,
+  seventhLeapsToUnlabelledSixFour,
+} from "./support/chordSpellingAndDiatonic";
 import {
-  chordEvidence,
-  diagnostic,
-  noteEvidence,
-} from "../helpers/core";
+  transfersLeadingToneInWrittenDominant,
+  tenorLeapsToTonicThird,
+  becomesRespelledChainSeventh,
+  leavesLeadingToneAtRespelledDiminishedPivot,
+  leadingToneSource,
+} from "../state/leadingToneTransfers";
+import {
+  leavesDiatonicSequenceLeadingTone,
+  leadingToneReachesTonicThroughNinth,
+  leadingNeighborFrame,
+  ornamentsSameLeadingHarmony,
+} from "../state/leadingToneTargets";
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
-import { leadingNeighborFrame, ornamentsSameLeadingHarmony } from "../state/leadingToneNeighbor";
-import {
-  becomesRespelledChainSeventh, leavesLeadingToneAtRespelledDiminishedPivot,
-} from "../state/leadingToneWrittenTransitions";
-import { ornamentsPreparedSeventh } from "../state/preparedSeventh";
-import { readDoubleDominantSeventhLanding } from "../state/doubleDominantSeventh";
-import { isProvenLocalDeceptiveTarget } from "./localDeceptiveAppliedTarget";
-import { isProvenHeldDoubleDominantContinuation } from "./heldDoubleDominantContinuation";
-import { writtenAppliedDominantMotion } from "./appliedDominantMotion";
-import { exchangesSupertonicSeventhWithRoot, seventhLeapsToUnlabelledSixFour } from "./supertonicSeventhExchange";
+import { isProvenLocalDeceptiveTarget, writtenAppliedDominantMotion } from "./support/appliedAndDeceptive";
+import { isProvenHeldDoubleDominantContinuation } from "./support/doubleDominant";
 import {
   defineObligationRule,
   type ObligationDecision,
@@ -63,7 +65,6 @@ import {
   leadingToneBecomesNextDominantSeventh,
   leadingToneDescendsInMajorDeceptiveMotion,
   leadingToneResolves,
-  leadingToneSource,
   supportsTendencyResolutionRules,
   transitionEvidence,
   type AlteredTonePayload,

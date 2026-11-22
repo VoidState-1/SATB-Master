@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyProject } from "../../project";
 import { serializeRuleTestCase } from "./canonicalize";
-import { testCaseFor } from "./fixtures";
+import { testCaseFor } from "./fixtures/ruleTestCase";
 import { parseRuleTestCase } from "./validation";
 
 describe("规则测试用例解析", () => {

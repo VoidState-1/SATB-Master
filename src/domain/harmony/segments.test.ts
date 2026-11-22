@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { chordIdentityEquals, chordIdentityToneSpellings, type ChordIdentity } from "../chordModel";
-import { validateProject, type ProjectDocument } from "../project";
+import { validateProject, type ProjectDocument, PPQ, createEmptyProject } from "../project";
 import { compileScoreText } from "../scoreText";
 import { buildHarmonyAnalysis } from "./analysis";
 import { checkHarmony } from "./registry";
+import { correctionChord, correctionProject } from "./testing/fixtures/harmonyProject";
+import { type TestChordDraft, addChord } from "./testing/fixtures/chordDrafts";
 
 const repeatedDominant = `satb 1
 key C major
@@ -141,5 +143,51 @@ describe("书写和弦身份", () => {
       expect(chordIdentityEquals(source.identity, identity)).toBe(false);
       expect(check(reordered).spans).toHaveLength(4);
     }
+  });
+});
+
+describe("规则引擎修正基线", () => {
+  it("单个和弦区域内部的调号变化必须切断 HarmonySpan", () => {
+    const project = correctionProject(PPQ * 2);
+    project.chordTrack.regions = [correctionChord("tonic-region", 0, PPQ * 2)];
+    project.keyEvents.push({
+      id: "key-change",
+      tick: PPQ,
+      tonic: { step: "G", alter: 0 },
+      mode: "major",
+    });
+
+    const analysis = buildHarmonyAnalysis(project, 1);
+    expect(analysis.harmonySpans).toHaveLength(2);
+    expect(
+      analysis.harmonySpans.map((span) => [span.fromTick, span.toTick]),
+    ).toEqual([
+      [0, PPQ],
+      [PPQ, PPQ * 2],
+    ]);
+  });
+});
+
+describe("斯波索宾基础规则检查", () => {
+  it("置信度变化会切断 HarmonySpan，避免确定语义覆盖歧义语义", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ * 2;
+    const tonic: TestChordDraft = {
+      degree: 1,
+      degreeAlteration: 0,
+      quality: "major",
+      inversion: 0,
+      confidence: "certain",
+    };
+    addChord(project, "certain-tonic", 0, tonic);
+    addChord(project, "ambiguous-tonic", 1, {
+      ...tonic,
+      confidence: "ambiguous",
+    });
+
+    const analysis = buildHarmonyAnalysis(project);
+    const spans = analysis.harmonySpans;
+    expect(spans).toHaveLength(2);
+    expect(spans.map((span) => span.status)).toEqual(["complete", "ambiguous"]);
   });
 });

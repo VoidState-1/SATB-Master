@@ -3,7 +3,7 @@ import { createEmptyProject, PPQ } from "../../project";
 import type { RuleDefinition } from "../runtime";
 import { expectedDiagnosticFromActual } from "./comparator";
 import { RuleTestRunner, runRuleTestCase } from "./runner";
-import { testCaseFor } from "./fixtures";
+import { testCaseFor } from "./fixtures/ruleTestCase";
 
 describe("规则测试运行器", () => {
   it("隔离运行目标规则并比较预期与实际结果", async () => {

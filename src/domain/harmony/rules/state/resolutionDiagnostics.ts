@@ -6,7 +6,7 @@ import { chordEvidence, chordLabel, diagnostic, noteEvidence } from "../helpers/
 import { mergeDiagnosticEvidence, obligationDiagnosticContext, type ObligationDecision, type ObligationEnvironment } from "./obligation";
 import type { AlteredTonePayload, DominantNinthPayload, LeadingTonePayload, SeventhPayload, VoiceObligationPayload } from "./tendency";
 import { currentSpanId, openedSourceChord, openedSourceNote, openedSpanId } from "./tendencyContext";
-import { dominantNinthTone } from "../../writtenDominantNinth";
+import { dominantNinthTone } from "../../facts/dominantMotion";
 
 interface ResolutionReport {
   ruleId: "resolution.leading-tone" | "resolution.chord-seventh" | "resolution.dominant-ninth" | "resolution.altered-tone";

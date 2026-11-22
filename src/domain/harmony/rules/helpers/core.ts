@@ -1,10 +1,16 @@
-import { formatChordIdentity } from "../../../chords";
 import { chordIdentityInversion } from "../../../chordModel";
-import type {
-  AnalysisChord,
-  AnalysisNote,
-  HarmonyAnalysis,
-} from "../../analysis";
+import { formatChordIdentity } from "../../../chords";
+import {
+  formatSpelledPitch,
+  normalizePitchClassNumber,
+  pitchClassEquals,
+  type SpelledPitchClass,
+  type WrittenInterval,
+  keyEquals,
+} from "../../../pitch";
+import type { VoiceId } from "../../../project/types";
+import { VOICE_CONFIG, VOICE_ORDER } from "../../../project/voice";
+import type { AnalysisChord, AnalysisNote, HarmonyAnalysis } from "../../analysis";
 import type {
   DiagnosticEvidence,
   DiagnosticSubjects,
@@ -12,15 +18,8 @@ import type {
   RuleDiagnostic,
   RuleEvaluation,
 } from "../../runtime";
-import type { VoiceId } from "../../../project/types";
-import { VOICE_CONFIG, VOICE_ORDER } from "../../../project/voice";
-import {
-  formatSpelledPitch,
-  normalizePitchClassNumber,
-  pitchClassEquals,
-  type SpelledPitchClass,
-  type WrittenInterval,
-} from "../../../pitch";
+import { keyAtTick } from "../../segments";
+import type { HarmonyRuleContext } from "../context/createRuleContext";
 
 /** 将规则诊断数组封装为 RuleEvaluation 对象 */
 export function evaluation(diagnostics: RuleDiagnostic[]): RuleEvaluation {
@@ -199,4 +198,18 @@ export function chordInversion(chord: AnalysisChord) {
   return chordIdentityInversion(
     chord.identity as Parameters<typeof chordIdentityInversion>[0],
   );
+}
+
+export function crossesWrittenBoundary(context: HarmonyRuleContext, from: number, to: number) {
+  const { project, phraseBoundaries } = context.analysis;
+  const initial = keyAtTick(project.keyEvents, from);
+  return project.keyEvents.some(event => from < event.tick && event.tick <= to && !keyEquals(initial, event)) ||
+    phraseBoundaries.some(boundary => !boundary.stale && from < boundary.tick && boundary.tick <= to);
+}
+
+export function crossesManualPhraseBoundary(
+  context: Pick<HarmonyRuleContext, "analysis">, fromTick: number, toTick: number,
+) {
+  return context.analysis.phraseBoundaries.some(boundary =>
+    boundary.source === "manual" && fromTick < boundary.tick && boundary.tick <= toTick);
 }

@@ -24,3 +24,26 @@ describe("内置规则对象集合", () => {
     );
   });
 });
+
+describe("规则引擎修正基线", () => {
+  it("固定当前规则目录及实施数量", () => {
+    expect(HARMONY_RULE_DEFINITIONS).toHaveLength(70);
+    expect(
+      HARMONY_RULE_DEFINITIONS.every(
+        (definition) => "evaluate" in definition || "process" in definition,
+      ),
+    ).toBe(true);
+    expect(new Set(HARMONY_RULE_DEFINITIONS.map(({ id }) => id)).size).toBe(70);
+  });
+});
+
+describe("完整规则目录首版实现", () => {
+  it("70 条目录规则均有可执行实现", () => {
+    expect(HARMONY_RULE_DEFINITIONS).toHaveLength(70);
+    expect(
+      HARMONY_RULE_DEFINITIONS.every(
+        (item) => "evaluate" in item || "process" in item,
+      ),
+    ).toBe(true);
+  });
+});

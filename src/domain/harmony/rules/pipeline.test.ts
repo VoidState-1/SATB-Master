@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildHarmonyAnalysis, sameHarmonyAtTicks } from "../analysis";
 import { checkHarmony } from "../registry";
-import type {
-  HarmonyDiagnostic,
-  RuleDefinition,
-  RuleDiagnostic,
+import {
+  type HarmonyDiagnostic,
+  type RuleDefinition,
+  type RuleDiagnostic,
+  RuleScheduler,
+  runRulesSynchronously,
 } from "../runtime";
-import { RuleScheduler, runRulesSynchronously } from "../runtime";
 import {
   createEmptyProject,
   PPQ,
@@ -16,13 +17,11 @@ import {
   type ProjectDocument,
   type VoiceId,
 } from "../../project";
-import {
-  HARMONY_RULE_DEFINITIONS,
-  defaultHarmonyRuleSeverities,
-} from "./catalog";
+import { HARMONY_RULE_DEFINITIONS, defaultHarmonyRuleSeverities } from "./catalog";
 import { arbitrateDiagnostics } from "./diagnosticArbiter";
 import { planRuleApplicability } from "./applicability";
 import { voicePairTransitionFacts } from "./sharedFacts";
+import { semantics as writtenPitchSemantics, fSharpMajorRegion } from "../testing/fixtures/writtenPitchProject";
 
 function semantics(
   id: string,
@@ -557,5 +556,52 @@ describe("分析与规则结果复用", () => {
       asyncResult.diagnostics.map(({ id, ...item }) => item),
     );
     expect(sync.skippedRules).toEqual(asyncResult.skippedRules);
+  });
+});
+
+describe("Phase B v1 书写与和弦金样本", () => {
+  it("结构化区分无和弦与缺少和声语义的跳过原因", () => {
+    const noChord = checkHarmony(createEmptyProject());
+    expect(noChord.skippedRules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "no-chords", partial: false }),
+      ]),
+    );
+
+    const noFunction = createEmptyProject();
+    noFunction.lengthTicks = PPQ;
+    noFunction.chordTrack.regions = [fSharpMajorRegion()];
+    const result = checkHarmony(noFunction);
+    expect(result.skippedRules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "function.retrogression",
+          reason: "missing-semantics",
+        }),
+      ]),
+    );
+  });
+
+  it("精确 appliedTarget 不再被旧粗分类误判为歧义", () => {
+    const project = createEmptyProject();
+    project.lengthTicks = PPQ;
+    const ambiguous = fSharpMajorRegion(true);
+    ambiguous.semantics = writtenPitchSemantics(2, { appliedTarget: 5 });
+    project.chordTrack.regions = [ambiguous];
+
+    const result = checkHarmony(project);
+    expect(result.skippedRules).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "function.retrogression",
+          reason: "ambiguous-semantics",
+        }),
+      ]),
+    );
+    expect(
+      result.diagnostics.some(
+        (item) => item.ruleId === "function.retrogression",
+      ),
+    ).toBe(false);
   });
 });

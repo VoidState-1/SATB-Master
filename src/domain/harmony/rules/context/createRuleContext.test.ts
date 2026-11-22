@@ -6,7 +6,7 @@ import {
   correctionChord,
   correctionNote,
   setCorrectionVoice,
-} from "../../rule-engine-correction/fixtures";
+} from "../../testing/fixtures/harmonyProject";
 import { createHarmonyRuleContext } from "./createRuleContext";
 
 function contextFixture() {

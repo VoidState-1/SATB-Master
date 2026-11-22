@@ -22,7 +22,7 @@ import { pitchClassEquals, toMidi } from "./pitch";
 import { keyAtTick } from "./time";
 import { cadenceChordCoverage } from "./project/cadenceCoverage";
 import { detectProjectCadences } from "./harmony/cadence/projectEvidence";
-import { matchingObservedCadence } from "./harmony/cadence/confirmation";
+import { matchingObservedCadence } from "./harmony/cadence/model";
 import { reconcileCadenceAnnotationStaleness } from "./project/normalize";
 
 export interface EditResult {

@@ -1,12 +1,24 @@
 export * from "./types";
-export * from "./candidates";
-export * from "./apply";
-export * from "./fit";
-export * from "./functionalTemplates";
-export * from "./inferChords";
-export * from "./harmonyInference";
+export {
+  candidateComparator,
+  createFunctionalCandidate,
+  createAbsoluteCandidate,
+  buildChordInferenceCandidates,
+  fitSimultaneousNeighbors,
+  fitFifthOmissionRevoicing,
+  fitProlongedHarmony,
+  fitAnticipation,
+  fitPreparedSuspension,
+  fitDominantSixthSubstitution,
+  candidateDescription,
+  fitCadentialRevoicing,
+  createLoweredSupertonic,
+  withLoweredSupertonics,
+  candidateHasNonChordToneAssignments,
+} from "./candidates";
+export * from "./pipeline";
+export * from "./scoring";
 export * from "./segmentation";
-export * from "./sequence";
 export {
   buildChordInferenceObservations,
   noteMidi,

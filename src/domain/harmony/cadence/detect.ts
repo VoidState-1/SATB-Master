@@ -9,40 +9,48 @@ import {
   type KeyReference,
 } from "../../chordModel";
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
-import { keyEquals, leadingTonePitchClass, pitchClassEquals, pitchClassValue, scaleDegreePitchClass } from "../../pitch";
+import {
+  keyEquals,
+  leadingTonePitchClass,
+  pitchClassEquals,
+  pitchClassValue,
+  scaleDegreePitchClass,
+} from "../../pitch";
 import { buildMeasures, measureAtTick, ticksPerBeat, type MeasureInfo } from "../../time";
 import { buildMetricTimeline, compareMetricStrength, metricPositionAt } from "../../rhythm/metric";
-import { closingTonicDecorationEvidence } from "./closingTonicDecoration";
-import { dominantNeighborEvidence } from "./dominantNeighbors";
-import { detachedAuthenticEvidence, detachedSparseTonicEvidence } from "./detachedAuthentic";
-import { dominantLandingGapEvidence } from "./dominantLandingGap";
-import { tonicBassSuspensionEvidence } from "./tonicBassSuspension";
-import { stagedTonicArrivalEvidence } from "./stagedTonicArrival";
-import { closingTonicPedalEvidence, closingTonicRevoicingEvidence } from "./tonicPedalEnding";
-import { continuesThroughParallelTonic } from "./parallelTonicPivot";
-import { isWrittenAuxiliaryReturn } from "./auxiliaryReturn";
-import { precedingDetachedDeception } from "./detachedDeceptive";
-import { articulatedEndingEvidence } from "./articulatedEnding";
-import { octaveTonicEndingEvidence } from "./octaveTonicEnding";
-import { dorianPlagalEnding } from "./dorianPlagalEnding";
-import type {
-  AnalysisChord,
-  AnalysisSlice,
-  HarmonyAnalysis,
-  HarmonySpan,
-} from "../analysis";
+import {
+  closingTonicDecorationEvidence,
+  dominantNeighborEvidence,
+  detachedAuthenticEvidence,
+  detachedSparseTonicEvidence,
+  dominantLandingGapEvidence,
+  tonicBassSuspensionEvidence,
+  stagedTonicArrivalEvidence,
+  closingTonicPedalEvidence,
+  closingTonicRevoicingEvidence,
+  octaveTonicEndingEvidence,
+} from "./authenticEndings";
+import {
+  continuesThroughParallelTonic,
+  isWrittenAuxiliaryReturn,
+  precedingDetachedDeception,
+  articulatedEndingEvidence,
+  dorianPlagalEnding,
+} from "./phraseEndings";
+import type { AnalysisChord, AnalysisSlice, HarmonyAnalysis, HarmonySpan } from "../analysis";
 import { isCadential64Span } from "../rules/connector";
 import type { PhraseSegment } from "../phrase";
-import { clipHarmonySpan, sliceWithinSpan } from "./spanRange";
-import type {
-  CadenceCandidate,
-  CadenceConfidence,
-  CadenceCompletion,
-  CadenceEvidence,
-  CadenceForm,
-  CadenceKind,
-  CadenceSpanFacts,
-} from "./types";
+import {
+  clipHarmonySpan,
+  sliceWithinSpan,
+  type CadenceCandidate,
+  type CadenceConfidence,
+  type CadenceCompletion,
+  type CadenceEvidence,
+  type CadenceForm,
+  type CadenceKind,
+  type CadenceSpanFacts,
+} from "./model";
 
 const confidenceRank: Record<CadenceConfidence, number> = {
   ambiguous: 0,

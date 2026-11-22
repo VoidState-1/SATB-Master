@@ -1,4 +1,4 @@
-import { decoratedPassingVoicing } from "../helpers/structuralTriadVoicing";
+import { decoratedPassingVoicing } from "../helpers/chordVoicing";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import type { NonChordToneRole, VoiceId } from "../../../project/types";
@@ -11,7 +11,7 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { NoteView } from "../context/views";
-import { readHeldChromaticPassing } from "./chromaticPassing";
+import { readHeldChromaticPassing } from "./support/chromaticPassing";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 type NonchordRuleId =

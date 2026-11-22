@@ -15,12 +15,11 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { isCadentialContraryOctave } from "./cadentialContraryOctaves";
+import { isCadentialContraryOctave, preparedSuspensionParallel } from "./support/suspensionsAndVoiceLeading";
 import {
   SIMULTANEOUS_CROSS_RELATION_RULE,
   SUCCESSIVE_CROSS_RELATION_RULE,
 } from "./crossRelations";
-import { preparedSuspensionParallel } from "./preparedSuspensionParallels";
 import { sameHarmonyOnTransition } from "../helpers/motionHarmony";
 
 type VoicePairRuleId =

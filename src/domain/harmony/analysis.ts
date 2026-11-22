@@ -24,7 +24,7 @@ import type {
 import { detectCadences } from "./cadence";
 import { cadenceInputs } from "./cadence/projectEvidence";
 import { buildHarmonySpans, buildSlices, keyAtTick, sameKey } from "./segments";
-import { reviewObservedCadenceAnnotation } from "./cadence/confirmation";
+import { reviewObservedCadenceAnnotation } from "./cadence/model";
 import type { CadenceCandidate } from "./cadence";
 import type { CadenceAnnotation as ProjectCadenceAnnotation } from "../project/types";
 import {
@@ -38,7 +38,7 @@ import {
   type HarmonyContextFacts,
 } from "./rules/sharedFacts";
 
-import { readSliceProlongations, type WrittenProlongation } from "./writtenProlongation";
+import { readSliceProlongations, type WrittenProlongation } from "./facts/prolongation";
 
 export { sameChordIdentityWithoutBass } from "./segments";
 

@@ -4,7 +4,7 @@ import { cloneProject, getAllPlayableTracks } from "./selectors";
 import type { ProjectDocument } from "./types";
 import { cadenceChordCoverage } from "./cadenceCoverage";
 import { detectProjectCadences } from "../harmony/cadence/projectEvidence";
-import { reviewObservedCadenceAnnotation } from "../harmony/cadence/confirmation";
+import { reviewObservedCadenceAnnotation } from "../harmony/cadence/model";
 
 export function reconcileChordIdentities(project: ProjectDocument) {
   project.chordTrack.regions = project.chordTrack.regions.map((region) => {

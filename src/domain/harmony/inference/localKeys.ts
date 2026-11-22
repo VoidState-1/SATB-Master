@@ -2,7 +2,7 @@ import { chordToneSpellings, type KeyReference } from "../../chordModel";
 import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, type SpelledPitchClass } from "../../pitch";
 import type { ChordInferenceObservation } from "./types";
 import { observationNotes, resolvesTone, soundingBass } from "./observations";
-import { harmonicMajorPreparation } from "./appliedSequences";
+import { harmonicMajorPreparation } from "./dominantFamily";
 
 export interface LocalKeyContext {
   readonly key: KeyReference;

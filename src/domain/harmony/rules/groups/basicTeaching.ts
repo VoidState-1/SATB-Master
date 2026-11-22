@@ -19,16 +19,16 @@ import {
   chordLabel,
   diagnostic,
   noteEvidence,
+  crossesManualPhraseBoundary,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { structuralTriadVoicing } from "../helpers/structuralTriadVoicing";
-import { notesWithAnticipationReplacements } from "../helpers/anticipation";
-import { resolvesLeadingSeventhToPassingTonic } from "../../leadingSeventhTonicSixFour";
-import { crossesManualPhraseBoundary } from "../helpers/phraseBoundary";
-import { hasSubdominantSixFourOnTonicPedal } from "./tonicPedalSubdominantSixFour";
+import { structuralTriadVoicing } from "../helpers/chordVoicing";
+import { notesWithAnticipationReplacements } from "../helpers/ornaments";
+import { resolvesLeadingSeventhToPassingTonic } from "../../facts/tendencyResolution";
+import { hasSubdominantSixFourOnTonicPedal } from "./support/suspensionsAndVoiceLeading";
 import { leadingToneForFunction } from "../services/harmony";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { hasDeceptiveSixthThirdDoubling } from "./deceptiveSixthDoubling";
+import { hasDeceptiveSixthThirdDoubling } from "./support/appliedAndDeceptive";
 
 const UPPER_VOICES = ["soprano", "alto", "tenor"] as const;
 

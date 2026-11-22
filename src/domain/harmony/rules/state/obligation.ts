@@ -12,7 +12,7 @@ import type {
 } from "../../runtime";
 import type { RuleConfig, RuleRequirement } from "../types";
 import { defineStatefulRule, type RuleMetadataInput } from "../defineRule";
-import { analysisMoment, type AnalysisMoment } from "./moment";
+import { analysisMoment, type AnalysisMoment } from "./tendencyContext";
 import { createObligationDebugSnapshot } from "../../debug/diagnosticDebug";
 
 export type RetriggerPolicy =
