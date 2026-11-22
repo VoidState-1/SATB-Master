@@ -21,7 +21,7 @@ import {
   isCanonicalTonicFifthOmission,
   type ChordFitOptions,
 } from "./scoring";
-import { soundingBass, buildChordInferenceObservations } from "./observations";
+import { soundingBass, buildChordInferenceObservations, observationNotes } from "./observations";
 import type {
   ChordInferenceCandidate,
   ChordInferenceEvidence,
@@ -29,7 +29,7 @@ import type {
   ChordInferenceOptions,
   ChordInferenceScore,
 } from "./types";
-import type { ProjectDocument } from "../../project";
+import type { NonChordToneRole, ProjectDocument } from "../../project";
 import { inferPhrases, isCurrentPhraseBoundary } from "../phrase";
 import type * as DiatonicAndPivots from "./diatonicAndPivots";
 import type * as DominantFamily from "./dominantFamily";
@@ -329,6 +329,61 @@ export function buildChordInferenceCandidates(
 }
 
 
+const ORNAMENT_FIT_REJECTIONS = [
+  "bass-mismatch",
+  "unexplained-extra-tone",
+  "omitted-chord-tone",
+  "too-many-omitted-chord-tones",
+];
+
+export function fitContextualOrnament(
+  anchor: ChordInferenceCandidate,
+  observation: ChordInferenceObservation,
+  assignments: Readonly<Record<string, NonChordToneRole>>,
+  evidenceCode: string,
+): ChordInferenceCandidate | undefined {
+  const noteIds = Object.keys(assignments);
+  if (!noteIds.length) return;
+  const { hardRejected, ...written } = fitChordObservation(observation, anchor.identity, {
+    allowIncompleteVoicing: true,
+    allowNonChordToneCandidates: true,
+  });
+  if (hardRejected && !ORNAMENT_FIT_REJECTIONS.includes(hardRejected)) return;
+  if (!written.spellingConsistent ||
+      written.nonChordToneNoteIds.length !== noteIds.length ||
+      !written.nonChordToneNoteIds.every(id => Object.hasOwn(assignments, id)) ||
+      (!written.bassMatchesInversion &&
+        (!observation.bass || !Object.hasOwn(assignments, observation.bass.id)))) return;
+  if (observationNotes(observation).some(({ note }) =>
+    Object.hasOwn(assignments, note.id) && note.nonChordToneRole &&
+    note.nonChordToneRole !== assignments[note.id])) return;
+
+  const byRole = new Map<NonChordToneRole, string[]>();
+  for (const [id, role] of Object.entries(assignments)) {
+    const ids = byRole.get(role) ?? [];
+    ids.push(id);
+    byRole.set(role, ids);
+  }
+  const fit = { ...written, nonChordToneAssignments: Object.freeze({ ...assignments }) };
+  return {
+    id: `${observation.index}:${evidenceCode}:${anchor.id}`,
+    observationIndex: observation.index,
+    identity: anchor.identity,
+    semantics: anchor.semantics,
+    functionalBaseId: anchor.functionalBaseId,
+    fit,
+    score: scoreFor(observation, anchor.identity, fit, anchor.score.functionalTier),
+    confidence: "medium",
+    evidence: [
+      ...evidenceFor(written, true),
+      { kind: "sequence-context", code: evidenceCode, noteIds },
+      ...Array.from(byRole, ([role, ids]) => ({
+        kind: "inferred-nonchord-tone" as const, code: role, noteIds: ids,
+      })),
+    ],
+  };
+}
+
 export function fitSimultaneousNeighbors(
   anchor: ChordInferenceCandidate,
   observation: ChordInferenceObservation,
@@ -414,7 +469,7 @@ export function fitAnticipation(
   const { hardRejected, ...literal } = fitChordObservation(observation, anchor.identity);
   if (!literal.spellingConsistent || literal.nonChordToneNoteIds.length !== anticipated.length ||
       !anticipated.every(id => literal.nonChordToneNoteIds.includes(id))) return;
-  if (hardRejected && !["bass-mismatch", "unexplained-extra-tone", "omitted-chord-tone", "too-many-omitted-chord-tones"].includes(hardRejected)) return;
+  if (hardRejected && !ORNAMENT_FIT_REJECTIONS.includes(hardRejected)) return;
 
   const fit = {
     ...literal,
@@ -640,6 +695,7 @@ export function buildContextualChordCandidates(
     withProlongedHarmony,
     simultaneousNeighborCandidates,
     withWrittenLowerNeighborPairs,
+    withContextualOrnaments,
   } = passes.ornaments;
   const {
     withWholeWrittenTriadRespellings,
@@ -724,6 +780,9 @@ export function buildContextualChordCandidates(
   candidates = withSpelledSeventhsOverItalian(observations, candidates, currentPhraseTicks, project.ppq, options);
   candidates = withContextualWrittenRespellings(observations, candidates, options, currentPhraseTicks, manualPhraseTicks);
   const ninths = withDominantNinths(observations, candidates, manualPhraseTicks, options);
-  return { observations, candidates: ninths.candidates, currentPhraseTicks,
+  candidates = withContextualOrnaments(
+    observations, ninths.candidates, options, project.ppq, currentPhraseTicks, lowerNeighbors.withheldStarts,
+  );
+  return { observations, candidates, currentPhraseTicks,
     withheldStarts: lowerNeighbors.withheldStarts, ninthAlternatives: ninths.alternate };
 }

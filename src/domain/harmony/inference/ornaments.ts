@@ -4,6 +4,7 @@ import {
   primaryHarmonyInterpretation,
   chordIdentityInversion,
   chordIdentityToneSpellings,
+  chordVoicingPolicy,
 } from "../../chordModel";
 import {
   keyDeclarationEquals,
@@ -12,15 +13,20 @@ import {
   writtenInterval,
   pitchClassEquals,
   scaleDegreePitchClass,
+  stepIndex,
   toMidi,
   pitchClassValue,
+  type SpelledPitchClass,
 } from "../../pitch";
+import type { NonChordToneRole } from "../../project";
 import { VOICE_ORDER } from "../../project/voice";
 import { compareMetricStrength } from "../../rhythm/metric";
+import type { AnalysisNote } from "../analysis";
 import {
   fitProlongedHarmony,
   candidateComparator,
   fitAnticipation,
+  fitContextualOrnament,
   fitPreparedSuspension,
   fitSimultaneousNeighbors,
 } from "./candidates";
@@ -158,7 +164,7 @@ function anticipatedNotes(
 function hasAddedSixthReading(
   anchor: ChordInferenceCandidate,
   middle: ChordInferenceObservation,
-  motion: NonNullable<ReturnType<typeof anticipatedNotes>>[number],
+  motion: { previous: AnalysisNote; note: AnalysisNote },
 ) {
   const { identity } = anchor;
   if (!middle.bass || !pitchClassEquals(middle.bass.pitch, identity.root)) return false;
@@ -453,4 +459,359 @@ export function withWrittenLowerNeighborPairs(
     return [];
   });
   return { candidateSets, withheldStarts };
+}
+
+type CandidateSet = readonly ChordInferenceCandidate[];
+type OrnamentAssignments = Record<string, NonChordToneRole>;
+type OrnamentTriplet = readonly [Observation, Observation, Observation];
+
+function isStructuralAnchor(candidate: ChordInferenceCandidate) {
+  return !!candidate.semantics && candidate.identity.structure.kind === "tertian" &&
+    candidate.fit.spellingConsistent && candidate.fit.bassMatchesInversion &&
+    candidate.fit.nonChordToneNoteIds.length === 0;
+}
+
+function validOrnamentWindow(window: readonly Observation[], boundaries: readonly number[]) {
+  const first = window[0], last = window[window.length - 1];
+  return !boundaries.some(tick => first.fromTick < tick && tick <= last.fromTick) &&
+    window.every((part, index) =>
+      part.completeSatb && part.key.tick === first.key.tick && keyDeclarationEquals(part.key, first.key) &&
+      (index === 0 || window[index - 1].toTick === part.fromTick));
+}
+
+function isWrittenMember(tones: readonly SpelledPitchClass[], note: AnalysisNote) {
+  return tones.some(tone => pitchClassEquals(tone, note.pitch));
+}
+
+function touches(from: AnalysisNote, to: AnalysisNote) {
+  return from.startTick + from.durationTicks === to.startTick;
+}
+
+function ornamentStepDirection(from: AnalysisNote, to: AnalysisNote, chromatic = true): 1 | -1 | 0 {
+  if (!touches(from, to)) return 0;
+  const interval = writtenInterval(from.pitch, to.pitch);
+  const direction = interval.semitones > 0 ? 1 : -1;
+  if (isWrittenStep(interval) && interval.diatonicSteps === direction) return direction;
+  if (chromatic && interval.diatonicSteps === 0 && Math.abs(interval.semitones) === 1) return direction;
+  return 0;
+}
+
+function sameWrittenContinuation(from: AnalysisNote, to: AnalysisNote) {
+  return spelledPitchEquals(from.pitch, to.pitch) && (from.id === to.id || touches(from, to));
+}
+
+function recoverContextualSuspensions(
+  [preparation, middle, resolution]: OrnamentTriplet,
+  preparations: CandidateSet,
+  resolutions: CandidateSet,
+  ppq: number,
+) {
+  if (middle.metric?.confidence !== "certain" || middle.metric.level < 2 ||
+      resolution.metric?.confidence !== "certain" ||
+      compareMetricStrength(middle.metric, resolution.metric) !== "stronger") return [];
+
+  const duration = middle.toTick - middle.fromTick;
+  const completeSurface = hasCompleteWrittenTertianChord(middle);
+  return resolutions.flatMap(anchor => {
+    const tones = chordIdentityToneSpellings(anchor.identity);
+    const assignments: OrnamentAssignments = Object.create(null);
+    const restored: AnalysisNote[] = [];
+    for (const voice of VOICE_ORDER) {
+      const note = middle.activeNotes[voice]!;
+      if (isWrittenMember(tones, note)) {
+        restored.push(note);
+        continue;
+      }
+      const previous = preparation.activeNotes[voice]!, next = resolution.activeNotes[voice]!;
+      const preparationLength = preparation.toTick - Math.max(previous.startTick, preparation.fromTick);
+      const requiredLength = previous.id === note.id ? duration : Math.min(duration, ppq);
+      const direction = ornamentStepDirection(note, next, false);
+      if (!sameWrittenContinuation(previous, note) || preparationLength < requiredLength ||
+          !preparations.some(candidate => isWrittenMember(chordIdentityToneSpellings(candidate.identity), previous)) ||
+          !direction || !isWrittenMember(tones, next)) return [];
+      assignments[note.id] = direction < 0 ? "suspension" : "retardation";
+      restored.push(next);
+    }
+
+    const size = Object.keys(assignments).length;
+    const bass = middle.activeNotes.bass!, settledBass = resolution.activeNotes.bass!;
+    if (!size || size > 3 ||
+        (completeSurface && !pitchClassEquals(bass.pitch, settledBass.pitch) && !assignments[bass.id]) ||
+        !chordVoicingPolicy(anchor.identity).requiredDegrees.every(degree => {
+          const tone = chordIdentityToneSpellingForDegree(anchor.identity, degree);
+          return tone && restored.some(note => pitchClassEquals(tone, note.pitch));
+        })) return [];
+    const candidate = fitContextualOrnament(anchor, middle, assignments, "contextual-suspension");
+    return candidate ? [candidate] : [];
+  });
+}
+
+function recoverContextualAnticipations(
+  [left, middle, right]: OrnamentTriplet,
+  departures: CandidateSet,
+  arrivals: CandidateSet,
+  ppq: number,
+) {
+  const duration = middle.toTick - middle.fromTick;
+  if ([left, middle, right].some(part => part.metric?.confidence !== "certain") ||
+      compareMetricStrength(middle.metric, left.metric) !== "weaker" ||
+      compareMetricStrength(middle.metric, right.metric) !== "weaker" ||
+      duration > Math.min(ppq / 2, left.toTick - left.fromTick, right.toTick - right.fromTick) ||
+      hasCompleteWrittenTertianChord(middle)) return [];
+
+  return departures.flatMap(anchor => {
+    const tones = chordIdentityToneSpellings(anchor.identity);
+    const moving = observationNotes(middle).filter(({ note }) => !isWrittenMember(tones, note));
+    if (!moving.length || moving.some(({ voiceId, note }) => {
+      const next = right.activeNotes[voiceId]!;
+      return note.startTick !== middle.fromTick || !sameWrittenContinuation(note, next) ||
+        (note.id !== next.id && next.startTick !== right.fromTick) ||
+        hasAddedSixthReading(anchor, middle, { previous: left.activeNotes[voiceId]!, note });
+    }) || !arrivals.some(arrival => {
+      const arrivalTones = chordIdentityToneSpellings(arrival.identity);
+      return moving.every(({ voiceId }) => isWrittenMember(arrivalTones, right.activeNotes[voiceId]!));
+    })) return [];
+
+    const assignments = Object.fromEntries(moving.map(({ note }) => [note.id, "anticipation"] as const));
+    const candidate = fitContextualOrnament(anchor, middle, assignments, "contextual-anticipation");
+    return candidate ? [candidate] : [];
+  });
+}
+
+function formsPerfectFifth(first: AnalysisNote, second: AnalysisNote) {
+  const interval = writtenInterval(first.pitch, second.pitch);
+  return Math.abs(interval.diatonicSteps) % 7 === 4 && Math.abs(interval.semitones) % 12 === 7;
+}
+
+function hasParallelNeighborFifths(left: Observation, middle: Observation, assignments: OrnamentAssignments) {
+  const neighbors = observationNotes(middle).filter(({ note }) => assignments[note.id] === "neighbor");
+  return neighbors.some(({ voiceId, note }, index) => {
+    const first = left.activeNotes[voiceId]!;
+    return neighbors.slice(index + 1).some(({ voiceId: otherVoice, note: other }) => {
+      const second = left.activeNotes[otherVoice]!;
+      return ornamentStepDirection(first, note) === ornamentStepDirection(second, other) &&
+        formsPerfectFifth(first, second) && formsPerfectFifth(note, other);
+    });
+  });
+}
+
+/** One run of consecutive non-members, bracketed by its departure and arrival tones. */
+function horizontalOrnament(notes: readonly AnalysisNote[], singleSlice: boolean, allowEscape: boolean) {
+  const first = notes[0], middle = notes[1], last = notes[notes.length - 1];
+  const direction = ornamentStepDirection(first, middle);
+  if (!direction) return;
+  if (notes.slice(2).every((note, index) => ornamentStepDirection(notes[index + 1], note) === direction)) {
+    return "passing";
+  }
+  if (!singleSlice) return;
+  if (spelledPitchEquals(first.pitch, last.pitch) && ornamentStepDirection(middle, last) === -direction) {
+    return "neighbor";
+  }
+  if (allowEscape && touches(middle, last)) {
+    const leap = writtenInterval(middle.pitch, last.pitch);
+    // An octave displacement of a step or repeated tone does not establish an escape.
+    const steps = Math.abs(leap.diatonicSteps);
+    const semitones = Math.abs(leap.semitones) % 12;
+    const displaced =
+      (steps % 7 === 0 && (semitones === 0 || semitones === 11)) ||
+      (steps % 7 === 6 && semitones >= 10);
+    if (steps > 1 && !displaced &&
+        Math.sign(leap.semitones) === -direction &&
+        Math.sign(leap.diatonicSteps) === -direction) return "escape";
+  }
+}
+
+function horizontalAssignments(
+  window: readonly Observation[],
+  leftAnchor: ChordInferenceCandidate,
+  rightAnchor: ChordInferenceCandidate,
+  sameHarmony: boolean,
+) {
+  const left = window[0], right = window[window.length - 1];
+  const middle = window.slice(1, -1);
+  const tones = chordIdentityToneSpellings(leftAnchor.identity);
+  const arrivalTones = chordIdentityToneSpellings(rightAnchor.identity);
+  const assignments: OrnamentAssignments[] = middle.map(() => Object.create(null));
+  const allowEscape = !sameHarmony && middle.length === 1 &&
+    compareMetricStrength(middle[0].metric, left.metric) === "weaker" &&
+    compareMetricStrength(middle[0].metric, right.metric) === "weaker";
+  let hasChordVoice = false;
+
+  for (const voice of VOICE_ORDER) {
+    const notes = window.map(part => part.activeNotes[voice]!);
+    const last = notes.length - 1;
+    if (!isWrittenMember(tones, notes[0]) || !isWrittenMember(arrivalTones, notes[last])) return;
+    let leavesChord = false;
+    for (let start = 1; start < last;) {
+      if (isWrittenMember(tones, notes[start])) {
+        start++;
+        continue;
+      }
+      leavesChord = true;
+      let end = start + 1;
+      while (end < last && !isWrittenMember(tones, notes[end])) end++;
+      if (notes[end - 1].id === notes[end].id) return;
+      const span = sameHarmony ? notes.slice(start - 1, end + 1) : notes;
+      const run = span.filter((note, index, parts) =>
+        index === 0 || note.id !== parts[index - 1].id);
+      const role = horizontalOrnament(run, middle.length === 1, allowEscape);
+      if (!role) return;
+      for (let index = start; index < end; index++) assignments[index - 1][notes[index].id] = role;
+      start = end;
+    }
+    hasChordVoice ||= !leavesChord;
+  }
+  if (sameHarmony && !hasChordVoice) return;
+  if (middle.length === 1 && hasParallelNeighborFifths(left, middle[0], assignments[0])) return;
+  if (assignments.some((roles, index) => {
+    const count = Object.keys(roles).length;
+    if (!count || count === VOICE_ORDER.length) return true;
+    if (sameHarmony || count !== 3 || roles[middle[index].bass!.id] ||
+        (leftAnchor.functionalBaseId !== "D" && leftAnchor.functionalBaseId !== "DD")) return false;
+    // A lone retained bass cannot prolong a dominant whose leading tone
+    // departs downwards with the other upper parts.
+    const third = chordIdentityToneSpellingForDegree(leftAnchor.identity, 3);
+    return !!third && observationNotes(left).some(({ voiceId, note }) => {
+      const next = middle[index].activeNotes[voiceId]!;
+      return pitchClassEquals(note.pitch, third) && roles[next.id] &&
+        writtenInterval(note.pitch, next.pitch).semitones < 0;
+    });
+  })) return;
+  return assignments;
+}
+
+function supportsLoneUpperPassing(
+  left: Observation, middle: Observation, right: Observation, candidate: ChordInferenceCandidate,
+) {
+  const { structure } = candidate.identity;
+  if (structure.kind !== "tertian" || (structure.quality !== "major" && structure.quality !== "minor") ||
+      structure.extensions.length || candidate.fit.nonChordToneNoteIds.length !== 1) return true;
+  const ornament = observationNotes(middle).find(({ note }) =>
+    candidate.fit.nonChordToneAssignments[note.id] === "passing");
+  if (!ornament || ornament.voiceId === "bass") return true;
+
+  // A lone upper passing tone between different triads still needs a
+  // recognizable third and independent evidence of any chromatic departure.
+  const { note, voiceId } = ornament;
+  if (candidate.fit.omittedChordDegrees.includes(3) ||
+      observationNotes(middle).some(({ voiceId: companion, note: other }) => {
+        const previous = left.activeNotes[companion]!;
+        return companion !== voiceId && previous.id !== other.id && spelledPitchEquals(previous.pitch, other.pitch);
+      })) return false;
+  const degree = (stepIndex(note.pitch.step) - stepIndex(middle.key.tonic.step) + 7) % 7 + 1;
+  return pitchClassEquals(note.pitch, scaleDegreePitchClass(middle.key, degree)) ||
+    note.pitch.step === left.activeNotes[voiceId]!.pitch.step ||
+    note.pitch.step === right.activeNotes[voiceId]!.pitch.step;
+}
+
+function recoverAccentedPassing(
+  [left, middle, right]: OrnamentTriplet,
+  departure: ChordInferenceCandidate,
+  arrival: ChordInferenceCandidate,
+) {
+  if (middle.metric?.confidence !== "certain" || middle.metric.level === 0) return;
+  const tones = chordIdentityToneSpellings(arrival.identity);
+  const moving = observationNotes(middle).filter(({ note }) => !isWrittenMember(tones, note));
+  if (moving.length !== 1 || moving[0].voiceId === "bass") return;
+  const { voiceId, note } = moving[0];
+  const first = left.activeNotes[voiceId]!, last = right.activeNotes[voiceId]!;
+  const direction = ornamentStepDirection(first, note);
+  if (!direction || ornamentStepDirection(note, last) !== direction ||
+      !isWrittenMember(chordIdentityToneSpellings(departure.identity), first) ||
+      !isWrittenMember(tones, last)) return;
+  return fitContextualOrnament(arrival, middle, { [note.id]: "passing" }, "contextual-passing");
+}
+
+function recoverContextualPassingAndNeighbors(
+  window: readonly Observation[],
+  departures: CandidateSet,
+  arrivals: CandidateSet,
+  ppq: number,
+) {
+  const left = window[0], right = window[window.length - 1];
+  const middle = window.slice(1, -1);
+  const result = middle.map(() => new Map<string, ChordInferenceCandidate>());
+  if (middle.some(part => part.toTick - part.fromTick > ppq)) return result;
+
+  const weak = middle.every(part => part.metric?.confidence === "certain" &&
+    (part.metric.level < 2 || compareMetricStrength(part.metric, left.metric) === "weaker"));
+  const completeSurface = middle.some(hasCompleteWrittenTertianChord);
+  const anchors = [...departures, ...arrivals];
+  for (const departure of departures) {
+    for (const arrival of arrivals) {
+      const sameIdentity = chordIdentityEquals(departure.identity, arrival.identity);
+      // The six-four pass decides whether a literal tonic six-four is
+      // cadential. Two undecided readings do not prove a prolongation.
+      if (sameIdentity && anchors.some(candidate =>
+        candidate.functionalBaseId === "K46" && chordIdentityEquals(candidate.identity, departure.identity)) &&
+        anchors.some(candidate =>
+          (candidate.functionalBaseId === "T" || candidate.functionalBaseId === "t") &&
+          chordIdentityEquals(candidate.identity, departure.identity))) continue;
+      const sameHarmony = sameIdentity &&
+        JSON.stringify(departure.semantics) === JSON.stringify(arrival.semantics);
+      if (weak && (sameHarmony || !completeSurface)) {
+        const assignments = horizontalAssignments(window, departure, arrival, sameHarmony);
+        if (assignments) {
+          const code = sameHarmony ? "contextual-prolongation" : "contextual-passing";
+          const candidates = middle.map((part, index) =>
+            fitContextualOrnament(departure, part, assignments[index], code));
+          if (candidates.every(candidate => candidate !== undefined) &&
+              (sameHarmony || middle.length !== 1 || supportsLoneUpperPassing(left, middle[0], right, candidates[0]))) {
+            candidates.forEach((candidate, index) => result[index].set(candidate.id, candidate));
+          }
+        }
+      }
+      if (!sameHarmony && !completeSurface && middle.length === 1) {
+        const candidate = recoverAccentedPassing([left, middle[0], right], departure, arrival);
+        if (candidate) result[0].set(candidate.id, candidate);
+      }
+    }
+  }
+  return result;
+}
+
+/** Restore only unresolved slices, using written structural readings at the window edges. */
+export function withContextualOrnaments(
+  observations: readonly Observation[],
+  sets: readonly CandidateSet[],
+  options: ChordInferenceOptions,
+  ppq: number,
+  phraseBoundaryTicks: readonly number[],
+  withheldStarts: ReadonlySet<number>,
+): readonly CandidateSet[] {
+  if (options.minConfidence === "high" || options.allowNonChordToneCandidates === false) return sets;
+
+  const anchors = sets.map((set, index) =>
+    withheldStarts.has(observations[index].fromTick) ? [] : set.filter(isStructuralAnchor));
+  const result = sets.slice();
+  const blank = (index: number) => !result[index].length && !withheldStarts.has(observations[index].fromTick);
+  for (const recover of [recoverContextualSuspensions, recoverContextualAnticipations]) {
+    for (let i = 1; i + 1 < observations.length; i++) {
+      if (!blank(i) || !anchors[i - 1].length || !anchors[i + 1].length) continue;
+      const window = [observations[i - 1], observations[i], observations[i + 1]] as const;
+      if (!validOrnamentWindow(window, phraseBoundaryTicks)) continue;
+      const candidates = recover(window, anchors[i - 1], anchors[i + 1], ppq);
+      if (candidates.length) result[i] = candidates.sort(candidateComparator);
+    }
+  }
+
+  for (let start = 1; start + 1 < observations.length;) {
+    if (!blank(start)) {
+      start++;
+      continue;
+    }
+    let end = start + 1;
+    while (end < observations.length && blank(end)) end++;
+    if (end < observations.length && end - start <= 3 && anchors[start - 1].length && anchors[end].length) {
+      const window = observations.slice(start - 1, end + 1);
+      if (validOrnamentWindow(window, phraseBoundaryTicks)) {
+        const recovered = recoverContextualPassingAndNeighbors(window, anchors[start - 1], anchors[end], ppq);
+        recovered.forEach((candidates, offset) => {
+          if (candidates.size) result[start + offset] = [...candidates.values()].sort(candidateComparator);
+        });
+      }
+    }
+    start = end;
+  }
+  return result;
 }
