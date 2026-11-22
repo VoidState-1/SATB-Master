@@ -202,15 +202,71 @@ annotations {
     });
     it.each([
       ["出发处已经缺五音", "C5/4.", "A4/4."],
-      ["中间为另一次起奏", "F4/2 F4/4", "F4/4. F4/8 F4/4"],
       ["下一音改在另一八度", "A4/4 |", "A5/4 |"],
       ["落点的身份与四声部冲突", "ii6/4", "V6/4"],
       ["手写标签与方向冲突", "role=passing", "role=neighbor"],
     ])("%s时保留实际缺音警告", (_label, old, replacement) => {
       expect(missing(exercise.replace(old, replacement))).toHaveLength(1);
     });
+    it("女中音同音重奏时仅核实有明确标注的经过音", () => {
+      const reattack = exercise.replace("F4/2 F4/4", "F4/4. F4/8 F4/4");
+      expect(missing(reattack)).toHaveLength(0);
+      expect(missing(reattack.replace("B4/8@p", "B4/8").replace(/annotations \{[^}]+\}/, ""))).toHaveLength(1);
+    });
     it.each([1440, 1720, 1920])("句界 %i 隔开依据时保留警告", tick => {
       expect(missing(exercise, tick)).toHaveLength(1);
+    });
+  });
+
+  describe("尾拍装饰与同一和弦内的完整结构", () => {
+    it.each([
+      ["半音辅助音", "C5/4. C#5/8@p C5/4", "I", "neighbor"],
+      ["逸音", "C5/4. B4/8@p G4/4", "I", "escape"],
+      ["保持进入后继和弦的先现音", "C5/4. B4/8@p~ B4/4", "V", "anticipation"],
+      ["倚音", "C5/4. E5/8@p F5/4", "ii6", "appoggiatura"],
+    ])("核实%s取代唯一五音", (_label, notes, target, role) => {
+      const score = exercise.replace("C5/4. B4/8@p A4/4", notes)
+        .replace("ii6/4", target + "/4").replace("role=passing", "role=" + role)
+        .replace("F4/2 F4/4", "F4/4. F4/8 F4/4");
+      expect(missing(score)).toHaveLength(0);
+      expect(missing(score.replace("role=" + role, "role=other"))).toHaveLength(1);
+    });
+
+    const dominant = `satb 1
+key C major
+meter 3/4
+bars 1..1 {
+ S: | D5/4. E5/8@p F5/4 |
+ A: | F4/4. F#4/8@n F4/4 |
+ T: | B3/2 C4/4 |
+ B: | G3/2 F3/4 |
+ H: | V7/2 IV/4 |
+}
+annotations {
+ note p role=passing
+ note n role=neighbor
+}`;
+    it("经过音与辅助音同时替换属七和弦的五音和七音", () => {
+      expect(missing(dominant)).toHaveLength(0);
+      expect(missing(dominant.replace("F4/4 |", "F5/4 |"))).toHaveLength(1);
+      expect(missing(dominant.replace("F4/4. F#4/8@n F4/4", "F4/4. B4/8 B4/4")
+        .replace("D5/4. E5/8@p F5/4", "D5/4. B4/8 B4/4")
+        .replace(/annotations \{[^}]+\}/, ""))).toHaveLength(1);
+      expect(missing(dominant, 1440)).toHaveLength(1);
+    });
+
+    it("完整切片的缺失音必须来自当前已核实的装饰声部", () => {
+      const differentVoice = exercise.replace("C5/4. B4/8@p A4/4", "C5/4. A4/8 A4/4")
+        .replace("F4/2 F4/4", "F4/4. E4/8@p D4/4");
+      expect(missing(differentVoice)).toHaveLength(1);
+    });
+
+    it("调号事件隔开结构切片时保留缺音警告", () => {
+      const { project } = compileScoreText(dominant);
+      project.keyEvents.push({ ...project.keyEvents[0], id: "written-key-change", tick: 1440 });
+      expect(checkHarmony(project).diagnostics).toContainEqual(expect.objectContaining({
+        ruleId: "chord.incomplete-members", tick: 1440,
+      }));
     });
   });
 });
@@ -868,7 +924,10 @@ ${role ? "annotations {\n note ornament role=" + role + "\n}" : ""}`).project;
       ["改变后转位", "C3/2 C3/4 D3/4@ornament | E3/1", "I/1 | I/1", 3, true],
       ["终点前休止", "C3/2 D3/4@ornament r/4 | E3/1", "I/1 | I6/1", 2, true],
       ["经过音长于前音", "C3/4 D3/2.@ornament | E3/1", "I/1 | I6/1", 1, true],
-      ["变化经过音", "E3/2 F#3/4@ornament G3/4 | G3/1", "I6/2. I64/4 | I64/1", 2, true],
+      ["变化经过音", "E3/2 F#3/4@ornament G3/4 | G3/1", "I6/2. I64/4 | I64/1", 2, false],
+      ["变化经过音在同一和弦内落到构成音", "E3/2 F#3/4@ornament G3/4 | G3/1", "I6/1 | I64/1", 2, false],
+      ["变化音跳进离开", "E3/2 F#3/4@ornament B3/4 | B3/1", "I6/2. V6/4 | V6/1", 2, true],
+      ["变化音等音错拼为减三度", "E3/2 Gb3/4@ornament G3/4 | G3/1", "I6/2. I64/4 | I64/1", 2, true],
       ["次强拍", "C3/2 D3/2@ornament | E3/1", "I/1 | I6/1", 2, false],
       ["下行连接转位", "E3/2 E3/4 D3/4@ornament | C3/1", "I6/1 | I/1", 3, false],
     ] as const)("%s", (_label, bassLine, chords, beat, reports) => {
@@ -880,6 +939,20 @@ ${role ? "annotations {\n note ornament role=" + role + "\n}" : ""}`).project;
     it("上声部重新起奏不把持续的经过音变成结构音", () => {
       const project = bassProject("C3", "D3", "E3", "passing", undefined, undefined, "G4/2. G4/8 G4/8 | C5/1");
       expect(checkHarmony(project).diagnostics.some(item => item.ruleId === "chord.inversion-bass")).toBe(false);
+    });
+
+    it.each([
+      ["同向半音阶经过链", "I6/2. I64/4 | I64/1", "passing", false],
+      ["起点转位写错", "I/2. I64/4 | I64/1", "passing", true],
+      ["终点转位写错", "I6/2. I/4 | I64/1", "passing", true],
+      ["第二个经过音标签冲突", "I6/2. I64/4 | I64/1", "neighbor", true],
+    ] as const)("%s", (_label, chords, secondRole, reports) => {
+      const project = bassProject("", "", "", "passing", "E3/2 F3/8@ornament F#3/8 G3/4 | G3/1", chords);
+      project.satbTracks.find(track => track.voice === "bass")!.notes[2].nonChordToneRole = secondRole;
+      for (const beat of [2, 2.5]) {
+        expect(checkHarmony(project).diagnostics.some(item =>
+          item.ruleId === "chord.inversion-bass" && item.tick === beat * project.ppq)).toBe(reports);
+      }
     });
 
     it.each([3.5, 4])("在拍位 %s 起奏，占据下一小节强拍时仍报错", onset => {
@@ -924,6 +997,67 @@ ${role ? "annotations {\n note ornament role=" + role + "\n}" : ""}`).project;
       const project = bassProject(previous, ornament, target, role, undefined, chords);
       expect(checkHarmony(project).diagnostics.some(item => item.ruleId === "chord.inversion-bass" &&
         item.tick === 3 * project.ppq && item.severity === "error")).toBe(reports);
+    });
+  });
+
+  describe("挂留、辅助、逸音与倚音的低音证据", () => {
+    it.each([
+      ["同高重奏并下行解决", "G3/1 | G3/4@ornament F3/2.", "V/1 | IV/1", "suspension", 4, false],
+      ["跨和弦保持并下行解决", "G3/1@ornament~ | G3/4 F3/2.", "V/1 | IV/1", "suspension", 4, false],
+      ["上行延宕", "F3/1 | F3/4@ornament G3/2.", "IV/1 | V/1", "retardation", 4, false],
+      ["前和弦未准备", "G3/1 | G3/4@ornament F3/2.", "ii/1 | IV/1", "suspension", 4, true],
+      ["下行但未落到标注低音", "G3/1 | G3/4@ornament F3/2.", "V/1 | IV6/1", "suspension", 4, true],
+      ["在另一和弦上才解决", "G3/1 | G3/4@ornament F3/2.", "V/1 | IV/4 IV/2.", "suspension", 4, true],
+      ["下行挂留实际向上", "G3/1 | G3/4@ornament A3/2.", "V/1 | IV6/1", "suspension", 4, true],
+      ["自然辅助音", "C3/2 D3/4@ornament C3/4 | C3/1", "I/1 | I/1", "neighbor", 2, false],
+      ["半音辅助音", "C3/2 C#3/4@ornament C3/4 | C3/1", "I/1 | I/1", "neighbor", 2, false],
+      ["辅助音回到下一和弦的正确低音", "E3/2. F3/4@ornament | E3/1", "I6/1 | vi64/1", "neighbor", 3, false],
+      ["辅助音没有折返", "C3/2 D3/4@ornament E3/4 | E3/1", "I/1 | I6/1", "neighbor", 2, true],
+      ["辅助音折返但改变八度", "C3/2 D3/4@ornament C4/4 | C4/1", "I/1 | I/1", "neighbor", 2, true],
+      ["辅助音回到标注不符的低音", "E3/2. F3/4@ornament | E3/1", "I6/1 | vi/1", "neighbor", 3, true],
+      ["小节强拍上的辅助音", "C3/1 | D3/4@ornament C3/2.", "I/1 | I/1", "neighbor", 4, true],
+      ["辅助音比两端都长", "C3/4 D3/2@ornament C3/4 | C3/1", "I/1 | I/1", "neighbor", 1, true],
+      ["逸音从结构低音级进离开后跳进", "C3/2. D3/4@ornament | G3/1", "I/1 | V/1", "escape", 3, false],
+      ["逸音实际级进离开", "C3/2. D3/4@ornament | E3/1", "I/1 | I6/1", "escape", 3, true],
+      ["逸音跳到错误转位低音", "C3/2. D3/4@ornament | G3/1", "I/1 | V6/1", "escape", 3, true],
+      ["倚音跳进并解决至后继低音", "C3/2. F3/4@ornament | E3/1", "I/1 | I6/1", "appoggiatura", 3, false],
+      ["倚音跳进并解决至同区间的结构低音", "C3/2 F3/4@ornament E3/4 | E3/1", "I6/1 | I6/1", "appoggiatura", 2, false],
+      ["倚音此前没有正确转位", "C3/2. F3/4@ornament | E3/1", "I64/1 | I6/1", "appoggiatura", 3, true],
+      ["倚音实际级进进入", "C3/2. D3/4@ornament | E3/1", "I/1 | I6/1", "appoggiatura", 3, true],
+    ] as const)("%s", (_label, line, chords, role, beat, reports) => {
+      const project = bassProject("", "", "", role, line, chords);
+      expect(checkHarmony(project).diagnostics.some(item =>
+        item.ruleId === "chord.inversion-bass" && item.tick === beat * project.ppq)).toBe(reports);
+    });
+
+    it("句界阻断已准备低音的解决证据", () => {
+      const project = bassProject("", "", "", "suspension", "G3/1 | G3/4@ornament F3/2.", "V/1 | IV/1");
+      project.structure.phraseBoundaries.push({
+        id: "cut", tick: 5 * project.ppq, source: "manual", confidence: "certain",
+      });
+      expect(checkHarmony(project).diagnostics).toContainEqual(expect.objectContaining({
+        ruleId: "chord.inversion-bass", tick: 4 * project.ppq,
+      }));
+    });
+  });
+
+  describe("持续音与标注转位", () => {
+    it.each([
+      ["同音持续", "C3/1~ | C3/1", "", true, false],
+      ["同音重奏", "C3/1 | C3/1", "", true, false],
+      ["持续音角色明确", "C3/1 | C3/1@ornament", "pedal", false, false],
+      ["前一和弦缺少持续音语境", "C3/1 | C3/1", "", false, true],
+      ["变换音高", "C3/1 | D3/1", "", true, true],
+      ["同音名但变换八度", "C3/1 | C4/1", "", true, true],
+      ["角色标在与持续音语境不符的音上", "C3/1 | D3/1@ornament", "pedal", true, true],
+    ] as const)("%s", (_label, line, role, firstContext, reports) => {
+      const project = bassProject("", "", "", role, line, "I/1 | V/1");
+      const [first, second] = project.chordTrack.regions;
+      const pitch = { step: "C", alter: 0 } as const;
+      if (firstContext) first.semantics!.pedalContext = { pitch, role: "start" };
+      second.semantics!.pedalContext = { pitch, role: "continue" };
+      expect(checkHarmony(project).diagnostics.some(item =>
+        item.ruleId === "chord.inversion-bass" && item.tick === 4 * project.ppq)).toBe(reports);
     });
   });
 });

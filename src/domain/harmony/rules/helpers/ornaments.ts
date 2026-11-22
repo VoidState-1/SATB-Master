@@ -30,7 +30,292 @@ import {
 import { matchesWrittenChord, resolvesInVoice } from "../../facts/tendencyResolution";
 import { soundsCompleteWrittenChord, hasCompleteWrittenTertianVoicing } from "../../facts/writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import type { NoteView } from "../context/views";
 import { activeNotes, crossesManualPhraseBoundary } from "./core";
+
+function noteEnd(note: AnalysisNote) {
+  return note.startTick + note.durationTicks;
+}
+
+// Spasobin chs. 38–41: a written second or a chromatic semitone can
+// connect adjacent notes in an uninterrupted passing or neighbor motion.
+export function passingStepDirection(from: AnalysisNote, to: AnalysisNote): -1 | 0 | 1 {
+  if (noteEnd(from) !== to.startTick) return 0;
+  const { diatonicSteps, semitones } = writtenInterval(from.pitch, to.pitch);
+  const distance = Math.abs(semitones);
+  const direction = semitones > 0 ? 1 : -1;
+  if (diatonicSteps === 0 && distance === 1) return direction;
+  return diatonicSteps === direction && distance >= 1 && distance <= 2 ? direction : 0;
+}
+
+function isStructuralTone(context: HarmonyRuleContext, note: AnalysisNote, slice?: AnalysisSlice) {
+  return !note.nonChordToneRole && context.harmony.isWrittenChordTone(note, slice?.chord);
+}
+
+function isDepartureTone(context: HarmonyRuleContext, note: AnalysisNote) {
+  return isStructuralTone(context, note, context.sliceAt(noteEnd(note) - 1)) ||
+    isStructuralTone(context, note, context.sliceAt(note.startTick));
+}
+
+function isOutsideChord(context: HarmonyRuleContext, note: AnalysisNote, chord?: AnalysisChord) {
+  return Boolean(chord && !context.harmony.isWrittenChordTone(note, chord));
+}
+
+export function resolvePassingChain(context: HarmonyRuleContext, current: NoteView) {
+  if (current.note.nonChordToneRole !== "passing") return;
+  const neighborhood = context.noteNeighborhood(current);
+  const previous = neighborhood?.previous;
+  const next = neighborhood?.next;
+  if (!neighborhood || !previous || !next ||
+      !isOutsideChord(context, current.note, neighborhood.attackSlice.chord)) return;
+  const direction = passingStepDirection(previous.note, current.note);
+  if (!direction || passingStepDirection(current.note, next.note) !== direction) return;
+
+  const chainNotes = [current.note];
+  let left = previous;
+  let right = next;
+  // Up to four intervening notes suffice to fill a perfect fourth chromatically.
+  while (left.note.nonChordToneRole === "passing") {
+    if (chainNotes.length === 4) return;
+    const entry = context.noteNeighborhood(left);
+    if (!entry?.previous || !isOutsideChord(context, left.note, entry.attackSlice.chord) ||
+        passingStepDirection(entry.previous.note, left.note) !== direction) return;
+    chainNotes.unshift(left.note);
+    left = entry.previous;
+  }
+  while (right.note.nonChordToneRole === "passing") {
+    if (chainNotes.length === 4) return;
+    const entry = context.noteNeighborhood(right);
+    if (!entry?.next || !isOutsideChord(context, right.note, entry.attackSlice.chord) ||
+        passingStepDirection(right.note, entry.next.note) !== direction) return;
+    chainNotes.push(right.note);
+    right = entry.next;
+  }
+
+  const leftAnchor = left.note;
+  const rightAnchor = right.note;
+  if (crossesManualPhraseBoundary(context, leftAnchor.startTick, rightAnchor.startTick) ||
+      !isDepartureTone(context, leftAnchor) ||
+      !isStructuralTone(context, rightAnchor, context.sliceAt(rightAnchor.startTick))) return;
+  return { direction, leftAnchor, rightAnchor, chainNotes };
+}
+
+// Chs. 36–37: the first dissonant slice identifies the harmonic entry even
+// when the underlying note was attacked on the preparation chord.
+export function suspensionEntry(context: HarmonyRuleContext, currentNote: NoteView) {
+  const { voiceId, note } = currentNote;
+  const outside = context.slices({ overlapping: { fromTick: note.startTick, toTick: noteEnd(note) } })
+    .first(slice => slice.notes[voiceId]?.id === note.id && isOutsideChord(context, note, slice.chord));
+  if (!outside) return;
+  const previousSlice = context.sliceTransitions({ toSliceIndex: outside.index }).last()?.previous;
+  const previousAttack = context.noteNeighborhood(currentNote)?.previous?.note;
+  const preparedByHeldNote = Boolean(
+    previousSlice?.chord && previousSlice.endTick === outside.tick &&
+    previousSlice.notes[voiceId]?.id === note.id &&
+    context.harmony.isWrittenChordTone(note, previousSlice.chord),
+  );
+  const preparedByReattack = Boolean(
+    previousSlice?.chord && previousAttack && noteEnd(previousAttack) === note.startTick &&
+    toMidi(previousAttack.pitch) === toMidi(note.pitch) &&
+    context.harmony.isWrittenChordTone(previousAttack, previousSlice.chord),
+  );
+  return {
+    current: outside,
+    previousSlice,
+    previousAttack,
+    prepared: preparedByHeldNote || preparedByReattack,
+  };
+}
+
+function preparedSuspension(context: HarmonyRuleContext, current: NoteView, chord: AnalysisChord) {
+  const entry = suspensionEntry(context, current);
+  const preparation = entry?.previousSlice;
+  const preparedNote = preparation?.notes[current.voiceId];
+  return Boolean(entry?.prepared && entry.current.chord?.id === chord.id &&
+    preparation?.chord && preparation.chord.id !== chord.id && preparation.endTick === entry.current.tick &&
+    preparedNote && context.pitch.sameWrittenPitch(preparedNote, current.note) &&
+    !crossesManualPhraseBoundary(context, preparation.tick, noteEnd(current.note)));
+}
+
+function isLeap(from: AnalysisNote, to: AnalysisNote) {
+  const interval = writtenInterval(from.pitch, to.pitch);
+  return noteEnd(from) === to.startTick && Math.abs(interval.diatonicSteps) > 1 &&
+    Math.abs(interval.semitones) > 2;
+}
+
+// Chs. 40 and 43 describe the return of a neighbor and the two directions of
+// a leaping ornament. Share their motion evidence with the bass and voicing checks.
+function resolveOrnamentMotion(context: HarmonyRuleContext, current: NoteView, chord: AnalysisChord) {
+  const { note } = current;
+  const neighborhood = context.noteNeighborhood(current);
+  const previous = neighborhood?.previous?.note;
+  const next = neighborhood?.next?.note;
+  if (!neighborhood || !next || noteEnd(note) !== next.startTick) return;
+  const arrival = context.sliceAt(next.startTick);
+  const prepared = note.nonChordToneRole === "suspension" || note.nonChordToneRole === "retardation";
+  const motionStart = prepared ? note.startTick : previous?.startTick ?? note.startTick;
+  if (!arrival?.chord || !isStructuralTone(context, next, arrival) ||
+      crossesManualPhraseBoundary(context, motionStart, next.startTick)) return;
+
+  const departure = context.sliceAt(note.startTick - 1);
+  const exit = passingStepDirection(note, next);
+  const jumpedIn = Boolean(previous && isLeap(previous, note));
+  switch (note.nonChordToneRole) {
+    case "neighbor":
+      if (!previous || !exit || passingStepDirection(previous, note) !== -exit ||
+          !context.pitch.sameWrittenPitch(previous, next) || !isDepartureTone(context, previous)) return;
+      break;
+    case "escape":
+      if (!previous || !passingStepDirection(previous, note) ||
+          !isStructuralTone(context, previous, departure) || !isLeap(note, next)) return;
+      break;
+    case "appoggiatura":
+      if (!exit || (!jumpedIn && previous && context.metric.positionAt(note.startTick)?.role !== "downbeat")) return;
+      break;
+    case "suspension":
+    case "retardation": {
+      const direction = note.nonChordToneRole === "suspension" ? -1 : 1;
+      if (exit !== direction || writtenInterval(note.pitch, next.pitch).diatonicSteps !== direction ||
+          !preparedSuspension(context, current, chord)) return;
+      break;
+    }
+    default:
+      return;
+  }
+  return { previous, departure, next, arrival, target: arrival.chord, jumpedIn };
+}
+
+function anticipatesNextChord(context: HarmonyRuleContext, current: NoteView, chord: AnalysisChord) {
+  const { note, voiceId } = current;
+  const arrival = chord.startTick + chord.durationTicks;
+  const target = context.sliceAt(arrival);
+  const sounding = target?.notes[voiceId];
+  if (!target?.chord || target.chord.startTick !== arrival || !sounding ||
+      crossesManualPhraseBoundary(context, note.startTick, arrival) ||
+      !context.harmony.isWrittenChordTone(note, target.chord)) return false;
+  // Ch. 42: the next chord takes up the same written pitch, held or reattacked.
+  return sounding.id === note.id ||
+    (noteEnd(note) === arrival && sounding.startTick === arrival &&
+      !sounding.nonChordToneRole && context.pitch.sameWrittenPitch(note, sounding));
+}
+
+export function isVerifiedChordOrnament(
+  context: HarmonyRuleContext, chord: AnalysisChord, { voiceId, note }: NoteView,
+) {
+  if (!note.nonChordToneRole || note.nonChordToneRole === "other" || note.nonChordToneRole === "pedal" ||
+      !isOutsideChord(context, note, chord)) return false;
+  const view = context.notes({ voiceId, startingAt: note.startTick }).first(item => item.note.id === note.id);
+  if (!view) return false;
+  // Suspensions may have attacked as a structural member of the previous chord.
+  const role = note.nonChordToneRole;
+  if (role !== "suspension" && role !== "retardation" &&
+      context.sliceAt(note.startTick)?.chord?.id !== chord.id) return false;
+  if (role === "passing") return Boolean(resolvePassingChain(context, view));
+  // Bass anticipations affect both inversion and voicing. Their structural
+  // replacement is already checked by notesWithAnticipationReplacements.
+  if (role === "anticipation") return voiceId !== "bass" && anticipatesNextChord(context, view, chord);
+  return Boolean(resolveOrnamentMotion(context, view, chord));
+}
+
+function isStructuralBass(context: HarmonyRuleContext, note: AnalysisNote, slice?: AnalysisSlice) {
+  return Boolean(slice?.chord && pitchClassEquals(note.pitch, slice.chord.identity.bass) &&
+    isStructuralTone(context, note, slice));
+}
+
+function hasStructuralBass(context: HarmonyRuleContext, chord: AnalysisChord) {
+  return context.slices({ overlapping: { fromTick: chord.startTick, toTick: chord.startTick + chord.durationTicks } })
+    .any(slice => slice.chord?.id === chord.id && Boolean(slice.notes.bass &&
+      isStructuralBass(context, slice.notes.bass, slice)));
+}
+
+function continuesPedalBass(context: HarmonyRuleContext, chord: AnalysisChord, bass: AnalysisNote) {
+  // Ch. 48: the bass pedal may sound independently of the moving harmony.
+  const pedal = chord.semantics?.pedalContext;
+  if (!pedal || !pitchClassEquals(pedal.pitch, bass.pitch)) return false;
+  if (bass.nonChordToneRole === "pedal") return true;
+  return [true, false].some(before => {
+    const edge = before ? chord.startTick : chord.startTick + chord.durationTicks;
+    const adjacent = context.sliceAt(before ? edge - 1 : edge);
+    const otherBass = adjacent?.notes.bass;
+    const otherPedal = adjacent?.chord?.semantics?.pedalContext;
+    return Boolean(otherBass && otherPedal && pitchClassEquals(pedal.pitch, otherPedal.pitch) &&
+      context.pitch.sameWrittenPitch(bass, otherBass) &&
+      (bass.id === otherBass.id || (before
+        ? noteEnd(otherBass) === edge && bass.startTick === edge
+        : noteEnd(bass) === edge && otherBass.startTick === edge)));
+  });
+}
+
+export function isVerifiedOrnamentalBass(
+  context: HarmonyRuleContext, slice: AnalysisSlice, chord: AnalysisChord, bass: AnalysisNote,
+) {
+  if (continuesPedalBass(context, chord, bass)) return true;
+  const role = bass.nonChordToneRole;
+  if (!role || role === "other" || role === "pedal" || role === "anticipation" ||
+      !isOutsideChord(context, bass, chord)) return false;
+  const view = context.notes({ voiceId: "bass", startingAt: bass.startTick }).first(item => item.note.id === bass.id);
+  if (!view) return false;
+  const end = chord.startTick + chord.durationTicks;
+  if (role === "suspension" || role === "retardation") {
+    const motion = resolveOrnamentMotion(context, view, chord);
+    return Boolean(motion && motion.target.id === chord.id && motion.arrival.tick >= slice.endTick &&
+      isStructuralBass(context, motion.next, motion.arrival));
+  }
+  if (context.sliceAt(bass.startTick)?.chord?.id !== chord.id) return false;
+
+  const position = context.metric.positionAt(bass.startTick);
+  const offDownbeat = Boolean(position && position.role !== "downbeat");
+  const withinMeasure = offDownbeat &&
+    context.metric.positionAt(noteEnd(bass) - 1)?.measureNumber === position?.measureNumber;
+  if (role === "passing") {
+    const chain = resolvePassingChain(context, view);
+    if (!withinMeasure || !chain || bass.durationTicks > chain.leftAnchor.durationTicks ||
+        !hasStructuralBass(context, chord)) return false;
+    const departure = context.sliceAt(noteEnd(chain.leftAnchor) - 1);
+    const source = departure?.chord;
+    if (!source || !isStructuralTone(context, chain.leftAnchor, departure) ||
+        (!isStructuralBass(context, chain.leftAnchor, departure) &&
+          !isStructuralBassAtStart(context, source))) return false;
+    const arrival = context.sliceAt(chain.rightAnchor.startTick);
+    const target = arrival?.chord;
+    if (target?.id === chord.id) return true;
+    if (target?.startTick !== end || target.startTick !== chain.rightAnchor.startTick ||
+        !isStructuralBass(context, chain.rightAnchor, arrival)) return false;
+    // Ascending melodic-minor V–V6/V65 uses the separate continuation
+    // proof in beforeMelodicMinorPassingBass, including the resolution to i.
+    const key = slice.key;
+    const dominant = scaleDegreePitchClass(key, 5);
+    return !(key.mode === "minor" && chain.chainNotes.length === 1 && source.id === chord.id &&
+      pitchClassEquals(source.identity.root, dominant) && pitchClassEquals(target.identity.root, dominant) &&
+      pitchClassEquals(chain.leftAnchor.pitch, dominant) &&
+      pitchClassEquals(bass.pitch, scaleDegreePitchClass(key, 6, 1)) &&
+      pitchClassEquals(chain.rightAnchor.pitch, leadingTonePitchClass(key)));
+  }
+
+  const motion = resolveOrnamentMotion(context, view, chord);
+  if (!motion || !isStructuralBass(context, motion.next, motion.arrival)) return false;
+  const { previous, departure, target, next } = motion;
+  const entersNextChord = target.id !== chord.id && target.startTick === end && next.startTick === end;
+  switch (role) {
+    case "neighbor":
+      return Boolean(withinMeasure && previous && isStructuralBass(context, previous, departure) &&
+        (departure?.chord?.id === chord.id || target.id === chord.id) &&
+        bass.durationTicks <= Math.max(previous.durationTicks, next.durationTicks));
+    case "escape":
+      return Boolean(offDownbeat && entersNextChord && previous && departure?.chord?.id === chord.id &&
+        isStructuralBass(context, previous, departure));
+    case "appoggiatura":
+      return motion.jumpedIn && (target.id === chord.id || entersNextChord) && hasStructuralBass(context, chord);
+    default:
+      return false;
+  }
+}
+
+function isStructuralBassAtStart(context: HarmonyRuleContext, chord: AnalysisChord) {
+  const opening = context.sliceAt(chord.startTick);
+  const bass = opening?.notes.bass;
+  return Boolean(opening?.chord?.id === chord.id && bass && isStructuralBass(context, bass, opening));
+}
 
 /** Restore the previous structural note only in voices that demonstrably
  * anticipate the next chord (Spasobin, chapter 42, §§1–5). */

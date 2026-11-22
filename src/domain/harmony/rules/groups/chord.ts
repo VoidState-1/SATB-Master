@@ -8,10 +8,7 @@ import type { RuleDiagnostic } from "../../runtime";
 import { effectiveFunctionalDesignation } from "../../../functionalHarmonyCatalog";
 import {
   formatPitchClass,
-  isWrittenStep,
   pitchClassEquals,
-  scaleDegreePitchClass,
-  stepIndex,
   toMidi,
   writtenInterval,
   type SpelledPitchClass,
@@ -27,12 +24,14 @@ import {
   chordSliceFacts,
   type ChordSliceFact,
   structuralTriadVoicing,
+  realizedBeforeVerifiedOrnaments,
   triadOrnaments,
   landsOnIncompleteTonic,
 } from "../helpers/chordVoicing";
 import { continuesCompleteSeventh } from "../helpers/motionHarmony";
 import {
   beforeMelodicMinorPassingBass,
+  isVerifiedOrnamentalBass,
   pairedOuterNeighbors,
   notesWithAnticipationReplacements,
 } from "../helpers/ornaments";
@@ -85,13 +84,12 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
   return diagnostics;
 }
 
-function connectsStructuralBasses(
+function anticipatesStructuralBass(
   context: HarmonyRuleContext,
   chord: ChordSliceFact["chord"],
   bass: AnalysisNote,
 ) {
-  const role = bass.nonChordToneRole;
-  if ((role !== "passing" && role !== "anticipation") || context.harmony.isWrittenChordTone(bass, chord)) return false;
+  if (bass.nonChordToneRole !== "anticipation" || context.harmony.isWrittenChordTone(bass, chord)) return false;
   const position = context.metric.positionAt(bass.startTick);
   if (!position || position.role === "downbeat" ||
       context.metric.positionAt(bass.startTick + bass.durationTicks - 1)?.measureNumber !== position.measureNumber) return false;
@@ -109,24 +107,11 @@ function connectsStructuralBasses(
       !pitchClassEquals(previous.pitch, chord.identity.bass) ||
       !pitchClassEquals(next.pitch, target.identity.bass) ||
       !context.harmony.isWrittenChordTone(previous, chord) || !context.harmony.isWrittenChordTone(next, target)) return false;
-  if (role === "anticipation") {
-    const landing = context.metric.positionAt(next.startTick);
-    return bass.durationTicks <= next.durationTicks &&
-      position.confidence === "certain" && landing?.confidence === "certain" &&
-      (position.role === "weak-beat" || position.role === "subdivision") && landing.level > position.level &&
-      context.pitch.sameWrittenPitch(bass, next);
-  }
-  const meaning = context.harmony.primaryInterpretation(chord);
-  if (meaning.status === "ambiguous") return false;
-  const key = (meaning.status === "resolved" && meaning.value.localKey) || context.keyAt(bass.startTick);
-  if (!key) return false;
-  const degree = (stepIndex(bass.pitch.step) - stepIndex(key.tonic.step) + 7) % 7 + 1;
-  if (!pitchClassEquals(bass.pitch, scaleDegreePitchClass(key, degree))) return false;
-  const entry = writtenInterval(previous.pitch, bass.pitch);
-  const exit = writtenInterval(bass.pitch, next.pitch);
-  return isWrittenStep(entry) && isWrittenStep(exit) &&
-    entry.diatonicSteps === exit.diatonicSteps &&
-    Math.sign(entry.semitones) === entry.diatonicSteps && Math.sign(exit.semitones) === exit.diatonicSteps;
+  const landing = context.metric.positionAt(next.startTick);
+  return bass.durationTicks <= next.durationTicks &&
+    position.confidence === "certain" && landing?.confidence === "certain" &&
+    (position.role === "weak-beat" || position.role === "subdivision") && landing.level > position.level &&
+    context.pitch.sameWrittenPitch(bass, next);
 }
 
 export function inversionBassRule(context: HarmonyRuleContext) {
@@ -135,8 +120,8 @@ export function inversionBassRule(context: HarmonyRuleContext) {
     const bass = active.find((item) => item.voiceId === "bass");
     if (!bass || pitchClassEquals(bass.note.pitch, chord.identity.bass)) return;
     const written = context.analysis.writtenProlongations.get(slice.tick);
-    if (connectsStructuralBasses(context, chord, bass.note) || beforeMelodicMinorPassingBass(context, slice) ||
-        pairedOuterNeighbors(context, slice)) return;
+    if (anticipatesStructuralBass(context, chord, bass.note) || beforeMelodicMinorPassingBass(context, slice) ||
+        pairedOuterNeighbors(context, slice) || isVerifiedOrnamentalBass(context, slice, chord, bass.note)) return;
     diagnostics.push(
       diagnostic(
         "chord.inversion-bass",
@@ -175,15 +160,10 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
     ({ slice, chord, active, stableComplete }) => {
       if (!stableComplete) return;
       const structural = notesWithAnticipationReplacements(context, slice, active);
-      const requiredDegrees = chordVoicingPolicy(chord.identity).requiredDegrees;
-      const missing = requiredDegrees
-        .map((degree) => chordIdentityToneSpellingForDegree(chord.identity, degree))
-        .filter(
-          (tone): tone is SpelledPitchClass => {
-            if (!tone) return false;
-            return !structural.some(({ note }) => pitchClassEquals(note.pitch, tone));
-          },
-        );
+      const requiredTones = chordVoicingPolicy(chord.identity).requiredDegrees
+        .map(degree => chordIdentityToneSpellingForDegree(chord.identity, degree))
+        .filter((tone): tone is SpelledPitchClass => Boolean(tone));
+      const missing = requiredTones.filter(tone => !structural.some(({ note }) => pitchClassEquals(note.pitch, tone)));
       if (missing.length === 0 || structuralTriadVoicing(context, slice) !== slice) return;
       const fifth = chordIdentityToneSpellingForDegree(chord.identity, 5);
       if (missing.length === 1 && fifth && pitchClassEquals(missing[0], fifth) &&
@@ -218,6 +198,7 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
         const respelt = respeltDoubleDominantMember(context, slice);
         if (respelt && pitchClassEquals(missing[0], respelt.seventh)) return;
       }
+      if (realizedBeforeVerifiedOrnaments(context, slice, chord, active, requiredTones, missing)) return;
       diagnostics.push(
         diagnostic(
           "chord.incomplete-members",

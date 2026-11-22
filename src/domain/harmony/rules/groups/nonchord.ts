@@ -1,4 +1,5 @@
 import { decoratedPassingVoicing } from "../helpers/chordVoicing";
+import { resolvePassingChain, suspensionEntry } from "../helpers/ornaments";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import type { NonChordToneRole, VoiceId } from "../../../project/types";
@@ -47,44 +48,6 @@ function roleNotes(context: HarmonyRuleContext, role: NonChordToneRole) {
     );
 }
 
-function suspensionEntry(
-  context: HarmonyRuleContext,
-  currentNote: NoteView,
-) {
-  const { voiceId, note } = currentNote;
-  const outside = context.slices().first(
-    (slice) =>
-      slice.notes[voiceId]?.id === note.id &&
-      Boolean(slice.chord) &&
-      !isChordTone(context, note, slice),
-  );
-  if (!outside) return undefined;
-  const previousSlice = context
-    .sliceTransitions({ toSliceIndex: outside.index })
-    .last()?.previous;
-  const previousAttack = context.noteNeighborhood(currentNote)?.previous?.note;
-  const preparedByHeldNote = Boolean(
-    previousSlice?.chord &&
-    previousSlice.endTick === outside.tick &&
-    previousSlice.notes[voiceId]?.id === note.id &&
-    isChordTone(context, note, previousSlice),
-  );
-  const preparedByReattack = Boolean(
-    previousSlice?.chord &&
-    previousAttack &&
-    previousAttack.startTick + previousAttack.durationTicks ===
-      note.startTick &&
-    toMidi(previousAttack.pitch) === toMidi(note.pitch) &&
-    isChordTone(context, previousAttack, previousSlice),
-  );
-  return {
-    current: outside,
-    previousSlice,
-    previousAttack,
-    prepared: preparedByHeldNote || preparedByReattack,
-  };
-}
-
 function pushRoleDiagnostic(
   diagnostics: RuleDiagnostic[],
   context: HarmonyRuleContext,
@@ -126,21 +89,14 @@ export function passingToneRule(context: HarmonyRuleContext) {
     const { voiceId, note } = current;
     const previous = neighborhood.previous?.note;
     const next = neighborhood.next?.note;
-    const previousSlice = previous ? context.sliceAt(previous.startTick) : undefined;
     const currentSlice = neighborhood.attackSlice;
-    const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
-    if (!previous || !next || !currentSlice.chord) continue;
-    if (readHeldChromaticPassing(context, voiceId, previous, note, next) ||
-        decoratedPassingVoicing(context, currentSlice)?.noteIds.includes(note.id)) continue;
-    const entering = writtenInterval(previous.pitch, note.pitch);
-    const leaving = writtenInterval(note.pitch, next.pitch);
-    const valid =
-      !isChordTone(context, note, currentSlice) &&
-      isChordTone(context, previous, previousSlice) &&
-      isChordTone(context, next, nextSlice) &&
-      context.pitch.isStep(previous, note) &&
-      context.pitch.isStep(note, next) &&
-      Math.sign(entering.semitones) === Math.sign(leaving.semitones);
+    if (!currentSlice.chord) continue;
+    const related = [previous, next].filter((neighbor): neighbor is AnalysisNote => Boolean(neighbor));
+    const valid = !isChordTone(context, note, currentSlice) && (
+      Boolean(previous && next && readHeldChromaticPassing(context, voiceId, previous, note, next)) ||
+      Boolean(decoratedPassingVoicing(context, currentSlice)?.noteIds.includes(note.id)) ||
+      Boolean(resolvePassingChain(context, current))
+    );
     if (!valid)
       pushRoleDiagnostic(
         diagnostics,
@@ -150,7 +106,7 @@ export function passingToneRule(context: HarmonyRuleContext) {
         note,
         "经过音角色不成立",
         "经过音应在两个结构音之间同向级进进入和离开。",
-        [previous, next],
+        related,
         currentSlice,
       );
   }

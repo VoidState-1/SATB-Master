@@ -32,8 +32,13 @@ import {
 } from "../../facts/tendencyResolution";
 import { soundsCompleteWrittenChord } from "../../facts/writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
-import { activeNotes, crossesWrittenBoundary } from "./core";
-import { pairedOuterNeighbors, triadTailOrnaments, beforeMelodicMinorPassingBass } from "./ornaments";
+import { activeNotes, crossesManualPhraseBoundary, crossesWrittenBoundary } from "./core";
+import {
+  pairedOuterNeighbors,
+  triadTailOrnaments,
+  beforeMelodicMinorPassingBass,
+  isVerifiedChordOrnament,
+} from "./ornaments";
 
 export { respeltDegrees, writtenDoubleDominantResolution } from "../../facts/tendencyResolution";
 
@@ -169,6 +174,35 @@ export function structuralTriadVoicing(context: HarmonyRuleContext, end: Analysi
   if (end.attackVoiceIds.length === 1 && end.attackVoiceIds[0] === "bass" &&
       end.notes.bass?.nonChordToneRole === "passing") return beforeMelodicMinorPassingBass(context, end) ?? end;
   return triadOrnaments(context, end)?.departure ?? end;
+}
+
+export function realizedBeforeVerifiedOrnaments(
+  context: HarmonyRuleContext,
+  slice: AnalysisSlice,
+  chord: AnalysisChord,
+  active: ReturnType<typeof activeNotes>,
+  requiredTones: readonly SpelledPitchClass[],
+  missing: readonly SpelledPitchClass[],
+) {
+  if (slice.tick <= chord.startTick) return false;
+  const verified = active.filter(item => isVerifiedChordOrnament(context, chord, item));
+  if (!verified.length) return false;
+  const retained = active.filter(({ note }) => !note.nonChordToneRole);
+  const covers = (notes: ReturnType<typeof activeNotes>, tones: readonly SpelledPitchClass[]) =>
+    tones.every(tone => notes.some(({ note }) => pitchClassEquals(note.pitch, tone)));
+
+  // Chs. 36–43: an ornament can temporarily displace a structural member
+  // only where the sounding voicing supplies evidence in that same voice.
+  return context.slices({ overlapping: { fromTick: chord.startTick, toTick: slice.tick } }).any(anchor => {
+    if (!anchor.completeSatb || anchor.chord?.id !== chord.id ||
+        crossesManualPhraseBoundary(context, anchor.tick, slice.tick) ||
+        context.analysis.project.keyEvents.some(event => anchor.tick < event.tick && event.tick <= slice.tick)) return false;
+
+    const unmarked = activeNotes(anchor).filter(({ note }) => !note.nonChordToneRole);
+    if (!covers(unmarked, requiredTones)) return false;
+    const replacements = unmarked.filter(item => verified.some(({ voiceId }) => item.voiceId === voiceId));
+    return covers(replacements, missing) && covers([...retained, ...replacements], requiredTones);
+  });
 }
 
 function primaryKey(context: HarmonyRuleContext, slice: AnalysisSlice, degree: 1 | 5) {

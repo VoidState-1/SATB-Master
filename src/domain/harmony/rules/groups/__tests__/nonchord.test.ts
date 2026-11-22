@@ -4,6 +4,58 @@ import { compileScoreText } from "../../../../scoreText";
 import { applyHarmonyInference, inferChords } from "../../../inference";
 import { checkHarmony } from "../../../registry";
 
+describe("自然与半音经过链", () => {
+  function findings(melody: string, harmony: string, roles: readonly string[], key = "C major", cut?: number) {
+    const { project } = compileScoreText(`satb 1
+key ${key}
+meter 4/4
+bars 1..1 {
+ S: | ${melody} |
+ A: empty
+ T: empty
+ B: empty
+ H: | ${harmony} |
+}
+annotations {
+ ${roles.map(id => "note " + id + " role=passing").join("\n ")}
+}`);
+    if (cut !== undefined) project.structure.phraseBoundaries.push({
+      id: "cut", tick: cut * project.ppq, source: "manual", confidence: "certain",
+    });
+    return checkHarmony(project).diagnostics.filter(d => d.ruleId === "nonchord.passing-tone");
+  }
+
+  it.each([
+    ["上行半音", "C5/2 C#5/4@p D5/4", "I/2. V/4", ["p"], "C major"],
+    ["下行半音", "A4/2 G#4/4@p G4/4", "IV/2. I/4", ["p"], "C major"],
+    ["重升经过", "F#4/2 F##4/4@p G#4/4", "V/2. vi/4", ["p"], "B major"],
+    ["两个自然经过音", "D#5/2 E#5/8@p F##5/8@q G#5/4", "V/2. I/4", ["p", "q"], "E major"],
+    ["两个半音阶经过音", "Eb5/2 D5/8@p Db5/8@q C5/4", "i/1", ["p", "q"], "C minor"],
+    ["三个半音阶经过音", "C5/2 C#5/8@p D5/8@q D#5/8@r E5/8", "I/1", ["p", "q", "r"], "C major"],
+    ["填满纯四度的四个经过音", "C5/4. C#5/8@p D5/8@q D#5/8@r E5/8@s F5/8", "IV/1",
+      ["p", "q", "r", "s"], "C major"],
+    ["长音到新和弦后才成为结构音", "C5/2 C#5/4@p D5/4", "V/4 I/2 V/4", ["p"], "C major"],
+  ] as const)("%s成立", (_label, notes, chords, roles, key) => {
+    expect(findings(notes, chords, roles, key)).toEqual([]);
+  });
+
+  it.each([
+    ["辅助音折返", "C5/2 C#5/4@p C5/4", "I/1", ["p"]],
+    ["倚音跳进", "G4/2 C#5/4@p D5/4", "I/2. V/4", ["p"]],
+    ["同音重复", "C5/2 C5/4@p D5/4", "I/2 V/2", ["p"]],
+    ["跨休止", "C5/4 r/4 C#5/4@p D5/4", "I/2. V/4", ["p"]],
+    ["跨手动句界", "C5/2 C#5/4@p D5/4", "I/2. V/4", ["p"], 3],
+    ["落点非和弦音", "C5/2 C#5/4@p D5/4", "I/1", ["p"]],
+    ["自身是当前构成音", "C5/2 D5/4@p E5/4", "I/2 V/4 I/4", ["p"]],
+    ["链中混入错标的构成音", "C5/2 C#5/8@p D5/8@q D#5/8@r E5/8", "I/2 V/4 I/4", ["p", "q", "r"]],
+    ["增二度", "C5/2 D#5/4@p E5/4", "I/1", ["p"]],
+    ["五个连续标注超过范围", "C5/4 C#5/8@p D5/8@q D#5/8@r E5/8@s E#5/8@t F#5/8",
+      "i/2. i/8 V/V/8", ["p", "q", "r", "s", "t"]],
+  ] as const)("%s仍报告", (...[_label, notes, chords, roles, cut]) => {
+    expect(findings(notes, chords, roles, "C major", cut)).toHaveLength(roles.length);
+  });
+});
+
 describe("分解和弦后的半音经过音", () => {
   const minor = `satb 1
 key E minor
