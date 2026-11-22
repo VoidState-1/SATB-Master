@@ -36,6 +36,8 @@ import {
   transfersLeadingToneInWrittenDominant,
   tenorLeapsToTonicThird,
   becomesRespelledChainSeventh,
+  descendsThroughSequentialMinorSeventh,
+  transfersLeadingToneAcrossPedalPassage,
   leavesLeadingToneAtRespelledDiminishedPivot,
   leadingToneSource,
 } from "../state/leadingToneTransfers";
@@ -233,6 +235,12 @@ function leadingToneTransition(
       return decision(environment, "resolve", "double-dominant-leading-tone-to-dominant-seventh", debugFacts);
     }
   }
+
+  if (attacked && targetUnchanged && descendsThroughSequentialMinorSeventh(environment))
+    return decision(environment, "violate", "leading-tone-sequential-minor-seventh", debugFacts);
+
+  if (attacked && targetUnchanged && transfersLeadingToneAcrossPedalPassage(environment))
+    return decision(environment, "cancel", "leading-tone-pedal-delayed-transfer", debugFacts);
 
   if (attacked && targetUnchanged && leadingToneBecomesNextDominantSeventh(environment))
     return decision(environment, "resolve", "leading-tone-becomes-next-dominant-seventh", debugFacts);

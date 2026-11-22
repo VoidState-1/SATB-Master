@@ -1,6 +1,7 @@
 import { chordToneSpellings } from "../../../chordModel";
 import {
   keyEquals,
+  isWrittenStep,
   pitchClassEquals,
   pitchClassValue,
   scaleDegreePitchClass,
@@ -24,6 +25,7 @@ import {
   matchesWrittenChord,
   resolvesInVoice,
   hasWrittenVoicing,
+  keepsWrittenMember,
 } from "../../facts/tendencyResolution";
 import { readCompleteWrittenChord } from "../../facts/writtenVoicing";
 import type { RuleStepContext } from "../../runtime";
@@ -251,6 +253,183 @@ export function transfersLeadingToneInWrittenDominant(
     candidate.targetAlter === payload.targetAlter && candidate.targetMode === payload.targetMode);
 }
 
+function writtenEvidenceFrame(rules: HarmonyRuleContext, frame: AnalysisSlice) {
+  const { chord } = frame;
+  if (!chord || chord.locked || rules.analysis.project.chordTrack.locked) return frame;
+  const readings = chord.semantics?.interpretations;
+  return readings?.length && readings.every(reading => reading.source === "inferred")
+    ? { ...frame, chord: undefined } : frame;
+}
+
+function sequenceDominantSeventh(rules: HarmonyRuleContext, frame: AnalysisSlice) {
+  const written = writtenEvidenceFrame(rules, frame);
+  const chord = readWrittenDominantSeventh(frame.notes);
+  if (chord && allowsWrittenTertianIdentity(written, chord.root, "dominant7") &&
+      Object.values(frame.notes).every(note => toMidi(note.pitch) >= toMidi(frame.notes.bass!.pitch))) return chord;
+}
+
+function minorSeventhOnBass(rules: HarmonyRuleContext, frame: AnalysisSlice, root: SpelledPitchClass) {
+  return !!frame.notes.bass && pitchClassEquals(frame.notes.bass.pitch, root) &&
+    matchesWrittenChord(writtenEvidenceFrame(rules, frame), root, "minor7");
+}
+
+/** A minor seventh on the local target can bridge two dominants. The old
+ * leading tone still needs a diagnostic because it has not resolved upward. */
+export function descendsThroughSequentialMinorSeventh(environment: ObligationEnvironment<LeadingTonePayload>) {
+  const transition = writtenTransition(environment, -1);
+  if (!transition) return false;
+  const { previous, slice, rules, voiceId, source, landing, target } = transition;
+  const dominantRoot = scaleDegreePitchClass({ tonic: target, mode: "major" }, 5);
+  const inDominant = (frame: AnalysisSlice) => {
+    const seventh = sequenceDominantSeventh(rules, frame);
+    return (!!seventh && pitchClassEquals(seventh.root, dominantRoot)) ||
+      matchesWrittenChord(writtenEvidenceFrame(rules, frame), dominantRoot, "major");
+  };
+  const opening = rules.sliceAt(environment.obligation.openedAt.tick);
+  if (!opening || !inDominant(opening) || !inDominant(previous)) return false;
+
+  const [, minorThird, , minorSeventh] = chordToneSpellings(target, "minor7");
+  if (source.pitch.step !== landing.pitch.step || !pitchClassEquals(landing.pitch, minorSeventh) ||
+      !minorSeventhOnBass(rules, slice, target)) return false;
+  const conversion = nextWrittenVoicingChange(rules, slice, frame => minorSeventhOnBass(rules, frame, target));
+  if (!conversion) return false;
+
+  const { departure, landing: nextDominant } = conversion;
+  const seventh = sequenceDominantSeventh(rules, nextDominant);
+  if (!seventh || !pitchClassEquals(seventh.root, target) ||
+      !keepsWrittenMember(departure, nextDominant, "bass") ||
+      !VOICE_ORDER.some(voice => voice !== voiceId && voice !== "bass" &&
+        pitchClassEquals(departure.notes[voice]!.pitch, minorThird) &&
+        pitchClassEquals(nextDominant.notes[voice]!.pitch, seventh.third) &&
+        movesBySemitone(departure, nextDominant, voice, 1))) return false;
+
+  const exit = nextWrittenVoicingChange(rules, nextDominant, frame =>
+    !!sequenceDominantSeventh(rules, frame) && spelledPitchEquals(nextDominant.notes.bass!.pitch, frame.notes.bass!.pitch));
+  if (!exit) return false;
+  const goal = writtenEvidenceFrame(rules, exit.landing);
+  const goalSeventh = sequenceDominantSeventh(rules, goal);
+  return (goalSeventh && pitchClassEquals(goalSeventh.root, seventh.target)) ||
+    matchesWrittenChord(goal, seventh.target, "major") || matchesWrittenChord(goal, seventh.target, "minor");
+}
+
+function arrivesOnWrittenTonic(rules: HarmonyRuleContext, slice: AnalysisSlice, key: KeyLike) {
+  const bass = slice.notes.bass;
+  const frame = writtenEvidenceFrame(rules, slice);
+  if (!bass || frame.chord?.semantics?.cadenceRole ||
+      !allowsWrittenLocalRole(rules, frame, key, 1) || !allowsWrittenTertianIdentity(frame, key.tonic, key.mode)) return false;
+  const tones = chordToneSpellings(key.tonic, key.mode);
+  if (pitchClassEquals(bass.pitch, tones[0])) {
+    return hasWrittenVoicing(frame, tones) || hasWrittenVoicing(frame, tones.slice(0, 2));
+  }
+  return pitchClassEquals(bass.pitch, tones[1]) && hasWrittenVoicing(frame, tones);
+}
+
+function writtenRootDominant(rules: HarmonyRuleContext, slice: AnalysisSlice, key: KeyLike) {
+  const frame = writtenEvidenceFrame(rules, slice);
+  const root = scaleDegreePitchClass(key, 5);
+  const bass = frame.notes.bass;
+  if (!bass || !pitchClassEquals(bass.pitch, root) || !allowsWrittenLocalRole(rules, frame, key, 5)) return false;
+  if (matchesWrittenChord(frame, root, "major")) return true;
+  const seventh = sequenceDominantSeventh(rules, frame);
+  return !!seventh && pitchClassEquals(seventh.root, root);
+}
+
+function isWeakPedalPassage(
+  rules: HarmonyRuleContext, before: AnalysisSlice, weak: AnalysisSlice, after: AnalysisSlice,
+) {
+  const position = rules.metric.positionAt(weak.tick);
+  if (position?.confidence !== "certain" ||
+      rules.metric.compare(rules.metric.positionAt(before.tick), position) !== "stronger" ||
+      rules.metric.compare(rules.metric.positionAt(after.tick), position) !== "stronger") return false;
+  return VOICE_ORDER.some(voice => {
+    if (voice === "bass" || !changesNoteAt(before, weak, voice) || !changesNoteAt(weak, after, voice)) return false;
+    const first = writtenInterval(before.notes[voice]!.pitch, weak.notes[voice]!.pitch);
+    const second = writtenInterval(weak.notes[voice]!.pitch, after.notes[voice]!.pitch);
+    return isWrittenStep(first) && isWrittenStep(second) && first.diatonicSteps === second.diatonicSteps &&
+      Math.sign(first.semitones) === first.diatonicSteps && Math.sign(second.semitones) === second.diatonicSteps;
+  });
+}
+
+/** The receiving part must keep the leading tone under the same sounding
+ * bass note up to its semitone resolution into the tonic. */
+export function transfersLeadingToneAcrossPedalPassage(environment: ObligationEnvironment<LeadingTonePayload>) {
+  const { context: { rules, previous, slice: weak }, obligation: { openedAt, payload } } = environment;
+  const source = openedSourceNote(environment);
+  const bass = previous?.notes.bass;
+  const key = { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode };
+  const opening = rules.sliceAt(openedAt.tick);
+  if (!opening || !writtenRootDominant(rules, opening, key) ||
+      !previous || previous.endTick !== weak.tick || !source || !bass || payload.voiceId === "bass" ||
+      !changesNoteAt(previous, weak, payload.voiceId) ||
+      !spelledPitchEquals(previous.notes[payload.voiceId]!.pitch, source.pitch) ||
+      !writtenRootDominant(rules, previous, key) || weak.notes.bass?.id !== bass.id ||
+      Object.values(weak.notes).some(note => pitchClassEquals(note.pitch, source.pitch))) return false;
+
+  const handoff = rules.sliceAt(weak.endTick);
+  const exitTick = bass.startTick + bass.durationTicks;
+  const tonic = rules.sliceAt(exitTick);
+  if (!handoff || handoff.tick !== weak.endTick || handoff.notes.bass?.id !== bass.id ||
+      !isWeakPedalPassage(rules, previous, weak, handoff) || !tonic || tonic.tick !== exitTick ||
+      crossesManualPhraseBoundary(rules, openedAt.tick, exitTick) || !arrivesOnWrittenTonic(rules, tonic, key) ||
+      !rules.slices({ overlapping: { fromTick: previous.tick, toTick: exitTick + 1 } })
+        .all(frame => keyEquals(previous.key, frame.key))) return false;
+
+  const receivers = VOICE_ORDER.filter(voice => {
+    const note = handoff.notes[voice];
+    return voice !== payload.voiceId && voice !== "bass" && !!note && !note.nonChordToneRole &&
+      note.startTick === handoff.tick && toMidi(note.pitch) > toMidi(bass.pitch) && pitchClassEquals(note.pitch, source.pitch);
+  });
+  const departure = rules.sliceAt(exitTick - 1);
+  if (receivers.length !== 1 || !departure) return false;
+  const receiver = receivers[0];
+  const first = handoff.notes[receiver]!;
+  return rules.slices({ overlapping: { fromTick: handoff.tick, toTick: exitTick } }).all(frame => {
+    const note = frame.notes[receiver];
+    return frame.notes.bass?.id === bass.id && !!note && !note.nonChordToneRole &&
+      spelledPitchEquals(note.pitch, first.pitch);
+  }) && resolvesInVoice(departure, tonic, receiver, key.tonic, 1);
+}
+
+/** Recover the local target of an unlabelled dominant before judging its
+ * leading tone. This supplies the same obligation in blind and given input. */
+function localTargetAtWrittenLink(rules: HarmonyRuleContext, slice: AnalysisSlice): KeyLike | undefined {
+  if (writtenEvidenceFrame(rules, slice).chord || !slice.completeSatb || !slice.attackVoiceIds.length) return;
+  const bass = slice.notes.bass!;
+  const seventh = sequenceDominantSeventh(rules, slice);
+  if (seventh) {
+    const voice = VOICE_ORDER.find(voice => pitchClassEquals(slice.notes[voice]!.pitch, seventh.third))!;
+    const lead = slice.notes[voice]!;
+    const next = rules.sliceAt(lead.startTick + lead.durationTicks);
+    const arrival = next?.notes[voice];
+    if (next && arrival?.pitch.step === lead.pitch.step && movesBySemitone(slice, next, voice, -1) &&
+        keyEquals(slice.key, next.key) && minorSeventhOnBass(rules, next, seventh.target)) {
+      return { tonic: seventh.target, mode: "minor" };
+    }
+  }
+
+  const written = writtenEvidenceFrame(rules, slice);
+  if (!matchesWrittenChord(written, bass.pitch, "major")) return;
+  const weak = rules.sliceAt(slice.endTick);
+  const handoff = weak && rules.sliceAt(weak.endTick);
+  if (!weak || !handoff || !isWeakPedalPassage(rules, slice, weak, handoff)) return;
+  const root = scaleDegreePitchClass({ tonic: bass.pitch, mode: "major" }, 4);
+  const tonic = rules.sliceAt(bass.startTick + bass.durationTicks);
+  for (const mode of ["major", "minor"] as const) {
+    const key = { tonic: root, mode };
+    if (tonic && keyEquals(slice.key, tonic.key) && handoff.notes.bass?.id === bass.id &&
+        arrivesOnWrittenTonic(rules, tonic, key)) return key;
+  }
+
+  // A nearby written dominant label can confirm the local key even when
+  // the bass connection itself is broken and must fail the transfer test.
+  const end = handoff.tick + rules.analysis.project.ppq;
+  for (const frame of rules.slices({ overlapping: { fromTick: handoff.tick, toTick: end } })) {
+    if (!frame.chord || !writtenEvidenceFrame(rules, frame).chord || !keyEquals(slice.key, frame.key)) continue;
+    const target = leadingToneResolutionKey(frame, rules.harmony);
+    if (pitchClassEquals(root, target.tonic) && writtenRootDominant(rules, frame, target)) return target;
+  }
+}
+
 export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
   id: "source.leading-tone-attacks",
   requires: ["written-pitches"],
@@ -258,7 +437,8 @@ export const leadingToneSource: ObligationSource<LeadingTonePayload> = {
     const { slice, previous, transitionFromPrevious } = context;
     const chord = slice.chord;
     if (!supportsTendencyResolutionRules(context, chord)) return [];
-    const targetKey = leadingToneSourceKey(context.rules, slice) ?? inheritedLeadingToneKeyAtRotation(context);
+    const targetKey = leadingToneSourceKey(context.rules, slice) ?? inheritedLeadingToneKeyAtRotation(context) ??
+      localTargetAtWrittenLink(context.rules, slice);
     if (!targetKey) return [];
     const { tonic: targetTonic, mode: targetMode } = targetKey;
     const leadingTone = leadingTonePitchClass(targetKey);

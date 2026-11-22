@@ -7,6 +7,8 @@ import {
 } from "../../../../chordModel";
 import {
   keyEquals,
+  isWrittenStep,
+  leadingTonePitchClass,
   enharmonicSpellings,
   pitchClassEquals,
   scaleDegreePitchClass,
@@ -31,8 +33,10 @@ import {
   hasCompleteWrittenTertianVoicing,
   readCompleteWrittenChord,
   soundsCompleteWrittenChord,
+  soundsCompleteWrittenTones,
   soundsDeclaredChord,
 } from "../../../facts/writtenVoicing";
+import { readWrittenDominantSeventh } from "../../../facts/dominantMotion";
 import type { RuleDiagnostic } from "../../../runtime";
 import type { HarmonyRuleContext } from "../../context/createRuleContext";
 import {
@@ -507,6 +511,164 @@ export function hasInsertedChromaticResolution(
 
 const AUGMENTED = "melody.augmented-interval";
 
+function declaredDiminishedMotionChord(context: HarmonyRuleContext, frame: AnalysisSlice) {
+  const { chord } = frame;
+  if (!chord || chord.locked || context.analysis.project.chordTrack.locked) return chord;
+  const readings = chord.semantics?.interpretations;
+  return readings?.length && readings.every(reading => reading.source === "inferred") ? undefined : chord;
+}
+
+function isRootPositionLeadingTriad(context: HarmonyRuleContext, frame: AnalysisSlice) {
+  const bass = frame.notes.bass;
+  if (!bass) return false;
+  const key = localKey(context, frame);
+  if (!pitchClassEquals(bass.pitch, leadingTonePitchClass(frame.key)) &&
+      (!key || !pitchClassEquals(bass.pitch, leadingTonePitchClass(key)))) return false;
+  const declared = declaredDiminishedMotionChord(context, frame)?.identity;
+  const diminished = chordToneSpellings(bass.pitch, "diminished");
+  return (declared?.structure.kind === "tertian" && declared.structure.quality === "diminished" &&
+    pitchClassEquals(declared.root, bass.pitch) && pitchClassEquals(declared.bass, bass.pitch)) ||
+    soundsCompleteWrittenTones(diminished, Object.values(frame.notes).map(({ pitch }) => ({ pitch })), bass);
+}
+
+function supportsDiminishedMotionVoicing(context: HarmonyRuleContext, frame: AnalysisSlice, ornamentId?: string) {
+  const notes = Object.values(frame.notes).filter(note => note.id !== ornamentId);
+  const bass = frame.notes.bass ?? notes.reduce<AnalysisNote | undefined>((lowest, note) =>
+    !lowest || toMidi(note.pitch) < toMidi(lowest.pitch) ? note : lowest, undefined);
+  if (!bass || bass.id === ornamentId || notes.some(note => toMidi(note.pitch) < toMidi(bass.pitch))) return false;
+  const declared = declaredDiminishedMotionChord(context, frame)?.identity;
+  const written = (identity: ChordIdentity) => soundsCompleteWrittenChord(identity, notes, bass);
+  const rootAndThird = (quality: "major" | "minor") =>
+    soundsCompleteWrittenTones(chordToneSpellings(bass.pitch, quality).slice(0, 2), notes, bass);
+  const seventh = ornamentId ? undefined : readWrittenDominantSeventh(frame.notes);
+  if (declared) {
+    if (written(declared)) return true;
+    if (declared.structure.kind === "tertian" && !declared.structure.extensions.length &&
+        !declared.structure.alterations.length && pitchClassEquals(declared.root, bass.pitch) &&
+        pitchClassEquals(declared.bass, bass.pitch) &&
+        (declared.structure.quality === "major" || declared.structure.quality === "minor")) {
+      return rootAndThird(declared.structure.quality);
+    }
+    return !!seventh && declared.structure.kind === "tertian" &&
+      declared.structure.quality === "dominant7" && !declared.structure.extensions.length &&
+      !declared.structure.alterations.length && pitchClassEquals(seventh.root, declared.root) &&
+      pitchClassEquals(bass.pitch, declared.bass);
+  }
+
+  if (seventh || hasCompleteWrittenTertianVoicing(notes.map(note => note.pitch)) ||
+      (notes.length >= 3 && (rootAndThird("major") || rootAndThird("minor")))) return true;
+  const inferred = frame.chord?.identity;
+  if (inferred?.structure.kind === "augmented-sixth" && written(inferred)) return true;
+  const key = localKey(context, frame) ?? frame.key;
+  const root = scaleDegreePitchClass(key, 6, key.mode === "major" ? -1 : 0);
+  if (!pitchClassEquals(bass.pitch, root)) return false;
+  return (["italian", "french", "german", "doubleAugmented43"] as const).some(variant =>
+    written({ root, bass: root, structure: { kind: "augmented-sixth", variant } }));
+}
+
+function hasPreparedOrPassingSupport(
+  context: HarmonyRuleContext, frame: AnalysisSlice, movingVoice: VoiceId,
+) {
+  return upperVoices.some(voice => {
+    const note = frame.notes[voice];
+    if (voice === movingVoice || !note || (note.nonChordToneRole && note.nonChordToneRole !== "passing" &&
+        note.nonChordToneRole !== "suspension" && note.nonChordToneRole !== "retardation")) return false;
+    const nextTick = note.startTick + note.durationTicks;
+    const after = context.sliceAt(nextTick);
+    const resolved = after?.notes[voice];
+    if (!after || !resolved || resolved.startTick !== nextTick ||
+        crossesManualPhraseBoundary(context, note.startTick, nextTick) || !keyEquals(frame.key, after.key) ||
+        !VOICE_ORDER.every(part => part === voice || frame.notes[part]?.id === after.notes[part]?.id) ||
+        !supportsDiminishedMotionVoicing(context, after) ||
+        !supportsDiminishedMotionVoicing(context, frame, note.id)) return false;
+    const exit = writtenInterval(note.pitch, resolved.pitch);
+    if (!isWrittenStep(exit) || Math.sign(exit.semitones) !== exit.diatonicSteps) return false;
+
+    if (note.startTick < frame.tick && context.sliceAt(frame.tick - 1)?.notes[voice]?.id === note.id) {
+      const preparation = context.sliceAt(note.startTick);
+      return !!preparation && (!note.nonChordToneRole ||
+        note.nonChordToneRole === (exit.semitones < 0 ? "suspension" : "retardation")) &&
+        supportsDiminishedMotionVoicing(context, preparation);
+    }
+    const before = context.sliceAt(note.startTick - 1);
+    const prior = before?.notes[voice];
+    if (!before || !prior || !keyEquals(before.key, frame.key) ||
+        crossesManualPhraseBoundary(context, before.tick, note.startTick) ||
+        prior.startTick + prior.durationTicks !== note.startTick ||
+        (note.nonChordToneRole && note.nonChordToneRole !== "passing") ||
+        context.metric.compare(context.metric.positionAt(after.tick), context.metric.positionAt(note.startTick)) !== "stronger" ||
+        !supportsDiminishedMotionVoicing(context, before)) return false;
+    const entry = writtenInterval(prior.pitch, note.pitch);
+    return isWrittenStep(entry) && entry.diatonicSteps === exit.diatonicSteps &&
+      Math.sign(entry.semitones) === Math.sign(exit.semitones);
+  });
+}
+
+function requiresSpecificDiminishedResolution(
+  context: HarmonyRuleContext, motion: MelodyTransition, from: AnalysisSlice, to: AnalysisSlice, resolution: AnalysisSlice,
+) {
+  const { voiceId, previous, current, writtenInterval: leap } = motion;
+  const bass = to.notes.bass;
+  if (voiceId === "bass" || !bass) return false;
+
+  // A possible minor cadential 6/4 after the raised fourth needs the full
+  // German sixth resolution that B.4 already verifies.
+  if (leap.diatonicSteps === -2 && leap.semitones === -2 &&
+      pitchClassEquals(previous.pitch, bass.pitch) &&
+      pitchClassEquals(current.pitch, scaleDegreePitchClass({ tonic: bass.pitch, mode: "major" }, 6, 1))) {
+    const fifth = resolution.notes[voiceId]!.pitch;
+    const tonic = scaleDegreePitchClass({ tonic: fifth, mode: "major" }, 4);
+    const notes = Object.values(resolution.notes);
+    if (chordToneSpellings(tonic, "minor").every(tone => notes.some(note => pitchClassEquals(note.pitch, tone)))) {
+      return true;
+    }
+  }
+
+  // The special bII7–V7 tritone belongs to the bass. It does not license
+  // another part to leap between the two fifths in the same connection.
+  const priorBass = from.notes.bass;
+  if (Math.abs(leap.semitones) !== 6 || !priorBass || bass.startTick !== to.tick ||
+      !pitchClassEquals(previous.pitch, chordToneSpellings(priorBass.pitch, "major")[2]) ||
+      !pitchClassEquals(current.pitch, chordToneSpellings(bass.pitch, "major")[2])) return false;
+  const bassLeap = context.melodyTransitions({ voiceId: "bass" }).first(transition => transition.current.id === bass.id);
+  return !!bassLeap && isNeapolitanSeventhBassTritone(context, bassLeap);
+}
+
+/** B.4 and B.5 use the same evidence for a written diminished leap. */
+export function resolvesDiminishedLeap(
+  context: HarmonyRuleContext, motion: MelodyTransition, named: ReturnType<typeof intervalName>,
+) {
+  const { previous, current, voiceId } = motion;
+  const leap = motion.writtenInterval;
+  if (named.quality !== "减" || named.number < 3 || !motion.contiguous ||
+      Math.sign(leap.semitones) !== Math.sign(leap.diatonicSteps)) return false;
+  const end = current.startTick + current.durationTicks;
+  const arrival = context.sliceAt(current.startTick);
+  const resolution = context.sliceAt(end);
+  const next = resolution?.notes[voiceId];
+  if (!arrival || !resolution || !next || next.startTick !== end ||
+      crossesManualPhraseBoundary(context, previous.startTick, end) ||
+      context.analysis.project.keyEvents.some(event => previous.startTick < event.tick && event.tick <= end)) return false;
+  const step = writtenInterval(current.pitch, next.pitch);
+  if (!isWrittenStep(step) || step.diatonicSteps !== Math.sign(step.semitones) ||
+      step.semitones * leap.semitones >= 0 || Math.abs(step.semitones) >= Math.abs(leap.semitones)) return false;
+
+  if (context.slices({ overlapping: { fromTick: previous.startTick, toTick: end + 1 } })
+    .all(frame => !frame.chord && !!frame.notes[voiceId] && Object.keys(frame.notes).length === 1)) {
+    // Without accompaniment, multiple chromatic spellings need harmonic evidence.
+    return [previous, current, next].filter(note =>
+      !isDiatonicIn(arrival.key, note) && !pitchClassEquals(note.pitch, leadingTonePitchClass(arrival.key))).length <= 1;
+  }
+
+  const supported = (frame: AnalysisSlice) =>
+    supportsDiminishedMotionVoicing(context, frame) || hasPreparedOrPassingSupport(context, frame, voiceId);
+  const departure = context.sliceAt(current.startTick - 1);
+  return !!departure && !requiresSpecificDiminishedResolution(context, motion, departure, arrival, resolution) &&
+    supported(departure) && supported(resolution) &&
+    context.slices({ overlapping: { fromTick: arrival.tick, toTick: end } }).all(frame =>
+      (voiceId !== "bass" || !isRootPositionLeadingTriad(context, frame)) && supported(frame));
+}
+
 function hasSupportedDiminishedMotion(context: HarmonyRuleContext, motion: MelodyTransition) {
   return isMinorSixthChordBassLine(context, motion) ||
     isResolvedDominantSixthBass(context, motion) ||
@@ -579,7 +741,8 @@ function alteredIntervalRule(context: HarmonyRuleContext, expectedQuality: "增"
     }
     if (named.quality !== expectedQuality || semitones === 0 ||
         isNeapolitanSeventhBassTritone(context, transition) ||
-        chain?.has(current.id) || (!augmented && hasSupportedDiminishedMotion(context, transition))) continue;
+        chain?.has(current.id) || (!augmented && (resolvesDiminishedLeap(context, transition, named) ||
+          hasSupportedDiminishedMotion(context, transition)))) continue;
 
     const attack = context.sliceAt(current.startTick);
     // The following 6→5 stays within V7. That internal continuity cannot

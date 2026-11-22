@@ -14,6 +14,7 @@ import { isNeapolitanSeventhBassTritone } from "./support/chordSpellingAndDiaton
 import { sameHarmonyAtMelodicAttack } from "../helpers/motionHarmony";
 import {
   previousSeventhInTritoneTransfer,
+  resolvesDiminishedLeap,
   augmentedIntervalRule,
   diminishedIntervalRule,
 } from "./support/chromaticPassing";
@@ -54,7 +55,7 @@ function evaluateMelodyTransitionRule(
     const writtenName = intervalName(transition.writtenInterval);
     if (!policy.matches(interval, writtenName, transition.voiceId)) continue;
     if (policy.id === "melody.tritone" && (isNeapolitanSeventhBassTritone(context, transition) ||
-        isResolvedDominantSixthBass(context, transition))) continue;
+        isResolvedDominantSixthBass(context, transition) || resolvesDiminishedLeap(context, transition, writtenName))) continue;
     const previousSeventh = policy.id === "melody.tritone" ? previousSeventhInTritoneTransfer(context, transition) : undefined;
     const finding = diagnostic(
       policy.id,

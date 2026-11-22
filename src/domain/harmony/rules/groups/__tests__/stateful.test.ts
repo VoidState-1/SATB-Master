@@ -2503,3 +2503,87 @@ bars 1..1 {
     });
   });
 });
+
+describe.each(["blind", "given"] as const)("E.1 小七过渡与属持续音交接 (%s)", mode => {
+  const rule = "resolution.leading-tone";
+  const sequence = [
+    "G4/4 F4/4 F#4/8 F4/8 G4/4",
+    "C#4/4 C4/4. B3/8 B3/4",
+    "A3/4 A3/4. G3/8 G3/4",
+    "A2/4 D3/4. G2/8 G2/4",
+  ];
+  const pedal = [
+    "r/4 Bb4/8 Ab4/8 G4/8 F4/8 | Eb4/2.",
+    "r/4 F4/8 Eb4/8 D4/4 | Eb4/2.",
+    "r/4 D4/8 C4/8 Bb3/8 Ab3/8 | G3/2.",
+    "r/4 Bb2/2 | Eb2/2.",
+  ];
+
+  function check(lines: readonly string[], mechanism: "sequence" | "pedal", boundary?: number, localPedal = false) {
+    const isSequence = mechanism === "sequence";
+    const harmony = isSequence ? "V7/4 r/2." : "r/4 V/8 r/4. | I/2.";
+    const localLabels = [
+      "annotations {",
+      ' chord dominant range=[1:3+1/2,2:1) symbol=V7 localKey="Eb major"',
+      ' chord tonic range=[2:1,3:1) symbol=I localKey="Eb major"',
+      "}",
+    ];
+    const { project: raw } = compileScoreText([
+      "satb 1", isSequence ? "key D minor" : localPedal ? "key A minor" : "key Eb major",
+      isSequence ? "meter 4/4" : "meter 3/4",
+      isSequence ? "bars 1..1 {" : "bars 1..2 {",
+      ...["S", "A", "T", "B"].map((voice, i) => ` ${voice}: | ${lines[i]} |`),
+      ...(mode === "given" && !localPedal ? [` H: | ${harmony} |`] : []), "}",
+      ...(mode === "given" && localPedal ? localLabels : []),
+    ].join("\n"));
+    if (boundary !== undefined) raw.structure.phraseBoundaries.push({
+      id: "manual", tick: boundary * raw.ppq, source: "manual", confidence: "certain",
+    });
+    const project = mode === "blind"
+      ? applyHarmonyInference(raw, { chordInference: inferChords(raw) },
+          { mode: "replace-unlocked", writeNonChordToneRoles: true }).project
+      : raw;
+    expect(validateProject(project)).toBe(true);
+    return checkHarmony(project).diagnostics.filter(d => d.ruleId === rule &&
+      d.tick === (isSequence ? 1 : 1.5) * project.ppq && d.voiceIds.includes(isSequence ? "alto" : "tenor"));
+  }
+
+  it("V06 小七转属七再下行五度时保留建议", () => {
+    expect(check(sequence, "sequence")).toMatchObject([{
+      severity: "suggestion",
+      title: "模进中导音经小七和弦过渡",
+      trace: expect.arrayContaining([expect.objectContaining({
+        outcome: "violate", reason: "leading-tone-sequential-minor-seventh",
+      })]),
+    }]);
+  });
+
+  it.each([
+    ["小七的三音没有升高", sequence.map(line => line.replace("F#4/8", "F4/8")), undefined],
+    ["新属七没有落向五度下行目标", ["G4/4 F4/4 F#4/8 E4/8 E4/4", "C#4/4 C4/4. C4/8 C4/4",
+      "A3/4 A3/4. C4/8 C4/4", "A2/4 D3/4. C3/8 C3/4"], undefined],
+    ["导音未半音下行成七音", [sequence[0], "C#4/4 A4/4. B3/8 B3/4", "A3/4 C4/4. G3/8 G3/4", sequence[3]], undefined],
+    ["中介后有人工句界", sequence, 2.5],
+    ["进入中介处有人工句界", sequence, 1],
+  ] as const)("V06 %s时仍报黄警", (_name, lines, boundary) => {
+    expect(check(lines, "sequence", boundary)).toMatchObject([{ severity: "warning", title: "导音未上行解决" }]);
+  });
+
+  it("V07 另一声部隔一个弱位切片接手并在主和弦解决", () => {
+    expect(check(pedal, "pedal")).toEqual([]);
+    expect(check(pedal, "pedal", undefined, true)).toEqual([]);
+  });
+
+  it.each([
+    ["持续低音中途换音", [...pedal.slice(0, 3), "r/4 Bb2/8 C3/8 Bb2/4 | Eb2/2."], undefined],
+    ["持续低音中途休止", [...pedal.slice(0, 3), "r/4 Bb2/8 r/8 Bb2/4 | Eb2/2."], undefined],
+    ["同音重奏切断持续低音", [...pedal.slice(0, 3), "r/4 Bb2/8 Bb2/8 Bb2/4 | Eb2/2."], undefined],
+    ["接手声部没有上行解决", [pedal[0], "r/4 F4/8 Eb4/8 D4/4 | G4/2.", pedal[2], pedal[3]], undefined],
+    ["接手处有人工句界", pedal, 2],
+    ["落主处有人工句界", pedal, 3],
+  ] as const)("V07 %s时仍报原声部黄警", (_name, lines, boundary) => {
+    const warning = [{ severity: "warning", title: "导音未上行解决" }];
+    expect(check(lines, "pedal", boundary)).toMatchObject(warning);
+    if (mode === "given") expect(check(lines, "pedal", boundary, true)).toMatchObject(warning);
+  });
+});

@@ -16,6 +16,7 @@ interface ResolutionReport {
   message: string;
   params: NonNullable<RuleDiagnostic["params"]>;
   chordIds?: string[];
+  severityCap?: RuleDiagnostic["severityCap"];
   evidence: DiagnosticEvidence[];
 }
 
@@ -37,6 +38,7 @@ function reportResolution<Payload extends VoiceObligationPayload>(
     [voiceId], [source, current], report.title, report.message, {
       chordIds: report.chordIds,
       params: report.params,
+      severityCap: report.severityCap,
       evidence: mergeDiagnosticEvidence(report.evidence, evidence),
       causeRefs: [`${ruleId}|${connectionKey}|voice:${voiceId}`],
       subjects,
@@ -61,12 +63,16 @@ export function leadingToneDiagnostic(
     alter: payload.targetAlter,
   };
   const targetKeyName = `${formatPitchClass(targetTonic)} ${payload.targetMode}`;
+  const throughMinorSeventh = decision.reason === "leading-tone-sequential-minor-seventh";
   return reportResolution(environment, decision, {
     ruleId: "resolution.leading-tone",
     source,
     current,
-    title: "导音未上行解决",
-    message: `书写导音 ${formatPitchClass(leadingTone)} 通常应上行半音解决到主音。`,
+    title: throughMinorSeventh ? "模进中导音经小七和弦过渡" : "导音未上行解决",
+    message: throughMinorSeventh
+      ? "导音半音下行进入中介小七和弦，随后转为属七和弦继续模进。请结合后续进行复核原七音走向。"
+      : `书写导音 ${formatPitchClass(leadingTone)} 通常应上行半音解决到主音。`,
+    severityCap: throughMinorSeventh ? "suggestion" : undefined,
     params: {
       key: targetKeyName,
       leadingTone: formatPitchClass(leadingTone),

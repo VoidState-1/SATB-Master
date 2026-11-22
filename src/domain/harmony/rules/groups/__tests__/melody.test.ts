@@ -2387,3 +2387,87 @@ describe("大调二级半减七降五音的旋律拼写", () => {
     });
   });
 });
+
+describe.each(["blind", "given"] as const)("B.4/B.5 共享减音程解决 (%s)", mode => {
+  const diminished = "melody.diminished-interval";
+  const tritone = "melody.tritone";
+  const both = [diminished, tritone];
+  const draft = ["", "", "", "F3/4 B2/4 C3/4"];
+  const polyphonic = ["F5/4 B4/4 C5/4", "C5/4 F4/4 E4/4", "A3/4 D4/4 G3/4", "F3/4 G2/4 C3/4"];
+
+  function findings(lines: readonly string[], harmony = "", voice: VoiceId = "bass", boundary?: number, key = "C major") {
+    const { project: raw } = compileScoreText([
+      "satb 1", "key " + key, "meter 3/4", "bars 1..1 {",
+      ...["S", "A", "T", "B"].map((part, i) => lines[i] ? ` ${part}: | ${lines[i]} |` : ` ${part}: empty`),
+      ...(mode === "given" && harmony ? [" H: | " + harmony + " |"] : []), "}",
+    ].join("\n"));
+    if (boundary !== undefined) raw.structure.phraseBoundaries.push({
+      id: "manual", tick: boundary * raw.ppq, source: "manual", confidence: "certain",
+    });
+    const project = mode === "blind"
+      ? applyHarmonyInference(raw, { chordInference: inferChords(raw) },
+          { mode: "replace-unlocked", writeNonChordToneRoles: true }).project
+      : raw;
+    const context = createHarmonyRuleContext(buildHarmonyAnalysis(project));
+    const atLeap = (d: { tick: number; voiceIds: readonly VoiceId[] }) =>
+      d.tick === raw.ppq && d.voiceIds.includes(voice);
+    const direct = [...diminishedIntervalRule(context), ...tritoneRule(context)].filter(atLeap).map(d => d.ruleId);
+    const visible = checkHarmony(project, undefined, {}, {
+      [diminished]: { "same-harmony": "strict", arpeggiation: "strict" },
+      [tritone]: { "same-harmony": "strict", arpeggiation: "strict" },
+    }).diagnostics.filter(d => both.includes(d.ruleId) && atLeap(d));
+    return { direct, visible: visible.map(d => d.ruleId) };
+  }
+
+  it("未配和声的单低音 F3–B2–C3 在两条规则静默", () => {
+    expect(findings(draft)).toEqual({ direct: [], visible: [] });
+  });
+
+  it.each([
+    ["没有后继", "F3/4 B2/4 r/4", undefined, both],
+    ["继续同向", "F3/4 B2/4 A2/4", undefined, both],
+    ["反向跳进", "F3/4 B2/4 E3/4", undefined, both],
+    ["解决前有休止", "F3/4 B2/8 r/8 C3/4", undefined, both],
+    ["跨跳进处人工句界", draft[3], 1, both],
+    ["跨解决处人工句界", draft[3], 2, both],
+    ["增四同向", "F3/4 B3/4 C4/4", undefined, [tritone]],
+    ["增四反向", "F3/4 B3/4 A3/4", undefined, [tritone]],
+  ] as const)("%s 时保留原诊断", (_name, bass, boundary, expected) => {
+    const actual = findings(["", "", "", bass], "", "bass", boundary);
+    expect(actual.direct).toEqual(expected);
+    expect(actual.visible).toEqual([tritone]);
+  });
+
+  it("四部实写 IV–V7–I 支持女高反向半音解决，和弦还可留空", () => {
+    expect(findings(polyphonic, "IV/4 V7/4 I/4", "soprano")).toEqual({ direct: [], visible: [] });
+    expect(findings(polyphonic, "", "soprano")).toEqual({ direct: [], visible: [] });
+  });
+
+  it("落主配置只省五音时仍支持反向半音解决", () => {
+    const line = [polyphonic[0], polyphonic[1], "A3/4 D4/4 C4/4", polyphonic[3]];
+    expect(findings(line, "IV/4 V7/4 I/4", "soprano")).toEqual({ direct: [], visible: [] });
+  });
+
+  it("原位导减三和弦不能为同一条低音减五度提供豁免", () => {
+    const leadingTriad = ["F5/4 F5/4 E5/4", "C5/4 D5/4 C5/4", "A3/4 F4/4 G3/4", draft[3]];
+    expect(findings(leadingTriad, "IV/4 viio/4 I/4")).toEqual({ direct: both, visible: [tritone] });
+  });
+
+  it("法增六直接到属和弦时可支持减三度解决", () => {
+    const line = ["Eb5/4 C#5/4 D5/4", "Bb4/4 A4/4 A4/4", "G4/4 G4/4 F#4/4", "Eb3/4 Eb3/4 D3/4"];
+    expect(findings(line, "VI/4 Fr+6/4 V/4", "soprano", undefined, "G minor")).toEqual({ direct: [], visible: [] });
+  });
+
+  it("带反向级进的减四度可由完整实写小调和声支持", () => {
+    const line = ["Ab4/4 E4/4 F4/4", "C4/4 Bb3/4 C4/4", "F3/4 G3/4 Ab3/4", "F2/4 C3/4 F2/4"];
+    expect(findings(line, "i/4 V7/4 i/4", "soprano", undefined, "F minor")).toEqual({ direct: [], visible: [] });
+  });
+
+  it.each([
+    ["落点错拼", ["F5/4 B4/4 C5/4", "C5/4 Gb4/4 E4/4", polyphonic[2], polyphonic[3]], undefined],
+    ["解决切片与和声冲突", [polyphonic[0], "C5/4 F4/4 F#4/4", polyphonic[2], polyphonic[3]], undefined],
+    ["跨人工句界", polyphonic, 2],
+  ] as const)("%s 时四部配置仍保留两条底层诊断", (_name, lines, boundary) => {
+    expect(findings(lines, "IV/4 V7/4 I/4", "soprano", boundary)).toEqual({ direct: both, visible: [tritone] });
+  });
+});
