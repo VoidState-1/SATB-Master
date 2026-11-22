@@ -41,6 +41,7 @@ export function diagnostic(
     params?: Record<string, string | number | boolean>;
     evidence?: DiagnosticEvidence[];
     confidence?: number;
+    severityCap?: RuleDiagnostic["severityCap"];
     pairMotion?: RuleDiagnostic["pairMotion"];
     motionSameHarmony?: boolean;
     melodyTransitionId?: string;
@@ -64,6 +65,7 @@ export function diagnostic(
     params: options.params ?? {},
     evidence: options.evidence ?? [],
     confidence: options.confidence ?? 1,
+    ...(options.severityCap && { severityCap: options.severityCap }),
     ...(options.pairMotion && { pairMotion: options.pairMotion }),
     ...(options.melodyTransitionId !== undefined && { melodyTransitionId: options.melodyTransitionId }),
     ...(options.motionSameHarmony !== undefined && { motionSameHarmony: options.motionSameHarmony }),

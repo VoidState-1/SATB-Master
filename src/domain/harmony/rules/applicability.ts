@@ -110,7 +110,7 @@ function contextsFor(
     intersects(facts.voiceExchangeTransitionIds, transitions.slice)
   )
     contexts.push("voice-exchange");
-  if (intersects(facts.innerVoiceTransitionIds, transitions.slice))
+  if (diagnostic.pairMotion?.innerVoices ?? intersects(facts.innerVoiceTransitionIds, transitions.slice))
     contexts.push("inner-voices");
   if (
     diagnostic.pairMotion?.bassStepUp ??
@@ -120,7 +120,8 @@ function contextsFor(
   if (diagnostic.noteIds.some((id) => facts.nonchordToneNoteIds.includes(id)))
     contexts.push("nonchord-tone");
   if (intersects(facts.pedalSpanIds, spanIds)) contexts.push("pedal-point");
-  if (intersects(facts.cadenceSpanIds, spanIds)) contexts.push("cadence");
+  if (diagnostic.pairMotion?.cadence ?? intersects(facts.cadenceSpanIds, spanIds))
+    contexts.push("cadence");
   const referencedConnectionIds = new Set(
     (diagnostic.causeRefs ?? [])
       .flatMap((reference) => reference.split("|"))

@@ -15,7 +15,13 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
-import { isCadentialContraryOctave, preparedSuspensionParallel } from "./support/suspensionsAndVoiceLeading";
+import {
+  isCadentialContraryOctave,
+  isClosingCadentialOverlap,
+  preparedSuspensionParallel,
+} from "./support/suspensionsAndVoiceLeading";
+import { mozartFifths } from "./support/augmentedSixth";
+import type { RuleConfig, RuleExceptionPolicy } from "../types";
 import {
   SIMULTANEOUS_CROSS_RELATION_RULE,
   SUCCESSIVE_CROSS_RELATION_RULE,
@@ -39,6 +45,13 @@ interface VoicePairRulePolicy {
   matches(fact: VoicePairTransitionFact, transition: SliceTransition): boolean;
   delayedInterval?: (interval: VoicePairTransitionFact["currentInterval"]) => boolean;
   sameHarmony?(transition: SliceTransition): boolean;
+  details?(fact: VoicePairTransitionFact, transition: SliceTransition, immediate: boolean): {
+    title?: string;
+    message?: string;
+    severityCap?: RuleDiagnostic["severityCap"];
+    cadence?: boolean;
+    innerVoices?: boolean;
+  };
 }
 
 function isPerfectOctave(interval: VoicePairTransitionFact["currentInterval"]) {
@@ -64,6 +77,7 @@ function evaluateVoicePairRule(
         ? preparedSuspensionParallel(context, transition, fact, policy.delayedInterval)
         : undefined;
       if (!immediate && !delayed) continue;
+      const details = policy.details?.(fact, transition, immediate);
       const [upperId, lowerId] = fact.voiceIds;
       const [previousUpper, previousLower] = delayed
         ? [delayed.held, delayed.lowerBefore]
@@ -76,14 +90,18 @@ function evaluateVoicePairRule(
           transition.current.endTick,
           [upperId, lowerId],
           [previousUpper, previousLower, currentUpper, currentLower],
-          policy.title,
-          delayed ? "两声部依次作下行级进，延留解决后重现相同的纯音程。" : policy.message,
+          details?.title ?? policy.title,
+          delayed ? "两声部依次作下行级进，延留解决后重现相同的纯音程。" : details?.message ?? policy.message,
           {
             motionSameHarmony: policy.sameHarmony?.(transition),
-            ...(delayed ? { params: { suspensionEntryTick: delayed.entryTick } } : {
+            severityCap: details?.severityCap,
+            ...(delayed && { params: { suspensionEntryTick: delayed.entryTick } }),
+            ...((immediate || details) && {
               pairMotion: {
-                voiceExchange: fact.voiceExchange,
-                bassStepUp: fact.bassMotion === "step-up",
+                voiceExchange: immediate ? fact.voiceExchange : undefined,
+                bassStepUp: immediate ? fact.bassMotion === "step-up" : undefined,
+                cadence: details?.cadence,
+                innerVoices: details?.innerVoices,
               },
             }),
             causeRefs: [
@@ -115,7 +133,9 @@ function evaluateVoicePairRule(
   return diagnostics;
 }
 
-export function parallelFifthsRule(context: HarmonyRuleContext) {
+export function parallelFifthsRule(
+  context: HarmonyRuleContext, _config: RuleConfig, exceptionPolicy: RuleExceptionPolicy = {},
+) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.parallel-fifths",
     delayedInterval: isPerfectFifth,
@@ -125,6 +145,21 @@ export function parallelFifthsRule(context: HarmonyRuleContext) {
       bothVoicesMove(fact) &&
       isPerfectFifth(fact.previousInterval) &&
       isPerfectFifth(fact.currentInterval),
+    details: (fact, transition, immediate) => {
+      const mozart = immediate ? mozartFifths(context, transition, fact) : undefined;
+      if (!mozart || exceptionPolicy["inner-voices"] === "strict") return { innerVoices: !!mozart };
+      return {
+        innerVoices: true,
+        severityCap: "suggestion",
+        ...(mozart === "triad" ? {
+          title: "莫扎特五度（教材许可）",
+          message: "斯波索宾 §30.4 允许德增六直进属三和弦时低音与内声部出现平行纯五度，外声部仍禁止。",
+        } : {
+          title: "莫扎特五度变体（德增六进属七）",
+          message: "德增六直进属七且高端下行成为属七的七音时，允许低音与内声部出现平行纯五度，外声部仍禁止。",
+        }),
+      };
+    },
   });
 }
 
@@ -184,6 +219,7 @@ export function voiceOverlapRule(context: HarmonyRuleContext) {
     sameHarmony: transition => sameHarmonyOnTransition(transition, context.harmony),
     title: "声部重叠",
     message: "当前声部进入了相邻声部上一位置所占据的音域。",
+    details: (fact, transition) => ({ cadence: isClosingCadentialOverlap(context, transition, fact) }),
     matches: (fact) => {
       const [upperId, lowerId] = fact.voiceIds;
       const adjacent =
@@ -257,12 +293,13 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     group: "voiceLeading",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
-    dependencyScope: "slice",
-    supportedExceptionContexts: ["same-harmony", "voice-exchange"],
+    dependencyScope: "phrase",
+    supportedExceptionContexts: ["same-harmony", "voice-exchange", "cadence"],
     defaultExceptionPolicies: {
       "same-harmony": "exempt",
       "voice-exchange": "exempt",
     },
+    contextualDefaultExceptionPolicies: { cadence: "exempt" },
     evaluate: voiceOverlapRule,
   }),
   defineStatelessRule({
@@ -324,6 +361,8 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     defaultSeverity: "error",
     requires: ["written-pitches"],
     dependencyScope: "project",
+    supportedExceptionContexts: ["inner-voices"],
+    contextualDefaultExceptionPolicies: { "inner-voices": "downgrade" },
     evaluate: parallelFifthsRule,
   }),
   defineStatelessRule({

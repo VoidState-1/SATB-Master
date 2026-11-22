@@ -8,6 +8,86 @@ import { checkHarmony, createHarmonyRuleScheduler } from "../../../registry";
 import { diagnosticFor, pitch, setLine } from "../../../testing/fixtures/ruleProjects";
 import { defaultHarmonyRuleSeverities } from "../../catalog";
 
+describe("结束终止中的女高与女低声部超越", () => {
+  const rule = "voice-leading.overlap";
+  const parts = {
+    soprano: "D5/4 F#4/4 G4/2",
+    alto: "G4/4 D4/4 D4/2",
+    tenor: "B3/4 C4/4 B3/2",
+    bass: "D3/4 D2/4 G2/2",
+    harmony: "K46/4 V7/4 I/2",
+  };
+
+  function example(mode: "blind" | "given", changes: Partial<typeof parts> = {}) {
+    const { soprano, alto, tenor, bass, harmony } = { ...parts, ...changes };
+    const { project } = compileScoreText(`satb 1
+key G major
+meter 4/4
+bars 1..1 {
+ S: | ${soprano} |
+ A: | ${alto} |
+ T: | ${tenor} |
+ B: | ${bass} |
+ ${mode === "given" ? `H: | ${harmony} |` : ""}
+}`);
+    return mode === "given" ? project : applyHarmonyInference(project, { chordInference: inferChords(project) }, {
+      mode: "replace-unlocked", writeNonChordToneRoles: true,
+    }).project;
+  }
+
+  function overlap(project: ProjectDocument, strict = false) {
+    const exceptions = strict ? { [rule]: { cadence: "strict" } } as const : {};
+    return checkHarmony(project, undefined, {}, exceptions).diagnostics.find(diagnostic =>
+      diagnostic.ruleId === rule && diagnostic.tick === PPQ &&
+      diagnostic.voiceIds.includes("alto") && diagnostic.voiceIds.includes("soprano"),
+    );
+  }
+
+  describe.each(["blind", "given"] as const)("%s", mode => {
+    it("属七省五且女高落导音，默认例外与严格警告均可用", () => {
+      const project = example(mode);
+      expect(overlap(project)).toBeUndefined();
+      expect(overlap(project, true)).toMatchObject({ severity: "warning", voiceIds: ["alto", "soprano"] });
+    });
+
+    it("属三和弦上女高可下跳到五音", () => {
+      const project = example(mode, {
+        soprano: "G5/4 A4/4 G4/2",
+        alto: "B4/4 F#4/4 D4/2",
+        tenor: "D4/4 D4/4 B3/2",
+        harmony: "K46/4 V/4 I/2",
+      });
+      expect(overlap(project)).toBeUndefined();
+      expect(overlap(project, true)?.severity).toBe("warning");
+    });
+
+    it.each([
+      ["后续改为下属和弦", { soprano: "D5/4 F#4/4 G4/2", alto: "G4/4 D4/4 E4/2", tenor: "B3/4 C4/4 C4/2", bass: "D3/4 D2/4 C3/2", harmony: "K46/4 V7/4 IV/2" }],
+      ["属七后休止且全曲无落主", {
+        soprano: "D5/4 F#4/4 r/2", alto: "G4/4 D4/4 r/2",
+        tenor: "B3/4 C4/4 r/2", bass: "D3/4 D2/4 r/2", harmony: "K46/4 V7/4 r/2",
+      }],
+      ["有真正的垂直交叉", { alto: "G4/4 D5/4 D4/2" }],
+      ["属低音不换八度", { bass: "D3/4 D3/4 G2/2" }],
+      ["普通 G/B → D7/A 换位且低音继续下行", { bass: "B2/4 A2/4 Ab2/2", harmony: "I6/4 V43/4 r/2" }],
+    ] as const)("%s 仍保留 C.1 警告", (_, changes) => {
+      expect(overlap(example(mode, changes))?.severity).toBe("warning");
+    });
+
+    it.each([PPQ, 2 * PPQ])("在 %i tick 设人工句界后仍报警告", tick => {
+      const project = example(mode);
+      project.structure.phraseBoundaries.push({ tick, id: "cut", source: "manual", confidence: "certain" });
+      expect(overlap(project)?.severity).toBe("warning");
+    });
+  });
+
+  it.each(["I64/4", "r/4"])("源拍标签为 %s 时使用实写主四六和随后的正格落主", source => {
+    const project = example("given", { harmony: `${source} V7/4 I/2` });
+    expect(overlap(project)).toBeUndefined();
+    expect(overlap(project, true)?.severity).toBe("warning");
+  });
+});
+
 describe("隐伏五度的和声上下文", () => {
   const rule = "voice-leading.hidden-fifth";
   function fifths(project: ProjectDocument, strict = false) {

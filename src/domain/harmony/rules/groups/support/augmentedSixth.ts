@@ -16,11 +16,12 @@ import {
   pitchClassValue,
 } from "../../../../pitch";
 import { VOICE_ORDER } from "../../../../project/voice";
-import type { AnalysisNote, AnalysisSlice, MelodyTransition } from "../../../analysis";
+import type { AnalysisNote, AnalysisSlice, MelodyTransition, SliceTransition } from "../../../analysis";
 import { movesToWrittenTone, resolvesDoubleAugmentedFourThree } from "../../../facts/dominantMotion";
 import { soundsCompleteWrittenMembers } from "../../../facts/writtenVoicing";
 import type { HarmonyRuleContext } from "../../context/createRuleContext";
 import type { ConnectionView } from "../../context/views";
+import type { VoicePairTransitionFact } from "../../sharedFacts";
 import {
   agreesWithExplicitIdentity,
   agreesWithExplicitMembers,
@@ -46,6 +47,74 @@ function exactlyVoiced(slice: AnalysisSlice, tones: readonly SpelledPitchClass[]
     tones.some(tone => pitchClassEquals(note.pitch, tone)),
   ) &&
     tones.every(tone => notes.some(({ note }) => pitchClassEquals(note.pitch, tone)));
+}
+
+function sameKeyDominant(
+  context: HarmonyRuleContext, slice: AnalysisSlice, key: KeyLike, quality: "major" | "dominant7",
+) {
+  const chord = slice.chord;
+  if (!chord) return;
+  const { root, structure } = chord.identity;
+  const reading = context.harmony.primaryInterpretation(chord);
+  if (reading.status !== "resolved" || structure.kind !== "tertian" ||
+      structure.quality !== quality || structure.extensions.length || structure.alterations.length ||
+      !pitchClassEquals(root, scaleDegreePitchClass(key, 5))) return;
+  const { degree, degreeAlteration, localKey, appliedTarget, designation } = reading.value;
+  if (degree === 5 && degreeAlteration === 0 && !appliedTarget &&
+      (!designation || designation.primaryFunction === "dominant") &&
+      keyEquals(localKey ?? slice.key, key)) return chord.identity;
+}
+
+export function resolvesAugmentedSixthHighToDominantSeventh(
+  context: HarmonyRuleContext, source: AnalysisSlice, target: AnalysisSlice, key: KeyLike,
+  high: AnalysisNote, arrival: AnalysisNote,
+) {
+  const fourth = scaleDegreePitchClass(key, 4, 0);
+  if (high.nonChordToneRole || arrival.nonChordToneRole ||
+      !pitchClassEquals(high.pitch, scaleDegreePitchClass(key, 4, 1)) ||
+      !movesToWrittenTone(high.pitch, arrival.pitch, fourth, 0, -1) ||
+      crossesManualPhraseBoundary(context, source.tick, target.tick)) return false;
+
+  const dominant = sameKeyDominant(context, target, key, "dominant7");
+  return !!dominant && pitchClassEquals(chordIdentityToneSpellings(dominant)[3], arrival.pitch);
+}
+
+export function mozartFifths(
+  context: HarmonyRuleContext, { previous: source, current: target, contiguous, sameKey }: SliceTransition,
+  fact: VoicePairTransitionFact,
+): "triad" | "seventh" | undefined {
+  const [upper, lower] = fact.voiceIds;
+  if (lower !== "bass" || (upper !== "alto" && upper !== "tenor") || !contiguous || !sameKey ||
+      crossesManualPhraseBoundary(context, source.tick, target.tick)) return;
+  const [inner, bass] = fact.previousNotes;
+  const [nextInner, nextBass] = fact.currentNotes;
+  if ([inner, bass, nextInner, nextBass].some(note => note.nonChordToneRole)) return;
+
+  const reading = source.chord && context.harmony.primaryInterpretation(source.chord);
+  const key = (reading?.status === "resolved" ? reading.value.localKey : undefined) ?? source.key;
+  const majorKey = { tonic: key.tonic, mode: "major" } as const;
+  const loweredSixth = scaleDegreePitchClass(majorKey, 6, -1);
+  const loweredThird = scaleDegreePitchClass(majorKey, 3, -1);
+  const raisedFourth = scaleDegreePitchClass(key, 4, 1);
+  const fifth = scaleDegreePitchClass(key, 5);
+  if (!pitchClassEquals(bass.pitch, loweredSixth) || !pitchClassEquals(inner.pitch, loweredThird) ||
+      !movesToWrittenTone(bass.pitch, nextBass.pitch, fifth, -1, -1) ||
+      !movesToWrittenTone(inner.pitch, nextInner.pitch, scaleDegreePitchClass(key, 2), -1, -1)) return;
+
+  const structure = source.chord?.identity.structure;
+  if (!(structure?.kind === "augmented-sixth" && structure.variant === "german") &&
+      !exactlyVoiced(source, [loweredSixth, key.tonic, loweredThird, raisedFourth])) return;
+
+  const highEndpoints = activeNotes(source).filter(({ note }) => pitchClassEquals(note.pitch, raisedFourth));
+  if (highEndpoints.length !== 1) return;
+  const [{ voiceId, note: high }] = highEndpoints;
+  const arrival = target.notes[voiceId];
+  if (!arrival || high.nonChordToneRole || arrival.nonChordToneRole || !target.chord ||
+      !pitchClassEquals(target.chord.identity.bass, fifth)) return;
+  if (movesToWrittenTone(high.pitch, arrival.pitch, fifth, 1, 1) &&
+      sameKeyDominant(context, target, key, "major")) return "triad";
+  if (resolvesAugmentedSixthHighToDominantSeventh(context, source, target, key, high, arrival))
+    return "seventh";
 }
 
 function resolvesEndpoint(

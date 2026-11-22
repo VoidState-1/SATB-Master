@@ -25,6 +25,7 @@ import {
   isItalianToFrenchVoicing,
   isAuxiliaryAugmentedSixthReturn,
   resolvesPreparedDoubleAugmentedFourThree,
+  resolvesAugmentedSixthHighToDominantSeventh,
 } from "./support/augmentedSixth";
 import { isMajorTonicSixFour, resolvesDoubleAugmentedFourThree } from "../../facts/dominantMotion";
 
@@ -58,7 +59,7 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
     const sourceChord = sourceSlice.chord;
     const targetChord = targetSlice.chord;
     if (
-      !sourceChord ||
+      sourceChord?.identity.structure.kind !== "augmented-sixth" ||
       !targetChord ||
       !sourceSlice.completeSatb ||
       !targetSlice.completeSatb
@@ -113,8 +114,7 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
       highDelta === 1 &&
       pitchClassEquals(targetHigh.pitch, dominantPitch),
     );
-    const isDoubleAugmented43 = sourceChord.identity.structure.kind === "augmented-sixth" &&
-      sourceChord.identity.structure.variant === "doubleAugmented43";
+    const isDoubleAugmented43 = sourceChord.identity.structure.variant === "doubleAugmented43";
     const actualTargetKey = targetInterpretation?.localKey ?? targetSlice.key;
     const isDoubleAugmentedTarget = isDoubleAugmented43 &&
       targetResolution.status !== "ambiguous" &&
@@ -127,6 +127,12 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
         (resolvesDoubleAugmentedFourThree(sourceSlice.notes, targetSlice.notes, sourceKey) ||
           resolvesPreparedDoubleAugmentedFourThree(context, candidate, sourceKey))) continue;
     if (!isDoubleAugmented43 && (isDominant || isCadential64) && lowResolves && highResolves)
+      continue;
+    const loweredSixth = scaleDegreePitchClass(sourceKey, 6, sourceKey.mode === "major" ? -1 : 0);
+    if (!isDoubleAugmented43 && sourceResolution.status !== "ambiguous" && lowResolves &&
+        pitchClassEquals(low.note.pitch, loweredSixth) &&
+        !low.note.nonChordToneRole && !targetLow?.nonChordToneRole && targetHigh && highDelta === -1 &&
+        resolvesAugmentedSixthHighToDominantSeventh(context, sourceSlice, targetSlice, sourceKey, high.note, targetHigh))
       continue;
     if (continuesInFrenchVoicing(context, candidate, sourceKey)) continue;
     if (!isDominant && !isCadential64 &&

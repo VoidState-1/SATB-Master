@@ -21,7 +21,12 @@ import {
 import { VOICE_ORDER } from "../../../../project/voice";
 import type { AnalysisSlice, SliceTransition, AnalysisNote } from "../../../analysis";
 import { movesToWrittenTone, preparedNinthOverDominantSeventh } from "../../../facts/dominantMotion";
-import { verifyPreparedSuspensionVoicing, type PreparationSupport } from "../../../facts/tendencyResolution";
+import {
+  allowsWrittenTertianIdentity,
+  hasWrittenVoicing,
+  verifyPreparedSuspensionVoicing,
+  type PreparationSupport,
+} from "../../../facts/tendencyResolution";
 import { soundsDeclaredChord } from "../../../facts/writtenVoicing";
 import type { HarmonyRuleContext } from "../../context/createRuleContext";
 import { crossesManualPhraseBoundary, activeNotes } from "../../helpers/core";
@@ -316,6 +321,68 @@ export function heldSuspensionsAt(context: HarmonyRuleContext, slice: AnalysisSl
   ) || !tones.every(tone => resolvedNotes.some(({ note }) => pitchClassEquals(note.pitch, tone)))) return [];
 
   return verified.motions.map(({ noteId }) => noteId);
+}
+
+function matchesCadentialHarmony(
+  context: HarmonyRuleContext, slice: AnalysisSlice, key: KeyLike,
+  root: SpelledPitchClass, quality: ChordQuality, degree: 1 | 5,
+) {
+  if (!allowsWrittenTertianIdentity(slice, root, quality)) return false;
+  const chord = slice.chord;
+  if (!chord) return true;
+  const reading = context.harmony.primaryInterpretation(chord);
+  if (reading.status === "unavailable") return true;
+  return reading.status === "resolved" && !reading.value.appliedTarget &&
+    reading.value.degree === degree && reading.value.degreeAlteration === 0 &&
+    keyEquals(reading.value.localKey ?? slice.key, key);
+}
+
+/** 斯波索宾 §9.3 例 9–108b。属音低音换位时，女高音可下跳到属和弦的三音或五音。 */
+export function isClosingCadentialOverlap(
+  context: HarmonyRuleContext, { previous, current, contiguous, sameKey }: SliceTransition,
+  fact: VoicePairTransitionFact,
+) {
+  if (fact.voiceIds[0] !== "soprano" || fact.voiceIds[1] !== "alto" ||
+      !contiguous || !sameKey || !previous.completeSatb || !current.completeSatb) return false;
+  const [sopranoBefore, altoBefore] = fact.previousNotes;
+  const [soprano, alto] = fact.currentNotes;
+  if (toMidi(soprano.pitch) >= toMidi(altoBefore.pitch) ||
+      toMidi(alto.pitch) > toMidi(sopranoBefore.pitch) ||
+      writtenInterval(sopranoBefore.pitch, soprano.pitch).diatonicSteps > -2) return false;
+
+  const bassBefore = previous.notes.bass!, bass = current.notes.bass!;
+  const bassMotion = writtenInterval(bassBefore.pitch, bass.pitch);
+  if (Math.abs(bassMotion.diatonicSteps) !== 7 || Math.abs(bassMotion.semitones) !== 12 ||
+      VOICE_ORDER.some((voice, index) => index > 0 &&
+        toMidi(current.notes[VOICE_ORDER[index - 1]]!.pitch) < toMidi(current.notes[voice]!.pitch))) return false;
+
+  const dominantEnd = current.chord ? current.chord.startTick + current.chord.durationTicks : current.endTick;
+  const landing = context.sliceAt(dominantEnd);
+  if (!landing?.completeSatb || !keyEquals(landing.key, current.key) ||
+      crossesManualPhraseBoundary(context, previous.tick, landing.tick)) return false;
+  const key = effectiveKey(context, current.chord ? current : previous.chord ? previous : landing);
+  if (!key) return false;
+  const [dominant, third, fifth, seventh] = chordToneSpellings(scaleDegreePitchClass(key, 5), "dominant7");
+  if (!pitchClassEquals(bass.pitch, dominant) ||
+      (!pitchClassEquals(soprano.pitch, third) && !pitchClassEquals(soprano.pitch, fifth))) return false;
+
+  const tonic = chordToneSpellings(key.tonic, key.mode);
+  const sourceRole = previous.chord?.semantics?.cadenceRole;
+  if ((sourceRole && sourceRole !== "cadential64") ||
+      !matchesCadentialHarmony(context, previous, key, key.tonic, key.mode, 1) ||
+      !(hasWrittenVoicing(previous, tonic) ||
+        (sourceRole === "cadential64" && hasWrittenVoicing(previous, [tonic[0], dominant])))) return false;
+
+  const actualDominant = matchesCadentialHarmony(context, current, key, dominant, "major", 5) &&
+      (hasWrittenVoicing(current, [dominant, third, fifth]) || hasWrittenVoicing(current, [dominant, third]));
+  const actualSeventh = matchesCadentialHarmony(context, current, key, dominant, "dominant7", 5) &&
+      (hasWrittenVoicing(current, [dominant, third, fifth, seventh]) ||
+        hasWrittenVoicing(current, [dominant, third, seventh]));
+  return (actualDominant || actualSeventh) &&
+    !landing.chord?.semantics?.cadenceRole &&
+    pitchClassEquals(landing.notes.bass!.pitch, key.tonic) &&
+    matchesCadentialHarmony(context, landing, key, key.tonic, key.mode, 1) &&
+    (hasWrittenVoicing(landing, tonic) || hasWrittenVoicing(landing, tonic.slice(0, 2)));
 }
 
 function primaryRootPositionKey(context: HarmonyRuleContext, slice: AnalysisSlice, degree: 1 | 5) {

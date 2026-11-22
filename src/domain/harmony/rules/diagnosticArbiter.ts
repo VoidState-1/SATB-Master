@@ -67,7 +67,8 @@ export function normalizeBuiltinDiagnostic(
     return undefined;
   const {
     pairMotion: _pairMotion, motionSameHarmony: _motionSameHarmony,
-    melodyTransitionId: _melodyTransitionId, strictDefaultContext: _strictDefaultContext, ...report
+    melodyTransitionId: _melodyTransitionId, strictDefaultContext: _strictDefaultContext,
+    severityCap: _severityCap, ...report
   } = item;
   const normalized: HarmonyDiagnostic = {
     ...report,

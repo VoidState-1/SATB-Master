@@ -31,6 +31,7 @@ import {
   completeHarmonyResult,
   severityAfterApplicability,
 } from "./rules/policy/result";
+import { compareDiagnosticSeverity } from "./rules/policy/severity";
 import { validateRuleStates as validateRuleStateEnvelopes } from "./rules/policy/state";
 
 export type { RuleConfig } from "./rules/types";
@@ -205,7 +206,14 @@ export type RuleDiagnostic = Omit<
   "id" | "severity" | "exceptionContexts"
 > & {
   /** 在产生声部对诊断的同一连接上观测到的进行事实。 */
-  pairMotion?: { voiceExchange: boolean; bassStepUp: boolean };
+  pairMotion?: {
+    voiceExchange?: boolean;
+    bassStepUp?: boolean;
+    cadence?: boolean;
+    innerVoices?: boolean;
+  };
+  /** 教材认可的例外可限制诊断等级。 */
+  severityCap?: DiagnosticSeverity;
   /** 同和声例外在本条诊断所指的连接上是否成立。 */
   motionSameHarmony?: boolean;
   /** 确知诊断对应的旋律连接时，例外只使用本次起奏的证据。 */
@@ -281,6 +289,7 @@ export interface StatelessRuleDefinition extends Omit<
   readonly evaluate: (
     context: ReadonlyRuleContext,
     config: RuleConfig,
+    exceptionPolicy?: RuleExceptionPolicy,
   ) => RuleEvaluation | Promise<RuleEvaluation>;
 }
 
@@ -436,12 +445,13 @@ function collectEvaluation(
         analysis,
         effectiveExceptionPolicy,
       );
-      const effectiveSeverity = severityAfterApplicability(
+      let effectiveSeverity = severityAfterApplicability(
         severity,
         applicability.policy,
       );
-      if (!effectiveSeverity)
-        return undefined;
+      if (!effectiveSeverity) return undefined;
+      if (item.severityCap && compareDiagnosticSeverity(item.severityCap, effectiveSeverity) > 0)
+        effectiveSeverity = item.severityCap;
       return normalizeBuiltinDiagnostic(
         item,
         definition,
@@ -587,9 +597,10 @@ async function runRule(
   analysis: HarmonyAnalysis,
   rules: HarmonyRuleContext,
   config: RuleConfig,
+  exceptionPolicy?: RuleExceptionPolicy,
 ) {
   if (!isStatefulRule(definition))
-    return definition.evaluate(rules, config);
+    return definition.evaluate(rules, config, exceptionPolicy);
   const run = createStatefulRuleRun(analysis, rules);
   for (const context of run.contexts) {
     const result = await definition.process(context, run.states, config);
@@ -632,7 +643,7 @@ export function runRulesSynchronously(
             rules,
             configs[definition.id] ?? {},
           )
-        : definition.evaluate(rules, configs[definition.id] ?? {});
+        : definition.evaluate(rules, configs[definition.id] ?? {}, exceptions[definition.id]);
       if (evaluation instanceof Promise)
         throw new Error("同步兼容入口不支持异步规则");
       const collected = collectEvaluation(
@@ -774,6 +785,7 @@ export class RuleScheduler {
           analysis,
           rules,
           request.configs?.[definition.id] ?? {},
+          request.exceptions?.[definition.id],
         );
       } catch {
         const failure = {

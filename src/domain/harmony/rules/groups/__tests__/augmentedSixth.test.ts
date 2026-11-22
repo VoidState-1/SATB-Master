@@ -10,7 +10,8 @@ import {
 import { compileScoreText } from "../../../../scoreText";
 import { buildHarmonyAnalysis } from "../../../analysis";
 import { applyHarmonyInference, inferHarmony } from "../../../inference";
-import { checkHarmony } from "../../../registry";
+import { checkHarmony, createHarmonyRuleScheduler } from "../../../registry";
+import { defaultHarmonyRuleSeverities } from "../../catalog";
 import {
   diagnosticFor,
   dominantNinthProject,
@@ -339,7 +340,7 @@ describe("增六和弦的配置与连接规则", () => {
       ).toBe("error");
     });
 
-    it("Ger+6 直入 D 的真实平行五度只由基础规则报错", () => {
+    function germanDirectDominant(outer = false) {
       const project = createEmptyProject();
       project.lengthTicks = PPQ * 2;
       const target = functionalChord(project, "german-direct-dominant", 1, {
@@ -355,17 +356,40 @@ describe("增六和弦的配置与连接规则", () => {
         ...manualCertain,
       });
       project.chordTrack.regions = [augmentedSixthRegion("german"), target];
-      setLine(project, "soprano", [pitch("F", 1, 4), pitch("G", 0, 4)]);
-      setLine(project, "alto", [pitch("C", 0, 4), pitch("B", 0, 3)]);
-      setLine(project, "tenor", [pitch("E", -1, 3), pitch("D", 0, 3)]);
+      const upper = [pitch("F", 1, 4), pitch("G", 0, 4)];
+      const middle = [pitch("C", 0, 4), pitch("B", 0, 3)];
+      setLine(project, "soprano", outer ? [pitch("E", -1, 4), pitch("D", 0, 4)] : upper);
+      setLine(project, "alto", outer ? [pitch("F", 1, 3), pitch("G", 0, 3)] : middle);
+      setLine(project, "tenor", outer ? [pitch("C", 0, 3), pitch("B", 0, 2)] : [pitch("E", -1, 3), pitch("D", 0, 3)]);
       setLine(project, "bass", [pitch("A", -1, 2), pitch("G", 0, 2)]);
 
-      expect(
-        diagnosticFor(project, "voice-leading.parallel-fifths")?.severity,
-      ).toBe("error");
-      expect(
-        diagnosticFor(project, "connection.german-augmented-sixth"),
-      ).toBeUndefined();
+      return project;
+    }
+
+    it("Ger+6 直入 D 的低音与男高平行纯五度只发教材提示", () => {
+      const project = germanDirectDominant();
+      const fifth = diagnosticFor(project, "voice-leading.parallel-fifths");
+      expect(fifth).toMatchObject({
+        voiceIds: ["bass", "tenor"],
+        severity: "suggestion",
+        title: "莫扎特五度（教材许可）",
+        message: expect.stringContaining("斯波索宾 §30.4"),
+      });
+      expect(fifth).not.toHaveProperty("severityCap");
+      expect(diagnosticFor(project, "resolution.augmented-sixth")).toBeUndefined();
+    });
+
+    it("Ger+6 直入 D 的低音与女高平行十二度仍报错", () => {
+      const project = germanDirectDominant(true);
+      const rule = "voice-leading.parallel-fifths";
+      const fifth = checkHarmony(project, undefined, {}, { [rule]: { "inner-voices": "exempt" } })
+        .diagnostics.find(diagnostic => diagnostic.ruleId === rule);
+      expect(fifth).toMatchObject({
+        voiceIds: ["bass", "soprano"],
+        severity: "error",
+        title: "平行或反向纯五度",
+      });
+      expect(diagnosticFor(project, "resolution.augmented-sixth")).toBeUndefined();
     });
   });
 });
@@ -592,14 +616,113 @@ bars 1..1 {
   });
 
   describe("保留常规增六要求及给定标签", () => {
-    it("第32章书面8的实写德增六高端下行，属七身份不能豁免", () => {
-      for (const project of [inferFromNotes(descendingGermanEnd), compileScoreText(descendingGermanEnd).project]) {
-        expect(errors(project)).toMatchObject([{
-          tick: 2 * project.ppq, params: { target: "D", lowDelta: -1, highDelta: -1 },
-        }]);
+    const parallels = "voice-leading.parallel-fifths";
+
+    function germanArrival(project: Project, strict = false) {
+      const policy = strict ? { [parallels]: { "inner-voices": "strict" } } as const : {};
+      return checkHarmony(project, undefined, {}, policy).diagnostics.find(diagnostic =>
+        diagnostic.ruleId === parallels && diagnostic.tick === 2 * project.ppq &&
+        diagnostic.voiceIds.includes("bass"),
+      );
+    }
+
+    const ascendingGermanEnd = descendingGermanEnd
+      .replace("G#4/4 G4/4", "G#4/4 A4/4").replace("V7/4", "V/4");
+    const routes = [
+      ["盲推", inferFromNotes],
+      ["给定", (score: string) => compileScoreText(score).project],
+    ] as const;
+
+    it.each(routes)("%s的德增六直入属和弦，两种莫扎特五度均按教材提示处理", (_, projectFrom) => {
+      for (const [score, title, message] of [
+        [ascendingGermanEnd, "莫扎特五度（教材许可）", "斯波索宾 §30.4"],
+        [descendingGermanEnd, "莫扎特五度变体（德增六进属七）", "下行成为属七的七音"],
+      ]) {
+        const project = projectFrom(score);
+        expect(germanArrival(project)).toMatchObject({
+          title, message: expect.stringContaining(message), severity: "suggestion", voiceIds: ["bass", "tenor"],
+        });
+        expect(germanArrival(project, true)).toMatchObject({
+          title: "平行或反向纯五度", severity: "error",
+        });
+        expect(errors(project)).toEqual([]);
       }
-      const corrected = descendingGermanEnd.replace("G#4/4 G4/4", "G#4/4 A4/4").replace("V7/4", "V/4");
-      expect(errors(compileScoreText(corrected).project)).toEqual([]);
+    });
+
+    it.each(routes)("%s的德增六直入属七，外声部平行十二度继续报错", (_, projectFrom) => {
+      const outer = descendingGermanEnd
+        .replace("D5/4 D5/4 C#5/4 D5/4", "D5/4 F4/4 E4/4 D5/4")
+        .replace("G4/4 G#4/4 G4/4 F4/4", "G4/4 G#3/4 G3/4 F4/4")
+        .replace("D4/4 F4/4 E4/4 D4/4", "D4/4 D3/4 C#3/4 D4/4");
+      const project = projectFrom(outer);
+      expect(germanArrival(project)).toMatchObject({ severity: "error", voiceIds: ["bass", "soprano"] });
+      expect(errors(project)).toEqual([]);
+    });
+
+    it("给定和弦缺少源德增六标注时，从实写音名认出莫扎特五度", () => {
+      const project = compileScoreText(descendingGermanEnd.replace("Ger+6/4", "r/4")).project;
+      expect(germanArrival(project)).toMatchObject({
+        severity: "suggestion", title: "莫扎特五度变体（德增六进属七）",
+      });
+      project.satbTracks.find(track => track.id === "soprano")!.notes[1].pitch.step = "E";
+      expect(germanArrival(project)?.severity).toBe("error");
+    });
+
+    it.each([
+      ["目标属三", descendingGermanEnd.replace("V7/4", "V/4")],
+      ["低端未下行到属音", descendingGermanEnd.replace("Bb2/4 A2/4", "Bb2/4 A3/4")],
+      ["高端跳进到七音", descendingGermanEnd.replace("G#4/4 G4/4", "G#4/4 G3/4")],
+      ["高端落在别的和弦音", descendingGermanEnd.replace("G#4/4 G4/4", "G#4/4 E4/4")],
+    ])("给定 %s 时仍报 E.5", (_, score) => {
+      const project = compileScoreText(score).project;
+      expect(errors(project)).toContainEqual(expect.objectContaining({ tick: 2 * project.ppq }));
+    });
+
+    it.each(routes)("%s的增六与属七之间有人工句界时保留原诊断", (_, projectFrom) => {
+      const project = projectFrom(descendingGermanEnd);
+      const tick = 2 * project.ppq;
+      project.structure.phraseBoundaries.push({ id: "cut", tick, source: "manual", confidence: "certain" });
+      expect(germanArrival(project)?.severity).toBe("error");
+      expect(errors(project)).toContainEqual(expect.objectContaining({ tick }));
+    });
+
+    it("德增六的低音和内声部平行五度，高端跳进时仍报错", () => {
+      const score = descendingGermanEnd.replace("G#4/4 G4/4", "G#4/4 G3/4");
+      const project = compileScoreText(score).project;
+      expect(germanArrival(project)?.severity).toBe("error");
+      expect(errors(project)).toContainEqual(expect.objectContaining({ tick: 2 * project.ppq }));
+    });
+
+    it.each(["It+6", "Fr+6"])("普通 %s 的高端也可以下行成为属七七音", label => {
+      const member = label === "It+6" ? "D4" : "E4";
+      const score = descendingGermanEnd.replace("Ger+6", label)
+        .replace("D4/4 F4/4 E4/4", `D4/4 ${member}/4 E4/4`);
+      const project = compileScoreText(score).project;
+      expect(errors(project)).toEqual([]);
+      expect(germanArrival(project)).toBeUndefined();
+    });
+
+    it("调度入口保留严重度封顶、关闭和严格覆写", async () => {
+      const project = compileScoreText(descendingGermanEnd).project;
+      const defaults = defaultHarmonyRuleSeverities();
+      const scheduler = createHarmonyRuleScheduler();
+      for (const [revision, severity, strict, expected] of [
+        [1, "error", false, "suggestion"],
+        [2, "warning", false, "suggestion"],
+        [3, "suggestion", false, "suggestion"],
+        [4, "off", false, undefined],
+        [5, "error", true, "error"],
+      ] as const) {
+        const output = await scheduler.run({
+          project, revision, severities: { ...defaults, [parallels]: severity },
+          exceptions: strict ? { [parallels]: { "inner-voices": "strict" } } : {},
+        });
+        const fifth = output.diagnostics.find(diagnostic =>
+          diagnostic.ruleId === parallels && diagnostic.tick === 2 * project.ppq,
+        );
+        expect(fifth?.severity).toBe(expected);
+        if (fifth) expect(fifth).not.toHaveProperty("severityCap");
+      }
     });
 
     it("第37章键盘二2的实写双延留属于倍增三四，显式德增六标签仍按输入检查", () => {
