@@ -39,6 +39,7 @@ export type HarmonizationRelaxedLevel = 0 | 1 | 2;
 export interface HarmonizationSolution {
   id: string;
   label: string;
+  description: string;
   score: number;
   relaxedLevel: HarmonizationRelaxedLevel;
   project: ProjectDocument;

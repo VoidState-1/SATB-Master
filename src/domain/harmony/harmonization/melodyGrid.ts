@@ -1,4 +1,4 @@
-import { isWrittenStep, keyEquals, spelledPitchEquals, writtenInterval } from "../../pitch";
+import { isWrittenStep, keyEquals, pitchClassEquals, spelledPitchEquals, writtenInterval } from "../../pitch";
 import type { SpelledPitch } from "../../pitch";
 import type { ChordRegion, KeyEvent, NoteEvent, PhraseBoundary, ProjectDocument, VoiceId } from "../../project/types";
 import { VOICE_ORDER } from "../../project/voice";
@@ -6,7 +6,9 @@ import { buildMetricTimeline, metricPositionAt, type MetricLevel } from "../../r
 import { inferPhrases } from "../phrase";
 import type { AutoHarmonizationOptions, HarmonizationGivenVoice, HarmonizationRange } from "./types";
 
-type CadenceZone = "final-authentic" | "medial-cadence";
+export type OrnamentRole = "passing" | "neighbor";
+
+type CadenceZone = "final-authentic" | "medial-authentic" | "medial-cadence";
 
 export interface MelodySlice {
   tick: number;
@@ -19,7 +21,7 @@ export interface MelodySlice {
   beatLength: number;
   lockedChord?: ChordRegion;
   lockedPitches: Partial<Record<VoiceId, SpelledPitch>>;
-  ornament?: "passing" | "neighbor";
+  ornament?: OrnamentRole;
   cadence?: { zone: CadenceZone; stage: "approach" | "dominant" | "landing" | "hold" };
   phraseStart: boolean;
 }
@@ -81,24 +83,29 @@ function planBoundaries(
   return boundaries;
 }
 
-function markCadences(slices: MelodySlice[], boundaries: readonly PhraseBoundary[]) {
+function markCadences(slices: MelodySlice[], boundaries: readonly PhraseBoundary[], givenVoice: HarmonizationGivenVoice) {
   let first = 0;
   const ends = [...boundaries.map(boundary => boundary.tick), slices.at(-1)?.endTick ?? 0];
   ends.forEach((end, phraseIndex) => {
     let after = first;
     while (after < slices.length && slices[after].tick < end) after++;
     if (first === after) return;
-    const zone = phraseIndex === ends.length - 1 ? "final-authentic" : "medial-cadence";
     slices[first].phraseStart = true;
     let landing = after - 1;
     while (landing > first && slices[landing - 1].melody === slices[landing].melody &&
       keyEquals(slices[landing - 1].key, slices[landing].key)) landing--;
+    const { key, melody } = slices[landing];
+    const bassTarget = givenVoice === "bass" ? melody.pitch : undefined;
+    const canLandOnTonic = !bassTarget || pitchClassEquals(bassTarget, key.tonic);
+    const final = phraseIndex === ends.length - 1;
+    const zone = final && canLandOnTonic ? "final-authentic" :
+      bassTarget && canLandOnTonic ? "medial-authentic" : "medial-cadence";
     const cutoff = slices[landing].tick - 2 * slices[landing].beatLength;
     for (let index = landing; index < after; index++) {
       slices[index].cadence = { zone, stage: index === landing ? "landing" : "hold" };
     }
     if (landing > first && slices[landing - 1].endTick === slices[landing].tick) {
-      slices[landing - 1].cadence = { zone, stage: zone === "final-authentic" ? "dominant" : "approach" };
+      slices[landing - 1].cadence = { zone, stage: zone === "medial-cadence" ? "approach" : "dominant" };
       for (let index = landing - 2; index >= first && slices[index].tick >= cutoff &&
         slices[index].endTick === slices[index + 1].tick; index--) {
         slices[index].cadence = { zone, stage: "approach" };
@@ -168,20 +175,33 @@ export function buildMelodyGrid(project: ProjectDocument, options: AutoHarmoniza
     });
   }
 
+  markCadences(slices, phraseBoundaries, givenVoice);
   if (options.allowPassingAndNeighborMelodies) {
+    const boundaryTicks = phraseBoundaries.map(boundary => boundary.tick);
     for (let index = 1; index < slices.length - 1; index++) {
       const [left, slice, right] = [slices[index - 1], slices[index], slices[index + 1]];
-      if (slice.metricLevel !== 0 || slice.melody.startTick !== slice.tick ||
-        left.endTick !== slice.tick || slice.endTick !== right.tick ||
-        right.melody.startTick !== right.tick) continue;
-      // In M1 the whole weak subdivision must be bounded by two contiguous written steps.
-      const into = writtenStep(left.melody.pitch, slice.melody.pitch);
-      const out = writtenStep(slice.melody.pitch, right.melody.pitch);
-      if (into && out) slice.ornament = spelledPitchEquals(left.melody.pitch, right.melody.pitch)
+      const { melody } = slice;
+      if (slice.metricLevel >= 2 || melody.startTick !== slice.tick || endOf(melody) !== slice.endTick ||
+        left.endTick !== slice.tick || slice.endTick !== right.tick || right.melody.startTick !== right.tick ||
+        left.key !== slice.key || slice.key !== right.key ||
+        left.melody.nonChordToneRole || right.melody.nonChordToneRole ||
+        boundaryTicks.some(tick => tick > left.melody.startTick && tick <= right.tick)) continue;
+      const into = writtenStep(left.melody.pitch, melody.pitch);
+      const out = writtenStep(melody.pitch, right.melody.pitch);
+      if (!into || !out) continue;
+      const role = spelledPitchEquals(left.melody.pitch, right.melody.pitch)
         ? "neighbor" : into === out ? "passing" : undefined;
+      if (!role || (melody.nonChordToneRole && melody.nonChordToneRole !== role) ||
+        (preserveLocks && melody.locked && melody.nonChordToneRole !== role)) continue;
+      if (givenVoice === "bass") {
+        const longestAnchor = role === "passing" ? left.melody.durationTicks
+          : Math.max(left.melody.durationTicks, right.melody.durationTicks);
+        if (melody.durationTicks > longestAnchor ||
+          metricPositionAt(timeline, slice.endTick - 1)?.measureNumber !== slice.measureNumber) continue;
+      }
+      slice.ornament = role;
     }
   }
-  markCadences(slices, phraseBoundaries);
   return { range, givenVoice, slices, phraseBoundaries };
 }
 

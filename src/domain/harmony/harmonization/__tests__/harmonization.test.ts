@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatSpelledPitch, toMidi } from "../../../pitch";
+import { primaryHarmonyInterpretation } from "../../../chordModel";
+import { formatSpelledPitch, pitchClassEquals, toMidi, writtenInterval } from "../../../pitch";
 import { getSatbTrack, PPQ, validateProject, VOICE_CONFIG, type ProjectDocument } from "../../../project";
 import { compileScoreText } from "../../../scoreText";
 import { autoHarmonize, applyAutoHarmonization, checkHarmony } from "../../index";
 import { buildMelodyGrid } from "../melodyGrid";
 import { buildVocabulary } from "../vocabulary";
-import type { HarmonizationGivenVoice, HarmonizationSolution } from "../types";
+import type { HarmonizationGivenVoice, HarmonizationSolution, HarmonizationStyle } from "../types";
 
 function exercise(key: string, givenVoice: HarmonizationGivenVoice, bars: string): ProjectDocument {
   const measures = bars.split("|").length - 2;
@@ -151,6 +152,136 @@ describe("automatic harmonization", () => {
     expect(selected.chords[0]).toMatchObject({ startTick: 0 });
     expect(selected.chords[0].durationTicks).toBeGreaterThan(PPQ);
     expect(getSatbTrack(applyAutoHarmonization(source, selected), "soprano").notes[1].nonChordToneRole).toBe(role);
+  });
+
+  it.each([
+    ["soprano", "| E4/4 D4/4 F#4/4 G4/4 | E4/1 |"],
+    ["bass", "| C3/4 E3/4 F#3/4 G3/4 | C3/1 |"],
+  ] as const)("harmonizes an explicit secondary leading tone in the %s", (voice, bars) => {
+    const source = exercise("C major", voice, bars);
+    for (const style of ["textbook-standard", "expressive-secondary"] as const) {
+      const { solutions } = autoHarmonize(source, { style });
+      const solution = solutions[0];
+      assertClean(solution);
+      const secondary = solution.chords.find(chord => chord.startTick <= 2 * PPQ &&
+        chord.startTick + chord.durationTicks > 2 * PPQ);
+      const applied = secondary?.semantics && primaryHarmonyInterpretation(secondary.semantics).appliedTarget;
+      expect(applied?.degree).toBe(5);
+      expect(secondary?.identity.structure).toMatchObject({ quality: expect.stringMatching(/^(major|dominant7|diminished7)$/) });
+      const arrival = solution.chords.find(chord => chord.startTick === 3 * PPQ);
+      expect(arrival?.identity.root).toEqual({ step: "G", alter: 0 });
+      const given = getSatbTrack(solution.project, voice).notes;
+      expect(given).toEqual(getSatbTrack(source, voice).notes);
+      expect(writtenInterval(given[2].pitch, given[3].pitch)).toMatchObject({ diatonicSteps: 1, semitones: 1 });
+      for (const rule of ["function.applied-dominant-target", "function.double-dominant-target",
+        "chord.doubled-altered-tendency-tone"]) {
+        expect(checkHarmony(solution.project).diagnostics.some(diagnostic => diagnostic.ruleId === rule)).toBe(false);
+      }
+    }
+  });
+
+  it("resolves a secondary dominant through K46 before completing the cadence", () => {
+    const source = exercise("C major", "bass", "| C3/4 F#3/4 G3/4 G3/4 | C3/1 |");
+    const solution = autoHarmonize(source).solutions[0];
+    assertClean(solution);
+    const [secondary, cadential, dominant] = solution.chords.filter(chord =>
+      chord.startTick >= PPQ && chord.startTick < 4 * PPQ);
+    expect(primaryHarmonyInterpretation(secondary.semantics!).appliedTarget?.degree).toBe(5);
+    expect(cadential.semantics?.cadenceRole).toBe("cadential64");
+    expect(dominant.identity.root).toEqual({ step: "G", alter: 0 });
+    expect(solution.diagnosticSummary.diagnostics.filter(item =>
+      item.ruleId === "function.applied-dominant-target" || item.ruleId === "function.double-dominant-target")).toEqual([]);
+  });
+
+  it("does not end a selection on an unresolved applied chord", () => {
+    const source = exercise("C major", "soprano", "| C4/4 E4/4 F#4/4 G4/4 |");
+    const solution = autoHarmonize(source, { toTick: 3 * PPQ }).solutions[0];
+    expect(solution.relaxedLevel).toBe(2);
+    expect(validateProject(solution.project)).toBe(true);
+    const last = solution.chords.at(-1);
+    expect(last?.startTick).toBe(2 * PPQ);
+    expect(last?.semantics && primaryHarmonyInterpretation(last.semantics).appliedTarget).toBeUndefined();
+    expect(getSatbTrack(solution.project, "soprano").notes).toEqual(getSatbTrack(source, "soprano").notes);
+  });
+
+  it("offers a root-position deceptive progression when the fixed bass lands on scale degree six", () => {
+    const source = exercise("C major", "bass", "| C3/2 F3/4 G3/4 | A3/1 |");
+    const result = autoHarmonize(source, { style: "expressive-secondary" });
+    const solution = result.solutions.find(candidate => candidate.label === "阻碍进行" ||
+      candidate.description.includes("由属和弦转入六级"));
+    expect(solution).toBeDefined();
+    assertClean(solution!);
+    expect(solution!.chords.at(-1)?.identity.root).toEqual({ step: "A", alter: 0 });
+    const approach = solution!.chords.find(chord => chord.startTick === 3 * PPQ);
+    expect(approach?.identity.root).toEqual({ step: "G", alter: 0 });
+  });
+
+  it.each([
+    ["soprano", "passing", "| C4/4 D4/4 E4/2 | F4/2 B4/2 | C5/1 |"],
+    ["soprano", "neighbor", "| E4/4 F4/4 E4/2 | F4/2 B4/2 | C5/1 |"],
+    ["bass", "passing", "| C3/4 D3/4 E3/2 | F3/2 G2/2 | C3/1 |"],
+    ["bass", "neighbor", "| C3/4 D3/4 C3/2 | F3/2 G2/2 | C3/1 |"],
+  ] as const)("keeps the other three parts stationary through a weak-beat %s %s", (voice, role, bars) => {
+    const source = exercise("C major", voice, bars);
+    expect(buildMelodyGrid(source, { allowPassingAndNeighborMelodies: true }).slices[1].ornament).toBe(role);
+    const solution = autoHarmonize(source, { allowPassingAndNeighborMelodies: true }).solutions[0];
+    assertClean(solution);
+    for (const rule of ["nonchord.passing-tone", "nonchord.neighbor-tone", "chord.inversion-bass",
+      "voice-leading.parallel-fifths", "voice-leading.parallel-octaves"]) {
+      expect(solution.diagnosticSummary.diagnostics.some(diagnostic => diagnostic.ruleId === rule)).toBe(false);
+    }
+    const given = getSatbTrack(solution.project, voice).notes;
+    expect(given[1]).toEqual({ ...getSatbTrack(source, voice).notes[1], nonChordToneRole: role });
+    expect(solution.chords.find(chord => chord.startTick === 0)?.durationTicks).toBeGreaterThanOrEqual(2 * PPQ);
+    for (const track of solution.project.satbTracks) {
+      if (track.id === voice) continue;
+      expect(track.notes[0].durationTicks).toBeGreaterThanOrEqual(2 * PPQ);
+    }
+    expect(getSatbTrack(applyAutoHarmonization(source, solution), voice).notes).toEqual(given);
+  });
+
+  it("uses three distinct harmonic palettes on the same given melody", () => {
+    const source = exercise("C major", "soprano", eightBars);
+    const styles: HarmonizationStyle[] = ["classic-basic", "textbook-standard", "expressive-secondary"];
+    const [classic, textbook, expressive] = styles.map(style => autoHarmonize(source, { style }).solutions);
+    for (const solutions of [classic, textbook, expressive]) {
+      expect(solutions).toHaveLength(3);
+      for (const solution of solutions) {
+        assertClean(solution);
+        expect(solution.label).toMatch(/[\u4e00-\u9fff]/u);
+        expect(solution.description).toMatch(/[\u4e00-\u9fff]/u);
+      }
+    }
+    const classicalChords = buildVocabulary(source.keyEvents[0], "classic-basic");
+    const isClassical = (region: HarmonizationSolution["chords"][number]) =>
+      classicalChords.some(chord => pitchClassEquals(chord.identity.root, region.identity.root) &&
+        pitchClassEquals(chord.identity.bass, region.identity.bass) &&
+        JSON.stringify(chord.identity.structure) === JSON.stringify(region.identity.structure) &&
+        chord.role === region.semantics?.cadenceRole);
+    expect(classic[0].chords.every(isClassical)).toBe(true);
+    expect(textbook.some(solution => solution.chords.some(chord => !isClassical(chord)))).toBe(true);
+    const containsApplied = (solution: HarmonizationSolution) => solution.chords.some(chord =>
+      chord.semantics && primaryHarmonyInterpretation(chord.semantics).appliedTarget);
+    expect(textbook.some(containsApplied)).toBe(false);
+    expect(expressive.some(containsApplied)).toBe(true);
+    const progressions = expressive.map(solution => solution.chords.map(chord => [chord.startTick, chord.identity, chord.semantics?.cadenceRole]));
+    expect(new Set(progressions.map(progression => JSON.stringify(progression))).size).toBe(3);
+  });
+
+  it.each([
+    ["C major", [2, 4, 5, 6]],
+    ["A minor", [3, 4, 5, 6]],
+  ] as const)("includes the required secondary and leading-tone sevenths in %s", (key, targets) => {
+    const { keyEvents: [event] } = exercise(key, "soprano", "| E4/1 |");
+    const vocabulary = buildVocabulary(event, "expressive-secondary");
+    for (const target of targets) {
+      const dominants = vocabulary.filter(chord => chord.targetDegree === target && chord.degree === 5);
+      expect(dominants.map(chord => chord.inversion)).toEqual([0, 1, 2, 0, 1, 2, 3]);
+    }
+    const diminishedSevenths = vocabulary.filter(chord => chord.identity.structure.kind === "tertian" &&
+      chord.identity.structure.quality === "diminished7");
+    expect(diminishedSevenths.some(chord => chord.degree === 7 && !chord.applied)).toBe(true);
+    if (event.mode === "major") expect(diminishedSevenths.some(chord => chord.targetDegree === 5)).toBe(true);
   });
 
   it("handles extreme fixed pitches and leaps with a valid level-two solution and actual diagnostics", () => {

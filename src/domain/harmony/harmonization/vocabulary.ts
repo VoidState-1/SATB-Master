@@ -2,6 +2,7 @@ import {
   chordIdentityInversion,
   chordIdentityKeyWithoutBass,
   chordIdentityToneSpellings,
+  functionalTargetForDegree,
   chordVoicingPolicy,
   primaryHarmonyInterpretation,
   resolveChordIdentity,
@@ -10,22 +11,22 @@ import {
   type ChordIdentity,
   type FunctionalFamily,
   type HarmonySemantics,
+  type ScaleDegree,
 } from "../../chordModel";
 import {
   applyFunctionalDefinition,
+  applyFunctionalTarget,
   effectiveFunctionalDesignation,
   functionalDefinition,
   type FunctionalBaseId,
 } from "../../functionalHarmonyCatalog";
 import {
   leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, serializePitchClass,
-  stepIndex, toMidi, type KeyLike, type SpelledPitch, type SpelledPitchClass,
+  spelledPitchEquals, stepIndex, toMidi, type KeyLike, type SpelledPitch, type SpelledPitchClass,
 } from "../../pitch";
 import type { ChordRegion, VoiceId } from "../../project/types";
 import { VOICE_CONFIG, VOICE_ORDER } from "../../project/voice";
 import type { HarmonizationGivenVoice, HarmonizationRelaxedLevel, HarmonizationStyle } from "./types";
-
-const priority = { "classic-basic": 0, "textbook-standard": 1, "expressive-secondary": 2 };
 
 export interface HarmonizationChord {
   identity: ChordIdentity;
@@ -38,6 +39,10 @@ export interface HarmonizationChord {
   role?: HarmonySemantics["cadenceRole"];
   tones: SpelledPitchClass[];
   leadingTone: SpelledPitchClass;
+  targetDegree?: ScaleDegree;
+  targetRoot: SpelledPitchClass;
+  hasLeadingToneObligation: boolean;
+  chromaticTones: SpelledPitchClass[];
   requiredMask: number;
   weight: number;
   applied: boolean;
@@ -88,52 +93,95 @@ function describeChord(
     family: functionFamily,
     inversion: chordIdentityInversion(identity),
     leadingTone: leadingTonePitchClass(tendencyKey),
+    targetDegree: target,
+    targetRoot: tendencyKey.tonic,
+    hasLeadingToneObligation: target !== undefined ||
+      (functionFamily === "dominant" && (interpretation?.degree === 5 || interpretation?.degree === 7) &&
+        quality !== "minor" && quality !== "major7" && !(interpretation?.degree === 7 && quality === "major")),
+    chromaticTones: tones.filter(tone => !isDiatonicPitch(key, tone)),
     requiredMask: voicingPolicy.requiredDegrees.reduce((mask, degree) => mask | (1 << toneDegrees.indexOf(degree)), 0),
     applied: target !== undefined,
   };
 }
 
+function isDiatonicPitch(key: KeyLike, pitch: SpelledPitchClass) {
+  const degree = (stepIndex(pitch.step) - stepIndex(key.tonic.step) + 7) % 7 + 1;
+  return pitchClassEquals(scaleDegreePitchClass(key, degree as ScaleDegree), pitch) ||
+    (key.mode === "minor" && degree === 7 && pitchClassEquals(leadingTonePitchClass(key), pitch));
+}
+
 function catalogChord(
   key: KeyLike, base: FunctionalBaseId, inversion: ChordDraft["inversion"], weight: number,
   form: "triad" | "seventh" = "triad", role?: HarmonySemantics["cadenceRole"],
+  target?: ScaleDegree, fullyDiminished = false,
 ) {
-  const draft = applyFunctionalDefinition({
+  let draft = applyFunctionalDefinition({
     degree: 1, degreeAlteration: 0, inversion, quality: form === "triad" ? "major" : "dominant7",
     source: "inferred", confidence: "probable",
   }, functionalDefinition(base), key.mode);
   if (role) draft.cadenceRole = role;
+  if (target) draft = applyFunctionalTarget(draft, functionalTargetForDegree(target), key.mode);
+  if (fullyDiminished) draft.quality = "diminished7";
   return describeChord(resolveChordIdentity(draft, key), semanticsFromChordDraft(draft), key, weight);
 }
 
-export function buildVocabulary(key: KeyLike, style: HarmonizationStyle): HarmonizationChord[] {
+export function buildVocabulary(
+  key: KeyLike, style: HarmonizationStyle, melody: readonly SpelledPitchClass[] = [],
+): HarmonizationChord[] {
   const minor = key.mode === "minor";
   const tonic = minor ? "t" : "T";
   const subdominant = minor ? "s" : "S";
+  const mediant = minor ? "dtIII" : "DTIII";
   const chords = [
     catalogChord(key, tonic, 0, 2.3), catalogChord(key, tonic, 1, 1.6),
-    catalogChord(key, subdominant, 0, 1.7), catalogChord(key, subdominant, 1, 1.3),
-    catalogChord(key, "D", 0, 2), catalogChord(key, "D", 1, 1.3),
-    catalogChord(key, "SII", 1, 1.25),
-    catalogChord(key, "TSVI", 0, 1.1), catalogChord(key, "DVII", 1, 0.7),
-    catalogChord(key, "K46", 2, 1.7),
-    catalogChord(key, "D", 2, 0.65, "triad", "passing64"),
-    catalogChord(key, subdominant, 2, 0.65, "triad", "pedal64"),
-    catalogChord(key, "D", 0, 1.55, "seventh"),
+    catalogChord(key, subdominant, 0, 1.7), catalogChord(key, subdominant, 1, 0.9),
+    catalogChord(key, "D", 0, 2), catalogChord(key, "D", 1, 0.95),
+    catalogChord(key, "SII", 1, 0.45), catalogChord(key, "TSVI", 0, 0.35),
+    catalogChord(key, "K46", 2, 1.7), catalogChord(key, "D", 0, 1.55, "seventh"),
   ];
-  if (!minor) chords.push(catalogChord(key, "SII", 0, 1.05));
-  if (priority[style] >= 1) {
+  if (style === "classic-basic") return chords;
+  const expressive = style === "expressive-secondary";
+  chords.push(
+    catalogChord(key, "SII", 0, 1.15), catalogChord(key, "TSVI", 1, 1.05),
+    catalogChord(key, mediant, 0, 0.75), catalogChord(key, mediant, 1, 0.7),
+    catalogChord(key, "DVII", 0, 0.2), catalogChord(key, "DVII", 1, 0.8),
+    catalogChord(key, tonic, 2, 1.2, "triad", "passing64"),
+    catalogChord(key, "D", 2, 1.05, "triad", "passing64"),
+    catalogChord(key, subdominant, 2, 0.8, "triad", "passing64"),
+    catalogChord(key, subdominant, 2, 1.7, "triad", "pedal64"),
+    catalogChord(key, tonic, 2, 0.7, "triad", "pedal64"),
+  );
+  for (const inversion of [0, 1, 2, 3] as const) {
+    const inverted = inversion !== 0;
+    if (inverted) chords.push(catalogChord(key, "D", inversion, expressive ? 3.3 : 1.35, "seventh"));
     chords.push(
-      catalogChord(key, minor ? "dtIII" : "DTIII", 1, 0.5),
-      catalogChord(key, "D", 1, 1, "seventh"), catalogChord(key, "D", 2, 0.8, "seventh"),
-      catalogChord(key, "D", 3, 0.8, "seventh"),
-      catalogChord(key, "SII", 0, 0.6, "seventh"), catalogChord(key, "SII", 1, 0.7, "seventh"),
+      catalogChord(key, "SII", inversion, expressive ? 1.5 : 1.35, "seventh"),
+      catalogChord(key, "DVII", inversion, minor || expressive ? 0.85 : 0.4, "seventh"),
     );
   }
-  if (priority[style] >= 2) {
-    chords.push(catalogChord(key, "DD", 0, 0.7), catalogChord(key, "DD", 0, 0.4, "seventh"));
-    if (minor) chords.push(catalogChord(key, "d", 0, 0.3), catalogChord(key, "dtIII", 0, 0.5));
+  if (minor) {
+    chords.push(catalogChord(key, "d", 0, 0.3), catalogChord(key, "d", 1, 0.2),
+      catalogChord(key, "dVII", 0, 0.1), catalogChord(key, "dVII", 1, 0.1));
   }
-  return chords;
+
+  const matchesMelody = (chord: HarmonizationChord) =>
+    chord.chromaticTones.some(tone => melody.some(pitch => pitchClassEquals(tone, pitch)));
+  const secondary: HarmonizationChord[] = [];
+  const targets: ScaleDegree[] = minor ? [5, 4, 3, 6] : [5, 2, 6, 4];
+  for (const target of targets) {
+    const triad = ([0, 1, 2] as const).map(inversion =>
+      catalogChord(key, "D", inversion, expressive ? 4.7 : -1.5, "triad",
+        inversion === 2 ? "passing64" : undefined, target));
+    const sevenths = ([0, 1, 2, 3] as const).map(inversion =>
+      catalogChord(key, "D", inversion, expressive ? 5.3 : -1.5, "seventh", undefined, target));
+    if (expressive || matchesMelody(sevenths[0])) secondary.push(...triad, ...sevenths);
+  }
+  if (!minor) for (const target of [5, undefined] as const) {
+    const diminished = ([0, 1, 2, 3] as const).map(inversion =>
+      catalogChord(key, "DVII", inversion, expressive ? 3.6 : -1.5, "seventh", undefined, target, true));
+    if (expressive || matchesMelody(diminished[0])) secondary.push(...diminished);
+  }
+  return chords.concat(secondary);
 }
 
 export function lockedVocabulary(region: ChordRegion, key: KeyLike): HarmonizationChord {
@@ -186,19 +234,20 @@ export function enumerateVoicings(
   givenPitch: SpelledPitch,
   lockedVoicePitches: Partial<Record<VoiceId, SpelledPitch>>,
   relaxedLevel: HarmonizationRelaxedLevel,
-  context: { allowOmittedTonicFifth?: boolean; ornament?: boolean } = {},
+  context: { allowOmittedTonicFifth?: boolean } = {},
 ): Voicing[] {
   const fixed = { ...lockedVoicePitches, [givenVoice]: givenPitch };
-  const givenIndex = givenVoice === "soprano" ? 0 : 3;
   const pools = VOICE_ORDER.map(voice => {
     const pitch = fixed[voice];
     if (!pitch) return allowedPitches(chord, voice);
     const note = noteFact(pitch, chord);
     const { min, max } = VOICE_CONFIG[voice];
-    const ornament = voice === givenVoice && context.ornament && note.tone < 0;
-    const compatible = (note.tone >= 0 || ornament) &&
-      (voice !== "bass" || ornament || pitchClassEquals(pitch, chord.identity.bass));
-    return relaxedLevel === 2 || (compatible && note.midi >= min && note.midi <= max) ? [note] : [];
+    const compatible = note.tone >= 0 &&
+      (voice !== "bass" || pitchClassEquals(pitch, chord.identity.bass));
+    // The fixed outer voice can use a slightly wider range without moving the written melody.
+    const rangeAllowance = relaxedLevel === 1 && voice === givenVoice ? 3 : 0;
+    return ((relaxedLevel === 2 && (!chord.applied || chord.locked)) ||
+      (compatible && note.midi >= min - rangeAllowance && note.midi <= max + rangeAllowance)) ? [note] : [];
   });
   if (pools.some(pool => pool.length === 0)) return [];
 
@@ -237,7 +286,7 @@ export function enumerateVoicings(
               const bit = 1 << note.tone;
               doubled |= present & bit;
               present |= bit;
-            } else if (!context.ornament || index !== givenIndex) {
+            } else {
               penalty += 22;
             }
             if (note.leading) leadingCount++;
@@ -246,18 +295,18 @@ export function enumerateVoicings(
             penalty += Math.abs(note.midi - (min + max) / 2) * 0.065;
           }
           const missing = (present & required) !== required;
-          const ornament = context.ornament && notes[givenIndex].tone < 0;
-          const wrongBass = !pitchClassEquals(bass.pitch, chord.identity.bass) && !(ornament && givenIndex === 3);
+          const wrongBass = !pitchClassEquals(bass.pitch, chord.identity.bass);
           const tendencyDoubling = leadingCount > 1 || (chord.tones.length === 4 && Boolean(doubled & 8));
           const incompleteTonic = (present & 7) === 3;
           const wrongDoubling = triad && (incompleteTonic ? doubled !== 1 : (doubled & doublingMask) === 0);
-          if (!permitConflict && (tendencyDoubling || wrongBass ||
-            (missing && !ornament) || (relaxedLevel === 0 && wrongDoubling && !ornament))) continue;
-          if (missing && !ornament) penalty += 32;
+          if ((!permitConflict || chord.applied) && tendencyDoubling) continue;
+          if ((!permitConflict || (chord.applied && !chord.locked)) && (wrongBass || missing)) continue;
+          if (relaxedLevel === 0 && wrongDoubling) continue;
+          if (missing) penalty += 32;
           if (wrongBass) penalty += 180;
           if (tendencyDoubling) penalty += 180;
-          if (wrongDoubling && !ornament) penalty += 3;
-          if (!(present & 4) && !ornament) penalty += 1;
+          if (wrongDoubling) penalty += 3;
+          if (!(present & 4)) penalty += 1;
           if (tenorGap > 19) penalty += (tenorGap - 19) * 0.18;
           if (altoGap === 0 || sopranoGap === 0) penalty += 0.95;
           result.push(makeVoicing(notes, penalty, present));
@@ -266,4 +315,25 @@ export function enumerateVoicings(
     }
   }
   return result;
+}
+
+export function continueOrnament(
+  chord: HarmonizationChord, voicing: Voicing, givenVoice: HarmonizationGivenVoice,
+  pitch: SpelledPitch, lockedPitches: Partial<Record<VoiceId, SpelledPitch>>,
+  level: HarmonizationRelaxedLevel,
+): Voicing | undefined {
+  const index = givenVoice === "soprano" ? 0 : 3;
+  const note = noteFact(pitch, chord);
+  const departure = voicing.notes[index];
+  if (note.tone >= 0 || departure.tone < 0 || chord.role ||
+      (chord.applied && (departure.leading || departure.tone === 3))) return;
+  if (VOICE_ORDER.some((voice, i) => i !== index && lockedPitches[voice] &&
+    !spelledPitchEquals(lockedPitches[voice]!, voicing.notes[i].pitch))) return;
+  const { min, max } = VOICE_CONFIG[givenVoice];
+  const gap = index === 0 ? note.midi - voicing.notes[1].midi : voicing.notes[2].midi - note.midi;
+  if (gap < 0 || (index === 0 && gap > (level === 0 ? 12 : 16)) || note.midi < min || note.midi > max) return;
+  const notes: VoicedNotes = index === 0
+    ? [note, voicing.notes[1], voicing.notes[2], voicing.notes[3]]
+    : [voicing.notes[0], voicing.notes[1], voicing.notes[2], note];
+  return makeVoicing(notes, voicing.penalty, voicing.present);
 }

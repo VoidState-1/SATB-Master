@@ -10,6 +10,7 @@ import { cadenceInputs } from "../cadence/projectEvidence";
 import { phraseInferenceFingerprint } from "../phrase";
 import { checkHarmony } from "../registry";
 import type { MelodyGrid } from "./melodyGrid";
+import { isDeceptive } from "./transitionCost";
 import type { HarmonizationPath } from "./solver";
 import type { AutoHarmonizationApplyOptions, HarmonizationRange, HarmonizationSolution } from "./types";
 
@@ -98,7 +99,7 @@ function addPath(
   for (const [index, slice] of grid.slices.entries()) {
     const { chord, voicing, ornament } = path.choices[index];
     if (ornament && slice.melody.startTick === slice.tick &&
-      slice.durationTicks === slice.melody.durationTicks) ornaments.set(slice.melody.id, slice.ornament);
+      slice.durationTicks === slice.melody.durationTicks) ornaments.set(slice.melody.id, ornament);
     for (const [voiceIndex, voice] of VOICE_ORDER.entries()) {
       if (voice === grid.givenVoice) continue;
       const pitches = notes.get(voice)!;
@@ -158,6 +159,37 @@ function addPath(
   return output;
 }
 
+function describePath(grid: MelodyGrid, path: HarmonizationPath, project: ProjectDocument) {
+  const highlights = new Map<string, string>();
+  const add = (label: string, index: number, detail: string) => {
+    if (!highlights.has(label)) highlights.set(label, `第${grid.slices[index].measureNumber}小节${detail}`);
+  };
+  for (const [index, { chord, ornament }] of path.choices.entries()) {
+    if (chord.targetDegree === 5) add("重属推进", index, "以重属和弦引向属功能");
+    else if (chord.targetDegree) add("副属离调", index, `以副属和弦短暂引向第${chord.targetDegree}级`);
+    if (!chord.applied && chord.identity.structure.kind === "tertian" &&
+      chord.identity.structure.quality === "diminished7") add("减七色彩", index, "使用导音减七和弦");
+    if (index && grid.slices[index - 1].endTick === grid.slices[index].tick &&
+      grid.slices[index - 1].key === grid.slices[index].key && isDeceptive(path.choices[index - 1].chord, chord))
+      add("阻碍进行", index, "由属和弦转入六级");
+    if (chord.inversion > 0 && chord.tones.length === 4 && !chord.applied)
+      add("七和弦转位", index, chord.degree === 5 ? "使用属七和弦转位" : "使用七和弦转位");
+    if (chord.role === "cadential64") add("终止四六", index, "用终止四六准备属和弦");
+    if (chord.role === "passing64" || chord.role === "pedal64")
+      add("四六延展", index, chord.role === "passing64" ? "用经过四六连接低音" : "在持续低音上使用辅助四六");
+    if (ornament) add("弱拍装饰", index, ornament === "passing" ? "在原和弦上保留经过音" : "在原和弦上保留辅助音");
+  }
+  const labels = ["重属推进", "副属离调", "阻碍进行", "减七色彩", "七和弦转位", "弱拍装饰", "四六延展", "终止四六"];
+  const present = labels.filter(label => highlights.has(label));
+  if (present.length) return {
+    label: present[0],
+    description: present.slice(0, 2).map(label => highlights.get(label)).join("，") + "。",
+  };
+  return project.chordTrack.cadenceAnnotations.some(cadence => cadence.kind === "full" && cadence.form === "authentic")
+    ? { label: "正格收束", description: "以属功能到主和弦的正格进行收束乐句。" }
+    : { label: "平稳连接", description: "各声部以共同音和就近进行连接和弦。" };
+}
+
 export function verifyPath(
   source: ProjectDocument,
   grid: MelodyGrid,
@@ -175,11 +207,11 @@ export function verifyPath(
     else if (item.severity === "suggestion") diagnosticSummary.suggestionCount++;
   }
   const warnings: string[] = [];
-  if (path.relaxedLevel === 1) warnings.push("已放宽常见重复音与上方声部间距偏好。");
+  if (path.relaxedLevel === 1) warnings.push("已放宽部分配声限制，并保留给定旋律的原音高。");
   if (path.relaxedLevel === 2) warnings.push("已使用应急配和声，部分连接或固定音高需要复核。");
   if (diagnosticSummary.errorCount) warnings.push(`和声检查发现 ${diagnosticSummary.errorCount} 条错误。`);
   return {
-    id, label: "", score: path.score, relaxedLevel: path.relaxedLevel, project, diagnosticSummary,
+    id, ...describePath(grid, path, project), score: path.score, relaxedLevel: path.relaxedLevel, project, diagnosticSummary,
     givenVoice: grid.givenVoice, range: grid.range,
     chords: project.chordTrack.regions,
     phraseBoundaries: project.structure.phraseBoundaries,

@@ -3,7 +3,7 @@ import { VOICE_ORDER } from "../../project/voice";
 import type { MelodyGrid, MelodySlice } from "./melodyGrid";
 import { bassStep, scoreChoice, scoreTransition, type Choice, type TransitionState } from "./transitionCost";
 import type { HarmonizationRelaxedLevel, HarmonizationStyle } from "./types";
-import { buildVocabulary, chromaticVocabulary, enumerateVoicings, lockedVocabulary } from "./vocabulary";
+import { buildVocabulary, chromaticVocabulary, continueOrnament, enumerateVoicings, lockedVocabulary } from "./vocabulary";
 
 const BEAM_WIDTH = 56;
 const VOICINGS_PER_CHORD = 14;
@@ -21,36 +21,42 @@ export interface HarmonizationPath {
 }
 
 function choicesForGrid(grid: MelodyGrid, style: HarmonizationStyle, level: HarmonizationRelaxedLevel) {
-  const vocabulary = new Map<MelodySlice["key"], ReturnType<typeof buildVocabulary>>();
-  const voicings = new Map<string, Omit<Choice, "index" | "score">[]>();
+  const melodyByKey = new Map<MelodySlice["key"], Map<string, MelodySlice["melody"]["pitch"]>>();
+  for (const slice of grid.slices) {
+    let pitches = melodyByKey.get(slice.key);
+    if (!pitches) melodyByKey.set(slice.key, pitches = new Map());
+    pitches.set(serializeSpelledPitch(slice.melody.pitch), slice.melody.pitch);
+  }
+  const vocabulary = new Map([...melodyByKey].map(([key, pitches]) =>
+    [key, buildVocabulary(key, style, [...pitches.values()])]));
+  const voicings = new Map<string, Omit<Choice, "score">[]>();
   const chordIds = new Map<string, number>();
   const givenIndex = grid.givenVoice === "soprano" ? 0 : 3;
 
   return {
     ids: chordIds,
-    at(slice: MelodySlice, index: number) {
+    at(slice: MelodySlice, index: number, beam: readonly SearchState[]) {
       const canOmitFifth = slice.cadence?.zone === "final-authentic" &&
         (slice.cadence.stage === "landing" || slice.cadence.stage === "hold");
       const next = grid.slices[index + 1];
       const beforeNext = next && next.tick === slice.endTick && next.key === slice.key;
       const strongApproach = slice.metricLevel >= 2 && slice.cadence?.stage === "approach" &&
         beforeNext && next.metricLevel < slice.metricLevel;
-      const normal = vocabulary.get(slice.key) ?? buildVocabulary(slice.key, style);
-      vocabulary.set(slice.key, normal);
+      const normal = vocabulary.get(slice.key)!;
       const anchorPitches = VOICE_ORDER.map(voice => slice.lockedPitches[voice]);
       const cacheKey = JSON.stringify([slice.key.tick, slice.lockedChord?.id, canOmitFifth, Boolean(strongApproach),
-        Boolean(beforeNext), slice.ornament, serializeSpelledPitch(slice.melody.pitch),
+        Boolean(beforeNext), serializeSpelledPitch(slice.melody.pitch),
         ...anchorPitches.map(pitch => pitch && serializeSpelledPitch(pitch))]);
       let candidates = voicings.get(cacheKey);
       if (!candidates) {
         const chords = slice.lockedChord ? [lockedVocabulary(slice.lockedChord, slice.key)] : normal;
-        const generated: Omit<Choice, "index" | "score">[] = [];
+        const generated: Omit<Choice, "score">[] = [];
         const collect = (chord: (typeof chords)[number]) => {
           const entries = enumerateVoicings(chord, grid.givenVoice, slice.melody.pitch, slice.lockedPitches,
-            level, { allowOmittedTonicFifth: canOmitFifth, ornament: Boolean(slice.ornament) });
+            level, { allowOmittedTonicFifth: canOmitFifth });
           entries.sort((a, b) => a.penalty - b.penalty);
           for (const voicing of entries.slice(0, VOICINGS_PER_CHORD)) {
-            generated.push({ chord, voicing, ornament: Boolean(slice.ornament && voicing.notes[givenIndex].tone < 0) });
+            generated.push({ chord, voicing });
           }
         };
         const pitch = slice.melody.pitch;
@@ -60,8 +66,8 @@ function choicesForGrid(grid: MelodyGrid, style: HarmonizationStyle, level: Harm
             (chord.role && !beforeNext))) continue;
           const matches = givenIndex === 3 ? pitchClassEquals(chord.identity.bass, pitch)
             : chord.tones.some(tone => pitchClassEquals(tone, pitch));
-          if (!matches && !chord.locked && !slice.ornament) continue;
-          hasWrittenMember ||= matches;
+          if (!matches && !chord.locked) continue;
+          hasWrittenMember ||= matches && !chord.applied;
           collect(chord);
         }
         if (level === 2 && !slice.lockedChord && !hasWrittenMember)
@@ -69,10 +75,23 @@ function choicesForGrid(grid: MelodyGrid, style: HarmonizationStyle, level: Harm
         candidates = generated;
         voicings.set(cacheKey, candidates);
       }
-      return candidates.map((candidate, candidateIndex) => {
+      const ornament = slice.ornament;
+      const continued = new Map<string, Omit<Choice, "score">>();
+      if (ornament) {
+        for (const { choice } of beam) {
+          const { chord } = choice;
+          if (choice.ornament || chord.locked?.id !== slice.lockedChord?.id) continue;
+          const voicing = continueOrnament(chord, choice.voicing, grid.givenVoice, slice.melody.pitch,
+            slice.lockedPitches, level);
+          if (!voicing) continue;
+          const id = chord.signature + "|" + voicing.notes.map(note => serializeSpelledPitch(note.pitch)).join(",");
+          if (!continued.has(id)) continued.set(id, { chord, voicing, ornament });
+        }
+      }
+      return [...candidates, ...continued.values()].map(candidate => {
         if (!chordIds.has(candidate.chord.signature)) chordIds.set(candidate.chord.signature, chordIds.size + 1);
-        const choice = { ...candidate, index: candidateIndex, score: 0 };
-        choice.score = scoreChoice(choice, slice);
+        const choice: Choice = { ...candidate, score: 0 };
+        choice.score = scoreChoice(choice, slice, style);
         return choice;
       });
     },
@@ -85,47 +104,50 @@ function search(grid: MelodyGrid, style: HarmonizationStyle, level: Harmonizatio
   for (let index = 0; index < grid.slices.length; index++) {
     const slice = grid.slices[index];
     const previous = grid.slices[index - 1];
+    const next = grid.slices[index + 1];
     const contiguous = previous?.endTick === slice.tick;
     const sameKey = previous?.key === slice.key;
     const best: SearchState[] = [];
-    for (const choice of rows.at(slice, index)) {
+    for (const choice of rows.at(slice, index, beam)) {
       const { chord } = choice;
       if (level < 2 && !chord.locked && !contiguous &&
         (chord.role === "passing64" || chord.role === "pedal64" ||
           (chord.degree === 1 && chord.inversion === 0 && choice.voicing.present === 3))) continue;
-      if (!contiguous && choice.ornament) continue;
+      if ((chord.applied && !chord.locked &&
+        (slice.endTick !== next?.tick || next.key !== slice.key)) ||
+        (!contiguous && choice.ornament)) continue;
       const chordId = rows.ids.get(chord.signature)!;
       if (!previous) {
         best.push({
           choice, score: choice.score, harmonyHash: chordId,
-          obligations: { entryLevel: slice.metricLevel, bassDirection: 0, sopranoHeldTicks: slice.durationTicks },
+          obligations: { heldMetricLevel: slice.metricLevel, bassDirection: 0, sopranoHeldTicks: slice.durationTicks },
         });
         continue;
       }
 
       // Future hard constraints depend on how a passing or pedal six-four was entered
-      // and on the strength at which a prolongation began.
+      // and on the metric strength already reached during a prolongation.
       const byObligation = new Map<number | string, SearchState>();
       const keepFinalAlternatives = index >= grid.slices.length - 3;
       for (const state of beam) {
-        const cost = scoreTransition(state, choice, previous, slice, grid.givenVoice, level);
+        const cost = scoreTransition(state, choice, previous, slice, grid.givenVoice, level, style);
         if (cost === Number.NEGATIVE_INFINITY) continue;
         const score = state.score + cost + choice.score;
         const sameChord = contiguous && sameKey && state.choice.chord.signature === chord.signature;
-        const entryLevel = sameChord ? state.obligations.entryLevel : slice.metricLevel;
+        const heldMetricLevel = sameChord ? Math.max(state.obligations.heldMetricLevel, slice.metricLevel) : slice.metricLevel;
         const bassDirection = chord.role === "passing64" ? bassStep(state.choice, choice) : 0;
         const pedalOrigin = chord.role === "pedal64" && contiguous ? state.choice.chord.signature : undefined;
         const harmonyHash = Math.imul(state.harmonyHash, 31) + chordId | 0;
         const key = keepFinalAlternatives || pedalOrigin
-          ? `${entryLevel}|${bassDirection}|${pedalOrigin ?? ""}|${keepFinalAlternatives ? harmonyHash : ""}`
-          : entryLevel * 3 + bassDirection;
+          ? `${heldMetricLevel}|${bassDirection}|${pedalOrigin ?? ""}|${keepFinalAlternatives ? harmonyHash : ""}`
+          : heldMetricLevel * 3 + bassDirection;
         const existing = byObligation.get(key);
         if (existing && existing.score >= score) continue;
         const sameSoprano = contiguous && choice.voicing.notes[0].midi === state.choice.voicing.notes[0].midi;
         byObligation.set(key, {
           choice, previous: state, score, harmonyHash,
           obligations: {
-            entryLevel, bassDirection, pedalOrigin,
+            heldMetricLevel, bassDirection, pedalOrigin,
             sopranoHeldTicks: slice.durationTicks + (sameSoprano ? state.obligations.sopranoHeldTicks : 0),
           },
         });
@@ -167,7 +189,7 @@ export function solveHarmonization(
     const distinct: HarmonizationPath[] = [];
     for (const state of states) {
       const choices = reconstruct(state);
-      const key = choices.map(choice => choice.chord.signature).join("\n");
+      const key = choices.map(choice => choice.chord.signature + (choice.ornament ?? "")).join("\n");
       if (seen.has(key)) continue;
       seen.add(key);
       distinct.push({ choices, score: state.score, relaxedLevel: level });
