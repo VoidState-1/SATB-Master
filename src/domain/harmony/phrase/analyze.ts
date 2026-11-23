@@ -375,15 +375,12 @@ function hasMidpointDominantHold(
   return inversion === 3 && start !== terminal && longRelease;
 }
 
-function boundaryFacts(
+function boundaryRhythmFacts(
   project: PhraseAnalysisInput,
   timeline: ReturnType<typeof buildMetricTimeline>,
-  regions: readonly ChordRegion[],
   tick: number,
-  atTemplateTarget: boolean,
-  hasRoomForTwoPhrases: boolean,
+  evidence: PhraseEvidence[],
 ) {
-  const evidence: PhraseEvidence[] = [];
   const trackCount = project.satbTracks?.length ?? 0;
   const endingVoices = voicesEndingAt(project, tick);
   const startingVoices = voicesStartingAt(project, tick);
@@ -411,8 +408,22 @@ function boundaryFacts(
     });
 
   const reattack = allVoicesEnd && startingVoices === trackCount;
+  return {
+    endingVoices, startingVoices, soundAcross, actualSilence, longRelease, reattack,
+    beatLength, metric,
+  };
+}
+
+function boundaryHarmonyFacts(
+  project: PhraseAnalysisInput,
+  timeline: ReturnType<typeof buildMetricTimeline>,
+  regions: readonly ChordRegion[],
+  tick: number,
+  allowSustainedTerminal: boolean,
+  evidence: PhraseEvidence[],
+) {
   const terminal = terminalRegionAt(regions, tick) ??
-    (atTemplateTarget && reattack
+    (allowSustainedTerminal
       ? regions.find((region) => region.startTick < tick && tick < region.startTick + region.durationTicks)
       : undefined);
   const previous = previousRegion(regions, terminal);
@@ -446,6 +457,26 @@ function boundaryFacts(
     else
       evidence.push({ code: "continuous-following-harmony", value: "边界后和声材料连续" });
   }
+
+  return { terminal, previous, following, previousFamily, endsOnDominant };
+}
+
+function boundaryFacts(
+  project: PhraseAnalysisInput,
+  timeline: ReturnType<typeof buildMetricTimeline>,
+  regions: readonly ChordRegion[],
+  tick: number,
+  atTemplateTarget: boolean,
+  hasRoomForTwoPhrases: boolean,
+) {
+  const evidence: PhraseEvidence[] = [];
+  const {
+    endingVoices, startingVoices, soundAcross, actualSilence, longRelease, reattack,
+    beatLength, metric,
+  } = boundaryRhythmFacts(project, timeline, tick, evidence);
+  const { terminal, previous, following, previousFamily, endsOnDominant } = boundaryHarmonyFacts(
+    project, timeline, regions, tick, atTemplateTarget && reattack, evidence,
+  );
 
   const strongBreak = actualSilence;
   const moderate = new Set<string>();
@@ -482,26 +513,20 @@ function boundaryFacts(
   return { evidence, support, articulatedDominant: articulatedCadence && endsOnDominant && previousFamily === "dominant" };
 }
 
-function candidateAtRatio(
+function nearbyRatioCandidates(
   project: PhraseAnalysisInput,
   timeline: ReturnType<typeof buildMetricTimeline>,
-  targetRatio: PhraseTargetRatio,
-): PhraseBoundaryCandidate | undefined {
-  const range = effectiveRange(project);
-  const length = range.endTick - range.startTick;
-  if (length <= 0) return undefined;
-  const targetTick = range.startTick + length * targetRatioValue[targetRatio];
-  const window = Math.max(
-    timeline.ppq / 4,
-    Math.min(measureLengthAt(timeline, targetTick), length * REGULAR_PHRASE_POLICY.searchWindowRatio),
-  );
-  const regions = regionsOf(project);
+  regions: readonly ChordRegion[],
+  range: ReturnType<typeof effectiveRange>,
+  search: { targetRatio: PhraseTargetRatio; targetTick: number; window: number },
+) {
+  const { targetRatio, targetTick, window } = search;
   const hasRoomForTwoPhrases = targetRatio === "half" && [
     [range.startTick, targetTick], [targetTick, range.endTick],
   ].every(([start, end]) => timeline.measures.filter(measure =>
     measure.startTick >= start && measure.endTick <= end &&
     measure.endTick - measure.startTick === measure.numerator * measure.beatLength).length >= 3);
-  const nearby = eventTicks(project, timeline)
+  return eventTicks(project, timeline)
     .filter((tick) =>
       tick >= targetTick - window && tick <= targetTick + window &&
       tick > range.startTick && tick < range.endTick)
@@ -526,6 +551,13 @@ function candidateAtRatio(
         snapPriority,
       };
     });
+}
+
+function bestSupportedCandidate(
+  nearby: ReturnType<typeof nearbyRatioCandidates>,
+  timeline: ReturnType<typeof buildMetricTimeline>,
+  targetTick: number,
+): ReturnType<typeof nearbyRatioCandidates>[number] | undefined {
   // An inverted dominant can also locate an independently supported division.
   const hasNearbyDivision = nearby.some(item => item.facts.support !== "weak" && item.distance > 0 &&
     item.distance <= measureLengthAt(timeline, targetTick) / 2);
@@ -538,7 +570,25 @@ function candidateAtRatio(
       supportRank[right.facts.support] - supportRank[left.facts.support] ||
       left.snapPriority - right.snapPriority ||
       left.distance - right.distance || left.tick - right.tick);
-  let best = candidates[0];
+  return candidates[0];
+}
+
+function candidateAtRatio(
+  project: PhraseAnalysisInput,
+  timeline: ReturnType<typeof buildMetricTimeline>,
+  targetRatio: PhraseTargetRatio,
+): PhraseBoundaryCandidate | undefined {
+  const range = effectiveRange(project);
+  const length = range.endTick - range.startTick;
+  if (length <= 0) return undefined;
+  const targetTick = range.startTick + length * targetRatioValue[targetRatio];
+  const window = Math.max(
+    timeline.ppq / 4,
+    Math.min(measureLengthAt(timeline, targetTick), length * REGULAR_PHRASE_POLICY.searchWindowRatio),
+  );
+  const regions = regionsOf(project);
+  const nearby = nearbyRatioCandidates(project, timeline, regions, range, { targetRatio, targetTick, window });
+  let best = bestSupportedCandidate(nearby, timeline, targetTick);
   if (!best && targetRatio === "half" && !project.structure?.phraseBoundaries?.some(boundary =>
     boundary.source === "manual" || boundary.locked)) {
     for (const item of nearby.sort((left, right) => left.distance - right.distance || left.tick - right.tick)) {
