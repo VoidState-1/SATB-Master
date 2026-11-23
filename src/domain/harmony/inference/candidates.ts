@@ -385,6 +385,25 @@ export function fitContextualOrnament(
   };
 }
 
+/** Measure the written chord-member coverage after restoring the tones
+ * displaced by verified ornaments. Keep the surface fit and ornament cost. */
+export function scoreVerifiedOrnament(
+  candidate: ChordInferenceCandidate,
+  restored: ChordInferenceObservation,
+  corroborated: boolean,
+): ChordInferenceCandidate {
+  const toneFit = fitRatio(restored, candidate.identity, candidate.fit);
+  // Credit corroboration from both sides of the ornament while retaining
+  // the cost of every sounding non-chord tone.
+  const bassFit = restored.bass && pitchClassEquals(restored.bass.pitch, candidate.identity.bass) ? 1 : 0;
+  const contextFit = Math.max(0, toneFit - candidate.score.toneFit) * 50 +
+    Math.max(0, bassFit - candidate.score.bassFit) * 25 + (corroborated ? 8 : 0);
+  return {
+    ...candidate,
+    score: { ...candidate.score, contextFit, total: candidate.score.total + contextFit },
+  };
+}
+
 export function fitSimultaneousNeighbors(
   anchor: ChordInferenceCandidate,
   observation: ChordInferenceObservation,

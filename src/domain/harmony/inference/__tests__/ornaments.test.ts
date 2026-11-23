@@ -5,6 +5,7 @@ import { phraseInferenceFingerprint } from "../../phrase";
 import type { ChordInferenceOptions } from "../types";
 import { buildMetricTimeline, compareMetricStrength, metricPositionAt } from "../../../rhythm/metric";
 import { PPQ } from "../../../project";
+import { chordIdentityInversion } from "../../../chordModel";
 import { checkHarmony } from "../../registry";
 import { buildHarmonyAnalysis } from "../../analysis";
 import { buildChordInferenceCandidates, fitContextualOrnament } from "../candidates";
@@ -1327,5 +1328,117 @@ describe("Cut 2A 候选边界与书写核对", () => {
     const fitted = fitContextualOrnament(anchor, middle, { [id]: "neighbor" }, "test-ornament");
     if (role === "passing") expect(fitted).toBeUndefined();
     else expect(fitted?.fit.nonChordToneAssignments).toEqual({ [id]: role });
+  });
+});
+
+describe("Cut 2B 链式外音", () => {
+  it("核实延留后，以它的和弦骨架识别相邻的经过音", () => {
+    const project = oneBar("C major",
+      "D5/2 D5/8 C5/4.", "B4/2 E4/8 F4/8 G4/4", "G3/1", "G2/2 E3/2",
+    );
+    const first = displacedUpperPassingAt(inferChords(project), 2 * PPQ);
+    expect(first).toMatchObject({ status: "resolved", selected: {
+      identity: { root: { step: "C" }, bass: { step: "E" } },
+      fit: { nonChordToneAssignments: {
+        [project.satbTracks[0].notes[1].id]: "suspension",
+        [project.satbTracks[1].notes[2].id]: "passing",
+      } },
+    } });
+    expect(first?.selected?.evidence.map(item => item.code))
+      .toEqual(expect.arrayContaining(["contextual-suspension", "contextual-prolongation"]));
+  });
+
+  it("用跨越前一空白切片的持续音核实延留，并回接前面的经过音", () => {
+    const project = oneBar("C major",
+      "C5/2. B4/4", "A4/4. G4/8 F4/2", "A3/2 D4/2", "F3/2 G2/2",
+    );
+    const result = inferChords(project);
+    for (const [tick, root, track, index, role] of [
+      [1.5 * PPQ, "F", 1, 1, "passing"],
+      [2 * PPQ, "G", 0, 0, "suspension"],
+    ] as const) {
+      expect(displacedUpperPassingAt(result, tick)).toMatchObject({ status: "resolved", selected: {
+        identity: { root: { step: root } },
+        fit: { nonChordToneAssignments: { [project.satbTracks[track].notes[index].id]: role } },
+      } });
+    }
+  });
+
+  it("恢复解决处已符合规范省五配置的主和弦", () => {
+    const project = oneBar("C major", "D5/2 D5/4 C5/4", "B4/2 E4/2", "F4/2 C4/2", "G2/2 C3/2");
+    expectContextualOrnament(project, [2 * PPQ], "contextual-suspension",
+      { root: { step: "C" }, bass: { step: "C" } }, [[0, 1, "suspension"]]);
+  });
+
+  it.each([
+    ["相邻音以跳进进入", "B4/2 E4/8 B3/8 G4/4"],
+    ["延留解决与经过音形成平行五度", "B4/2 G4/8 F4/8 E4/4"],
+  ])("%s 时保留空白", (_name, alto) => {
+    const project = oneBar("C major", "D5/2 D5/8 C5/4.", alto, "G3/1", "G2/2 E3/2");
+    expect(displacedUpperPassingAt(inferChords(project), 2.5 * PPQ)?.status).toBe("unclassified");
+  });
+});
+
+describe("Cut 2B 弱位候选竞争", () => {
+  it.each([
+    ["一个辅助音拼成 iii6", "D5/4. E5/8 D5/2", "B4/1", "G3/1", "G2/1", 0, 1],
+    ["一个辅助音拼成 vii°", "D5/1", "G4/4. F4/8 G4/2", "D4/1", "B2/1", 1, 1],
+  ] as const)("%s 时让延续和声胜出，保留字面候选", (_name, s, a, t, b, track, note) => {
+    const project = oneBar("C major", s, a, t, b);
+    const result = inferChords(project);
+    const region = displacedUpperPassingAt(result, 1.5 * PPQ);
+    expect(region).toMatchObject({ status: "resolved", selected: {
+      functionalBaseId: "D",
+      fit: { nonChordToneAssignments: { [project.satbTracks[track].notes[note].id]: "neighbor" } },
+    } });
+    expect(region?.alternatives).toContainEqual(expect.objectContaining({
+      fit: expect.objectContaining({ nonChordToneNoteIds: [] }),
+    }));
+  });
+
+  it("两个反向经过音拼成 iii6 时延续前后的属七和弦", () => {
+    const project = oneBar("C major", "F5/4. E5/8 D5/2", "D4/4. E4/8 F4/2", "G3/1", "B2/1");
+    expectContextualOrnament(project, [1.5 * PPQ], "contextual-prolongation",
+      { root: { step: "G" }, bass: { step: "B" }, structure: { quality: "dominant7" } },
+      [[0, 1, "passing"], [1, 1, "passing"]]);
+  });
+
+  it("两个辅助音形成孤立 V6/4 时保留原 ii", () => {
+    const project = oneBar("C major", "A4/4. B4/8 A4/2", "F4/4. G4/8 F4/2", "D4/1", "D3/1");
+    expectContextualOrnament(project, [1.5 * PPQ], "contextual-prolongation",
+      { root: { step: "D" }, bass: { step: "D" }, structure: { quality: "minor" } },
+      [[0, 1, "neighbor"], [1, 1, "neighbor"]]);
+  });
+
+  it("保留被禁止竞争或跨边界切片的字面读法", () => {
+    const project = oneBar("C major", "D5/4. E5/8 D5/2", "B4/1", "G3/1", "G2/1");
+    const observations = buildChordInferenceObservations(project);
+    const original = observations.map(part => buildChordInferenceCandidates(part));
+    for (const [options, boundaries, withheld] of [
+      [{ minConfidence: "high" }, [], new Set<number>()],
+      [{ allowNonChordToneCandidates: false }, [], new Set<number>()],
+      [{}, [2 * PPQ], new Set<number>()],
+      [{}, [], new Set([1.5 * PPQ])],
+    ] as const) {
+      expect(withContextualOrnaments(observations, original, options, PPQ, boundaries, withheld)[1]).toBe(original[1]);
+    }
+  });
+
+  it.each([
+    ["整拍 iii6", "D5/4 E5/4 D5/2", "B4/1", "G3/1", "G2/1", PPQ, "E", 1],
+    ["短时 V4/3", "C5/4. B4/8 C5/2", "G4/1", "E4/4. F4/8 E4/2", "C3/4. D3/8 E3/2", 1.5 * PPQ, "G", 2],
+    ["短时 IV6/4", "G5/4. A5/8 G5/2", "E5/4. F5/8 E5/2", "C4/1", "C3/1", 1.5 * PPQ, "F", 2],
+  ] as const)("保留结构进行中的%s", (_name, s, a, t, b, tick, root, inversion) => {
+    const project = oneBar("C major", s, a, t, b);
+    const region = displacedUpperPassingAt(inferChords(project), tick);
+    expect(region).toMatchObject({
+      fromTick: tick,
+      status: "resolved",
+      selected: {
+        identity: { root: { step: root } },
+        fit: { nonChordToneAssignments: {} },
+      },
+    });
+    expect(chordIdentityInversion(region!.selected!.identity)).toBe(inversion);
   });
 });
