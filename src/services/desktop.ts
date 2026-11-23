@@ -1,5 +1,52 @@
+import type { DesktopInvokeMap } from "../../shared/desktop";
+import { MAX_DIAGNOSTIC_BUNDLE_BYTES, type LogEntry } from "../../shared/logging";
 import { migrateProject, type ProjectDocument } from "../domain/project";
 import type { PortableRuleProfile } from "../domain/ruleProfile";
+
+export function hasDesktopLogging() {
+  return typeof window !== "undefined" && typeof window.desktop?.log?.appendBatch === "function";
+}
+
+export function getDesktopLogSessionId() {
+  return typeof window !== "undefined" ? window.desktop?.log?.sessionId : undefined;
+}
+
+export function appendDesktopLogBatch(entries: readonly LogEntry[]) {
+  if (typeof window !== "undefined") return window.desktop?.log?.appendBatch({ entries });
+}
+
+export async function getRecentDesktopLogs(
+  limit?: number,
+): Promise<DesktopInvokeMap["log:get-recent"]["response"]> {
+  return (typeof window !== "undefined" && await window.desktop?.log?.getRecent({ limit }))
+    || { entries: [] };
+}
+
+export async function openDesktopLogDirectory(): Promise<DesktopInvokeMap["log:open-directory"]["response"]> {
+  return (typeof window !== "undefined" && await window.desktop?.log?.openDirectory())
+    || { opened: false };
+}
+
+export async function exportDiagnosticBundleFile(
+  bundleJson: string,
+  defaultName = "satb-diagnostic.json",
+): Promise<DesktopInvokeMap["log:export-bundle"]["response"]> {
+  const logging = typeof window !== "undefined" ? window.desktop?.log : undefined;
+  if (logging) return logging.exportBundle({ bundleJson, defaultName });
+
+  const blob = new Blob([bundleJson], { type: "application/json;charset=utf-8" });
+  if (blob.size > MAX_DIAGNOSTIC_BUNDLE_BYTES) throw new Error("排错包大小超过 20 MB");
+  const url = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = /\.json$/i.test(defaultName) ? defaultName : defaultName + ".json";
+    anchor.click();
+    return { canceled: false };
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
 
 const BROWSER_PROJECT_KEY = "satb-master-browser-project";
 export const MAX_SOUNDFONT_BYTES = 2 * 1024 * 1024 * 1024;

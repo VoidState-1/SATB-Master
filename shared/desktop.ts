@@ -1,5 +1,7 @@
 import type { InstalledExternalRulePackage } from "./external-rules.js";
+import type { LogEntry } from "./logging.js";
 
+export const LOG_SESSION_ARGUMENT = "--satb-log-session=";
 export const MAX_RULE_TEST_CASE_BYTES = 20 * 1024 * 1024;
 export const MAX_AUDIT_FILE_BYTES = 32 * 1024 * 1024;
 
@@ -32,6 +34,22 @@ export interface InstallExternalRuleRequest {
 }
 
 export interface DesktopInvokeMap {
+  "log:append-batch": {
+    request: { entries: readonly LogEntry[] };
+    response: { written: number };
+  };
+  "log:get-recent": {
+    request: { limit?: number };
+    response: { entries: LogEntry[]; logFilePath?: string; logDirectory?: string };
+  };
+  "log:open-directory": {
+    request: void;
+    response: { opened: boolean; directory?: string };
+  };
+  "log:export-bundle": {
+    request: { bundleJson: string; defaultName?: string };
+    response: { canceled: boolean; filePath?: string };
+  };
   "audit:read-startup-package": { request: void; response: string };
   "window:minimize": { request: void; response: void };
   "window:toggle-maximize": { request: void; response: boolean };
@@ -173,6 +191,10 @@ export type DesktopInvokeChannel = keyof DesktopInvokeMap;
 export type DesktopEventChannel = keyof DesktopEventMap;
 
 export const DESKTOP_CHANNELS = Object.freeze({
+  logAppendBatch: "log:append-batch",
+  logGetRecent: "log:get-recent",
+  logOpenDirectory: "log:open-directory",
+  logExportBundle: "log:export-bundle",
   auditReadStartupPackage: "audit:read-startup-package",
   windowMinimize: "window:minimize",
   windowToggleMaximize: "window:toggle-maximize",
@@ -207,6 +229,13 @@ export const DESKTOP_CHANNELS = Object.freeze({
 } as const satisfies Record<string, DesktopInvokeChannel | DesktopEventChannel>);
 
 export interface DesktopApi {
+  log: {
+    sessionId?: string;
+    appendBatch(request: DesktopInvokeMap["log:append-batch"]["request"]): Promise<DesktopInvokeMap["log:append-batch"]["response"]>;
+    getRecent(request?: DesktopInvokeMap["log:get-recent"]["request"]): Promise<DesktopInvokeMap["log:get-recent"]["response"]>;
+    openDirectory(): Promise<DesktopInvokeMap["log:open-directory"]["response"]>;
+    exportBundle(request: DesktopInvokeMap["log:export-bundle"]["request"]): Promise<DesktopInvokeMap["log:export-bundle"]["response"]>;
+  };
   audit: {
     hasStartupPackage: boolean;
     readStartupPackage(): Promise<string>;

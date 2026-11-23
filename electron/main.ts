@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,8 +8,10 @@ import { registerRuleLibraryIpc } from './rule-library.js'
 import { registerRuleTestCaseIpc } from './rule-test-cases.js'
 import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
 import { installReactDevToolsIfAvailable } from './dev-extensions.js'
-import { DESKTOP_CHANNELS, MAX_AUDIT_FILE_BYTES } from '../shared/desktop.js'
-import { handleDesktop } from './typed-ipc.js'
+import { DESKTOP_CHANNELS, LOG_SESSION_ARGUMENT, MAX_AUDIT_FILE_BYTES } from '../shared/desktop.js'
+import { serializeError, type LogEntry } from '../shared/logging.js'
+import { MainLogger, registerLoggingIpc } from './logger.js'
+import { handleDesktop, setDesktopIpcReporter } from './typed-ipc.js'
 import {
   loadSavedWindowState,
   MIN_WINDOW_HEIGHT,
@@ -26,6 +29,80 @@ const startupAuditPath = auditArgument < 0 ? undefined : process.argv[auditArgum
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
 
 if (e2eDirectory) app.setPath('userData', path.join(e2eDirectory, 'user-data'))
+const logger = new MainLogger(path.join(app.getPath('userData'), 'logs'))
+const sessionId = randomUUID()
+
+function mainLogEntry(
+  level: LogEntry['level'],
+  scope: LogEntry['scope'],
+  message: string,
+  details: Pick<LogEntry, 'code' | 'context' | 'error'> = {},
+): LogEntry {
+  return {
+    id: randomUUID(),
+    timestamp: new Date().toISOString(),
+    process: 'main',
+    level,
+    scope,
+    message,
+    ...details,
+  }
+}
+
+process.on('uncaughtException', (error, origin) => {
+  try {
+    logger.appendSync(mainLogEntry('fatal', 'app', '主进程发生未捕获异常', {
+      code: 'UNCAUGHT_EXCEPTION',
+      error: serializeError(error),
+      context: { origin },
+    }))
+  } finally {
+    process.exit(1)
+  }
+})
+
+process.on('unhandledRejection', (reason) => {
+  logger.appendSync(mainLogEntry('fatal', 'app', '主进程存在未处理的 Promise 拒绝', {
+    code: 'UNHANDLED_REJECTION',
+    error: serializeError(reason),
+  }))
+})
+
+app.on('render-process-gone', (_event, webContents, details) => {
+  if (details.reason === 'clean-exit') return
+  logger.appendSync(mainLogEntry('fatal', 'app', '渲染进程异常退出', {
+    code: 'RENDER_CRASH',
+    context: { ...details, webContentsId: webContents.id },
+  }))
+})
+
+app.on('child-process-gone', (_event, details) => {
+  if (details.reason === 'clean-exit') return
+  logger.appendSync(mainLogEntry('fatal', 'app', 'Electron 子进程异常退出', {
+    context: { ...details },
+  }))
+})
+
+setDesktopIpcReporter((level, context, error) => {
+  const failed = level === 'error'
+  void logger.append(mainLogEntry(level, 'ipc', failed ? 'IPC 调用失败' : 'IPC 调用耗时过长', {
+    code: failed ? 'IPC_FAILED' : undefined,
+    error: failed ? serializeError(error) : undefined,
+    context,
+  }))
+})
+
+registerLoggingIpc(logger)
+void logger.append(mainLogEntry('info', 'app', 'SATB Master 启动', {
+  context: {
+    sessionId,
+    appVersion: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    electron: process.versions.electron ?? 'unknown',
+    node: process.versions.node,
+  },
+}))
 registerSoundFontScheme()
 
 function createWindow() {
@@ -46,7 +123,10 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      additionalArguments: auditArgument < 0 ? [] : ['--satb-open-startup-audit'],
+      additionalArguments: [
+        LOG_SESSION_ARGUMENT + sessionId,
+        ...(auditArgument < 0 ? [] : ['--satb-open-startup-audit']),
+      ],
     },
   })
 

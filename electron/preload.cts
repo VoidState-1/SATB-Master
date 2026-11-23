@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import {
   DESKTOP_CHANNELS,
+  LOG_SESSION_ARGUMENT,
   type DesktopApi,
   type DesktopEventChannel,
   type DesktopEventMap,
@@ -27,6 +28,13 @@ function subscribeDesktop<Channel extends DesktopEventChannel>(
 }
 
 const desktop: DesktopApi = {
+  log: {
+    sessionId: process.argv.find((arg) => arg.startsWith(LOG_SESSION_ARGUMENT))?.slice(LOG_SESSION_ARGUMENT.length),
+    appendBatch: (request) => invokeDesktop(DESKTOP_CHANNELS.logAppendBatch, request),
+    getRecent: (request = {}) => invokeDesktop(DESKTOP_CHANNELS.logGetRecent, request),
+    openDirectory: () => invokeDesktop(DESKTOP_CHANNELS.logOpenDirectory),
+    exportBundle: (request) => invokeDesktop(DESKTOP_CHANNELS.logExportBundle, request),
+  },
   audit: {
     hasStartupPackage: process.argv.includes('--satb-open-startup-audit'),
     readStartupPackage: () => invokeDesktop(DESKTOP_CHANNELS.auditReadStartupPackage),
