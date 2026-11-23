@@ -52,6 +52,7 @@ import type {
   ChordInferenceOptions,
   ChordInferenceRegion,
 } from "./types";
+import { continuesInKey } from "./passContext";
 import type { VoiceId } from "../../project";
 import { VOICE_ORDER } from "../../project/voice";
 import { soundsCompleteWrittenChord } from "../facts/writtenVoicing";
@@ -71,10 +72,6 @@ const isRootDominantSeventh: FunctionalChordTemplate = {
   localKeyPolicy: "current-key",
   expectedInversion: 0,
 };
-
-function continuesInKey(source: ChordInferenceObservation, following: ChordInferenceObservation) {
-  return source.toTick === following.fromTick && keyDeclarationEquals(source.key, following.key);
-}
 
 function exactDominantSixthReading(candidate: ChordInferenceCandidate) {
   return candidate.fit.spellingConsistent && !candidate.fit.nonChordToneNoteIds.length &&
@@ -256,6 +253,107 @@ function suppliesPreparation(candidate: ChordInferenceCandidate) {
   return !reading.appliedTarget && reading.designation?.primaryFunction === "subdominant";
 }
 
+function readDominantNinthVoicing(source: ChordInferenceObservation) {
+  const bass = soundingBass(source);
+  if (!bass || source.soundingPitchClasses.length !== 4 ||
+      !pitchClassEquals(bass, scaleDegreePitchClass(source.key, 5))) return;
+  const candidate = dominantNinthTemplates
+    .map(template => createFunctionalCandidate(source, template, {}))
+    .find(item => item && written(item));
+  if (!candidate) return;
+  const ninth = dominantNinthTone(candidate.identity);
+  const seventh = chordIdentityToneSpellingForDegree(candidate.identity, 7);
+  if (!ninth || !seventh) return;
+  const voiceWithTone = (tone: SpelledPitchClass) => VOICE_ORDER.find(voice => {
+    const note = source.activeNotes[voice];
+    return note && !note.nonChordToneRole && pitchClassEquals(note.pitch, tone);
+  });
+  const ninthVoice = voiceWithTone(ninth);
+  const seventhVoice = voiceWithTone(seventh);
+  const ninthNote = ninthVoice && source.activeNotes[ninthVoice];
+  if (!ninthNote || !seventhVoice) return;
+
+  return { bass, candidate, ninthVoice, ninthNote, seventhVoice };
+}
+
+function proveDominantNinth(
+  observations: readonly ChordInferenceObservation[],
+  sets: readonly (readonly ChordInferenceCandidate[])[],
+  boundaries: readonly number[],
+  index: number,
+  source: ChordInferenceObservation,
+  { bass, candidate, ninthVoice, ninthNote, seventhVoice }: NonNullable<ReturnType<typeof readDominantNinthVoicing>>,
+) {
+  const previous = observations[index - 1], landing = observations[index + 1];
+  const retainsPitch = (other: ChordInferenceObservation, voice: VoiceId) => {
+    const note = other.activeNotes[voice];
+    const prior = source.activeNotes[voice];
+    return !!prior && !!note && !note.nonChordToneRole && spelledPitchEquals(note.pitch, prior.pitch);
+  };
+  const heldFromPreparation = previous && connectsDominantNinth(previous, source, boundaries) &&
+    previous.activeNotes[ninthVoice]?.id === ninthNote.id;
+  const prepared = heldFromPreparation && sets[index - 1].some(suppliesPreparation) &&
+    retainsPitch(previous, seventhVoice);
+  const nextNote = landing && connectsDominantNinth(source, landing, boundaries) ? landing.activeNotes[ninthVoice] : undefined;
+  const arrival = nextNote && !nextNote.nonChordToneRole && nextNote.startTick === landing.fromTick &&
+    ninthNote.startTick + ninthNote.durationTicks === landing.fromTick ? nextNote : undefined;
+  const tonic = arrival && sets[index + 1].some(target =>
+    (target.functionalBaseId === "T" || target.functionalBaseId === "t") &&
+    written(target) && !target.fit.omittedChordDegrees.length &&
+    writtenDominantNinthResolves(candidate.identity, target.identity, ninthNote.pitch, arrival.pitch));
+  const landingBass = arrival && soundingBass(landing);
+  const suspension = arrival && landingBass && pitchClassEquals(landingBass, bass) &&
+    pitchClassEquals(arrival.pitch, bass) &&
+    VOICE_ORDER.filter(voice => voice !== "bass" && voice !== ninthVoice).every(voice => retainsPitch(landing, voice))
+    ? createFunctionalCandidate(landing, seventhTemplate, {})
+    : undefined;
+  const resolvedSuspension = arrival && suspension && written(suspension) &&
+    writtenDominantNinthResolves(candidate.identity, suspension.identity, ninthNote.pitch, arrival.pitch);
+  if (!prepared && !tonic && !resolvedSuspension) return;
+
+  const evidence: ChordInferenceEvidence[] = [];
+  if (prepared) evidence.push({
+    kind: "sequence-context", code: "dominant-ninth-preparation", noteIds: [ninthNote.id],
+    details: { atTick: source.fromTick },
+  });
+  if (tonic && arrival) evidence.push({
+    kind: "sequence-context", code: "dominant-ninth-to-tonic", noteIds: [ninthNote.id, arrival.id],
+    details: { atTick: landing.fromTick },
+  });
+  if (resolvedSuspension && arrival) evidence.push({
+    kind: "sequence-context", code: "dominant-ninth-same-root-9-8", noteIds: [ninthNote.id, arrival.id],
+    details: { atTick: landing.fromTick },
+  });
+  const proven = {
+    ...candidate,
+    confidence: "high" as const,
+    evidence: [...candidate.evidence, ...evidence],
+  };
+  return { proven, previous, landing, heldFromPreparation, resolvedSuspension, suspension };
+}
+
+function dominantNinthSuspensionAlternative(
+  source: ChordInferenceObservation,
+  { candidate, ninthNote }: NonNullable<ReturnType<typeof readDominantNinthVoicing>>,
+  { previous, landing, heldFromPreparation, resolvedSuspension, suspension }: NonNullable<ReturnType<typeof proveDominantNinth>>,
+  previousCandidates: readonly ChordInferenceCandidate[],
+  options: ChordInferenceOptions,
+) {
+  const preparationBass = previous?.bass;
+  const supportedSuspension = resolvedSuspension && suspension && options.allowNonChordToneCandidates !== false &&
+    heldFromPreparation && preparationBass &&
+    previousCandidates.some(anchor => soundsCompleteWrittenChord(
+      anchor.identity, Object.values(previous.activeNotes).filter(note => note !== undefined), preparationBass,
+    ) && !chordIdentityEquals(anchor.identity, candidate.identity)) &&
+    preparedNinthOverDominantSeventh(
+      suspension.identity, previous.activeNotes, source.activeNotes, landing.activeNotes,
+      source.fromTick, landing.fromTick, source.metric, landing.metric,
+    ) === ninthNote.id;
+  return supportedSuspension
+    ? fitPreparedSuspension(suspension, source, [{ noteId: ninthNote.id, figure: "9-8" }])
+    : undefined;
+}
+
 /** Spasobin §23.3–5 supplies distinct facts about preparation and exit.
  * An accented ninth held from an exact preparation chord also permits a
  * parallel reading as a suspension over the written V7. */
@@ -268,86 +366,14 @@ export function withDominantNinths(
   const result = sets.slice();
   const alternate = new Map<string, ChordInferenceCandidate>();
   for (const [index, source] of observations.entries()) {
-    const bass = soundingBass(source);
-    if (!bass || source.soundingPitchClasses.length !== 4 ||
-        !pitchClassEquals(bass, scaleDegreePitchClass(source.key, 5))) continue;
-    const candidate = dominantNinthTemplates
-      .map(template => createFunctionalCandidate(source, template, {}))
-      .find(item => item && written(item));
-    if (!candidate) continue;
-    const ninth = dominantNinthTone(candidate.identity);
-    const seventh = chordIdentityToneSpellingForDegree(candidate.identity, 7);
-    if (!ninth || !seventh) continue;
-    const voiceWithTone = (tone: SpelledPitchClass) => VOICE_ORDER.find(voice => {
-      const note = source.activeNotes[voice];
-      return note && !note.nonChordToneRole && pitchClassEquals(note.pitch, tone);
-    });
-    const ninthVoice = voiceWithTone(ninth);
-    const seventhVoice = voiceWithTone(seventh);
-    const ninthNote = ninthVoice && source.activeNotes[ninthVoice];
-    if (!ninthNote || !seventhVoice) continue;
-
-    const previous = observations[index - 1], landing = observations[index + 1];
-    const retainsPitch = (other: ChordInferenceObservation, voice: VoiceId) => {
-      const note = other.activeNotes[voice];
-      const prior = source.activeNotes[voice];
-      return !!prior && !!note && !note.nonChordToneRole && spelledPitchEquals(note.pitch, prior.pitch);
-    };
-    const heldFromPreparation = previous && connectsDominantNinth(previous, source, boundaries) &&
-      previous.activeNotes[ninthVoice]?.id === ninthNote.id;
-    const prepared = heldFromPreparation && sets[index - 1].some(suppliesPreparation) &&
-      retainsPitch(previous, seventhVoice);
-    const nextNote = landing && connectsDominantNinth(source, landing, boundaries) ? landing.activeNotes[ninthVoice] : undefined;
-    const arrival = nextNote && !nextNote.nonChordToneRole && nextNote.startTick === landing.fromTick &&
-      ninthNote.startTick + ninthNote.durationTicks === landing.fromTick ? nextNote : undefined;
-    const tonic = arrival && sets[index + 1].some(target =>
-      (target.functionalBaseId === "T" || target.functionalBaseId === "t") &&
-      written(target) && !target.fit.omittedChordDegrees.length &&
-      writtenDominantNinthResolves(candidate.identity, target.identity, ninthNote.pitch, arrival.pitch));
-    const landingBass = arrival && soundingBass(landing);
-    const suspension = arrival && landingBass && pitchClassEquals(landingBass, bass) &&
-      pitchClassEquals(arrival.pitch, bass) &&
-      VOICE_ORDER.filter(voice => voice !== "bass" && voice !== ninthVoice).every(voice => retainsPitch(landing, voice))
-      ? createFunctionalCandidate(landing, seventhTemplate, {})
-      : undefined;
-    const resolvedSuspension = arrival && suspension && written(suspension) &&
-      writtenDominantNinthResolves(candidate.identity, suspension.identity, ninthNote.pitch, arrival.pitch);
-    if (!prepared && !tonic && !resolvedSuspension) continue;
-
-    const evidence: ChordInferenceEvidence[] = [];
-    if (prepared) evidence.push({
-      kind: "sequence-context", code: "dominant-ninth-preparation", noteIds: [ninthNote.id],
-      details: { atTick: source.fromTick },
-    });
-    if (tonic && arrival) evidence.push({
-      kind: "sequence-context", code: "dominant-ninth-to-tonic", noteIds: [ninthNote.id, arrival.id],
-      details: { atTick: landing.fromTick },
-    });
-    if (resolvedSuspension && arrival) evidence.push({
-      kind: "sequence-context", code: "dominant-ninth-same-root-9-8", noteIds: [ninthNote.id, arrival.id],
-      details: { atTick: landing.fromTick },
-    });
-    const proven = {
-      ...candidate,
-      confidence: "high" as const,
-      evidence: [...candidate.evidence, ...evidence],
-    };
+    const voicing = readDominantNinthVoicing(source);
+    if (!voicing) continue;
+    const proof = proveDominantNinth(observations, sets, boundaries, index, source, voicing);
+    if (!proof) continue;
+    const { proven, resolvedSuspension, suspension } = proof;
     const otherReadings = result[index].filter(item => item.id !== proven.id &&
       (item.semantics || !chordIdentityEquals(item.identity, proven.identity)));
-
-    const preparationBass = previous?.bass;
-    const supportedSuspension = resolvedSuspension && suspension && options.allowNonChordToneCandidates !== false &&
-      heldFromPreparation && preparationBass &&
-      sets[index - 1].some(anchor => soundsCompleteWrittenChord(
-        anchor.identity, Object.values(previous.activeNotes).filter(note => note !== undefined), preparationBass,
-      ) && !chordIdentityEquals(anchor.identity, candidate.identity)) &&
-      preparedNinthOverDominantSeventh(
-        suspension.identity, previous.activeNotes, source.activeNotes, landing.activeNotes,
-        source.fromTick, landing.fromTick, source.metric, landing.metric,
-      ) === ninthNote.id;
-    const parallel = supportedSuspension
-      ? fitPreparedSuspension(suspension, source, [{ noteId: ninthNote.id, figure: "9-8" }])
-      : undefined;
+    const parallel = dominantNinthSuspensionAlternative(source, voicing, proof, sets[index - 1], options);
     // The same writing supports both accounts in §23.5. Keep the choice
     // alongside the literal path so its continuity bonus cannot erase V9.
     if (parallel) alternate.set(proven.id, { ...parallel, confidence: "high" });
@@ -535,10 +561,6 @@ export function withReattackedTonicNinths(
 
 const degrees = [1, 2, 3, 4, 5, 6, 7] as const;
 
-function sameContext(left: ChordInferenceObservation, right: ChordInferenceObservation) {
-  return left.toTick === right.fromTick && keyDeclarationEquals(left.key, right.key);
-}
-
 /** In harmonic major the lowered sixth gives iiø7 (§21.1) or the
  * diminished supertonic in first inversion (§19.1). */
 export function harmonicMajorPreparation(item: ChordInferenceObservation, next: ChordInferenceObservation, key: KeyReference) {
@@ -563,17 +585,15 @@ export function harmonicMajorPreparation(item: ChordInferenceObservation, next: 
 /** Recognize a sequence only after two consecutive fourth-related root
  * changes. The written sonority of each link supplies its root and quality;
  * the link alone does not establish a new key. */
-export function withAppliedSequences(
+function appliedSequenceIndices(
   observations: readonly ChordInferenceObservation[],
-  sets: readonly (readonly ChordInferenceCandidate[])[],
-  options: ChordInferenceOptions,
+  stacks: readonly ReturnType<typeof readWrittenDominantSeventh>[],
 ) {
-  const stacks = observations.map(item => readWrittenDominantSeventh(item.activeNotes));
   const chain = new Set<number>();
   let start = 0, links = 0;
   for (let i = 0; i < stacks.length; i++) {
     const current = stacks[i], next = stacks[i + 1];
-    if (current && next && sameContext(observations[i], observations[i + 1])) {
+    if (current && next && continuesInKey(observations[i], observations[i + 1])) {
       if (pitchClassEquals(current.root, next.root)) continue;
       if (pitchClassValue(current.target) === pitchClassValue(next.root)) {
         links++;
@@ -587,10 +607,20 @@ export function withAppliedSequences(
     start = i + 1;
     links = 0;
   }
+  return chain;
+}
+
+export function withAppliedSequences(
+  observations: readonly ChordInferenceObservation[],
+  sets: readonly (readonly ChordInferenceCandidate[])[],
+  options: ChordInferenceOptions,
+) {
+  const stacks = observations.map(item => readWrittenDominantSeventh(item.activeNotes));
+  const chain = appliedSequenceIndices(observations, stacks);
   return observations.map((item, i) => {
     const existing = sets[i];
     const next = observations[i + 1];
-    if (next && sameContext(item, next)) {
+    if (next && continuesInKey(item, next)) {
       const prep = harmonicMajorPreparation(item, next, item.key);
       if (prep) {
         const chord = createFunctionalCandidate(item, {
@@ -645,7 +675,7 @@ function exact(candidate: ChordInferenceCandidate) {
 }
 
 function connectsDoubleAugmentedFourThree(left: Frame, right: Frame, boundaries: readonly number[]) {
-  return left.toTick === right.fromTick && keyDeclarationEquals(left.key, right.key) &&
+  return continuesInKey(left, right) &&
     !boundaries.some(tick => left.fromTick < tick && tick <= right.fromTick);
 }
 

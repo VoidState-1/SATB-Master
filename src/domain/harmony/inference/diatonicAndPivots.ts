@@ -36,6 +36,7 @@ import type {
 } from "./types";
 import { compareMetricStrength } from "../../rhythm/metric";
 import type { LocalKeyContext } from "./localKeys";
+import { continuesInKey } from "./passContext";
 import { fitChordObservation, identityForFunctionalTemplate } from "./scoring";
 
 const degrees = [1, 2, 3, 4, 5, 6, 7] as const;
@@ -307,10 +308,6 @@ function needsIdentity(set: SupertonicResolutionCandidateSet) {
   return set.every(c => !c.semantics && c.confidence === "low");
 }
 
-function sameContext(source: ChordInferenceObservation, end: ChordInferenceObservation) {
-  return keyDeclarationEquals(source.key, end.key);
-}
-
 function literalDominant(item: ChordInferenceObservation, key: KeyReference, options: ChordInferenceOptions, inversion: 2 | 3) {
   const root = scaleDegreePitchClass(key, 5);
   const candidate = createAbsoluteCandidate(item, root, "dominant7", options);
@@ -331,7 +328,7 @@ export function withThirdInversionResolutions(
   if (options.minConfidence === "high") return sets;
   const result = sets.slice();
   const connected = (i: number, end: number) =>
-    frames.slice(i, end + 1).every((f, offset) => sameContext(frames[i], f) &&
+    frames.slice(i, end + 1).every((f, offset) => keyDeclarationEquals(frames[i].key, f.key) &&
       (!offset || frames[i + offset - 1].toTick === f.fromTick)) &&
     !boundaries.some(t => frames[i].fromTick < t && t <= frames[end].fromTick);
   for (let i = 0; i + 1 < frames.length; i++) {
@@ -391,6 +388,59 @@ function hasWrittenLowestBass(item: Observation) {
   return observationNotes(item).every(({ note }) => toMidi(note.pitch) >= lowest);
 }
 
+function confirmLeadingSeventhArrival(
+  observations: readonly Observation[],
+  i: number,
+  source: Observation,
+  arrival: Observation,
+  contexts: ReadonlyMap<number, LocalKeyContext>,
+  phraseBoundaries: readonly number[],
+) {
+  const tonicBass = arrival.bass;
+  if (!tonicBass || source.toTick !== arrival.fromTick || arrival.key.id !== source.key.id) return;
+  const bassEnd = tonicBass.startTick + tonicBass.durationTicks;
+  const tonicNotes = observationNotes(arrival).filter(({ note }) =>
+    !note.nonChordToneRole && note.startTick + note.durationTicks >= bassEnd);
+  if (tonicNotes.length < 3) return;
+  let j = i + 2;
+  while (j < observations.length) {
+    const frame = observations[j];
+    if (frame.bass?.id !== tonicBass.id) break;
+    j++;
+  }
+
+  const dominantOnset = observations[j];
+  const bass = dominantOnset?.bass;
+  if (!bass || dominantOnset.fromTick !== bassEnd || dominantOnset.key.id !== source.key.id) return;
+  // The dominant itself can begin with a written rest in the upper voice.
+  // Look up the key proven by the existing pipeline within this bass event.
+  let proof: LocalKeyContext | undefined;
+  for (let k = j; k < observations.length && observations[k].key.id === source.key.id &&
+    observations[k].bass?.id === bass.id; k++) {
+    proof = contexts.get(k);
+    if (proof) break;
+  }
+  if (!proof || proof.dominantIndex < j || proof.tonicIndex <= proof.dominantIndex ||
+      observations.slice(i, proof.tonicIndex + 1).some(frame =>
+        frame.key.id !== source.key.id || !hasWrittenLowestBass(frame)) ||
+      phraseBoundaries.some(tick => source.fromTick < tick && tick <= observations[proof.tonicIndex].fromTick))
+    return;
+  const key = proof.key;
+  if (keyEquals(source.key, key) || (arrival.localKey && !keyEquals(arrival.localKey, key)) ||
+      !pitchClassEquals(bass.pitch, scaleDegreePitchClass(key, 5))) return;
+
+  const dominantNotes = observationNotes(dominantOnset).filter(({ note }) => !note.nonChordToneRole);
+  const dominant = chordToneSpellings(bass.pitch, "major");
+  if (!dominant.every(tone => dominantNotes.some(({ note }) => pitchClassEquals(note.pitch, tone))))
+    return;
+  const tonic = chordToneSpellings(key.tonic, key.mode);
+  if (!tonic.every(tone => tonicNotes.some(({ note }) => pitchClassEquals(note.pitch, tone))) ||
+      ![tonic[0], tonic[1]].some(tone => pitchClassEquals(tone, tonicBass.pitch)) ||
+      observationNotes(arrival).some(({ note }) =>
+        note.nonChordToneRole || !tonic.some(tone => pitchClassEquals(note.pitch, tone)))) return;
+  return proof;
+}
+
 /** Spasobin §57.8a permits a written vii°7 to resolve straight to the new
  * tonic. The ensuing independently inferred V–I must confirm that key. */
 export function withLeadingSeventhIntoConfirmedKey(
@@ -407,48 +457,10 @@ export function withLeadingSeventhIntoConfirmedKey(
         source.soundingPitchClasses.length !== 4 || existing.some(exactConfirmedKeyLeadingSeventh) ||
         observationNotes(source).some(({ note }) => note.nonChordToneRole)) return existing;
 
-    const tonicBass = arrival.bass;
-    if (!tonicBass || source.toTick !== arrival.fromTick || arrival.key.id !== source.key.id) return existing;
-    const bassEnd = tonicBass.startTick + tonicBass.durationTicks;
-    const tonicNotes = observationNotes(arrival).filter(({ note }) =>
-      !note.nonChordToneRole && note.startTick + note.durationTicks >= bassEnd);
-    if (tonicNotes.length < 3) return existing;
-    let j = i + 2;
-    while (j < observations.length) {
-      const frame = observations[j];
-      if (frame.bass?.id !== tonicBass.id) break;
-      j++;
-    }
-
-    const dominantOnset = observations[j];
-    const bass = dominantOnset?.bass;
-    if (!bass || dominantOnset.fromTick !== bassEnd || dominantOnset.key.id !== source.key.id) return existing;
-    // The dominant itself can begin with a written rest in the upper voice.
-    // Look up the key proven by the existing pipeline within this bass event.
-    let proof: LocalKeyContext | undefined;
-    for (let k = j; k < observations.length && observations[k].key.id === source.key.id &&
-      observations[k].bass?.id === bass.id; k++) {
-      proof = contexts.get(k);
-      if (proof) break;
-    }
-    if (!proof || proof.dominantIndex < j || proof.tonicIndex <= proof.dominantIndex ||
-        observations.slice(i, proof.tonicIndex + 1).some(frame =>
-          frame.key.id !== source.key.id || !hasWrittenLowestBass(frame)) ||
-        phraseBoundaries.some(tick => source.fromTick < tick && tick <= observations[proof.tonicIndex].fromTick))
-      return existing;
+    const proof = confirmLeadingSeventhArrival(observations, i, source, arrival, contexts, phraseBoundaries);
+    if (!proof) return existing;
     const key = proof.key;
-    if (keyEquals(source.key, key) || (arrival.localKey && !keyEquals(arrival.localKey, key)) ||
-        !pitchClassEquals(bass.pitch, scaleDegreePitchClass(key, 5))) return existing;
 
-    const dominantNotes = observationNotes(dominantOnset).filter(({ note }) => !note.nonChordToneRole);
-    const dominant = chordToneSpellings(bass.pitch, "major");
-    if (!dominant.every(tone => dominantNotes.some(({ note }) => pitchClassEquals(note.pitch, tone))))
-      return existing;
-    const tonic = chordToneSpellings(key.tonic, key.mode);
-    if (!tonic.every(tone => tonicNotes.some(({ note }) => pitchClassEquals(note.pitch, tone))) ||
-        ![tonic[0], tonic[1]].some(tone => pitchClassEquals(tone, tonicBass.pitch)) ||
-        observationNotes(arrival).some(({ note }) =>
-          note.nonChordToneRole || !tonic.some(tone => pitchClassEquals(note.pitch, tone)))) return existing;
     const leading = leadingTonePitchClass(key);
     const leadingNote = observationNotes(source).find(({ note }) => pitchClassEquals(note.pitch, leading));
     const resolved = leadingNote && arrival.activeNotes[leadingNote.voiceId];
@@ -480,10 +492,6 @@ export function withLeadingSeventhIntoConfirmedKey(
 
 const pivotSeventhInversions = [0, 1, 2, 3] as const;
 
-function continuesInKey(left: ChordInferenceObservation, right: ChordInferenceObservation) {
-  return left.toTick === right.fromTick && keyDeclarationEquals(left.key, right.key);
-}
-
 function hasRespelling(before: ChordInferenceObservation, pivot: ChordInferenceObservation) {
   const notes = observationNotes(before);
   return notes.every(({ voiceId, note }) => {
@@ -501,6 +509,36 @@ function hasRespelling(before: ChordInferenceObservation, pivot: ChordInferenceO
 
 function hasExactSpelling(candidate: ChordInferenceCandidate) {
   return candidate.fit.spellingConsistent && candidate.fit.nonChordToneNoteIds.length === 0;
+}
+
+function writtenPivotLeadingTone(
+  pivot: ChordInferenceObservation,
+  dominant: ChordInferenceObservation,
+  tonic: ChordInferenceObservation,
+  key: KeyReference,
+) {
+  const loweredSixth = scaleDegreePitchClass(key, 6, -1);
+  const dominantRoot = scaleDegreePitchClass(key, 5);
+  const notes = observationNotes(pivot);
+  if (!notes.some(({ note }) => pitchClassEquals(note.pitch, loweredSixth)) ||
+      !notes.every(({ voiceId, note }) => {
+        const next = dominant.activeNotes[voiceId];
+        if (!next) return false;
+        const motion = toMidi(next.pitch) - toMidi(note.pitch);
+        return pitchClassEquals(note.pitch, loweredSixth)
+          ? motion === -1 && pitchClassEquals(next.pitch, dominantRoot)
+          : motion === 0;
+      })) return;
+
+  const leadingTone = leadingTonePitchClass(key);
+  const leadingNote = observationNotes(dominant).find(({ note }) =>
+    pitchClassEquals(note.pitch, leadingTone),
+  );
+  const arrival = leadingNote && tonic.activeNotes[leadingNote.voiceId];
+  if (!leadingNote || !arrival || !pitchClassEquals(arrival.pitch, key.tonic) ||
+      toMidi(arrival.pitch) - toMidi(leadingNote.note.pitch) !== 1) return;
+
+  return leadingTone;
 }
 
 export function withWrittenPivotSevenths(
@@ -536,26 +574,8 @@ export function withWrittenPivotSevenths(
     );
     if (!hasDominant || !hasTonic) return existing;
 
-    const loweredSixth = scaleDegreePitchClass(key, 6, -1);
-    const dominantRoot = scaleDegreePitchClass(key, 5);
-    const notes = observationNotes(pivot);
-    if (!notes.some(({ note }) => pitchClassEquals(note.pitch, loweredSixth)) ||
-        !notes.every(({ voiceId, note }) => {
-          const next = dominant.activeNotes[voiceId];
-          if (!next) return false;
-          const motion = toMidi(next.pitch) - toMidi(note.pitch);
-          return pitchClassEquals(note.pitch, loweredSixth)
-            ? motion === -1 && pitchClassEquals(next.pitch, dominantRoot)
-            : motion === 0;
-        })) return existing;
-
-    const leadingTone = leadingTonePitchClass(key);
-    const leadingNote = observationNotes(dominant).find(({ note }) =>
-      pitchClassEquals(note.pitch, leadingTone),
-    );
-    const arrival = leadingNote && tonic.activeNotes[leadingNote.voiceId];
-    if (!leadingNote || !arrival || !pitchClassEquals(arrival.pitch, key.tonic) ||
-        toMidi(arrival.pitch) - toMidi(leadingNote.note.pitch) !== 1) return existing;
+    const leadingTone = writtenPivotLeadingTone(pivot, dominant, tonic, key);
+    if (!leadingTone) return existing;
 
     const bass = pivot.bass.pitch;
     const tones = chordToneSpellings(leadingTone, "diminished7");

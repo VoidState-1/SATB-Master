@@ -102,13 +102,7 @@ function doubleLeadingPreparation(
   return !doublesThird || resolvesLeadingSeventhToDoubledThird(writtenFrame(item), writtenFrame(next), tones, dominantTriad);
 }
 
-/** Find preparation for the closing key within the current written key. */
-function preparationStart(
-  observations: readonly ChordInferenceObservation[], landing: number, dominant: number,
-  key: KeyReference, existing: ReadonlyMap<number, LocalKeyContext>,
-  settled: boolean,
-) {
-  const tonic = observations[landing];
+function preparationHarmonies(tonic: ChordInferenceObservation, key: KeyReference) {
   const targetScale = scale(key), homeScale = scale(tonic.key);
   const tonicTriad = chordToneSpellings(key.tonic, key.mode);
   const dominantRoot = scaleDegreePitchClass(key, 5);
@@ -131,6 +125,17 @@ function preparationStart(
       leading: chordToneSpellings(leadingTonePitchClass(target), "diminished7"),
     };
   });
+  return {
+    targetScale, homeScale, tonicTriad, dominantRoot, dominantSeventh, dominantTriad, sharpFourth,
+    doubleDominant, doubleLeadingSeventh, neapolitan, leadingSeventh, relativeMajor, homeLeadingTone,
+    subdominant, supertonicSeventh, relativeApplied,
+  };
+}
+
+function dominantPreparationRun(
+  observations: readonly ChordInferenceObservation[], dominant: number, tonic: ChordInferenceObservation,
+  key: KeyReference, existing: ReadonlyMap<number, LocalKeyContext>, dominantSeventh: readonly SpelledPitchClass[],
+) {
   let hasSeventh = contains(observations[dominant].soundingPitchClasses, dominantSeventh[3]);
   let hasTriad = !hasSeventh;
   while (dominant > 0 && observations[dominant - 1].key === tonic.key && !existing.has(dominant - 1) &&
@@ -140,19 +145,79 @@ function preparationStart(
     hasSeventh ||= seventh;
     hasTriad ||= !seventh;
   }
+  return { start: dominant, hasSeventh, hasTriad };
+}
+
+function preparationEvidence(
+  item: ChordInferenceObservation, next: ChordInferenceObservation, key: KeyReference,
+  harmonies: ReturnType<typeof preparationHarmonies>, directlyBeforeDominant: boolean, canUseDoubleDominant: boolean,
+) {
+  const {
+    dominantRoot, tonicTriad, targetScale, homeScale, leadingSeventh, sharpFourth,
+    doubleDominant, doubleLeadingSeventh, dominantTriad, relativeApplied,
+  } = harmonies;
+  const cadential64 = directlyBeforeDominant && hasBass(item, dominantRoot) &&
+    fits(item, tonicTriad) && contains(item.soundingPitchClasses, key.tonic);
+  const pitches = item.soundingPitchClasses;
+  const fitsTargetScale = fits(item, targetScale);
+  const distinctive = fitsTargetScale && pitches.some(p => !contains(homeScale, p));
+  const leadingPreparation = pitches.length >= 3 && contains(pitches, leadingSeventh[0]) && fits(item, leadingSeventh);
+  const doubleDominantPreparation = canUseDoubleDominant && pitches.length >= 3 && contains(pitches, sharpFourth) &&
+    (fits(item, doubleDominant) || doubleLeadingPreparation(item, next, doubleLeadingSeventh, dominantTriad));
+  const appliedPreparation = relativeApplied.some(({ dominant, leading }) =>
+    pitches.length >= 3 && (contains(pitches, leading[0]) && fits(item, leading) ||
+      contains(pitches, dominant[1]) && contains(pitches, dominant[3]) && fits(item, dominant)));
+  return { cadential64, pitches, fitsTargetScale, distinctive, leadingPreparation, doubleDominantPreparation, appliedPreparation };
+}
+
+function homeTonicFollowsDominant(observations: readonly ChordInferenceObservation[], index: number, key: KeyReference) {
+  const prev = observations[index - 1];
+  let k = index - 1;
+  while (k >= 0 && withinBeat(prev, observations[k]) && !dominantSupports(observations[k], key)) k--;
+  return k >= 0 && withinBeat(prev, observations[k]);
+}
+
+interface UnsettledPreparationEvidence {
+  firstPitches?: readonly SpelledPitchClass[];
+  independent: boolean;
+  chromaticBeforeDominant: boolean;
+}
+
+function recordUnsettledPreparation(
+  evidence: UnsettledPreparationEvidence, pitches: readonly SpelledPitchClass[],
+  chromaticAtDominant: boolean, homeScale: readonly SpelledPitchClass[], dominantThird: SpelledPitchClass,
+) {
+  // Reattacks and inversions of the same pitch collection supply one
+  // piece of evidence, regardless of how many slices they occupy.
+  const previous = evidence.firstPitches ??= pitches;
+  evidence.independent ||= pitches.length !== previous.length || pitches.some(p => !contains(previous, p));
+  evidence.chromaticBeforeDominant ||= chromaticAtDominant &&
+    pitches.some(p => !contains(homeScale, p) && !pitchClassEquals(p, dominantThird));
+}
+
+/** Find preparation for the closing key within the current written key. */
+function preparationStart(
+  observations: readonly ChordInferenceObservation[], landing: number, dominant: number,
+  key: KeyReference, existing: ReadonlyMap<number, LocalKeyContext>,
+  settled: boolean,
+) {
+  const tonic = observations[landing];
+  const harmonies = preparationHarmonies(tonic, key);
+  const { targetScale, homeScale, dominantSeventh, sharpFourth, neapolitan, relativeMajor,
+    homeLeadingTone, subdominant, supertonicSeventh } = harmonies;
+  const { start: dominantStart, hasSeventh, hasTriad } =
+    dominantPreparationRun(observations, dominant, tonic, key, existing, dominantSeventh);
   const chromaticDominant = !contains(homeScale, dominantSeventh[1]);
   const canUseDoubleDominant = !contains(homeScale, sharpFourth);
-  const preparationBass = observations[dominant - 1]?.bass;
+  const preparationBass = observations[dominantStart - 1]?.bass;
   let samePreparationBass = !!preparationBass;
   let start: number | undefined;
   let relativeDiatonicStart: number | undefined;
   let relativeCadenceSupport = hasSeventh;
   let relativeBridgeFits = true;
   let earlierCadenceEnd: number | undefined;
-  let firstEvidence: readonly SpelledPitchClass[] | undefined;
-  let independentEvidence = false;
-  let chromaticPreparationBeforeDominant = false;
-  for (let j = dominant - 1; j >= 0; j--) {
+  const unsettledEvidence: UnsettledPreparationEvidence = { independent: false, chromaticBeforeDominant: false };
+  for (let j = dominantStart - 1; j >= 0; j--) {
     const item = observations[j];
     if (!item.completeSatb || item.key !== tonic.key ||
         (tonic.metric?.measureNumber ?? 0) - (item.metric?.measureNumber ?? 0) > 4) break;
@@ -166,30 +231,18 @@ function preparationStart(
     if (homeMode === item.key.mode) {
       // A common home tonic can lead into an expanded V–V7. An isolated
       // applied dominant after the home tonic is still ambiguous.
-      if (start === undefined && j === dominant - 1 && settled && chromaticDominant &&
-          hasTriad && hasSeventh && hasBass(tonic, key.tonic) && fits(item, targetScale)) start = dominant;
+      if (start === undefined && j === dominantStart - 1 && settled && chromaticDominant &&
+          hasTriad && hasSeventh && hasBass(tonic, key.tonic) && fits(item, targetScale)) start = dominantStart;
       break;
     }
     if (relativeMajor && contains(item.soundingPitchClasses, homeLeadingTone)) break;
     if (homeMode) {
       relativeBridgeFits = false;
-      const prev = observations[j - 1];
-      let k = j - 1;
-      while (k >= 0 && withinBeat(prev, observations[k]) && !dominantSupports(observations[k], item.key)) k--;
-      if (k >= 0 && withinBeat(prev, observations[k])) break;
+      if (homeTonicFollowsDominant(observations, j, item.key)) break;
       continue;
     }
-    const cadential64 = j === dominant - 1 && hasBass(item, dominantRoot) &&
-      fits(item, tonicTriad) && contains(item.soundingPitchClasses, key.tonic);
-    const pitches = item.soundingPitchClasses;
-    const fitsTargetScale = fits(item, targetScale);
-    const distinctive = fitsTargetScale && pitches.some(p => !contains(homeScale, p));
-    const leadingPreparation = pitches.length >= 3 && contains(pitches, leadingSeventh[0]) && fits(item, leadingSeventh);
-    const doubleDominantPreparation = canUseDoubleDominant && pitches.length >= 3 && contains(pitches, sharpFourth) &&
-      (fits(item, doubleDominant) || doubleLeadingPreparation(item, observations[j + 1], doubleLeadingSeventh, dominantTriad));
-    const appliedPreparation = relativeApplied.some(({ dominant, leading }) =>
-      pitches.length >= 3 && (contains(pitches, leading[0]) && fits(item, leading) ||
-        contains(pitches, dominant[1]) && contains(pitches, dominant[3]) && fits(item, dominant)));
+    const { cadential64, pitches, fitsTargetScale, distinctive, leadingPreparation, doubleDominantPreparation, appliedPreparation } =
+      preparationEvidence(item, observations[j + 1], key, harmonies, j === dominantStart - 1, canUseDoubleDominant);
     if (relativeMajor) {
       relativeBridgeFits &&= fitsTargetScale || doubleDominantPreparation || appliedPreparation;
       relativeCadenceSupport ||= cadential64 || doubleDominantPreparation || appliedPreparation;
@@ -202,18 +255,14 @@ function preparationStart(
     if (cadential64 || chromaticPreparation || distinctive || doubleDominantPreparation || appliedPreparation ||
         harmonicMajorPreparation(item, observations[j + 1], key)) start = j;
     if (!settled && (cadential64 || distinctive || doubleDominantPreparation || leadingPreparation || appliedPreparation)) {
-      // Reattacks and inversions of the same pitch collection supply one
-      // piece of evidence, regardless of how many slices they occupy.
-      const previousEvidence = firstEvidence ??= pitches;
-      independentEvidence ||= pitches.length !== previousEvidence.length || pitches.some(p => !contains(previousEvidence, p));
-      chromaticPreparationBeforeDominant ||= j === dominant - 1 && (distinctive || doubleDominantPreparation) &&
-        pitches.some(p => !contains(homeScale, p) && !pitchClassEquals(p, dominantSeventh[1]));
+      recordUnsettledPreparation(unsettledEvidence, pitches,
+        j === dominantStart - 1 && (distinctive || doubleDominantPreparation), homeScale, dominantSeventh[1]);
       if (leadingPreparation) start = j;
     }
   }
   if (relativeCadenceSupport && relativeDiatonicStart !== undefined)
     start = Math.min(start ?? relativeDiatonicStart, relativeDiatonicStart);
-  if (!settled && !independentEvidence && !(chromaticDominant && chromaticPreparationBeforeDominant)) return;
+  if (!settled && !unsettledEvidence.independent && !(chromaticDominant && unsettledEvidence.chromaticBeforeDominant)) return;
   if (start !== undefined && earlierCadenceEnd !== undefined) return earlierCadenceEnd + 1;
   return start;
 }

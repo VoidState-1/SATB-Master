@@ -352,6 +352,42 @@ function omittedPedalAnchor(
     isCanonicalTonicFifthOmission(before, candidate.identity));
 }
 
+function classifyCadentialSixFourRun(
+  observations: readonly ChordInferenceObservation[],
+  sets: readonly SixFoursCandidateSet[],
+  triads: readonly (ChordInferenceCandidate | undefined)[],
+  classified: SixFoursCandidateSet[],
+  start: number,
+  end: number,
+  acceptMedium: boolean,
+) {
+  const cadential = sets[start].find(c => c.functionalBaseId === "K46");
+  if (!cadential || end + 1 >= sets.length) {
+    return end;
+  }
+  const revoiced = acceptMedium && !sets[end + 1].length && end + 2 < sets.length &&
+    keyEquals(observations[start].key, observations[end + 1].key) && observations[end + 1].metric?.confidence === "certain" &&
+    observations[end + 1].metric!.level < (observations[start].metric?.level ?? 0)
+    ? fitCadentialRevoicing(cadential, observations[end + 1]) : undefined;
+  const target = end + (revoiced ? 2 : 1);
+  const prepared = revoiced && sets[start - 1]?.some(c => ["S", "s", "SII", "N6", "It+6", "Fr+6", "Ger+6"].includes(c.functionalBaseId ?? "") &&
+    c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length) && keyEquals(observations[start - 1].key, observations[start].key);
+  if (!resolvesToDominant(observations[start], observations[target - 1], observations[target], sets[target],
+      !!prepared || dominantContinuesToTonic(observations, sets, target))) {
+    return end;
+  }
+  for (let i = start; i <= end; i++) {
+    classified[i] = sets[i].filter(c => c !== triads[i]).map(c => c.functionalBaseId === "K46"
+      ? { ...c, evidence: [...c.evidence, { kind: "sequence-context", code: "cadential64-resolution" }] }
+      : c);
+  }
+  if (revoiced) {
+    classified[end + 1] = [revoiced];
+    return end + 1;
+  }
+  return end;
+}
+
 /** Recognize a complete weak six-four between two presentations of the same harmony. */
 export function classifySixFours(
   observations: readonly ChordInferenceObservation[], sets: readonly SixFoursCandidateSet[], acceptMedium = true,
@@ -391,32 +427,7 @@ export function classifySixFours(
             : c);
       }
     } else {
-      const cadential = sets[start].find(c => c.functionalBaseId === "K46");
-      if (!cadential || end + 1 >= sets.length) {
-        start = end;
-        continue;
-      }
-      const revoiced = acceptMedium && !sets[end + 1].length && end + 2 < sets.length &&
-        keyEquals(observations[start].key, observations[end + 1].key) && observations[end + 1].metric?.confidence === "certain" &&
-        observations[end + 1].metric!.level < (observations[start].metric?.level ?? 0)
-        ? fitCadentialRevoicing(cadential, observations[end + 1]) : undefined;
-      const target = end + (revoiced ? 2 : 1);
-      const prepared = revoiced && sets[start - 1]?.some(c => ["S", "s", "SII", "N6", "It+6", "Fr+6", "Ger+6"].includes(c.functionalBaseId ?? "") &&
-        c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length) && keyEquals(observations[start - 1].key, observations[start].key);
-      if (!resolvesToDominant(observations[start], observations[target - 1], observations[target], sets[target],
-          !!prepared || dominantContinuesToTonic(observations, sets, target))) {
-        start = end;
-        continue;
-      }
-      for (let i = start; i <= end; i++) {
-        classified[i] = sets[i].filter(c => c !== triads[i]).map(c => c.functionalBaseId === "K46"
-          ? { ...c, evidence: [...c.evidence, { kind: "sequence-context", code: "cadential64-resolution" }] }
-          : c);
-      }
-      if (revoiced) {
-        end++;
-        classified[end] = [revoiced];
-      }
+      end = classifyCadentialSixFourRun(observations, sets, triads, classified, start, end, acceptMedium);
     }
     start = end;
   }

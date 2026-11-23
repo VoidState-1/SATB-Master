@@ -37,6 +37,7 @@ import type * as Ornaments from "./ornaments";
 import type * as Respellings from "./respellings";
 import type * as SixFours from "./sixFours";
 import type * as LocalKeys from "./localKeys";
+import type { InferencePassContext } from "./passContext";
 
 const FALLBACK_QUALITIES: readonly ChordQuality[] = [
   "major",
@@ -636,14 +637,15 @@ type ContextualCandidatePasses = {
   inferLocalKeys: typeof LocalKeys.inferLocalKeys;
 };
 
+type CandidateSets = readonly (readonly ChordInferenceCandidate[])[];
+
 function confidenceRank(value: "high" | "medium" | "low") {
   return value === "high" ? 2 : value === "medium" ? 1 : 0;
 }
 
-function initialCandidates(
-  observations: readonly ChordInferenceObservation[], options: ChordInferenceOptions,
-  terminalTicks: ReadonlySet<number>, meetsMinimumConfidence: (candidate: ChordInferenceCandidate) => boolean,
-) {
+function initialCandidates({
+  observations, options, terminalTicks, meetsMinimumConfidence,
+}: InferencePassContext) {
   const candidateSets: ChordInferenceCandidate[][] = [];
   observations.forEach((observation, index) => {
     const previousCandidates = candidateSets[index - 1] ?? [];
@@ -663,49 +665,11 @@ function initialCandidates(
   return candidateSets;
 }
 
-/** Each pass reads its predecessor's candidates. Score the path only after
- * both the harmonic and the voice-leading evidence are available. */
-export function buildContextualChordCandidates(
+function prepareInferenceContext(
   project: ProjectDocument,
   options: ChordInferenceOptions,
-  passes: ContextualCandidatePasses,
+  inferLocalKeys: ContextualCandidatePasses["inferLocalKeys"],
 ) {
-  const {
-    withThirdInversionResolutions,
-    withDiatonicSevenths,
-    withNeapolitanPivotSixths,
-    withNeapolitanPivotDominants,
-    withPassingTonicSevenths,
-    withLeadingSeventhIntoConfirmedKey,
-    withWrittenPivotSevenths,
-  } = passes.diatonicAndPivots;
-  const {
-    withAppliedDominants,
-    withReattackedTonicNinths,
-    withDeceptiveDominants,
-    withDominantSixthSubstitutions,
-    withDoubleAugmentedFourThree,
-    withAppliedSequences,
-    withDominantNinths,
-  } = passes.dominantFamily;
-  const {
-    withAnticipations,
-    withPreparedSuspensions,
-    withUpperPassingTones,
-    withProlongedHarmony,
-    simultaneousNeighborCandidates,
-    withWrittenLowerNeighborPairs,
-    withContextualOrnaments,
-  } = passes.ornaments;
-  const {
-    withWholeWrittenTriadRespellings,
-    withContextualWrittenRespellings,
-    withRaisedFifthResolutions,
-    withSpelledSeventhsOverItalian,
-  } = passes.respellings;
-  const { classifySixFours, withSingleVoiceRevoicings } = passes.sixFours;
-  const { inferLocalKeys } = passes;
-
   const fullScore = buildChordInferenceObservations(project);
   const minimumConfidence = options.minConfidence ?? "low";
   const meetsMinimumConfidence = (candidate: ChordInferenceCandidate) =>
@@ -733,27 +697,61 @@ export function buildContextualChordCandidates(
     .filter(boundary => isCurrentPhraseBoundary(project, boundary))
     .map(boundary => boundary.tick);
   const currentPhraseTicks = [...new Set([...terminalTicks, ...phraseBoundaryTicks])];
+  return {
+    observations, options, ppq: project.ppq, localKeys, terminalTicks, phraseBoundaryTicks,
+    currentPhraseTicks, manualPhraseTicks, minimumConfidence, meetsMinimumConfidence,
+  } satisfies InferencePassContext;
+}
 
-  let candidates: readonly (readonly ChordInferenceCandidate[])[] =
-    initialCandidates(observations, options, terminalTicks, meetsMinimumConfidence);
+function expandCoreCandidates(
+  { observations, options, currentPhraseTicks }: InferencePassContext,
+  candidates: CandidateSets,
+  { diatonicAndPivots, dominantFamily }: ContextualCandidatePasses,
+) {
+  const { withWrittenPivotSevenths, withDiatonicSevenths } = diatonicAndPivots;
+  const { withAppliedSequences, withAppliedDominants, withReattackedTonicNinths } = dominantFamily;
   // Establish candidate harmonies before resolving ornamental notes against them.
   candidates = withWrittenPivotSevenths(observations, candidates, options);
   candidates = withDiatonicSevenths(observations, candidates, options);
   candidates = withLoweredSupertonics(observations, candidates);
   candidates = withAppliedSequences(observations, candidates, options);
   candidates = withAppliedDominants(observations, candidates, options);
-  candidates = withReattackedTonicNinths(observations, candidates, options, currentPhraseTicks);
+  return withReattackedTonicNinths(observations, candidates, options, currentPhraseTicks);
+}
 
-  candidates = withAnticipations(observations, candidates, options, project.ppq, phraseBoundaryTicks);
-  candidates = withPreparedSuspensions(observations, candidates, options, project.ppq, phraseBoundaryTicks);
-  candidates = withProlongedHarmony(observations, candidates, options, project.ppq, phraseBoundaryTicks);
-  const doubleNeighbors = simultaneousNeighborCandidates(observations, candidates, options, project.ppq, phraseBoundaryTicks);
-  candidates = classifySixFours(
+function classifyEarlyOrnamentsAndSixFours(
+  { observations, options, ppq, phraseBoundaryTicks, currentPhraseTicks, minimumConfidence }: InferencePassContext,
+  candidates: CandidateSets,
+  { ornaments, sixFours }: ContextualCandidatePasses,
+) {
+  const { withAnticipations, withPreparedSuspensions, withProlongedHarmony, simultaneousNeighborCandidates } = ornaments;
+  const { classifySixFours } = sixFours;
+  candidates = withAnticipations(observations, candidates, options, ppq, phraseBoundaryTicks);
+  candidates = withPreparedSuspensions(observations, candidates, options, ppq, phraseBoundaryTicks);
+  candidates = withProlongedHarmony(observations, candidates, options, ppq, phraseBoundaryTicks);
+  const doubleNeighbors = simultaneousNeighborCandidates(observations, candidates, options, ppq, phraseBoundaryTicks);
+  return classifySixFours(
     observations, candidates, minimumConfidence !== "high", currentPhraseTicks, doubleNeighbors,
-    minimumConfidence !== "high" && options.allowNonChordToneCandidates !== false ? project.ppq : undefined,
+    minimumConfidence !== "high" && options.allowNonChordToneCandidates !== false ? ppq : undefined,
   );
+}
 
-  candidates = withDeceptiveDominants(observations, candidates, options, project.ppq, phraseBoundaryTicks);
+function expandDominantFamilyAndPivots(
+  {
+    observations, options, ppq, localKeys, phraseBoundaryTicks, currentPhraseTicks,
+    manualPhraseTicks, minimumConfidence, meetsMinimumConfidence,
+  }: InferencePassContext,
+  candidates: CandidateSets,
+  { dominantFamily, diatonicAndPivots, sixFours, respellings }: ContextualCandidatePasses,
+) {
+  const { withDeceptiveDominants, withDominantSixthSubstitutions, withDoubleAugmentedFourThree } = dominantFamily;
+  const {
+    withPassingTonicSevenths, withNeapolitanPivotDominants,
+    withThirdInversionResolutions, withLeadingSeventhIntoConfirmedKey,
+  } = diatonicAndPivots;
+  const { withSingleVoiceRevoicings } = sixFours;
+  const { withWholeWrittenTriadRespellings } = respellings;
+  candidates = withDeceptiveDominants(observations, candidates, options, ppq, phraseBoundaryTicks);
   candidates = withDominantSixthSubstitutions(observations, candidates, meetsMinimumConfidence, manualPhraseTicks);
   candidates = withPassingTonicSevenths(observations, candidates, options, currentPhraseTicks);
   candidates = withNeapolitanPivotDominants(
@@ -763,26 +761,74 @@ export function buildContextualChordCandidates(
     observations, candidates, manualPhraseTicks, meetsMinimumConfidence,
   );
   if (minimumConfidence !== "high") {
-    candidates = withSingleVoiceRevoicings(observations, candidates, project.ppq, phraseBoundaryTicks, currentPhraseTicks);
+    candidates = withSingleVoiceRevoicings(observations, candidates, ppq, phraseBoundaryTicks, currentPhraseTicks);
   }
   candidates = withThirdInversionResolutions(observations, candidates, options, currentPhraseTicks);
   candidates = withLeadingSeventhIntoConfirmedKey(
     observations, candidates, options, localKeys, currentPhraseTicks,
   );
-  candidates = withWholeWrittenTriadRespellings(observations, candidates, currentPhraseTicks);
+  return withWholeWrittenTriadRespellings(observations, candidates, currentPhraseTicks);
+}
 
+function recoverLateOrnamentsAndRespellings(
+  { observations, options, ppq, localKeys, currentPhraseTicks, manualPhraseTicks, meetsMinimumConfidence }: InferencePassContext,
+  candidates: CandidateSets,
+  { ornaments, diatonicAndPivots, respellings }: ContextualCandidatePasses,
+) {
+  const { withWrittenLowerNeighborPairs, withUpperPassingTones } = ornaments;
+  const { withNeapolitanPivotSixths } = diatonicAndPivots;
+  const { withRaisedFifthResolutions, withSpelledSeventhsOverItalian, withContextualWrittenRespellings } = respellings;
   const lowerNeighbors = withWrittenLowerNeighborPairs(observations, candidates, options, currentPhraseTicks);
   candidates = withUpperPassingTones(
-    observations, lowerNeighbors.candidateSets, options, currentPhraseTicks, project.ppq,
+    observations, lowerNeighbors.candidateSets, options, currentPhraseTicks, ppq,
   );
   candidates = withNeapolitanPivotSixths(observations, candidates, localKeys, currentPhraseTicks);
   candidates = withRaisedFifthResolutions(observations, candidates, manualPhraseTicks, meetsMinimumConfidence);
-  candidates = withSpelledSeventhsOverItalian(observations, candidates, currentPhraseTicks, project.ppq, options);
+  candidates = withSpelledSeventhsOverItalian(observations, candidates, currentPhraseTicks, ppq, options);
   candidates = withContextualWrittenRespellings(observations, candidates, options, currentPhraseTicks, manualPhraseTicks);
+  return { candidates, withheldStarts: lowerNeighbors.withheldStarts };
+}
+
+function recoverNinthsAndContextualOrnaments(
+  { observations, options, ppq, currentPhraseTicks, manualPhraseTicks }: InferencePassContext,
+  candidates: CandidateSets,
+  withheldStarts: ReturnType<typeof Ornaments.withWrittenLowerNeighborPairs>["withheldStarts"],
+  { dominantFamily, ornaments }: ContextualCandidatePasses,
+) {
+  const { withDominantNinths } = dominantFamily;
+  const { withContextualOrnaments } = ornaments;
   const ninths = withDominantNinths(observations, candidates, manualPhraseTicks, options);
   candidates = withContextualOrnaments(
-    observations, ninths.candidates, options, project.ppq, currentPhraseTicks, lowerNeighbors.withheldStarts,
+    observations, ninths.candidates, options, ppq, currentPhraseTicks, withheldStarts,
   );
-  return { observations, candidates, currentPhraseTicks,
-    withheldStarts: lowerNeighbors.withheldStarts, ninthAlternatives: ninths.alternate };
+  return { candidates, ninthAlternatives: ninths.alternate };
+}
+
+/** Each pass reads its predecessor's candidates. Score the path only after
+ * both the harmonic and the voice-leading evidence are available. */
+export function buildContextualChordCandidates(
+  project: ProjectDocument,
+  options: ChordInferenceOptions,
+  passes: ContextualCandidatePasses,
+) {
+  const context = prepareInferenceContext(project, options, passes.inferLocalKeys);
+  const initial = initialCandidates(context);
+  const core = expandCoreCandidates(context, initial, passes);
+  const classified = classifyEarlyOrnamentsAndSixFours(context, core, passes);
+  const dominantsAndPivots = expandDominantFamilyAndPivots(context, classified, passes);
+  const late = recoverLateOrnamentsAndRespellings(context, dominantsAndPivots, passes);
+  const { candidates, ninthAlternatives } = recoverNinthsAndContextualOrnaments(
+    context,
+    late.candidates,
+    late.withheldStarts,
+    passes,
+  );
+
+  return {
+    observations: context.observations,
+    candidates,
+    currentPhraseTicks: context.currentPhraseTicks,
+    withheldStarts: late.withheldStarts,
+    ninthAlternatives,
+  };
 }

@@ -21,7 +21,6 @@ import {
   isWrittenStep,
   stepIndex,
   writtenInterval,
-  keyDeclarationEquals,
   serializePitchClass,
 } from "../../pitch";
 import { readWrittenProlongation } from "../facts/prolongation";
@@ -35,6 +34,7 @@ import {
 import { readSoundingTertianIdentity } from "../facts/writtenVoicing";
 import { createAbsoluteCandidate, createFunctionalCandidate, candidateComparator } from "./candidates";
 import { observationNotes, resolvesTone, writtenFrame } from "./observations";
+import { continuesInKey } from "./passContext";
 import type {
   ChordInferenceCandidate as Candidate,
   ChordInferenceEvidence as Evidence,
@@ -409,8 +409,32 @@ export function withWholeWrittenTriadRespellings(
 
 type SpelledSeventhOverItalianCandidateSet = readonly ChordInferenceCandidate[];
 
-function sameContext(a: ChordInferenceObservation, b: ChordInferenceObservation) {
-  return a.toTick === b.fromTick && keyDeclarationEquals(a.key, b.key);
+function spelledSeventhOverItalian(
+  candidate: NonNullable<ReturnType<typeof createAbsoluteCandidate>>,
+  source: ChordInferenceObservation,
+  arrival: ChordInferenceObservation,
+  proof: NonNullable<ReturnType<typeof readResolvedRootSeventhWithoutFifth>>,
+) {
+  return {
+    ...candidate,
+    // The written root is flat VI of the established key. The brief
+    // arrival proves its resolution, without establishing another key.
+    semantics: semanticsFromChordDraft({
+      degree: 6, degreeAlteration: -1, quality: "dominant7", inversion: 0, extensions: [], alterations: [],
+      localKey: source.localKey, interpretationId: "inferred:written-lowered-sixth-seventh",
+      source: "inferred", confidence: "probable",
+    }),
+    confidence: "medium" as const,
+    evidence: [...candidate.evidence, {
+      kind: "sequence-context" as const,
+      code: "written-seventh-over-enharmonic-italian",
+      noteIds: proof.noteIds,
+      details: {
+        targetRoot: serializePitchClass(proof.target), targetQuality: proof.mode, omittedDegree: 5,
+        bassArrivalTick: arrival.fromTick, upperResolutionTick: proof.settledTick,
+      },
+    }],
+  };
 }
 
 /** A written minor seventh and independently resolved voices can replace an
@@ -429,13 +453,13 @@ export function withSpelledSeventhsOverItalian(
     if (!existing.some(isRespeltItalian)) return existing;
     const before = observations[i - 1], source = observations[i], arrival = observations[i + 1];
     if (!before || !arrival || !source.bass || before.bass?.id !== source.bass.id ||
-        !sameContext(before, source) || !sameContext(source, arrival)) return existing;
+        !continuesInKey(before, source) || !continuesInKey(source, arrival)) return existing;
     const fifth = chordToneSpellings(source.bass.pitch, "dominant7")[2];
     if (!observationNotes(before).some(({ voiceId, note }) => voiceId !== "bass" && !note.nonChordToneRole &&
         pitchClassEquals(note.pitch, fifth) && note.startTick + note.durationTicks === source.fromTick)) return existing;
 
     const later = observations[i + 2];
-    const delayed = later && sameContext(arrival, later) && arrival.toTick - arrival.fromTick <= ppq &&
+    const delayed = later && continuesInKey(arrival, later) && arrival.toTick - arrival.fromTick <= ppq &&
       later.fromTick - source.fromTick <= ppq ? writtenFrame(later) : undefined;
     const proof = readResolvedRootSeventhWithoutFifth(writtenFrame(source), writtenFrame(arrival), delayed);
     if (!proof || !pitchClassEquals(proof.root, scaleDegreePitchClass(source.key, 6, -1)) ||
@@ -447,26 +471,7 @@ export function withSpelledSeventhsOverItalian(
     // Preserve any competing independent interpretation.
     if (existing.some(other => !isRespeltItalian(other) &&
         (other.semantics || !chordIdentityEquals(other.identity, candidate.identity)))) return existing;
-    return [{
-      ...candidate,
-      // The written root is flat VI of the established key. The brief
-      // arrival proves its resolution, without establishing another key.
-      semantics: semanticsFromChordDraft({
-        degree: 6, degreeAlteration: -1, quality: "dominant7", inversion: 0, extensions: [], alterations: [],
-        localKey: source.localKey, interpretationId: "inferred:written-lowered-sixth-seventh",
-        source: "inferred", confidence: "probable",
-      }),
-      confidence: "medium" as const,
-      evidence: [...candidate.evidence, {
-        kind: "sequence-context" as const,
-        code: "written-seventh-over-enharmonic-italian",
-        noteIds: proof.noteIds,
-        details: {
-          targetRoot: serializePitchClass(proof.target), targetQuality: proof.mode, omittedDegree: 5,
-          bassArrivalTick: arrival.fromTick, upperResolutionTick: proof.settledTick,
-        },
-      }],
-    }];
+    return [spelledSeventhOverItalian(candidate, source, arrival, proof)];
   });
 }
 

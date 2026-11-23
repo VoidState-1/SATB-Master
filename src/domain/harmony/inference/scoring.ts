@@ -151,13 +151,10 @@ export function isCanonicalTonicFifthOmission(
   return rootCount === 3 && thirdCount === 1 && fifthCount === 0 && onlyRootAndThird;
 }
 
-export function fitChordObservation(
-  observation: ChordInferenceObservation,
-  identity: ChordIdentity,
-  options: ChordFitOptions = {},
-): ChordFitAssessment {
-  const notes = observationNotes(observation);
-  const tones = chordIdentityToneSpellings(identity);
+function classifyChordNotes(
+  notes: ReturnType<typeof observationNotes>,
+  tones: readonly SpelledPitchClass[],
+) {
   const chordToneNoteIds: string[] = [];
   const nonChordToneNoteIds: string[] = [];
   const spellingMatches: string[] = [];
@@ -171,16 +168,22 @@ export function fitChordObservation(
       if (match.exact) spellingMatches.push(note.id);
     }
   }
+  return {
+    chordToneNoteIds,
+    nonChordToneNoteIds,
+    spellingConsistent: chordToneNoteIds.length === 0 || spellingMatches.length === chordToneNoteIds.length,
+  };
+}
 
-  const omittedChordDegrees = chordDegrees(identity).filter((degree) => {
-    const tone = chordIdentityToneSpellingForDegree(identity, degree);
-    return tone && !notes.some(({ note }) => matchingToneIndex([tone], note.pitch));
-  });
-  const bassMatchesInversion =
-    !observation.bass ||
-    sameSoundingPitch(observation.bass.pitch, identity.bass);
-  const spellingConsistent =
-    chordToneNoteIds.length === 0 || spellingMatches.length === chordToneNoteIds.length;
+function chordFitRejection(
+  notes: ReturnType<typeof observationNotes>,
+  tones: readonly SpelledPitchClass[],
+  identity: ChordIdentity,
+  bassMatchesInversion: boolean,
+  nonChordToneNoteIds: readonly string[],
+  omittedChordDegrees: readonly ChordToneDegree[],
+  options: ChordFitOptions,
+) {
   const declaredExtra = nonChordToneNoteIds.every((id) =>
     notes.some(({ note }) => note.id === id && note.nonChordToneRole),
   );
@@ -212,6 +215,28 @@ export function fitChordObservation(
     )
   )
     hardRejected = "omitted-chord-tone";
+  return hardRejected;
+}
+
+export function fitChordObservation(
+  observation: ChordInferenceObservation,
+  identity: ChordIdentity,
+  options: ChordFitOptions = {},
+): ChordFitAssessment {
+  const notes = observationNotes(observation);
+  const tones = chordIdentityToneSpellings(identity);
+  const { chordToneNoteIds, nonChordToneNoteIds, spellingConsistent } = classifyChordNotes(notes, tones);
+
+  const omittedChordDegrees = chordDegrees(identity).filter((degree) => {
+    const tone = chordIdentityToneSpellingForDegree(identity, degree);
+    return tone && !notes.some(({ note }) => matchingToneIndex([tone], note.pitch));
+  });
+  const bassMatchesInversion =
+    !observation.bass ||
+    sameSoundingPitch(observation.bass.pitch, identity.bass);
+  const hardRejected = chordFitRejection(
+    notes, tones, identity, bassMatchesInversion, nonChordToneNoteIds, omittedChordDegrees, options,
+  );
 
   return {
     matchedNoteIds: Object.freeze(notes.map(({ note }) => note.id)),
@@ -416,7 +441,7 @@ interface PathState {
   readonly previousIndex?: number;
 }
 
-function analyzeRun(
+function forwardPathStates(
   observations: readonly ChordInferenceObservation[],
   candidateSets: readonly (readonly ChordInferenceCandidate[])[],
   fromIndex: number,
@@ -457,8 +482,16 @@ function analyzeRun(
     }
     states.push(currentStates);
   }
-  const lastStates = states.at(-1) ?? [];
+  return states;
+}
 
+function scoreRunCandidates(
+  observations: readonly ChordInferenceObservation[],
+  candidateSets: readonly (readonly ChordInferenceCandidate[])[],
+  fromIndex: number,
+  toIndex: number,
+  states: readonly (readonly PathState[])[],
+) {
   // Forward + backward scores give every candidate the same complete-run
   // context, including competing continuations rather than the selected path.
   const suffixScores: number[][] = [];
@@ -478,6 +511,18 @@ function analyzeRun(
       pathScore: states[offset][candidateIndex].score + suffixScores[offset][candidateIndex],
     }));
   }
+  return scoredCandidates;
+}
+
+function analyzeRun(
+  observations: readonly ChordInferenceObservation[],
+  candidateSets: readonly (readonly ChordInferenceCandidate[])[],
+  fromIndex: number,
+  toIndex: number,
+) {
+  const states = forwardPathStates(observations, candidateSets, fromIndex, toIndex);
+  const lastStates = states.at(-1) ?? [];
+  const scoredCandidates = scoreRunCandidates(observations, candidateSets, fromIndex, toIndex, states);
   let currentIndex = lastStates.reduce(
     (bestIndex, state, index) =>
       state.score > lastStates[bestIndex].score ? index : bestIndex,

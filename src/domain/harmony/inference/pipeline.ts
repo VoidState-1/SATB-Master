@@ -190,42 +190,16 @@ function noteIsLockedForInference(
   );
 }
 
-export function applyChordInference(
-  project: ProjectDocument,
-  result: ChordInferenceResult,
-  options: ChordInferenceApplyOptions,
-): ChordInferenceApplyResult {
-  const warnings: ChordInferenceWarning[] = [];
-  const selectedRegions = result.regions.flatMap(region => {
-    const candidate = selectedForApply(region, options);
-    return candidate ? [{ region, candidate }] : [];
-  });
-  if (selectedRegions.length === 0)
-    return {
-      project,
-      skipped: Object.freeze(warnings),
-      appliedRegionCount: 0,
-      writtenNonChordToneRoleCount: 0,
-    };
-  if (project.chordTrack.locked) {
-    for (const { region } of selectedRegions)
-      addWarning(warnings, {
-        code: "locked-chord",
-        fromTick: region.fromTick,
-        toTick: region.toTick,
-        message: "和弦轨已锁定，推导结果未应用",
-      });
-    return {
-      project,
-      skipped: Object.freeze(warnings),
-      appliedRegionCount: 0,
-      writtenNonChordToneRoleCount: 0,
-    };
-  }
+type SelectedChordRegion = { region: ChordInferenceRegion; candidate: ChordInferenceCandidate };
 
+function applySelectedChordRegions(
+  project: ProjectDocument,
+  selectedRegions: readonly SelectedChordRegion[],
+  options: ChordInferenceApplyOptions,
+  warnings: ChordInferenceWarning[],
+) {
   let next = cloneProject(project);
-  const appliedRegions: typeof selectedRegions = [];
-  let writtenNonChordToneRoleCount = 0;
+  const appliedRegions: SelectedChordRegion[] = [];
   for (const { region, candidate } of selectedRegions) {
     const proposed = regionFromCandidate(region, candidate);
     const overlappers = next.chordTrack.regions.filter((existing) =>
@@ -270,41 +244,85 @@ export function applyChordInference(
     next = added.project;
     appliedRegions.push({ region, candidate });
   }
+  return { next, appliedRegions };
+}
 
-  if (options.writeNonChordToneRoles) {
-    for (const { region, candidate } of appliedRegions) {
-      const assignments = candidate.fit.nonChordToneAssignments;
-      for (const [noteId, role] of Object.entries(assignments)) {
-        const track = next.satbTracks.find((candidate) =>
-          candidate.notes.some((note) => note.id === noteId),
-        );
-        const note = track?.notes.find((candidate) => candidate.id === noteId);
-        // A clipped inference region can still carry evidence from a held note.
-        if (!track || !note ||
-            note.startTick < result.range.fromTick || note.startTick >= result.range.toTick) continue;
-        if (noteIsLockedForInference(next, track, note)) {
-          addWarning(warnings, {
-            code: "locked-note",
-            fromTick: region.fromTick,
-            toTick: region.toTick,
-            message: "音符已锁定，非和弦音角色未写入",
-            noteIds: [noteId],
-          });
-          continue;
-        }
-        if (note.nonChordToneRole === role) continue;
-        note.nonChordToneRole = role;
-        writtenNonChordToneRoleCount += 1;
+function writeAppliedNonChordToneRoles(
+  next: ProjectDocument,
+  appliedRegions: readonly SelectedChordRegion[],
+  range: ChordInferenceResult["range"],
+  warnings: ChordInferenceWarning[],
+) {
+  let writtenNonChordToneRoleCount = 0;
+  for (const { region, candidate } of appliedRegions) {
+    const assignments = candidate.fit.nonChordToneAssignments;
+    for (const [noteId, role] of Object.entries(assignments)) {
+      const track = next.satbTracks.find((candidate) =>
+        candidate.notes.some((note) => note.id === noteId),
+      );
+      const note = track?.notes.find((candidate) => candidate.id === noteId);
+      // A clipped inference region can still carry evidence from a held note.
+      if (!track || !note ||
+          note.startTick < range.fromTick || note.startTick >= range.toTick) continue;
+      if (noteIsLockedForInference(next, track, note)) {
+        addWarning(warnings, {
+          code: "locked-note",
+          fromTick: region.fromTick,
+          toTick: region.toTick,
+          message: "音符已锁定，非和弦音角色未写入",
+          noteIds: [noteId],
+        });
+        continue;
       }
+      if (note.nonChordToneRole === role) continue;
+      note.nonChordToneRole = role;
+      writtenNonChordToneRoleCount += 1;
     }
   }
+  return writtenNonChordToneRoleCount;
+}
+
+function skippedChordInference(
+  project: ProjectDocument,
+  warnings: ChordInferenceWarning[],
+): ChordInferenceApplyResult {
+  return {
+    project,
+    skipped: Object.freeze(warnings),
+    appliedRegionCount: 0,
+    writtenNonChordToneRoleCount: 0,
+  };
+}
+
+export function applyChordInference(
+  project: ProjectDocument,
+  result: ChordInferenceResult,
+  options: ChordInferenceApplyOptions,
+): ChordInferenceApplyResult {
+  const warnings: ChordInferenceWarning[] = [];
+  const selectedRegions = result.regions.flatMap(region => {
+    const candidate = selectedForApply(region, options);
+    return candidate ? [{ region, candidate }] : [];
+  });
+  if (selectedRegions.length === 0)
+    return skippedChordInference(project, warnings);
+  if (project.chordTrack.locked) {
+    for (const { region } of selectedRegions)
+      addWarning(warnings, {
+        code: "locked-chord",
+        fromTick: region.fromTick,
+        toTick: region.toTick,
+        message: "和弦轨已锁定，推导结果未应用",
+      });
+    return skippedChordInference(project, warnings);
+  }
+
+  const { next, appliedRegions } = applySelectedChordRegions(project, selectedRegions, options, warnings);
+  const writtenNonChordToneRoleCount = options.writeNonChordToneRoles
+    ? writeAppliedNonChordToneRoles(next, appliedRegions, result.range, warnings)
+    : 0;
   if (appliedRegions.length === 0)
-    return {
-      project,
-      skipped: Object.freeze(warnings),
-      appliedRegionCount: 0,
-      writtenNonChordToneRoleCount: 0,
-    };
+    return skippedChordInference(project, warnings);
   if (next !== project) next.updatedAt = new Date().toISOString();
   return {
     project: next,
