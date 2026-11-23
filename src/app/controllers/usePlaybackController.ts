@@ -452,19 +452,20 @@ export function usePlaybackController({
     [isPlaying, loopStartTick, pausePlayheadBehavior, setPlayheadTick],
   );
 
-  const startPlayback = useCallback(async () => {
-    try {
+  const preparePlaybackAudio = useCallback(
+    async (shouldStart: () => boolean) => {
       await audioEngine.resume();
+      if (!shouldStart()) return false;
       const soundFontConfig = effectiveSoundFont;
       if (!audioEngine.isSoundFontLoaded(soundFontId(soundFontConfig))) {
         const request = requestSoundFontLoad(soundFontConfig);
         try {
           const soundFont = await request.promise;
-          if (!soundFont) return;
+          if (!soundFont || !shouldStart()) return false;
           if (soundFont !== "already-loaded")
             setSoundFontSizeBytes(soundFont.sizeBytes);
         } catch (error) {
-          if (!isLoadRequestCurrent(request)) return;
+          if (!isLoadRequestCurrent(request) || !shouldStart()) return false;
           // 音源缺失、摘要变化或安装路径异常时清掉旧音色，防止误用上一个工程的音色。
           await audioEngine.unloadSoundFont();
           setSoundFontProgress(undefined);
@@ -479,8 +480,16 @@ export function usePlaybackController({
             setSoundFontProgress(undefined);
         }
       }
-      const session = playSessionRef.current + 1;
-      playSessionRef.current = session;
+      return shouldStart();
+    },
+    [effectiveSoundFont, isLoadRequestCurrent, requestSoundFontLoad, showNotice],
+  );
+
+  const startPlayback = useCallback(async () => {
+    const session = ++playSessionRef.current;
+    const shouldStart = () => playSessionRef.current === session;
+    try {
+      if (!(await preparePlaybackAudio(shouldStart))) return;
       setIsPlaying(true);
       isPlayingRef.current = true;
       const playSegment = async (segmentStart: number): Promise<void> => {
@@ -488,6 +497,7 @@ export function usePlaybackController({
           startTick: segmentStart,
           endTick: loopEnabled ? loopEndTick : project.lengthTicks,
           metronome: metronomeEnabled,
+          shouldStart,
           onPosition: setPlayheadTick,
           onStop: () => {
             if (playSessionRef.current !== session) return;
@@ -511,23 +521,63 @@ export function usePlaybackController({
       playbackStartTickRef.current = startTick;
       await playSegment(startTick);
     } catch (error) {
+      if (!shouldStart()) return;
       setIsPlaying(false);
       isPlayingRef.current = false;
       showNotice(error instanceof Error ? error.message : "播放失败");
     }
   }, [
-    effectiveSoundFont,
     loopEnabled,
     loopEndTick,
     loopStartTick,
     metronomeEnabled,
     playheadTick,
+    preparePlaybackAudio,
     project,
-    isLoadRequestCurrent,
-    requestSoundFontLoad,
     setPlayheadTick,
     showNotice,
   ]);
+
+  const handleAuditionProject = useCallback(async (
+    candidate: ProjectDocument,
+    range: { fromTick: number; toTick: number },
+    signal: AbortSignal,
+    onEnded: () => void,
+  ) => {
+    if (signal.aborted) return;
+    const shouldStart = () => !signal.aborted;
+    const stop = () => audioEngine.stop();
+    const finish = () => {
+      signal.removeEventListener("abort", stop);
+      if (signal.aborted) return;
+      stop();
+      onEnded();
+    };
+
+    signal.addEventListener("abort", stop, { once: true });
+    try {
+      if (!(await preparePlaybackAudio(shouldStart))) {
+        finish();
+        return;
+      }
+      await audioEngine.playProject({
+        ...candidate,
+        auxiliaryTracks: [],
+        satbTracks: candidate.satbTracks.map(track => ({ ...track, muted: false, solo: false })),
+      }, {
+        startTick: range.fromTick,
+        endTick: range.toTick,
+        shouldStart,
+        onPosition: () => {},
+        onStop: finish,
+      });
+    } catch (error) {
+      signal.removeEventListener("abort", stop);
+      if (signal.aborted) return;
+      stop();
+      throw error;
+    }
+  }, [preparePlaybackAudio]);
 
   const handlePlay = useCallback(() => {
     if (isPlaying) {
@@ -594,6 +644,7 @@ export function usePlaybackController({
     handleUseDefaultSoundFont,
     handleStop,
     handlePlay,
+    handleAuditionProject,
     toggleLoop,
     setLoopBoundary,
   } as const;

@@ -29,6 +29,7 @@ import {
   SaveAll,
   Settings2,
   SkipBack,
+  Sparkles,
   Square,
   Trash2,
   Undo2,
@@ -53,12 +54,18 @@ import { TrackSidebar } from "../features/tracks";
 import { RuleTestWorkbench } from "../features/ruleTesting";
 import { AuditWorkbench } from "../features/audit";
 import { ChordInferenceDialog } from "../features/chordInference";
+import { AutoHarmonizationDialog } from "../features/autoHarmonization";
 import { ScorePreviewDialog, loadVexFlow } from "../features/scorePreview";
 import { ExportDialog } from "../features/export";
 import { MidiOutDialog } from "../features/midiOut";
 import { midiOutputManager } from "../audio/midiOutput";
 import { toMidi } from "../domain/pitch";
 import { replaceProject } from "../domain/editing";
+import {
+  applyAutoHarmonization,
+  type AutoHarmonizationApplyOptions,
+  type HarmonizationSolution,
+} from "../domain/harmony/harmonization";
 import {
   applyChordInference,
   applyHarmonyInference,
@@ -161,6 +168,7 @@ function AppShell() {
   const [notice, setNotice] = useState<string>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chordInferenceOpen, setChordInferenceOpen] = useState(false);
+  const [autoHarmonizationOpen, setAutoHarmonizationOpen] = useState(false);
   const [scorePreviewOpen, setScorePreviewOpen] = useState(false);
   const [bottomPanelTab, setBottomPanelTabState] = useState<BottomPanelTab>(
     getInitialBottomPanelTab,
@@ -249,6 +257,7 @@ function AppShell() {
     handleUseDefaultSoundFont,
     handleStop,
     handlePlay,
+    handleAuditionProject,
     toggleLoop,
     setLoopBoundary,
   } = usePlaybackController({
@@ -373,7 +382,7 @@ function AppShell() {
     requestConfirmation,
   });
   useKeyboardController({
-    enabled: !ruleTestMode && !auditOpen,
+    enabled: !ruleTestMode && !auditOpen && !autoHarmonizationOpen,
     bindings: shortcutSettings.bindings,
     confirmation,
     settingsOpen,
@@ -502,6 +511,28 @@ function AppShell() {
         : `没有应用和弦区段${unresolvedText}${warningText}`,
     );
     setChordInferenceOpen(false);
+  };
+
+  const handleAutoHarmonizationApply = (
+    solution: HarmonizationSolution,
+    options: AutoHarmonizationApplyOptions,
+  ) => {
+    const applied = applyAutoHarmonization(project, solution, options);
+    if (applied !== project) {
+      history.commit(replaceProject(project, draft => {
+        draft.satbTracks = applied.satbTracks;
+        draft.chordTrack = applied.chordTrack;
+        draft.structure = applied.structure;
+      }));
+      const { fromTick, toTick } = solution.range;
+      const chordsInRange = applied.chordTrack.regions.filter(chord =>
+        chord.startTick < toTick && fromTick < chord.startTick + chord.durationTicks,
+      ).length;
+      const chordText = options.writeChords !== false ? ` · 和弦轨 ${chordsInRange} 个区段` : "";
+      const { errorCount, warningCount } = solution.diagnosticSummary;
+      showNotice(`已应用自动和声${chordText} · 方案诊断 ${errorCount} 错误、${warningCount} 警告`);
+    }
+    setAutoHarmonizationOpen(false);
   };
 
   const measureCount = buildMeasures(project).length;
@@ -650,6 +681,15 @@ function AppShell() {
             label="从音符推导和弦"
             icon={<WandSparkles />}
             onClick={() => setChordInferenceOpen(true)}
+          />
+          <IconButton
+            label="自动和声"
+            icon={<Sparkles />}
+            active={autoHarmonizationOpen}
+            onClick={() => {
+              handleStop();
+              setAutoHarmonizationOpen(true);
+            }}
           />
           <IconButton
             label="教材审计"
@@ -1130,6 +1170,19 @@ function AppShell() {
           selectedChordIds={selectedChordIds}
           onClose={() => setChordInferenceOpen(false)}
           onApply={handleChordInferenceApply}
+        />
+      ) : null}
+      {autoHarmonizationOpen ? (
+        <AutoHarmonizationDialog
+          project={project}
+          playheadTick={playheadTick}
+          selectedNoteIds={selectedNoteIds}
+          selectedChordIds={selectedChordIds}
+          onClose={() => setAutoHarmonizationOpen(false)}
+          onApply={handleAutoHarmonizationApply}
+          onAudition={(solution, signal, onEnded) =>
+            handleAuditionProject(solution.project, solution.range, signal, onEnded)
+          }
         />
       ) : null}
       {scorePreviewOpen ? (

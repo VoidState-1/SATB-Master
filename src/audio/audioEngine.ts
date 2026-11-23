@@ -23,6 +23,7 @@ interface PlayOptions {
   startTick: number;
   endTick?: number;
   metronome?: boolean;
+  shouldStart?(): boolean;
   onPosition(tick: number): void;
   onStop(): void;
 }
@@ -259,7 +260,7 @@ export class SatbAudioEngine {
 
   async playProject(project: ProjectDocument, options: PlayOptions) {
     await this.resume();
-    if (!this.context) return;
+    if (!this.context || options.shouldStart?.() === false) return;
     this.stop(false);
     this.setOutputEnabled(true);
     const context = this.context;
