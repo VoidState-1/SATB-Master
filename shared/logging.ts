@@ -15,6 +15,10 @@ export const APP_ERROR_CODES = [
 export type LogLevel = (typeof LOG_LEVELS)[number];
 export type LogScope = (typeof LOG_SCOPES)[number];
 export type LogProcess = (typeof LOG_PROCESSES)[number];
+
+export function isErrorLog(level: LogLevel): boolean {
+  return level === "error" || level === "fatal";
+}
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number];
 export type LogValue = null | boolean | number | string | LogValue[] | { [key: string]: LogValue };
 

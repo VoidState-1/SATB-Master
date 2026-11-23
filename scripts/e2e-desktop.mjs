@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseMidi } from 'midi-file'
+import { assertCleanSessionLogs, waitForElectronExit } from './e2e-session-logs.mjs'
 
 const executable = path.resolve(process.argv[2] ?? 'release-installer/win-unpacked/SATB Master.exe')
 const appDirectory = process.argv[3] ? path.resolve(process.argv[3]) : undefined
@@ -1059,7 +1060,7 @@ async function verifyShortcutSettings() {
 async function configureHarmonyRuleSeverity() {
   await clickButton('设置')
   await clickButton('检查规则')
-  await waitFor(`document.querySelectorAll('.rule-row').length === 69`, '列出全部检查规则')
+  await waitFor(`document.querySelectorAll('.rule-row').length === 70`, '列出全部检查规则')
   await selectRuleByKey('builtin:voice-leading.parallel-fifths')
   const layout = await evaluate(`(() => {
     const content = document.querySelector('.rule-settings-content');
@@ -1661,8 +1662,13 @@ try {
   await clickButton('保存')
   await waitFor(`window.desktop.project.recovery().then((result) => result.available === false)`, '显式保存后清理恢复文件')
 
+  await evaluate(`setTimeout(() => void window.desktop.windowControls.close().catch(() => {}), 50); true`)
+  await waitForElectronExit(child)
+  const logCheck = await assertCleanSessionLogs(path.join(e2eDirectory, 'user-data'))
+
   console.log(JSON.stringify({
     executable,
+    logCheck,
     defaultSoundFont: 'ready',
     startupDefaultSoundFont: 'preloaded',
     sponsorDialog: 'asset-focus-dismiss-ready',
@@ -1698,13 +1704,10 @@ try {
     v2MigrationBackup: recoveryChoice === 'recover' ? path.basename(migrationBackupPath) : 'not-applicable',
   }, null, 2))
 } finally {
-  try {
-    void client?.send('Browser.close').catch(() => {})
-    await delay(300)
-  } catch {
-    // 调试连接可能先于 Browser.close 响应断开，最终仍由子进程句柄兜底回收。
-  }
   client?.close()
-  if (!child.killed) child.kill()
+  if (child.pid && child.exitCode === null && child.signalCode === null) {
+    child.kill()
+    await waitForElectronExit(child, { requireSuccess: false })
+  }
   await rm(e2eDirectory, { recursive: true, force: true })
 }

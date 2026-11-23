@@ -38,7 +38,7 @@ interface RuleTestWorkbenchProps {
   onBack(): void;
   confirmation?: ConfirmationState;
   answerConfirmation(confirmed: boolean): void;
-  notice?: string;
+  notices?: React.ReactNode;
   showNotice(message: string): void;
 }
 
@@ -78,7 +78,7 @@ export function RuleTestWorkbench({
   onBack,
   confirmation,
   answerConfirmation,
-  notice,
+  notices,
   showNotice,
 }: RuleTestWorkbenchProps) {
   const panelLayout = usePanelLayout("rule-test");
@@ -559,11 +559,7 @@ export function RuleTestWorkbench({
           onCancel={() => answerConfirmation(false)}
         />
       ) : null}
-      {notice ? (
-        <div className="notice" role="status">
-          {notice}
-        </div>
-      ) : null}
+      {notices}
     </main>
   );
 }

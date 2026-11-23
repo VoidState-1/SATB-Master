@@ -1,5 +1,6 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Sparkles, X } from "lucide-react";
+import type { ShowNotice } from "../../components/AppNoticeStack";
 import {
   autoHarmonize,
   type AutoHarmonizationApplyOptions,
@@ -23,6 +24,8 @@ interface AutoHarmonizationDialogProps {
   selectedNoteIds: ReadonlySet<string>;
   selectedChordIds: ReadonlySet<string>;
   onClose(): void;
+  showNotice?: ShowNotice;
+  notices?: ReactNode;
   onApply(solution: HarmonizationSolution, options: AutoHarmonizationApplyOptions): boolean | void;
   onAudition(solution: HarmonizationSolution, signal: AbortSignal, onEnded: () => void): Promise<void>;
 }
@@ -47,7 +50,7 @@ function selectionRange(
 }
 
 export function AutoHarmonizationDialog({
-  project, playheadTick, selectedNoteIds, selectedChordIds, onClose, onApply, onAudition,
+  project, playheadTick, selectedNoteIds, selectedChordIds, onClose, onApply, onAudition, showNotice, notices,
 }: AutoHarmonizationDialogProps) {
   const titleId = useId();
   const formId = useId();
@@ -128,11 +131,13 @@ export function AutoHarmonizationDialog({
     setMessage(undefined);
     const context = { ...range, givenVoice, style };
     logger.recordBreadcrumb("harmonization", "生成自动和声", context);
+    let logEntryId: string | undefined;
     try {
       const result = logger.span("harmonization", "生成自动和声", () => autoHarmonize(project, {
         ...context, respectLockedConstraints, allowPassingAndNeighborMelodies,
       }), context, {
         code: "HARMONIZATION_FAILED",
+        onFailure: entry => { logEntryId = entry.id; },
         summarize: ({ solutions }) => {
           const best = solutions[0];
           return {
@@ -146,7 +151,9 @@ export function AutoHarmonizationDialog({
       setSelectedId(result.solutions[0]?.id);
       setReview(result);
     } catch {
-      setMessage("生成和声方案失败，请调整参数后重试。");
+      const message = "生成和声方案失败，请调整参数后重试。";
+      setMessage(message);
+      showNotice?.(message, { level: "error", logEntryId });
     }
   }
 
@@ -302,6 +309,7 @@ export function AutoHarmonizationDialog({
           </>
         )}
       </footer>
+      {notices}
     </dialog>
   );
 }

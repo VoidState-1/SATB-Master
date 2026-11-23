@@ -33,6 +33,34 @@ describe("BottomPanel", () => {
     invalidationRanges: [],
   };
 
+  const logTabMarkup = (props: { developerMode?: boolean; showLogs?: boolean; unreadLogErrors?: number } = {}) =>
+    renderToStaticMarkup(
+      <BottomPanel
+        activeTab="diagnostics"
+        onTabChange={vi.fn()}
+        project={dummyProject}
+        harmonyResult={mockHarmonyResult}
+        onSelectDiagnostic={vi.fn()}
+        onToggleIgnoredDiagnostic={vi.fn()}
+        revision={1}
+        playheadTick={0}
+        {...props}
+      />,
+    );
+
+  it("hides logs in ordinary mode until a session error or shortcut makes it available", () => {
+    expect(logTabMarkup()).not.toContain(">日志<");
+    expect(logTabMarkup({ showLogs: true })).toContain(">日志<");
+    expect(logTabMarkup({ showLogs: true, unreadLogErrors: 2 }))
+      .toContain('class="bottom-tab-badge error" aria-label="2 条未读错误">2<');
+  });
+
+  it("shows the developer log tab without an unread badge", () => {
+    const html = logTabMarkup({ developerMode: true });
+    expect(html).toContain(">日志<");
+    expect(html).not.toContain("条未读错误");
+  });
+
   it("renders tab headers with problem count badge", () => {
     const html = renderToStaticMarkup(
       <BottomPanel

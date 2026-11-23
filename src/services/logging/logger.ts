@@ -3,6 +3,7 @@ import {
   APP_ERROR_CODES,
   AppError,
   MAX_RECENT_LOGS,
+  isErrorLog,
   sanitizeContext,
   sanitizePath,
   serializeError,
@@ -38,6 +39,7 @@ interface SpanOptions<T> {
   summarize?: (result: T) => unknown;
   level?: "debug" | "info";
   failureLevel?: "warn" | "error";
+  onFailure?: (entry: LogEntry) => void;
 }
 
 interface DiagnosticBundleOptions {
@@ -82,7 +84,7 @@ function copySnapshot(value: unknown, options: DiagnosticBundleOptions): LogValu
 export class RendererLogger {
   private entries: LogEntry[] = [];
   private breadcrumbs: BreadcrumbEntry[] = [];
-  private listeners = new Set<() => void>();
+  private listeners = new Set<(entry?: LogEntry) => void>();
   private notifying = false;
   private pending: LogEntry[] = [];
   private timer?: ReturnType<typeof setTimeout>;
@@ -124,13 +126,13 @@ export class RendererLogger {
     pushRecent(this.entries, entry, MAX_RECENT_LOGS);
     if (hasDesktopLogging()) {
       pushRecent(this.pending, entry, MAX_RECENT_LOGS);
-      if (level === "error" || level === "fatal") {
+      if (isErrorLog(level)) {
         void this.flush();
       } else {
         this.timer ??= setTimeout(() => void this.flush(), FLUSH_INTERVAL_MS);
       }
     }
-    this.notify();
+    this.notify(entry);
     return entry;
   }
 
@@ -172,11 +174,16 @@ export class RendererLogger {
       return value;
     };
     const fail = (error: unknown): never => {
-      this[options.failureLevel ?? "error"](scope, message, {
+      const entry = this[options.failureLevel ?? "error"](scope, message, {
         code: error instanceof AppError ? error.code : options.code,
         error,
         context: spanContext(),
       });
+      try {
+        options.onFailure?.(entry);
+      } catch {
+        // A notification must preserve the original operation error.
+      }
       throw error;
     };
 
@@ -207,18 +214,18 @@ export class RendererLogger {
     this.notify();
   }
 
-  subscribe(listener: () => void): () => void {
+  subscribe(listener: (entry?: LogEntry) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  private notify() {
+  private notify(entry?: LogEntry) {
     if (this.notifying) return;
     this.notifying = true;
     try {
       for (const listener of this.listeners) {
         try {
-          listener();
+          listener(entry);
         } catch {
           // Diagnostic listeners cannot interrupt logging or start a failure loop.
         }

@@ -11,6 +11,7 @@ import {
   FilePlus2,
   FolderOpen,
   LocateFixed,
+  List,
   Magnet,
   Maximize2,
   Music2,
@@ -39,8 +40,10 @@ import {
   X,
   Scissors,
 } from "lucide-react";
+import { AppNoticeStack, useAppNotices } from "../components/AppNoticeStack";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { BottomPanel, type BottomPanelTab } from "../features/bottomPanel";
+import { useSessionLogErrors, type LogFocus } from "../features/diagnostics";
 import { IconButton } from "../components/IconButton";
 import { Inspector } from "../features/inspector";
 import { PanelResizeHandle } from "../components/PanelResizeHandle";
@@ -170,7 +173,7 @@ function AppShell() {
   const loopEnabled = project.loop.enabled;
   const loopStartTick = project.loop.startTick;
   const loopEndTick = project.loop.endTick;
-  const [notice, setNotice] = useState<string>();
+  const { notices, showNotice, dismissNotice } = useAppNotices();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const changeSettingsOpen = (open: boolean) => {
     logger.recordBreadcrumb("editor", open ? "打开工程设置" : "关闭工程设置");
@@ -182,6 +185,8 @@ function AppShell() {
   const [bottomPanelTab, setBottomPanelTabState] = useState<BottomPanelTab>(
     getInitialBottomPanelTab,
   );
+  const [logsRequested, setLogsRequested] = useState(false);
+  const [logFocus, setLogFocus] = useState<LogFocus>();
   const [exportOpen, setExportOpen] = useState(false);
   const [midiOutOpen, setMidiOutOpen] = useState(false);
   const [midiOutEnabled, setMidiOutEnabled] = useState<boolean>(() =>
@@ -225,6 +230,14 @@ function AppShell() {
   }, [panelLayout.visibility.bottom, panelLayout.sizes.bottom]);
   const shortcutSettings = useShortcutBindings();
   const developerMode = useDeveloperMode();
+  const { hasErrors, unreadErrorCount } = useSessionLogErrors(
+    panelLayout.visibility.bottom && bottomPanelTab === "logs" && !ruleTestMode && !auditOpen,
+  );
+  const showLogsTab = developerMode.enabled || hasErrors || logsRequested;
+  const activeBottomTab = bottomPanelTab === "logs" && !showLogsTab ? "diagnostics" : bottomPanelTab;
+  useEffect(() => {
+    if (!showLogsTab) setBottomPanelTabState(current => current === "logs" ? "diagnostics" : current);
+  }, [showLogsTab]);
   const { scaleGuideEnabled, setScaleGuideEnabled } = useScaleGuide();
   const { pausePlayheadBehavior, setPausePlayheadBehavior } =
     usePausePlayheadBehavior();
@@ -232,6 +245,8 @@ function AppShell() {
 
   const setBottomPanelTab = useCallback((tab: BottomPanelTab) => {
     setBottomPanelTabState(tab);
+    if (tab === "logs") return;
+    setLogFocus(undefined);
     try {
       window.localStorage.setItem(BOTTOM_PANEL_TAB_STORAGE_KEY, tab);
     } catch {
@@ -251,14 +266,6 @@ function AppShell() {
       void loadVexFlow().catch(() => undefined);
     }, 600);
     return () => window.clearTimeout(timer);
-  }, []);
-
-  const showNotice = useCallback((message: string) => {
-    setNotice(message);
-    window.setTimeout(
-      () => setNotice((current) => (current === message ? undefined : current)),
-      2800,
-    );
   }, []);
 
   const {
@@ -504,6 +511,7 @@ function AppShell() {
   const handleChordInferenceApply = (result: HarmonyInferenceResult, options: ChordInferenceApplyOptions) => {
     const context = { mode: options.mode, selectedRegionCount: options.selection?.size };
     logger.recordBreadcrumb("inference", "应用和弦推导", context);
+    let logEntryId: string | undefined;
     try {
       const { phraseApplied, applied } = logger.span("inference", "应用和弦推导", () => {
         const phraseApplied = options.selection ? undefined : applyHarmonyInference(project, result, options);
@@ -512,6 +520,7 @@ function AppShell() {
         return { phraseApplied, applied };
       }, context, {
         code: "INFERENCE_FAILED",
+        onFailure: entry => { logEntryId = entry.id; },
         summarize: ({ applied }) => ({
           appliedRegionCount: applied.appliedRegionCount,
           skippedRegionCount: applied.skipped.length,
@@ -545,6 +554,7 @@ function AppShell() {
       setChordInferenceOpen(false);
       return true;
     } catch {
+      showNotice("应用和弦推导失败，请重试。", { level: "error", logEntryId });
       return false;
     }
   };
@@ -560,6 +570,7 @@ function AppShell() {
       writePhrasesAndCadences: options.writePhrasesAndCadences !== false,
     };
     logger.recordBreadcrumb("harmonization", "应用自动和声", context);
+    let logEntryId: string | undefined;
     try {
       const applied = logger.span("harmonization", "应用自动和声", () => {
         const applied = applyAutoHarmonization(project, solution, options);
@@ -573,6 +584,7 @@ function AppShell() {
         return applied;
       }, context, {
         code: "HARMONIZATION_FAILED",
+        onFailure: entry => { logEntryId = entry.id; },
         summarize: (applied) => ({
           applied: applied !== project,
           bestErrors: solution.diagnosticSummary.errorCount,
@@ -591,6 +603,7 @@ function AppShell() {
       setAutoHarmonizationOpen(false);
       return true;
     } catch {
+      showNotice("应用自动和声失败，请重试。", { level: "error", logEntryId });
       return false;
     }
   };
@@ -615,13 +628,28 @@ function AppShell() {
         cancelLabel: "留在工作台",
       }))
     )
-      return;
+      return false;
     ruleTestWorkspace.cancelRun();
     ruleTestWorkspace.editor.setSelectedNoteIds(new Set());
     ruleTestWorkspace.editor.setSelectedChordIds(new Set());
     logger.recordBreadcrumb("editor", "退出规则测试工作台");
     setRuleTestMode(false);
+    return true;
   };
+
+  const openLogs = async (entryId?: string) => {
+    if (ruleTestMode && !(await leaveRuleTestMode())) return;
+    setChordInferenceOpen(false);
+    setAutoHarmonizationOpen(false);
+    setLogsRequested(true);
+    setLogFocus(entryId ? { entryId } : undefined);
+    panelLayout.setBottomVisible(true);
+    setBottomPanelTab("logs");
+  };
+  const noticeStack = (
+    <AppNoticeStack notices={notices} onDismiss={dismissNotice} onViewLogs={entryId => void openLogs(entryId)} />
+  );
+
   if (auditOpen) {
     return <AuditWorkbench
       startupPackage={auditOpen === "startup"}
@@ -643,7 +671,7 @@ function AppShell() {
         onBack={() => void leaveRuleTestMode()}
         confirmation={confirmation}
         answerConfirmation={answerConfirmation}
-        notice={notice}
+        notices={noticeStack}
         showNotice={showNotice}
       />
     );
@@ -672,6 +700,11 @@ function AppShell() {
           <i />
           {audioMessage}
         </span>
+        {hasErrors && !panelLayout.visibility.bottom ? (
+          <button type="button" className="titlebar-log-link" onClick={() => void openLogs()}>
+            <List aria-hidden="true" /> 查看日志{unreadErrorCount > 0 ? ` (${unreadErrorCount})` : ""}
+          </button>
+        ) : null}
         {window.desktop?.windowControls ? (
           <div className="titlebar-controls">
             <IconButton
@@ -1056,7 +1089,10 @@ function AppShell() {
                 onResize={panelLayout.setBottom}
               />
               <BottomPanel
-                activeTab={bottomPanelTab}
+                activeTab={activeBottomTab}
+                showLogs={showLogsTab}
+                unreadLogErrors={unreadErrorCount}
+                logFocus={logFocus}
                 onTabChange={setBottomPanelTab}
                 project={project}
                 harmonyResult={harmonyResult}
@@ -1232,6 +1268,8 @@ function AppShell() {
           selectedChordIds={selectedChordIds}
           onClose={() => setChordInferenceOpen(false)}
           onApply={handleChordInferenceApply}
+          showNotice={showNotice}
+          notices={noticeStack}
         />
       ) : null}
       {autoHarmonizationOpen ? (
@@ -1242,6 +1280,8 @@ function AppShell() {
           selectedChordIds={selectedChordIds}
           onClose={() => setAutoHarmonizationOpen(false)}
           onApply={handleAutoHarmonizationApply}
+          showNotice={showNotice}
+          notices={noticeStack}
           onAudition={(solution, signal, onEnded) =>
             handleAuditionProject(solution.project, solution.range, signal, onEnded)
           }
@@ -1278,11 +1318,7 @@ function AppShell() {
           onClose={() => setMidiOutOpen(false)}
         />
       ) : null}
-      {notice ? (
-        <div className="notice" role="status">
-          {notice}
-        </div>
-      ) : null}
+      {!chordInferenceOpen && !autoHarmonizationOpen ? noticeStack : null}
     </main>
   );
 }

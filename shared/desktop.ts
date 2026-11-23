@@ -186,6 +186,7 @@ export interface DesktopInvokeMap {
 }
 
 export interface DesktopEventMap {
+  "log:error-entry": LogEntry;
   "window:maximized-changed": boolean;
   "soundfont:hash-progress": {
     token: string;
@@ -199,6 +200,7 @@ export type DesktopEventChannel = keyof DesktopEventMap;
 
 export const DESKTOP_CHANNELS = Object.freeze({
   logAppendBatch: "log:append-batch",
+  logErrorEntry: "log:error-entry",
   logGetRecent: "log:get-recent",
   logOpenDirectory: "log:open-directory",
   logExportBundle: "log:export-bundle",
@@ -239,6 +241,7 @@ export const DESKTOP_CHANNELS = Object.freeze({
 export interface DesktopApi {
   log: {
     sessionId?: string;
+    onErrorEntry(callback: (entry: LogEntry) => void): () => void;
     appendBatch(request: DesktopInvokeMap["log:append-batch"]["request"]): Promise<DesktopInvokeMap["log:append-batch"]["response"]>;
     getRecent(request?: DesktopInvokeMap["log:get-recent"]["request"]): Promise<DesktopInvokeMap["log:get-recent"]["response"]>;
     openDirectory(): Promise<DesktopInvokeMap["log:open-directory"]["response"]>;

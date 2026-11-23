@@ -468,21 +468,6 @@
   height: 13px;
 }
 
-.notice {
-  position: fixed;
-  right: 284px;
-  bottom: 198px;
-  z-index: 30;
-  max-width: 360px;
-  padding: 9px 12px;
-  border: 1px solid #4c544d;
-  border-radius: 5px;
-  background: rgba(38, 41, 35, 0.94);
-  color: #fff;
-  font-size: 11px;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18);
-}
-
 .inspector-switch {
   display: inline-flex;
   align-items: center;

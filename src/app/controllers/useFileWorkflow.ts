@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppError } from "../../../shared/logging";
+import type { ShowNotice } from "../../components/AppNoticeStack";
 import { audioEngine } from "../../audio/audioEngine";
 import {
   buildMidi,
@@ -37,7 +38,7 @@ interface FileWorkflowOptions {
   history: ProjectHistoryFilePort;
   createProject(): ProjectDocument;
   onWorkspaceReset(project: ProjectDocument): void;
-  showNotice(message: string): void;
+  showNotice: ShowNotice;
   requestConfirmation(options: ConfirmationState): Promise<boolean>;
 }
 
@@ -126,6 +127,7 @@ export function useFileWorkflow({
   const handleOpen = useCallback(async () => {
     if (isBusyRef.current) return;
     isBusyRef.current = true;
+    let logEntryId: string | undefined;
     try {
       await logger.span("file", "打开工程", async () => {
         if (
@@ -148,11 +150,14 @@ export function useFileWorkflow({
           result.migratedFromSchemaVersion === 2 ? result.filePath : undefined,
         );
         onWorkspaceReset(result.project);
-        showNotice("工程已打开");
+        showNotice("工程已打开", { level: "success" });
         return { canceled: false, migratedFromSchemaVersion: result.migratedFromSchemaVersion };
-      }, undefined, { code: "FILE_READ_FAILED", level: "info", summarize: (result) => result });
+      }, undefined, {
+        code: "FILE_READ_FAILED", level: "info", summarize: (result) => result,
+        onFailure: entry => { logEntryId = entry.id; },
+      });
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "打开工程失败");
+      showNotice(error instanceof Error ? error.message : "打开工程失败", { level: "error", logEntryId });
     } finally {
       isBusyRef.current = false;
     }
@@ -162,6 +167,7 @@ export function useFileWorkflow({
     async (forceDialog = false) => {
       if (isBusyRef.current) return;
       isBusyRef.current = true;
+      let logEntryId: string | undefined;
       try {
         logger.recordBreadcrumb("file", "保存工程", { forceDialog });
         const result = await logger.span("file", "保存工程", () => {
@@ -176,6 +182,7 @@ export function useFileWorkflow({
           code: "FILE_WRITE_FAILED",
           level: "info",
           summarize: ({ canceled }) => ({ canceled }),
+          onFailure: entry => { logEntryId = entry.id; },
         });
         if (result.canceled) return;
         setFilePath(result.filePath ?? filePath);
@@ -185,9 +192,10 @@ export function useFileWorkflow({
           result.migrationBackupPath
             ? "工程已升级为 v3 并备份原文件；旧版本不能打开新文件"
             : "工程已保存",
+          { level: "success" },
         );
       } catch (error) {
-        showNotice(error instanceof Error ? error.message : "保存工程失败");
+        showNotice(error instanceof Error ? error.message : "保存工程失败", { level: "error", logEntryId });
       } finally {
         isBusyRef.current = false;
       }

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { AlertCircle, Maximize2, Music2 } from "lucide-react";
+import { AlertCircle, List, Maximize2, Music2 } from "lucide-react";
 import { IconButton } from "../../components/IconButton";
 import type { ProjectDocument } from "../../domain/project";
 import type {
@@ -9,6 +9,8 @@ import type {
 import {
   DiagnosticsPanel,
   DiagnosticsSummary,
+  LogsPanel,
+  type LogFocus,
 } from "../diagnostics";
 import {
   getInitialHighlightMode,
@@ -22,7 +24,7 @@ import {
 } from "../scorePreview";
 import type { ScorePreviewWarning } from "../../domain/notation";
 
-export type BottomPanelTab = "diagnostics" | "score";
+export type BottomPanelTab = "diagnostics" | "score" | "logs";
 
 export interface BottomPanelProps {
   activeTab: BottomPanelTab;
@@ -33,6 +35,9 @@ export interface BottomPanelProps {
   onToggleIgnoredDiagnostic(diagnostic: HarmonyDiagnostic): void;
   onCopyDiagnostic?(diagnostic: HarmonyDiagnostic): void;
   developerMode?: boolean;
+  showLogs?: boolean;
+  unreadLogErrors?: number;
+  logFocus?: LogFocus;
   revision: number;
   playheadTick: number;
   isPlaying?: boolean;
@@ -50,6 +55,9 @@ export function BottomPanel({
   onToggleIgnoredDiagnostic,
   onCopyDiagnostic,
   developerMode = false,
+  showLogs = false,
+  unreadLogErrors = 0,
+  logFocus,
   revision,
   playheadTick,
   isPlaying = false,
@@ -139,6 +147,23 @@ export function BottomPanel({
               </span>
             ) : null}
           </button>
+          {developerMode || showLogs || unreadLogErrors > 0 || activeTab === "logs" ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "logs"}
+              className={`bottom-panel-tab ${activeTab === "logs" ? "is-active" : ""}`}
+              onClick={() => onTabChange("logs")}
+            >
+              <List aria-hidden="true" />
+              <span>日志</span>
+              {unreadLogErrors > 0 ? (
+                <span className="bottom-tab-badge error" aria-label={`${unreadLogErrors} 条未读错误`}>
+                  {unreadLogErrors > 99 ? "99+" : unreadLogErrors}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
         </div>
 
         <div className="bottom-panel-context">
@@ -149,7 +174,7 @@ export function BottomPanel({
                 harmonyResult.diagnostics.length - activeDiagnostics.length
               }
             />
-          ) : (
+          ) : activeTab === "score" ? (
             <ScorePreviewToolbar
               compact
               scale={scale}
@@ -173,7 +198,7 @@ export function BottomPanel({
                 ) : null
               }
             />
-          )}
+          ) : null}
         </div>
       </header>
 
@@ -188,6 +213,8 @@ export function BottomPanel({
             developerMode={developerMode}
             hideHeader
           />
+        ) : activeTab === "logs" ? (
+          <LogsPanel project={project} harmonyResult={harmonyResult} focus={logFocus} />
         ) : (
           <ScorePreviewPane
             project={project}

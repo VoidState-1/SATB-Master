@@ -10,6 +10,7 @@ import {
   LOG_SCOPES,
   MAX_DIAGNOSTIC_BUNDLE_BYTES,
   MAX_RECENT_LOGS,
+  isErrorLog,
   sanitizeContext,
   serializeError,
   type AppErrorCode,
@@ -46,7 +47,10 @@ export class MainLogger {
   private pending: PendingBatch[] = [];
   private scheduled?: ReturnType<typeof setImmediate>;
 
-  constructor(readonly directory: string) {
+  constructor(
+    readonly directory: string,
+    private readonly publishError?: (entry: LogEntry) => void,
+  ) {
     try {
       this.rotate();
     } catch {
@@ -86,6 +90,15 @@ export class MainLogger {
 
   private remember(entries: readonly LogEntry[]) {
     this.recent = this.recent.concat(entries).slice(-MAX_RECENT_LOGS);
+    if (!this.publishError) return;
+    for (const entry of entries) {
+      if (entry.process === "renderer" || !isErrorLog(entry.level)) continue;
+      try {
+        this.publishError(entry);
+      } catch {
+        // Delivery to a renderer must not interrupt persistence.
+      }
+    }
   }
 
   private drain() {
@@ -187,7 +200,15 @@ export class MainLogger {
 let mainLogger: MainLogger | undefined;
 
 export function initializeMainLogger(directory: string) {
-  return mainLogger = new MainLogger(directory);
+  return mainLogger = new MainLogger(directory, (entry) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      try {
+        if (!window.webContents.isDestroyed()) window.webContents.send(DESKTOP_CHANNELS.logErrorEntry, entry);
+      } catch {
+        // A window may close before the error reaches its renderer.
+      }
+    }
+  });
 }
 
 export function createMainLogEntry(

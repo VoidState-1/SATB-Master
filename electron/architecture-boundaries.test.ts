@@ -30,9 +30,9 @@ describe("architecture boundaries", () => {
     expect(violations).toEqual([]);
   });
 
-  it("routes production warnings and Electron errors through the loggers", () => {
+  it("routes production warnings and errors through the loggers", () => {
     const violations = ["electron", "src"].flatMap((root) => {
-      const methods = root === "electron" ? "warn|error" : "warn";
+      const methods = "warn|error";
       const call = new RegExp(
         String.raw`\bconsole\s*(?:(?:\?\.|\.)\s*(?:${methods})|(?:\?\.\s*)?\[\s*["'](?:${methods})["']\s*\])\s*(?:\?\.\s*)?\(`,
       );

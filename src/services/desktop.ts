@@ -7,6 +7,10 @@ export function hasDesktopLogging() {
   return typeof window !== "undefined" && typeof window.desktop?.log?.appendBatch === "function";
 }
 
+export function subscribeToDesktopLogErrors(listener: (entry: LogEntry) => void) {
+  if (typeof window !== "undefined") return window.desktop?.log?.onErrorEntry?.(listener);
+}
+
 export function getDesktopLogSessionId() {
   return typeof window !== "undefined" ? window.desktop?.log?.sessionId : undefined;
 }

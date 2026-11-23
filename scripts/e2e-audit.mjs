@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile, access } from "node:fs/promises";
 import path from "node:path";
+import { assertCleanSessionLogs, waitForElectronExit } from "./e2e-session-logs.mjs";
 
 const root = process.cwd();
 const [firstArgument, packageArgument, exeFlag, exeArgument] = process.argv.slice(2);
@@ -343,9 +344,7 @@ async function checkStartupPackage() {
   await wait(`document.querySelector('[aria-label="自填答案"]').value===${JSON.stringify(draft)} && document.querySelector('.audit-save-status')?.textContent.includes('已自动保存')`, "测试草稿未自动保存");
   // Allow Runtime.evaluate to respond before the native window tears down its CDP connection.
   await evaluate(`setTimeout(()=>document.querySelector('button[aria-label="关闭窗口"]').click(), 50); true`);
-  const deadline = Date.now() + 12_000;
-  while (child.exitCode === null && child.signalCode === null && Date.now() < deadline) await delay(100);
-  if (child.exitCode !== 0) throw new Error("临时用户目录中的客户端未正常退出");
+  await waitForElectronExit(child);
   socket.close();
   await launch();
   await wait(directoryReady, "在同一用户目录重开后未恢复审计包");
@@ -358,6 +357,10 @@ try {
   await launch();
   if (startupMode) await checkStartupPackage();
   else await runWorkbenchChecks(packageValue);
+  await evaluate(`setTimeout(() => void window.desktop.windowControls.close().catch(() => {}), 50); true`);
+  await waitForElectronExit(child);
+  const { files, entries } = await assertCleanSessionLogs(path.join(directory, "user-data"));
+  console.log(`PASS: JSONL 日志门禁，${files} 个文件、${entries} 条日志`);
   console.log(`Artifacts: ${directory}`);
 } catch (error) {
   if (socket?.readyState === WebSocket.OPEN) await capture("audit-failure.png").catch(() => {});
@@ -365,5 +368,8 @@ try {
 } finally {
   socket?.close();
   for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error("CDP closed")); }
-  if (child?.exitCode === null) child.kill();
+  if (child?.pid && child.exitCode === null && child.signalCode === null) {
+    child.kill();
+    await waitForElectronExit(child, { requireSuccess: false });
+  }
 }

@@ -1,0 +1,72 @@
+.app-notices {
+  position: fixed;
+  right: 16px;
+  bottom: 20px;
+  z-index: 100;
+  display: grid;
+  gap: 6px;
+  width: min(400px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.app-notice {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px 7px 10px;
+  border: 1px solid #a7afa5;
+  border-radius: 5px;
+  background: #f7f7f4;
+  color: #2b312a;
+  font-size: 12px;
+  box-shadow: 0 4px 14px #242c2030;
+  pointer-events: auto;
+}
+
+.app-notice[data-level="success"] { border-color: #8aa397; background: #edf4ed; color: #234e3f; }
+.app-notice[data-level="warn"] { border-color: #c8aa6e; background: #fff4da; color: #65440f; }
+.app-notice[data-level="error"] { border-color: #cb9694; background: #fcebe8; color: #752c29; }
+
+.app-notice > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.app-notice svg,
+.titlebar-log-link svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.app-notice button,
+.titlebar-log-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 2px 5px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  white-space: nowrap;
+  font: inherit;
+}
+
+.app-notice button:hover,
+.titlebar-log-link:hover {
+  border-color: currentColor;
+}
+
+.app-notice button:focus-visible,
+.titlebar-log-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.titlebar-log-link {
+  -webkit-app-region: no-drag;
+  color: #8b2e2e;
+  font-size: 12px;
+}

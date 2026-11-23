@@ -30,6 +30,7 @@ function subscribeDesktop<Channel extends DesktopEventChannel>(
 const desktop: DesktopApi = {
   log: {
     sessionId: process.argv.find((arg) => arg.startsWith(LOG_SESSION_ARGUMENT))?.slice(LOG_SESSION_ARGUMENT.length),
+    onErrorEntry: (callback) => subscribeDesktop(DESKTOP_CHANNELS.logErrorEntry, callback),
     appendBatch: (request) => invokeDesktop(DESKTOP_CHANNELS.logAppendBatch, request),
     getRecent: (request = {}) => invokeDesktop(DESKTOP_CHANNELS.logGetRecent, request),
     openDirectory: () => invokeDesktop(DESKTOP_CHANNELS.logOpenDirectory),

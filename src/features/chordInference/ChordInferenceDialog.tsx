@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { WandSparkles, X } from "lucide-react";
+import type { ShowNotice } from "../../components/AppNoticeStack";
 import {
   inferHarmony, type ChordInferenceApplyOptions, type HarmonyInferenceResult,
 } from "../../domain/harmony/inference";
@@ -20,6 +21,8 @@ export interface ChordInferenceDialogOptions {
   selectedNoteIds: ReadonlySet<string>;
   selectedChordIds: ReadonlySet<string>;
   onClose(): void;
+  showNotice?: ShowNotice;
+  notices?: ReactNode;
   onApply(result: HarmonyInferenceResult, options: ChordInferenceApplyOptions): boolean | void;
 }
 
@@ -56,6 +59,8 @@ export function ChordInferenceDialog({
   selectedChordIds,
   onClose,
   onApply,
+  showNotice,
+  notices,
 }: ChordInferenceDialogOptions) {
   const [rangeMode, setRangeMode] = useState<ChordInferenceRangeMode>(
     selectedRange(project, selectedNoteIds, selectedChordIds)
@@ -116,9 +121,11 @@ export function ChordInferenceDialog({
     const { project, options } = inferenceRequest;
     logger.recordBreadcrumb("inference", "推导和弦", options);
     setApplicationFailed(false);
+    let logEntryId: string | undefined;
     try {
       const result = logger.span("inference", "推导和弦", () => inferHarmony(project, options), options, {
         code: "INFERENCE_FAILED",
+        onFailure: entry => { logEntryId = entry.id; },
         summarize: ({ chordInference }) => ({
           regionCount: chordInference.regions.length,
           unresolvedCount: chordInference.unresolvedObservationIndices.length,
@@ -127,8 +134,9 @@ export function ChordInferenceDialog({
       setInference({ request: inferenceRequest, result });
     } catch {
       setInference({ request: inferenceRequest });
+      showNotice?.("和弦推导失败，请调整范围或选项后重试。", { level: "error", logEntryId });
     }
-  }, [inferenceRequest]);
+  }, [inferenceRequest, showNotice]);
 
   useEffect(() => {
     firstControlRef.current?.focus();
@@ -318,6 +326,7 @@ export function ChordInferenceDialog({
             <span>应用推导结果</span>
           </button>
         </footer>
+        {notices}
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ShowNotice } from "../../components/AppNoticeStack";
 import { audioEngine, type AudioEngineState } from "../../audio/audioEngine";
 import {
   soundFontId,
@@ -33,7 +34,7 @@ interface PlaybackControllerOptions {
   preloadSoundFont?: boolean;
   gridTicks: number;
   pausePlayheadBehavior?: PausePlayheadBehavior;
-  showNotice(message: string): void;
+  showNotice: ShowNotice;
   playheadTick?: number;
   onPlayheadChange?(tick: number): void;
 }
@@ -98,6 +99,7 @@ interface SoundFontLoadRequest {
   loadKey: string;
   generation?: number;
   promise: Promise<SoundFontLoadResult>;
+  failureEntryId?: string;
 }
 
 let activeSoundFontLoad: SoundFontLoadRequest | undefined;
@@ -188,6 +190,7 @@ export function usePlaybackController({
           {
             code: "SOUNDFONT_LOAD_FAILED",
             failureLevel: "warn",
+            onFailure: entry => { request.failureEntryId = entry.id; },
             summarize: (result) => ({ loaded: Boolean(result), superseded: result === undefined }),
           },
         ),
@@ -240,6 +243,7 @@ export function usePlaybackController({
           effectiveSoundFont.kind === "default"
             ? "默认音色不可用，已切换到回退音色"
             : "工程引用的音色不可用，已切换到回退音色",
+          { level: "warn", logEntryId: request.failureEntryId },
         );
       })
       .finally(() => {
@@ -386,12 +390,16 @@ export function usePlaybackController({
         );
       }
       setSoundFontSizeBytes(sizeBytes);
-      showNotice("SoundFont 已加载");
+      showNotice("SoundFont 已加载", { level: "success" });
     };
     const context = { kind: "user" };
     logger.recordBreadcrumb("audio", "选择 SoundFont", context);
+    let logEntryId: string | undefined;
     try {
-      await logger.span("audio", "加载所选 SoundFont", loadSelection, context, { code: "SOUNDFONT_LOAD_FAILED" });
+      await logger.span("audio", "加载所选 SoundFont", loadSelection, context, {
+        code: "SOUNDFONT_LOAD_FAILED",
+        onFailure: entry => { logEntryId = entry.id; },
+      });
     } catch (error) {
       if (
         generation === undefined ||
@@ -399,6 +407,7 @@ export function usePlaybackController({
       ) {
         showNotice(
           error instanceof Error ? error.message : "SoundFont 加载失败",
+          { level: "error", logEntryId },
         );
       }
     } finally {
@@ -435,7 +444,9 @@ export function usePlaybackController({
       showNotice("默认音色已加载");
     } catch (error) {
       if (isLoadRequestCurrent(request)) {
-        showNotice(error instanceof Error ? error.message : "默认音色加载失败");
+        showNotice(error instanceof Error ? error.message : "默认音色加载失败", {
+          level: "warn", logEntryId: request.failureEntryId,
+        });
       }
     } finally {
       if (isLoadRequestCurrent(request))
@@ -494,6 +505,7 @@ export function usePlaybackController({
             soundFontConfig.kind === "default"
               ? "默认音色不可用，已切换到回退音色"
               : "工程引用的音色不可用，已切换到回退音色",
+            { level: "warn", logEntryId: request.failureEntryId },
           );
         } finally {
           if (isLoadRequestCurrent(request))
@@ -512,10 +524,10 @@ export function usePlaybackController({
     logger.recordBreadcrumb("audio", "开始播放", { loopEnabled, metronomeEnabled });
     const handlePlaybackFailure = (error: unknown) => {
       if (!shouldStart()) return;
-      logger.error("audio", "播放失败", { code: "AUDIO_PLAYBACK_FAILED", error });
+      const entry = logger.error("audio", "播放失败", { code: "AUDIO_PLAYBACK_FAILED", error });
       setIsPlaying(false);
       isPlayingRef.current = false;
-      showNotice(error instanceof Error ? error.message : "播放失败");
+      showNotice(error instanceof Error ? error.message : "播放失败", { level: "error", logEntryId: entry.id });
     };
     try {
       if (!(await preparePlaybackAudio(shouldStart))) return;
@@ -607,11 +619,12 @@ export function usePlaybackController({
     } catch (error) {
       signal.removeEventListener("abort", stop);
       if (signal.aborted) return;
-      logger.error("audio", "候选试听失败", { code: "AUDIO_PLAYBACK_FAILED", error });
+      const entry = logger.error("audio", "候选试听失败", { code: "AUDIO_PLAYBACK_FAILED", error });
+      showNotice("候选试听失败，请重试。", { level: "error", logEntryId: entry.id });
       stop();
       throw error;
     }
-  }, [preparePlaybackAudio]);
+  }, [preparePlaybackAudio, showNotice]);
 
   const handlePlay = useCallback(() => {
     if (isPlaying) {

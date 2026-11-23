@@ -21,7 +21,7 @@ async function main() {
   if (command === "pack" ? rest.length !== 2 || rest[0] !== "--out" || !rest[1] : command === "feedback" ? rest.length !== 1 : rest.length !== 0) throw new Error(help);
   const inputPath = await realpath(resolve(input));
   const root = fileURLToPath(new URL("../", import.meta.url));
-  const server = await createServer({ root, configFile: false, server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
+  const server = await createServer({ root, configFile: false, server: { middlewareMode: true, hmr: false, ws: false, watch: null }, appType: "custom", logLevel: "error" });
   try {
     const api = await server.ssrLoadModule("/src/domain/audit/index.ts");
     const hash = async (text) => createHash("sha256").update(text).digest("hex");
