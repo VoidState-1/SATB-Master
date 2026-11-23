@@ -29,7 +29,12 @@ export interface PhraseEvidence {
     | "soprano-opening-reprise"
     | "regular-template-target"
     | "regular-template-boundary"
-    | "semantic-ambiguity";
+    | "semantic-ambiguity"
+    | "pickup-alignment"
+    | "phrase-length-grid"
+    | "tonic-restart"
+    | "sustained-voice"
+    | "unstable-ending";
   readonly value: string;
   readonly refs?: readonly string[];
 }
@@ -55,7 +60,7 @@ export interface PhraseBoundaryCandidate {
   readonly evidence: readonly PhraseEvidence[];
 }
 
-export type PhraseTargetRatio = "half" | "third" | "two-thirds";
+export type PhraseTargetRatio = "half" | "third" | "two-thirds" | "event";
 export type PhraseSupport = "strong" | "moderate" | "weak";
 export type PhraseStructureTemplate =
   | {
@@ -72,6 +77,10 @@ export type PhraseStructureTemplate =
         PhraseBoundaryCandidate,
         PhraseBoundaryCandidate,
       ];
+    }
+  | {
+      readonly kind: "multi";
+      readonly boundaries: readonly PhraseBoundaryCandidate[];
     };
 
 export interface PhraseAnalysis {

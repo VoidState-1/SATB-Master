@@ -370,7 +370,7 @@ function conflictsWithPedalContinuation(
 function pedalContinuationMidpoint(project: ProjectDocument, phrases: PhraseAnalysis) {
   if (phrases.template.kind !== "duple") return undefined;
   const [division] = phrases.template.boundaries;
-  if (division.distanceToTarget !== 0 || division.support !== "moderate" ||
+  if (division.targetRatio !== "half" || division.distanceToTarget !== 0 || division.support !== "moderate" ||
       !division.evidence.some(item => item.code === "all-voices-end") ||
       project.structure.phraseBoundaries.some(boundary => boundary.source === "manual" || boundary.locked)) return undefined;
 

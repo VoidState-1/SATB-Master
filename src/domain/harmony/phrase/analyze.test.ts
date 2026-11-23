@@ -13,6 +13,9 @@ import {
   phraseAtTick,
 } from "./index";
 import { compileScoreText } from "../../scoreText";
+import { buildMetricTimeline } from "../../rhythm/metric";
+import { selectEventDivisions } from "./segmentation";
+import type { PhraseBoundaryCandidate } from "./types";
 import { buildHarmonyAnalysis } from "../analysis";
 import { applyHarmonyInference, inferHarmony } from "../inference";
 
@@ -485,5 +488,118 @@ bars 1..7 {
       0,
       project.lengthTicks,
     ]);
+  });
+});
+
+const eventVoicings = {
+  T: ["E5", "G4", "C4", "C3"],
+  S: ["F5", "A4", "C4", "F3"],
+  D: ["D5", "G4", "B3", "G2"],
+  D2: ["D5", "G4", "B3", "F2"],
+  r: ["r", "r", "r", "r"],
+} as const;
+
+function eventScore(bars: readonly string[], meter = "meter 4/4") {
+  const voices = ["S", "A", "T", "B"];
+  const lines = voices.map((voice, index) => {
+    const written = bars.map(bar => bar.split(" ").map(token => {
+      const [chord, duration] = token.split("/") as [keyof typeof eventVoicings, string];
+      return `${eventVoicings[chord][index]}/${duration}`;
+    }).join(" "));
+    return `  ${voice}: | ${written.join(" | ")} |`;
+  });
+  return compileScoreText(`satb 1
+key C major
+${meter}
+bars 1..${bars.length} {
+${lines.join("\n")}
+  H: | ${bars.join(" | ")} |
+}`).project;
+}
+
+const movingBar = "T/4 S/4 T/4 T/4";
+
+function eventPeriod(phraseLengths: readonly number[], closing = "D/1") {
+  return eventScore(phraseLengths.flatMap((length, index) => [
+    ...Array.from({ length: length - 1 }, () => movingBar),
+    index === phraseLengths.length - 1 ? "T/1" : closing,
+  ]));
+}
+
+describe("基于音乐事件的全局乐句切分", () => {
+  it.each([
+    [[4, 6], "duple", [4]],
+    [[4, 4, 4], "triple", [4, 8]],
+    [[4, 4, 4, 4], "multi", [4, 8, 12]],
+  ] as const)("按乐句收束切分 %j 小节的乐段", (lengths, kind, measures) => {
+    const result = inferPhrases(eventPeriod(lengths));
+    expect(result.template.kind).toBe(kind);
+    expect(result.template.boundaries.map(boundary => boundary.tick)).toEqual(
+      measures.map(measure => measure * 4 * PPQ),
+    );
+    expect(result.segments.map(segment => (segment.toTick - segment.fromTick) / (4 * PPQ)))
+      .toEqual(lengths);
+  });
+
+  it("按开头第四拍弱起对齐新句起奏", () => {
+    const result = inferPhrases(eventScore([
+      "r/2. T/4", movingBar, movingBar, movingBar, "D/2. T/4",
+      movingBar, movingBar, movingBar, "T/2. r/4",
+    ]));
+
+    expect(result.template.kind).toBe("duple");
+    expect(result.template.boundaries).toEqual([expect.objectContaining({
+      tick: 19 * PPQ,
+      targetRatio: "event",
+      evidence: expect.arrayContaining([expect.objectContaining({ code: "pickup-alignment" })]),
+    })]);
+  });
+
+  it.each([
+    ["半小节弱起", "meter 4/4", "r/2 T/2", "D/2 T/2", "T/2 r/2", 18],
+    ["独立弱起小节", "meter 1/4\nat 2:1 meter 4/4", "T/4", "D/2. T/4", "T/2. r/4", 16],
+  ] as const)("跨小节弱起对齐（%s）", (_label, meter, first, split, last, beat) => {
+    const result = inferPhrases(eventScore([
+      first, movingBar, movingBar, movingBar, split, movingBar, movingBar, movingBar, last,
+    ], meter));
+    expect(result.template.boundaries).toMatchObject([{ tick: beat * PPQ, targetRatio: "event" }]);
+  });
+
+  it("两处相容的切点优于会阻塞两侧的单个高分切点", () => {
+    const project = eventPeriod([12]);
+    const candidates: PhraseBoundaryCandidate[] = [[4, 4], [5.5, 8], [7, 5]].map(([bar, score]) => ({
+      tick: bar * 4 * PPQ, score, targetRatio: "event", distanceToTarget: 0,
+      confidence: "probable", support: "moderate", evidence: [],
+    }));
+    const range = { startTick: 0, endTick: project.lengthTicks };
+    const template = selectEventDivisions(
+      buildMetricTimeline(project), range, [range.startTick, range.endTick], candidates,
+    );
+    expect(template.kind).toBe("triple");
+    expect(template.boundaries).toEqual([candidates[0], candidates[2]]);
+  });
+
+  it("有收束证据也不切出一小节短句", () => {
+    const project = eventPeriod([1, 5]);
+    const result = inferPhrases(project);
+
+    expect(result.candidates.some(boundary => boundary.tick === 4 * PPQ)).toBe(true);
+    expect(result.template.kind).toBe("single");
+  });
+
+  it("长音释放与四小节对齐不足以在属二还未解决时断句", () => {
+    const project = eventPeriod([4, 6], "D2/1");
+    expect(inferPhrases(project).template.kind).toBe("single");
+  });
+
+  it("保留人工边界，在另一侧独立选出有音乐证据的切点", () => {
+    const project = eventPeriod([4, 4, 4]);
+    const manual = { id: "manual", tick: 16 * PPQ, source: "manual", confidence: "certain" } as const;
+    project.structure.phraseBoundaries = [manual];
+
+    const result = inferPhrases(project);
+    expect(result.boundaries).toContainEqual(manual);
+    expect(result.template.kind).toBe("duple");
+    expect(result.segments.map(segment => segment.toTick)).toEqual([16, 32, 48].map(beat => beat * PPQ));
   });
 });

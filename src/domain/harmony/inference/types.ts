@@ -6,6 +6,7 @@ import type {
   HarmonySemantics,
   KeyReference,
 } from "../../chordModel";
+import type { PhraseStructureTemplate } from "../phrase/types";
 import type { AnalysisKey, AnalysisNote } from "../analysis";
 import type {
   FunctionalBaseDefinition,
@@ -193,7 +194,7 @@ export type HarmonyInferenceApplyOptions = ChordInferenceApplyOptions;
 
 export interface HarmonyInferenceApplyResult extends ChordInferenceApplyResult {
   readonly appliedPhraseBoundaryCount: number;
-  readonly appliedPhraseTemplate: "single" | "duple" | "triple";
+  readonly appliedPhraseTemplate: PhraseStructureTemplate["kind"];
 }
 
 export interface ChordInferenceSource {

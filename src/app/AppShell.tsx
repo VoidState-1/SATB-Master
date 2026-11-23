@@ -487,6 +487,7 @@ function AppShell() {
       single: "单乐句",
       duple: "双乐句",
       triple: "三乐句",
+      multi: "多乐句",
     };
     const phraseText = phraseApplied
       ? `，按${phraseTemplateLabels[phraseApplied.appliedPhraseTemplate]}处理` +
