@@ -66,6 +66,7 @@ export interface ChordInferenceObservation {
   readonly localKey?: KeyReference;
   readonly metric?: MetricPosition;
   readonly measureDurationTicks?: number;
+  readonly measureBeatTicks?: number;
   readonly completeSatb: boolean;
 }
 

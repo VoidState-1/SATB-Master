@@ -1052,6 +1052,179 @@ bars 1..5 {
   });
 });
 
+function cut3aScore(homeKey: string, bars: readonly (readonly string[])[], meter = "4/4") {
+  const parts = ["S", "A", "T", "B"].map((voice, part) => {
+    const measures = bars.map(bar => bar.map(chord => {
+      const [voicing, duration = "4"] = chord.split("/");
+      return voicing.split(" ")[part] + "/" + duration;
+    }).join(" "));
+    return `${voice}: | ${measures.join(" | ")} |`;
+  });
+  const project = compileScoreText(`satb 1
+key ${homeKey}
+meter ${meter}
+bars 1..${bars.length} {
+${parts.join("\n")}
+}`).project;
+  return {
+    project,
+    contexts: (phraseEndBeats: readonly number[] = []) => {
+      const observations = buildChordInferenceObservations(project);
+      const keys = inferLocalKeys(observations, new Set(phraseEndBeats.map(beat => beat * project.ppq)));
+      return (beat: number) => keys.get(observations.findIndex(item => item.fromTick === beat * project.ppq));
+    },
+    infer: () => {
+      const { regions } = inferChords(project);
+      return (beat: number) => regions.find(region =>
+        region.fromTick <= beat * project.ppq && beat * project.ppq < region.toTick);
+    },
+  };
+}
+
+describe("Cut 3A 一级关系转调", () => {
+  const gm = "D5 Bb4 G4 G2", cm = "Eb5 C5 G4 C3", c7 = "E5 C5 G4 Bb2";
+  const f = "C5 A4 F4 F3", f6 = "C5 F4 A3 A2", f7 = "Eb5 A4 C4 F3", bb = "D5 Bb4 F4 Bb2";
+  const eDim7 = "Db5 Bb4 G4 E3", d7 = "C5 F#4 A3 D3";
+  const bbMajor = { tonic: { step: "B", alter: -1 }, mode: "major" };
+  const dm = "D5 A4 F4 D3", a = "E5 C#5 A4 A2", a7 = "G5 C#5 E4 A2";
+
+  it.each([
+    ["C7/Bb → F/A → F7", [[gm + "/2", cm, c7], [f6, f7, bb + "/2"]], 2, 3, 5, 6, "dominant7"],
+    ["E°7 → F → F7", [[gm, eDim7, f, f7], [bb + "/1"]], 1, 1, 3, 4, "diminished7"],
+  ] as const)("由 %s 支持 g 小调转降 B 大调", (_name, bars, start, prep, dominant, tonic, quality) => {
+    const { infer, contexts } = cut3aScore("G minor", bars);
+    const contextAt = contexts([8]);
+    expect(contextAt(0)).toBeUndefined();
+    expect(contextAt(start)?.key).toEqual(bbMajor);
+    expect(contextAt(tonic)?.key).toEqual(bbMajor);
+    const at = infer();
+    expect(at(prep)?.selected).toMatchObject({
+      identity: { structure: { quality } },
+      semantics: { interpretations: [{ localKey: bbMajor }] },
+    });
+    expect(at(dominant)?.selected).toMatchObject({
+      functionalBaseId: "D", semantics: { interpretations: [{ localKey: bbMajor }] },
+    });
+  });
+
+  it("落在句尾时从 A–A7 起归入 d 小调，保留共同和弦 Gm6 的原调归属", () => {
+    const { infer, contexts } = cut3aScore("G minor", [[gm, "G4 D4 G3 Bb2", a, a7], [dm + "/1"]]);
+    const localKey = { tonic: { step: "D", alter: 0 }, mode: "minor" };
+    const contextAt = contexts([8]);
+    const at = infer();
+    expect(contextAt(1)).toBeUndefined();
+    expect(at(1)?.selected?.semantics?.interpretations[0].localKey).toBeUndefined();
+    for (const beat of [2, 3, 4]) {
+      expect(contextAt(beat)?.key).toEqual(localKey);
+      expect(at(beat)?.selected?.semantics?.interpretations[0].localKey).toEqual(localKey);
+    }
+  });
+
+  const eb = "G5 Eb5 Bb4 Eb3", bbm = "Db5 Bb4 F4 Bb2", bbm7 = "Ab5 Db5 F4 Bb2";
+  const c = "G5 E5 C4 C3", fm6 = "Ab4 F4 C4 Ab2";
+  const fMinor = { tonic: { step: "F", alter: 0 }, mode: "minor" };
+
+  it("无乐句切分时也识别由 Bbm(7) 和 C(7) 准备的半小节 Fm/A♭", () => {
+    const { contexts, infer } = cut3aScore("Eb major", [
+      [eb, bbm, bbm7, c], [c7 + "/2", fm6 + "/2"], [eb + "/1"],
+    ]);
+    const contextAt = contexts();
+    const at = infer();
+    for (const beat of [1, 2, 3, 4, 6]) {
+      expect(contextAt(beat)?.key).toEqual(fMinor);
+      expect(at(beat)?.selected?.semantics?.interpretations[0].localKey).toEqual(fMinor);
+    }
+    expect(contextAt(8)).toBeUndefined();
+  });
+
+  it("半小节 d 小调终止的准备可回溯越过属七的阻碍进行", () => {
+    const { contexts, infer } = cut3aScore("G minor", [
+      [gm, "F5 D5 B4 G#2", a, a7],
+      [bb, "E5 Bb4 E4 G3", a7 + "/2"],
+      [dm + "/2", "C5 F#4 D4 A2", gm],
+    ]);
+    const localKey = { tonic: { step: "D", alter: 0 }, mode: "minor" };
+    const contextAt = contexts();
+    expect(contextAt(0)).toBeUndefined();
+    for (const beat of [1, 4, 5, 6, 8]) expect(contextAt(beat)?.key).toEqual(localKey);
+    expect(infer()(1)?.selected).toMatchObject({
+      functionalBaseId: "DDVII", semantics: { interpretations: [{ localKey }] },
+    });
+    expect(contextAt(10)).toBeUndefined();
+  });
+
+  it("同一重属导七换位时仍只算一次中段准备", () => {
+    const { contexts } = cut3aScore("G minor", [
+      [gm, eDim7, "Db5 E4 G3 Bb2", f7], [bb + "/2", gm + "/2"],
+    ]);
+    expect(contexts()(4)).toBeUndefined();
+  });
+
+  it.each([
+    ["只有一次副属解决", [eb + "/2.", c7], [fm6 + "/2", eb + "/2"], 4],
+    ["落在弱拍", [eb, bbm, bbm7, c], [c7, fm6 + "/2", eb], 5],
+    ["主和弦只持续一拍", [eb, bbm, bbm7, c], [c7 + "/2", fm6, eb], 6],
+    ["同一低音上换成另一和弦", [eb, bbm, bbm7, c], [c7 + "/2", fm6, "Gb5 Eb4 C4 Ab2"], 6],
+  ] as const)("%s 时不把中段局部属主当作转调", (_name, first, second, tonic) => {
+    const { contexts, infer } = cut3aScore("Eb major", [first, second, [eb + "/1"]]);
+    expect(contexts()(tonic)).toBeUndefined();
+    expect(infer()(tonic)?.selected?.semantics?.interpretations[0].localKey).toBeUndefined();
+  });
+
+  it.each([
+    ["内部短落点", [["E5 C5 G4 C3/2", "F#5 C5 A4 D3", "G5 B4 D4 G2"], ["E5 C5 G4 C3/1"]], []],
+    ["原调主和弦后的句尾长落点", [["E5 C5 G4 C3/2.", "F#5 C5 A4 D3"], ["G5 B4 D4 G2/1"]], [8]],
+  ] as const)("C 大调只有一次 V7/V–V 时保留原调，即使是%s", (_name, bars, ends) => {
+    const { project, contexts, infer } = cut3aScore("C major", bars);
+    const contextAt = contexts(ends);
+    const at = infer();
+    for (const item of buildChordInferenceObservations(project)) {
+      expect(contextAt(item.fromTick / project.ppq)).toBeUndefined();
+      expect(at(item.fromTick / project.ppq)?.selected?.semantics?.interpretations[0].localKey).toBeUndefined();
+    }
+  });
+
+  it("没有属七或变化准备时保留 g 小调自然 VII–III 的原调归属", () => {
+    const { contexts, infer } = cut3aScore("G minor", [
+      [gm, cm, f + "/2"], [bb + "/2", cm, d7], [gm + "/1"],
+    ]);
+    const contextAt = contexts([6, 12]);
+    const at = infer();
+    for (const beat of [1, 2, 4, 6, 7, 8]) {
+      expect(contextAt(beat)).toBeUndefined();
+      expect(at(beat)?.selected?.semantics?.interpretations[0].localKey).toBeUndefined();
+    }
+  });
+
+  it.each(["原调导音", "显式调号事件"])("关系大调准备不越过%s", boundary => {
+    const { project, contexts } = cut3aScore("G minor", [
+      [gm, c7, boundary === "原调导音" ? d7 : cm, cm], [f6, f7, bb + "/2"],
+    ]);
+    if (boundary === "显式调号事件") {
+      project.keyEvents.push({ ...project.keyEvents[0], id: "printed", tick: 3 * project.ppq });
+    }
+    const at = contexts([8]);
+    expect(at(1)).toBeUndefined();
+    expect(at(2)).toBeUndefined();
+    expect(at(3)?.key).toEqual(bbMajor);
+    expect(at(6)?.key).toEqual(bbMajor);
+  });
+
+  it("连接同一关系大调相邻的两次终止，包括途中副导七和副属七", () => {
+    const bDim7 = "Ab5 F5 D5 B2", bb7 = "Ab5 Bb4 F4 D3", ebTriad = "G5 Bb4 Eb4 Eb3";
+    const { contexts } = cut3aScore("G minor", [
+      [gm + "/2", cm, c7], [f6, f7, bb + "/2"],
+      [dm, bDim7, cm, bb7], [ebTriad, eDim7, f, f7], [bb + "/1"],
+    ]);
+    const at = contexts([8, 20]);
+    expect(at(0)).toBeUndefined();
+    for (const beat of [2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
+      expect(at(beat)?.key).toEqual(bbMajor);
+    }
+    expect(at(6)?.tonicIndex).not.toBe(at(16)?.tonicIndex);
+  });
+});
+
 const example = {
   key: "Bb major", soprano: "A4/2 Bb4/4", alto: "F4/2 F4/4",
   tenor: "C4/4 F3/4 F3/4", bass: "Eb3/2 D3/4",

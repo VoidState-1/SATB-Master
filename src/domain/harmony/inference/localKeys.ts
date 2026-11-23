@@ -1,7 +1,8 @@
 import { chordToneSpellings, type KeyReference } from "../../chordModel";
-import { leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, type SpelledPitchClass } from "../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, type SpelledPitchClass } from "../../pitch";
+import { resolvesLeadingSeventhToDoubledThird } from "../facts/tendencyResolution";
 import type { ChordInferenceObservation } from "./types";
-import { observationNotes, resolvesTone, soundingBass } from "./observations";
+import { observationNotes, resolvesTone, soundingBass, writtenFrame } from "./observations";
 import { harmonicMajorPreparation } from "./dominantFamily";
 
 export interface LocalKeyContext {
@@ -18,18 +19,22 @@ function fits(observation: ChordInferenceObservation, tones: readonly SpelledPit
   return observation.completeSatb && Object.values(observation.activeNotes).every(note => contains(tones, note.pitch));
 }
 
-// A repeated bass pitch can support a fresh harmony. Only use it as duration
-// evidence if the tonic still stands at the end of the first measure.
+// A repeated bass pitch can support a fresh harmony. A short hold must
+// remain on the tonic throughout; a full measure can include a return.
 function tonicDisplacedDuringHold(
-  observations: readonly ChordInferenceObservation[], tonic: number, end: number, measureEnd: number, key: KeyReference,
+  observations: readonly ChordInferenceObservation[], tonic: number, end: number, holdEnd: number, key: KeyReference,
+  requireContinuousTonic: boolean,
 ) {
   const tones = chordToneSpellings(key.tonic, key.mode);
   let displaced = false;
-  for (let i = tonic + 1; i <= end && observations[i].fromTick < measureEnd; i++) {
+  for (let i = tonic + 1; i <= end && observations[i].fromTick < holdEnd; i++) {
     const item = observations[i];
     if (fits(item, tones)) displaced = false;
     else if (item.attackVoiceIds.length === 4 && soundingBass(item) &&
-        item.soundingPitchClasses.filter(pitch => !contains(tones, pitch)).length >= 2) displaced = true;
+        item.soundingPitchClasses.filter(pitch => !contains(tones, pitch)).length >= 2) {
+      if (requireContinuousTonic) return true;
+      displaced = true;
+    }
   }
   return displaced;
 }
@@ -84,32 +89,90 @@ function homeTonicMode(item: ChordInferenceObservation) {
   });
 }
 
-/** Find the first independently supported preparation for the closing key.
- * Stop at the home tonic (including a parallel-mode pivot), silence, or an
- * already identified cadence. Common diatonic chords alone do not choose a key. */
+function doubleLeadingPreparation(
+  item: ChordInferenceObservation, next: ChordInferenceObservation,
+  tones: readonly SpelledPitchClass[], dominantTriad: readonly SpelledPitchClass[],
+) {
+  if (!fits(item, tones)) return false;
+  // Preserve the written-motion check for the complete diminished seventh
+  // resolving directly to V with a doubled third.
+  const doublesThird = item.soundingPitchClasses.length === 4 && next.soundingPitchClasses.length === 3 &&
+    fits(next, dominantTriad) &&
+    observationNotes(next).filter(({ note }) => pitchClassEquals(note.pitch, dominantTriad[1])).length === 2;
+  return !doublesThird || resolvesLeadingSeventhToDoubledThird(writtenFrame(item), writtenFrame(next), tones, dominantTriad);
+}
+
+/** Find preparation for the closing key within the current written key. */
 function preparationStart(
   observations: readonly ChordInferenceObservation[], landing: number, dominant: number,
   key: KeyReference, existing: ReadonlyMap<number, LocalKeyContext>,
+  settled: boolean,
 ) {
   const tonic = observations[landing];
   const targetScale = scale(key), homeScale = scale(tonic.key);
   const tonicTriad = chordToneSpellings(key.tonic, key.mode);
   const dominantRoot = scaleDegreePitchClass(key, 5);
+  const dominantSeventh = chordToneSpellings(dominantRoot, "dominant7");
+  const dominantTriad = dominantSeventh.slice(0, 3);
+  const sharpFourth = scaleDegreePitchClass(key, 4, 1);
+  const doubleDominant = chordToneSpellings(scaleDegreePitchClass(key, 2), "dominant7");
+  const doubleLeadingSeventh = chordToneSpellings(sharpFourth, "diminished7");
   const neapolitan = chordToneSpellings(scaleDegreePitchClass(key, 2, -1), "major");
   const leadingSeventh = chordToneSpellings(leadingTonePitchClass(key), "diminished7");
-  while (dominant > 0 && observations[dominant - 1].key === tonic.key &&
-    dominantSupports(observations[dominant - 1], key)) dominant--;
+  const relativeMajor = tonic.key.mode === "minor" && key.mode === "major" &&
+    pitchClassEquals(key.tonic, scaleDegreePitchClass(tonic.key, 3));
+  const homeLeadingTone = leadingTonePitchClass(tonic.key);
+  const subdominant = chordToneSpellings(scaleDegreePitchClass(key, 4), "major");
+  const supertonicSeventh = chordToneSpellings(scaleDegreePitchClass(key, 2), "minor7");
+  const relativeApplied = (relativeMajor ? [2, 4] : []).map(degree => {
+    const target = { tonic: scaleDegreePitchClass(key, degree), mode: "major" as const };
+    return {
+      dominant: chordToneSpellings(scaleDegreePitchClass(target, 5), "dominant7"),
+      leading: chordToneSpellings(leadingTonePitchClass(target), "diminished7"),
+    };
+  });
+  let hasSeventh = contains(observations[dominant].soundingPitchClasses, dominantSeventh[3]);
+  let hasTriad = !hasSeventh;
+  while (dominant > 0 && observations[dominant - 1].key === tonic.key && !existing.has(dominant - 1) &&
+    dominantSupports(observations[dominant - 1], key)) {
+    dominant--;
+    const seventh = contains(observations[dominant].soundingPitchClasses, dominantSeventh[3]);
+    hasSeventh ||= seventh;
+    hasTriad ||= !seventh;
+  }
+  const chromaticDominant = !contains(homeScale, dominantSeventh[1]);
+  const canUseDoubleDominant = !contains(homeScale, sharpFourth);
   const preparationBass = observations[dominant - 1]?.bass;
   let samePreparationBass = !!preparationBass;
   let start: number | undefined;
+  let relativeDiatonicStart: number | undefined;
+  let relativeCadenceSupport = hasSeventh;
+  let relativeBridgeFits = true;
+  let earlierCadenceEnd: number | undefined;
+  let firstEvidence: readonly SpelledPitchClass[] | undefined;
+  let independentEvidence = false;
+  let chromaticPreparationBeforeDominant = false;
   for (let j = dominant - 1; j >= 0; j--) {
     const item = observations[j];
-    if (!item.completeSatb || item.key !== tonic.key || existing.has(j) ||
+    if (!item.completeSatb || item.key !== tonic.key ||
         (tonic.metric?.measureNumber ?? 0) - (item.metric?.measureNumber ?? 0) > 4) break;
+    const previousContext = existing.get(j);
+    if (previousContext) {
+      if (relativeMajor && relativeBridgeFits && keyEquals(previousContext.key, key)) earlierCadenceEnd = j;
+      break;
+    }
     samePreparationBass = samePreparationBass && !!preparationBass && hasBass(item, preparationBass.pitch);
     const homeMode = homeTonicMode(item);
-    if (homeMode === item.key.mode) break;
+    if (homeMode === item.key.mode) {
+      // A common home tonic can lead into an expanded V–V7. An isolated
+      // applied dominant after the home tonic is still ambiguous.
+      if (start === undefined && j === dominant - 1 && settled && chromaticDominant &&
+          hasTriad && hasSeventh && hasBass(tonic, key.tonic) && fits(item, targetScale)) start = dominant;
+      break;
+    }
+    if (relativeMajor && contains(item.soundingPitchClasses, homeLeadingTone)) break;
     if (homeMode) {
+      relativeBridgeFits = false;
       const prev = observations[j - 1];
       let k = j - 1;
       while (k >= 0 && withinBeat(prev, observations[k]) && !dominantSupports(observations[k], item.key)) k--;
@@ -118,13 +181,40 @@ function preparationStart(
     }
     const cadential64 = j === dominant - 1 && hasBass(item, dominantRoot) &&
       fits(item, tonicTriad) && contains(item.soundingPitchClasses, key.tonic);
-    const distinctive = item.soundingPitchClasses.some(p => contains(targetScale, p) && !contains(homeScale, p));
-    const chromaticPreparation = samePreparationBass && item.soundingPitchClasses.length >= 3 &&
-      (fits(item, neapolitan) && contains(item.soundingPitchClasses, neapolitan[0]) ||
-       fits(item, leadingSeventh) && contains(item.soundingPitchClasses, leadingSeventh[0]));
-    if (cadential64 || chromaticPreparation || distinctive && fits(item, targetScale) ||
+    const pitches = item.soundingPitchClasses;
+    const fitsTargetScale = fits(item, targetScale);
+    const distinctive = fitsTargetScale && pitches.some(p => !contains(homeScale, p));
+    const leadingPreparation = pitches.length >= 3 && contains(pitches, leadingSeventh[0]) && fits(item, leadingSeventh);
+    const doubleDominantPreparation = canUseDoubleDominant && pitches.length >= 3 && contains(pitches, sharpFourth) &&
+      (fits(item, doubleDominant) || doubleLeadingPreparation(item, observations[j + 1], doubleLeadingSeventh, dominantTriad));
+    const appliedPreparation = relativeApplied.some(({ dominant, leading }) =>
+      pitches.length >= 3 && (contains(pitches, leading[0]) && fits(item, leading) ||
+        contains(pitches, dominant[1]) && contains(pitches, dominant[3]) && fits(item, dominant)));
+    if (relativeMajor) {
+      relativeBridgeFits &&= fitsTargetScale || doubleDominantPreparation || appliedPreparation;
+      relativeCadenceSupport ||= cadential64 || doubleDominantPreparation || appliedPreparation;
+      if (settled && pitches.length >= 3 && fitsTargetScale &&
+          (fits(item, subdominant) || contains(pitches, supertonicSeventh[0]) &&
+           contains(pitches, supertonicSeventh[1]) && fits(item, supertonicSeventh))) relativeDiatonicStart = j;
+    }
+    const chromaticPreparation = samePreparationBass && pitches.length >= 3 &&
+      (fits(item, neapolitan) && contains(pitches, neapolitan[0]) || leadingPreparation);
+    if (cadential64 || chromaticPreparation || distinctive || doubleDominantPreparation || appliedPreparation ||
         harmonicMajorPreparation(item, observations[j + 1], key)) start = j;
+    if (!settled && (cadential64 || distinctive || doubleDominantPreparation || leadingPreparation || appliedPreparation)) {
+      // Reattacks and inversions of the same pitch collection supply one
+      // piece of evidence, regardless of how many slices they occupy.
+      const previousEvidence = firstEvidence ??= pitches;
+      independentEvidence ||= pitches.length !== previousEvidence.length || pitches.some(p => !contains(previousEvidence, p));
+      chromaticPreparationBeforeDominant ||= j === dominant - 1 && (distinctive || doubleDominantPreparation) &&
+        pitches.some(p => !contains(homeScale, p) && !pitchClassEquals(p, dominantSeventh[1]));
+      if (leadingPreparation) start = j;
+    }
   }
+  if (relativeCadenceSupport && relativeDiatonicStart !== undefined)
+    start = Math.min(start ?? relativeDiatonicStart, relativeDiatonicStart);
+  if (!settled && !independentEvidence && !(chromaticDominant && chromaticPreparationBeforeDominant)) return;
+  if (start !== undefined && earlierCadenceEnd !== undefined) return earlierCadenceEnd + 1;
   return start;
 }
 
@@ -176,7 +266,7 @@ function parallelTonicPivot(
 }
 
 /** A written V(7)–I can tonicize a scale degree without a change of key.
- * Require a phrase close and independent preparation in the destination.
+ * Require consolidation and independent preparation in the destination.
  * Keep printed key changes as hard boundaries. */
 export function inferLocalKeys(
   observations: readonly ChordInferenceObservation[],
@@ -195,11 +285,15 @@ export function inferLocalKeys(
     const rest = next && next.soundingPitchClasses.length === 0;
     // Compare written duration in ticks. Beat numbers on the opposite sides
     // of a meter change need not describe the same pulse length.
-    const held = arrival.measureDurationTicks &&
-      (arrival.metric?.role === "downbeat" || arrival.metric?.role === "secondary-accent") &&
-      observations[end].toTick - arrival.fromTick >= arrival.measureDurationTicks;
+    const accented = arrival.metric?.role === "downbeat" || arrival.metric?.role === "secondary-accent";
+    const duration = observations[end].toTick - arrival.fromTick;
+    const measure = arrival.measureDurationTicks;
+    const held = !!measure && accented && duration >= measure;
     const closesPhrase = phraseEnds.has(observations[end].toTick) || rest;
-    if (!closesPhrase && !held) continue;
+    const settled = !!closesPhrase || held;
+    const halfMeasureHold = measure && arrival.measureBeatTicks && accented
+      ? Math.max(measure / 2, arrival.measureBeatTicks * 2) : undefined;
+    if (!settled && (!halfMeasureHold || duration < halfMeasureHold)) continue;
 
     // A surface note can precede the stable sonority at the same bass. Find
     // a written dominant and tonic within one beat of the actual bass change.
@@ -209,10 +303,11 @@ export function inferLocalKeys(
     for (let j = i; j <= end && (j === i || withinBeat(arrival, observations[j])); j++) {
       const cadence = closingKey(observations[j], dominants);
       if (!cadence) continue;
-      if (!closesPhrase && arrival.measureDurationTicks && tonicDisplacedDuringHold(
-        observations, j, end, arrival.fromTick + arrival.measureDurationTicks, cadence.key,
+      const requiredHold = held ? measure : halfMeasureHold;
+      if (!closesPhrase && requiredHold && tonicDisplacedDuringHold(
+        observations, j, end, arrival.fromTick + requiredHold, cadence.key, !held,
       )) continue;
-      const start = preparationStart(observations, i, cadence.dominant.index, cadence.key, keys);
+      const start = preparationStart(observations, j, cadence.dominant.index, cadence.key, keys, settled);
       if (start !== undefined) {
         const context = { key: cadence.key, dominantIndex: cadence.dominant.index, tonicIndex: j };
         for (let k = start; k <= end; k++) keys.set(k, context);

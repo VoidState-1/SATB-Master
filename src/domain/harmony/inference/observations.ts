@@ -119,6 +119,7 @@ export function buildChordInferenceObservations(
       key: keyAt(project.keyEvents, start),
       metric,
       measureDurationTicks: measure && measure.numerator * measure.beatLength,
+      measureBeatTicks: measure?.beatLength,
       completeSatb: notes.length === VOICE_ORDER.length,
     });
   }
