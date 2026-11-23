@@ -21,7 +21,7 @@ import {
 } from "../../pitch";
 import { VOICE_ORDER } from "../../project/voice";
 import { compareMetricStrength, type MetricPosition } from "../../rhythm/metric";
-import type { AnalysisSlice } from "../analysis";
+import type { AnalysisNote, AnalysisSlice } from "../analysis";
 import { leadingToneDescendsToTonicFifth } from "../facts/dominantMotion";
 import { sameKey } from "../segments";
 import { resolvesInVoice } from "../facts/tendencyResolution";
@@ -29,18 +29,28 @@ import { hasCompleteWrittenTertianVoicing, soundsCompleteWrittenChord } from "..
 import type { CadenceEvidence, CadenceSpanFacts } from "./model";
 import { writtenNeighborsOverHeldBass } from "../facts/prolongation";
 
-const decorationUpperVoices = ["soprano", "alto", "tenor"] as const;
+const upperVoices = ["soprano", "alto", "tenor"] as const;
 const endOf = (note: { startTick: number; durationTicks: number }) => note.startTick + note.durationTicks;
+
+function isPlainTertian(identity: ChordIdentity, quality: ChordQuality) {
+  const structure = identity.structure;
+  return structure.kind === "tertian" && structure.quality === quality &&
+    !structure.extensions.length && !structure.alterations.length;
+}
 
 function ordinaryRootChord(facts: CadenceSpanFacts, degree: 1 | 5, quality: ChordQuality) {
   const identity = facts.chord?.identity;
   const semantics = facts.span.semantics;
   return facts.degree === degree && facts.interpretationStatus === "resolved" &&
-    identity?.structure.kind === "tertian" && identity.structure.quality === quality &&
-    !identity.structure.extensions.length && !identity.structure.alterations.length &&
+    !!identity && isPlainTertian(identity, quality) &&
     !semantics?.cadenceRole && !semantics?.pedalContext && !semantics?.mixture &&
     pitchClassEquals(identity.root, scaleDegreePitchClass(facts.key, degree)) &&
     chordIdentityInversion(identity) === 0 ? identity : undefined;
+}
+
+function isRootDominantBassMotion(motion: ReturnType<typeof writtenInterval>) {
+  return (motion.diatonicSteps === 3 && motion.semitones === 5) ||
+    (motion.diatonicSteps === -4 && motion.semitones === -7);
 }
 
 function writtenArrival(before: AnalysisSlice, dominant: ChordIdentity, onset: AnalysisSlice, tonic: ChordIdentity) {
@@ -49,10 +59,10 @@ function writtenArrival(before: AnalysisSlice, dominant: ChordIdentity, onset: A
       VOICE_ORDER.some(voice => onset.notes[voice]!.startTick !== onset.tick)) return false;
 
   const bass = writtenInterval(before.notes.bass!.pitch, onset.notes.bass!.pitch);
-  if (!(bass.diatonicSteps === 3 && bass.semitones === 5 || bass.diatonicSteps === -4 && bass.semitones === -7)) return false;
+  if (!isRootDominantBassMotion(bass)) return false;
   const [, leading, , seventh] = chordIdentityToneSpellings(dominant);
   const [root, third, fifth] = chordIdentityToneSpellings(tonic);
-  return decorationUpperVoices.every(voice => {
+  return upperVoices.every(voice => {
     const from = before.notes[voice]!, to = onset.notes[voice]!;
     if (pitchClassEquals(from.pitch, leading)) {
       return resolvesInVoice(before, onset, voice, root, 1) ||
@@ -61,6 +71,59 @@ function writtenArrival(before: AnalysisSlice, dominant: ChordIdentity, onset: A
     }
     return !pitchClassEquals(from.pitch, seventh) || resolvesInVoice(before, onset, voice, third, -1);
   });
+}
+
+function hasDecorationBass(
+  bass: AnalysisNote, left: AnalysisSlice, gap: AnalysisSlice, right: AnalysisSlice,
+) {
+  const resumedBass = right.notes.bass!;
+  if (left.notes.bass?.id !== bass.id || gap.notes.bass!.id !== bass.id ||
+      !pitchClassEquals(resumedBass.pitch, bass.pitch)) return false;
+  if (resumedBass.id === bass.id) return true;
+
+  const motion = writtenInterval(bass.pitch, resumedBass.pitch);
+  return endOf(bass) === right.tick && resumedBass.startTick === right.tick &&
+    Math.abs(motion.diatonicSteps) === 7 && Math.abs(motion.semitones) === 12;
+}
+
+function decorationUpperVoiceRefs(
+  left: AnalysisSlice, gap: AnalysisSlice, right: AnalysisSlice, bass: AnalysisNote, tonic: ChordIdentity,
+) {
+  const moving = upperVoices.filter(voice => gap.notes[voice]!.id !== left.notes[voice]!.id);
+  const held = upperVoices.find(voice => !moving.includes(voice));
+  if (moving.length !== 2 || !held || right.notes[held]!.id !== gap.notes[held]!.id) return;
+  const notes = VOICE_ORDER.map(voice => gap.notes[voice]!);
+  if (notes.some(note => toMidi(note.pitch) < toMidi(bass.pitch) || toMidi(note.pitch) > toMidi(gap.notes.soprano!.pitch)) ||
+      hasCompleteWrittenTertianVoicing(notes.map(note => note.pitch))) return;
+
+  const tones = chordIdentityToneSpellings(tonic);
+  let stepwisePreparation = false;
+  for (const voice of moving) {
+    const from = left.notes[voice]!, decoration = gap.notes[voice]!, to = right.notes[voice]!;
+    const entry = writtenInterval(from.pitch, decoration.pitch), exit = writtenInterval(decoration.pitch, to.pitch);
+    if (tones.some(tone => pitchClassEquals(tone, decoration.pitch)) ||
+        endOf(from) !== gap.tick || decoration.startTick !== gap.tick ||
+        endOf(decoration) !== right.tick || to.startTick !== right.tick ||
+        !isWrittenStep(exit) || exit.diatonicSteps !== Math.sign(exit.semitones)) return;
+    const entersByStep = isWrittenStep(entry) && entry.diatonicSteps === Math.sign(entry.semitones);
+    const role = decoration.nonChordToneRole;
+    if (role && !(role === "neighbor" && spelledPitchEquals(from.pitch, to.pitch)) &&
+        !(role === "passing" && entersByStep && entry.diatonicSteps === exit.diatonicSteps)) return;
+    stepwisePreparation ||= entersByStep;
+  }
+  if (stepwisePreparation) {
+    return [gap.notes[held]!.id, ...moving.flatMap(voice => [gap.notes[voice]!.id, right.notes[voice]!.id])];
+  }
+}
+
+function isCertainSubdivision(metric: MetricPosition | undefined): metric is MetricPosition {
+  return metric?.role === "subdivision" && metric.confidence === "certain";
+}
+
+function hasSpanVoicing(
+  facts: CadenceSpanFacts, slices: readonly AnalysisSlice[], identity: ChordIdentity, allowOmittedFifth: boolean,
+) {
+  return facts.span.sliceIndices.every(index => hasCadentialWrittenVoicing(slices[index], identity, allowOmittedFifth));
 }
 
 /** A single weak cut in an already established final tonic. Keep the
@@ -86,54 +149,25 @@ export function closingTonicDecorationEvidence(
   if (!d || !t || !finish || !before || !onset || !left || !gap?.completeSatb || !right || !release ||
       before.endTick !== onset.tick || left.endTick !== gap.tick || gap.index >= right.index ||
       right.tick - gap.tick > beatTicks / 2 || !writtenArrival(before, d, onset, t)) return;
+
   // Repeating a key signature can split one sustained set of notes into several slices.
   if (slices.slice(gap.index, right.index).some(slice => slice.chord ||
       VOICE_ORDER.some(voice => slice.notes[voice]?.id !== gap.notes[voice]!.id))) return;
   const position = metricAt(gap.tick);
-  if (position?.role !== "subdivision" || position.confidence !== "certain" ||
-      compareMetricStrength(metricAt(right.tick), position) !== "stronger") return;
+  if (!isCertainSubdivision(position) || compareMetricStrength(metricAt(right.tick), position) !== "stronger") return;
   if (slices.slice(before.index, release.index + 1).some(slice => !sameKey(slice.key, before.key)) ||
-      !arrival.span.sliceIndices.every(index => hasCadentialWrittenVoicing(slices[index], t, true)) ||
-      !terminal.span.sliceIndices.every(index => hasCadentialWrittenVoicing(slices[index], finish, false)) ||
+      !hasSpanVoicing(arrival, slices, t, true) || !hasSpanVoicing(terminal, slices, finish, false) ||
       VOICE_ORDER.some(voice => endOf(release.notes[voice]!) !== terminal.span.toTick)) return;
 
-  const bass = onset.notes.bass!, resumedBass = right.notes.bass!;
-  if (left.notes.bass?.id !== bass.id || gap.notes.bass!.id !== bass.id ||
-      !pitchClassEquals(resumedBass.pitch, bass.pitch)) return;
-  if (resumedBass.id !== bass.id) {
-    const motion = writtenInterval(bass.pitch, resumedBass.pitch);
-    if (endOf(bass) !== right.tick || resumedBass.startTick !== right.tick ||
-        Math.abs(motion.diatonicSteps) !== 7 || Math.abs(motion.semitones) !== 12) return;
-  }
-
-  const moving = decorationUpperVoices.filter(voice => gap.notes[voice]!.id !== left.notes[voice]!.id);
-  const held = decorationUpperVoices.find(voice => !moving.includes(voice));
-  if (moving.length !== 2 || !held || right.notes[held]!.id !== gap.notes[held]!.id) return;
-  const notes = VOICE_ORDER.map(voice => gap.notes[voice]!);
-  if (notes.some(note => toMidi(note.pitch) < toMidi(bass.pitch) || toMidi(note.pitch) > toMidi(gap.notes.soprano!.pitch)) ||
-      hasCompleteWrittenTertianVoicing(notes.map(note => note.pitch))) return;
-
-  const tones = chordIdentityToneSpellings(t);
-  let stepwisePreparation = false;
-  for (const voice of moving) {
-    const from = left.notes[voice]!, decoration = gap.notes[voice]!, to = right.notes[voice]!;
-    const entry = writtenInterval(from.pitch, decoration.pitch), exit = writtenInterval(decoration.pitch, to.pitch);
-    if (tones.some(tone => pitchClassEquals(tone, decoration.pitch)) ||
-        endOf(from) !== gap.tick || decoration.startTick !== gap.tick ||
-        endOf(decoration) !== right.tick || to.startTick !== right.tick ||
-        !isWrittenStep(exit) || exit.diatonicSteps !== Math.sign(exit.semitones)) return;
-    const entersByStep = isWrittenStep(entry) && entry.diatonicSteps === Math.sign(entry.semitones);
-    const role = decoration.nonChordToneRole;
-    if (role && !(role === "neighbor" && spelledPitchEquals(from.pitch, to.pitch)) &&
-        !(role === "passing" && entersByStep && entry.diatonicSteps === exit.diatonicSteps)) return;
-    stepwisePreparation ||= entersByStep;
-  }
-  if (!stepwisePreparation) return;
+  const bass = onset.notes.bass!;
+  if (!hasDecorationBass(bass, left, gap, right)) return;
+  const upperRefs = decorationUpperVoiceRefs(left, gap, right, bass, t);
+  if (!upperRefs) return;
 
   return {
     code: "closing-tonic-decoration",
     value: "属七实奏落主后，主低音和一个上声部保持，两个弱位装饰音级进回到主和弦",
-    refs: [bass.id, gap.notes[held]!.id, ...moving.flatMap(voice => [gap.notes[voice]!.id, right.notes[voice]!.id])],
+    refs: [bass.id, ...upperRefs],
   };
 }
 
@@ -264,44 +298,21 @@ function seventhResolutionId(
   }
 }
 
-/** Bridge one weak soprano attack between a fully voiced V7 and its
- * written tonic landing. The gap contributes evidence, not a chord region. */
-export function dominantLandingGapEvidence(
-  dominant: CadenceSpanFacts,
-  tonic: CadenceSpanFacts,
-  slices: readonly AnalysisSlice[],
-  metricAt: (tick: number) => MetricPosition | undefined,
-  beatTicks: number,
-): CadenceEvidence | undefined {
+function dominantAndTonicIdentities(dominant: CadenceSpanFacts, tonic: CadenceSpanFacts) {
   const source = dominant.chord?.identity;
   const target = tonic.chord?.identity;
-  if (!source || !target || source.structure.kind !== "tertian" ||
-      source.structure.quality !== "dominant7" || source.structure.extensions.length || source.structure.alterations.length ||
-      target.structure.kind !== "tertian" || target.structure.quality !== tonic.key.mode ||
-      target.structure.extensions.length || target.structure.alterations.length ||
+  if (!source || !target || !isPlainTertian(source, "dominant7") || !isPlainTertian(target, tonic.key.mode) ||
       !pitchClassEquals(target.root, tonic.key.tonic) || tonic.span.semantics?.cadenceRole) return;
-  const sourceInversion = chordIdentityInversion(source);
-  const targetInversion = chordIdentityInversion(target);
-  if (!((sourceInversion === 0 && targetInversion === 0) ||
-        (sourceInversion === 3 && targetInversion === 1))) return;
+  return { source, target };
+}
 
-  const before = slices[dominant.span.sliceIndices.at(-1)!];
-  const middle = before && slices[before.index + 1];
-  const landing = tonic.boundarySlice;
-  if (!before?.completeSatb || !middle?.completeSatb || !landing?.completeSatb || middle.chord ||
-      landing.index !== middle.index + 1 || before.endTick !== dominant.span.toTick ||
-      middle.tick !== before.endTick || middle.endTick !== tonic.span.fromTick || landing.tick !== middle.endTick ||
-      before.key.id !== middle.key.id || middle.key.id !== landing.key.id ||
-      middle.endTick - middle.tick > beatTicks / 2) return;
-  const metric = metricAt(middle.tick);
-  if (metric?.confidence !== "certain" || metric.role !== "subdivision" ||
-      compareMetricStrength(metricAt(landing.tick), metric) !== "stronger") return;
-
+function sopranoGapNote(
+  before: AnalysisSlice, middle: AnalysisSlice, landing: AnalysisSlice,
+  source: ChordIdentity, target: ChordIdentity, sourceTones: readonly SpelledPitchClass[],
+) {
   const origin = before.notes.soprano!;
   const surface = middle.notes.soprano!;
   const arrival = landing.notes.soprano!;
-  const sourceTones = chordIdentityToneSpellings(source);
-  const targetTones = chordIdentityToneSpellings(target);
   const beforeNotes = VOICE_ORDER.map(voice => before.notes[voice]!);
   const landingTop = toMidi(arrival.pitch);
   const landingBass = toMidi(landing.notes.bass!.pitch);
@@ -312,7 +323,7 @@ export function dominantLandingGapEvidence(
       }) ||
       !pitchClassEquals(landing.notes.bass!.pitch, target.bass) ||
       landing.notes.bass!.startTick !== landing.tick || !pitchClassEquals(origin.pitch, sourceTones[2]) ||
-      surface.startTick !== middle.tick || surface.startTick + surface.durationTicks !== landing.tick ||
+      surface.startTick !== middle.tick || endOf(surface) !== landing.tick ||
       origin.id === surface.id || surface.nonChordToneRole || arrival.nonChordToneRole ||
       arrival.startTick !== landing.tick || !pitchClassEquals(arrival.pitch, target.root) ||
       VOICE_ORDER.some(voice => voice !== "soprano" && middle.notes[voice]?.id !== before.notes[voice]?.id) ||
@@ -322,9 +333,38 @@ export function dominantLandingGapEvidence(
   const out = writtenInterval(surface.pitch, arrival.pitch);
   // Revoice the established dominant, or leave an upper auxiliary by a
   // contrary third directly to the tonic (Spasobin §43.1–2).
-  if (!sourceTones.some(tone => pitchClassEquals(surface.pitch, tone)) &&
-      !(into.diatonicSteps === 1 && isWrittenStep(into) && into.semitones > 0 &&
-        out.diatonicSteps === -2 && (out.semitones === -3 || out.semitones === -4))) return;
+  if (sourceTones.some(tone => pitchClassEquals(surface.pitch, tone)) ||
+      (into.diatonicSteps === 1 && isWrittenStep(into) && into.semitones > 0 &&
+        out.diatonicSteps === -2 && (out.semitones === -3 || out.semitones === -4))) return surface;
+}
+
+/** Bridge one weak soprano attack between a fully voiced V7 and its
+ * written tonic landing. The gap contributes evidence, not a chord region. */
+export function dominantLandingGapEvidence(
+  dominant: CadenceSpanFacts,
+  tonic: CadenceSpanFacts,
+  slices: readonly AnalysisSlice[],
+  metricAt: (tick: number) => MetricPosition | undefined,
+  beatTicks: number,
+): CadenceEvidence | undefined {
+  const identities = dominantAndTonicIdentities(dominant, tonic);
+  if (!identities) return;
+  const { source, target } = identities;
+  const sourceInversion = chordIdentityInversion(source);
+  const targetInversion = chordIdentityInversion(target);
+  if (!((sourceInversion === 0 && targetInversion === 0) ||
+        (sourceInversion === 3 && targetInversion === 1))) return;
+
+  const frames = unlabelledTonicGapFrames(dominant, tonic, slices, beatTicks / 2);
+  if (!frames) return;
+  const { before, suspension: middle, landing } = frames;
+  const metric = metricAt(middle.tick);
+  if (!isCertainSubdivision(metric) || compareMetricStrength(metricAt(landing.tick), metric) !== "stronger") return;
+
+  const sourceTones = chordIdentityToneSpellings(source);
+  const targetTones = chordIdentityToneSpellings(target);
+  const surface = sopranoGapNote(before, middle, landing, source, target, sourceTones);
+  if (!surface) return;
 
   const leadingVoice = VOICE_ORDER.find(voice => pitchClassEquals(before.notes[voice]!.pitch, sourceTones[1]))!;
   const seventhVoice = VOICE_ORDER.find(voice => pitchClassEquals(before.notes[voice]!.pitch, sourceTones[3]))!;
@@ -427,67 +467,33 @@ export function octaveTonicEndingEvidence(
   };
 }
 
-const stagedArrivalUpperVoices = ["soprano", "alto", "tenor"] as const;
-
-/** The tonic bass arrives before the whole chord. Written tendency tones
- * connect the short sounding slice to both harmonies (§§36.4, 42.1–2). */
-export function stagedTonicArrivalEvidence(
-  dominant: CadenceSpanFacts,
-  tonic: CadenceSpanFacts,
-  slices: readonly AnalysisSlice[],
-  metricAt: (tick: number) => MetricPosition | undefined,
-  beatTicks: number | undefined,
-): CadenceEvidence | undefined {
-  const source = dominant.chord?.identity;
-  const target = tonic.chord?.identity;
-  if (!source || !target || !beatTicks ||
-      source.structure.kind !== "tertian" || source.structure.quality !== "dominant7" ||
-      source.structure.extensions.length || source.structure.alterations.length ||
-      target.structure.kind !== "tertian" || target.structure.quality !== tonic.key.mode ||
-      target.structure.extensions.length || target.structure.alterations.length ||
-      !pitchClassEquals(target.root, tonic.key.tonic) || tonic.span.semantics?.cadenceRole ||
-      chordIdentityInversion(target) !== 0) return;
-  const inversion = chordIdentityInversion(source);
-  if (inversion !== 0 && inversion !== 2) return;
-
-  const frames = tonicBassGapFrames(dominant, tonic, slices, beatTicks);
-  if (!frames) return;
-  const { before, suspension: early, landing } = frames;
-  if (!hasCadentialWrittenVoicing(before, source, inversion === 0) ||
-      !hasCadentialWrittenVoicing(landing, target, false)) return;
-
+function hasStagedTonicBass(before: AnalysisSlice, early: AnalysisSlice, landing: AnalysisSlice, inversion: number) {
   const earlyBass = early.notes.bass!;
   const landingBass = landing.notes.bass!;
   if (earlyBass.startTick !== early.tick ||
       (earlyBass.nonChordToneRole && earlyBass.nonChordToneRole !== "anticipation") ||
-      !spelledPitchEquals(earlyBass.pitch, landingBass.pitch)) return;
+      !spelledPitchEquals(earlyBass.pitch, landingBass.pitch)) return false;
 
   const bassMotion = writtenInterval(before.notes.bass!.pitch, earlyBass.pitch);
-  const bassResolves = inversion === 0
-    ? (bassMotion.diatonicSteps === 3 && bassMotion.semitones === 5) ||
-      (bassMotion.diatonicSteps === -4 && bassMotion.semitones === -7)
+  return inversion === 0 ? isRootDominantBassMotion(bassMotion)
     : bassMotion.diatonicSteps === -1 && bassMotion.semitones === -2;
-  if (!bassResolves) return;
+}
 
-  const onset = metricAt(early.tick);
-  const resolution = metricAt(landing.tick);
-  const anticipates = onset?.confidence === "certain" && onset.role === "subdivision" &&
-    compareMetricStrength(resolution, onset) === "stronger";
-  const sustains = onset?.role === "downbeat" && earlyBass.id === landingBass.id &&
-    compareMetricStrength(onset, resolution) === "stronger";
-  if (!anticipates && !sustains) return;
-
+function stagedUpperVoiceRefs(
+  before: AnalysisSlice, early: AnalysisSlice, landing: AnalysisSlice, source: ChordIdentity, target: ChordIdentity,
+) {
   const [, leading, fifth, seventh] = chordIdentityToneSpellings(source);
   const tonicTones = chordIdentityToneSpellings(target);
   const [root, third] = tonicTones;
+  const earlyBass = early.notes.bass!;
   const heldTendencies: string[] = [];
 
-  for (const voice of stagedArrivalUpperVoices) {
+  for (const voice of upperVoices) {
     const old = before.notes[voice]!, middle = early.notes[voice]!, next = landing.notes[voice]!;
     if (toMidi(middle.pitch) < toMidi(earlyBass.pitch)) return;
     if (tonicTones.some(tone => pitchClassEquals(middle.pitch, tone))) continue;
 
-    if (next.startTick !== landing.tick || middle.startTick + middle.durationTicks !== landing.tick) return;
+    if (next.startTick !== landing.tick || endOf(middle) !== landing.tick) return;
     const motion = writtenInterval(middle.pitch, next.pitch);
     const isLeading = pitchClassEquals(middle.pitch, leading);
     const isSeventh = pitchClassEquals(middle.pitch, seventh);
@@ -498,24 +504,59 @@ export function stagedTonicArrivalEvidence(
           motion.semitones < 0 && isWrittenStep(motion);
       if (old.id !== middle.id || !resolves) return;
       heldTendencies.push(middle.id, next.id);
-    } else if (!pitchClassEquals(middle.pitch, fifth) || !pitchClassEquals(next.pitch, root) ||
-        motion.diatonicSteps !== -1 || motion.semitones >= 0 || !isWrittenStep(motion)) {
-      return;
+      continue;
     }
+    if (!pitchClassEquals(middle.pitch, fifth) || !pitchClassEquals(next.pitch, root) ||
+        motion.diatonicSteps !== -1 || motion.semitones >= 0 || !isWrittenStep(motion)) return;
   }
   // The separate three-suspension proof handles all three upper notes held unchanged.
-  if (!heldTendencies.length || !stagedArrivalUpperVoices.some(voice => before.notes[voice]!.id !== early.notes[voice]!.id))
-    return;
+  if (heldTendencies.length && upperVoices.some(voice => before.notes[voice]!.id !== early.notes[voice]!.id)) {
+    return heldTendencies;
+  }
+}
 
+/** The tonic bass arrives before the whole chord. Written tendency tones
+ * connect the short sounding slice to both harmonies (§§36.4, 42.1–2). */
+export function stagedTonicArrivalEvidence(
+  dominant: CadenceSpanFacts,
+  tonic: CadenceSpanFacts,
+  slices: readonly AnalysisSlice[],
+  metricAt: (tick: number) => MetricPosition | undefined,
+  beatTicks: number | undefined,
+): CadenceEvidence | undefined {
+  if (!beatTicks) return;
+  const identities = dominantAndTonicIdentities(dominant, tonic);
+  if (!identities || chordIdentityInversion(identities.target) !== 0) return;
+  const { source, target } = identities;
+  const inversion = chordIdentityInversion(source);
+  if (inversion !== 0 && inversion !== 2) return;
+
+  const frames = tonicBassGapFrames(dominant, tonic, slices, beatTicks);
+  if (!frames) return;
+  const { before, suspension: early, landing } = frames;
+  if (!hasCadentialWrittenVoicing(before, source, inversion === 0) ||
+      !hasCadentialWrittenVoicing(landing, target, false) ||
+      !hasStagedTonicBass(before, early, landing, inversion)) return;
+
+  const earlyBass = early.notes.bass!;
+  const onset = metricAt(early.tick);
+  const resolution = metricAt(landing.tick);
+  const anticipates = isCertainSubdivision(onset) && compareMetricStrength(resolution, onset) === "stronger";
+  const sustains = onset?.role === "downbeat" && earlyBass.id === landing.notes.bass!.id &&
+    compareMetricStrength(onset, resolution) === "stronger";
+  if (!anticipates && !sustains) return;
+
+  const upperRefs = stagedUpperVoiceRefs(before, early, landing, source, target);
+  if (!upperRefs) return;
   return {
     code: "staged-tonic-arrival",
     value: "主低音先到，属和弦的持续趋向音在原声部解决后完整落主",
-    refs: [earlyBass.id, ...heldTendencies],
+    refs: [earlyBass.id, ...upperRefs],
   };
 }
 
 /** One sounding, unlabelled slice between two chord spans in the same written key. */
-export function tonicBassGapFrames(
+function unlabelledTonicGapFrames(
   dominant: CadenceSpanFacts,
   tonic: CadenceSpanFacts,
   slices: readonly AnalysisSlice[],
@@ -533,7 +574,14 @@ export function tonicBassGapFrames(
   return { before, suspension, landing };
 }
 
-const bassSuspensionUpperVoices = ["soprano", "alto", "tenor"] as const;
+export function tonicBassGapFrames(
+  dominant: CadenceSpanFacts,
+  tonic: CadenceSpanFacts,
+  slices: readonly AnalysisSlice[],
+  beatTicks: number,
+) {
+  return unlabelledTonicGapFrames(dominant, tonic, slices, beatTicks);
+}
 
 /** Spasobin §§37.1–2 and 14.4: a root-position V7 resolves over a tonic
  * bass that arrives before the three prepared upper-voice suspensions. */
@@ -578,7 +626,7 @@ export function tonicBassSuspensionEvidence(
   const [root, third] = chordIdentityToneSpellings(target);
   const bassMidi = toMidi(bass.pitch);
   const topMidi = toMidi(landing.notes.soprano!.pitch);
-  for (const voice of bassSuspensionUpperVoices) {
+  for (const voice of upperVoices) {
     const origin = before.notes[voice]!;
     const held = suspension.notes[voice]!;
     const resolved = landing.notes[voice]!;
@@ -599,7 +647,7 @@ export function tonicBassSuspensionEvidence(
   return {
     code: "tonic-bass-suspension",
     value: "强拍低音先落主音，持续的属七三、五、七音在同声部解决",
-    refs: [bass.id, ...bassSuspensionUpperVoices.flatMap(voice => [before.notes[voice]!.id, landing.notes[voice]!.id])],
+    refs: [bass.id, ...upperVoices.flatMap(voice => [before.notes[voice]!.id, landing.notes[voice]!.id])],
   };
 }
 
@@ -607,9 +655,7 @@ const inner = ["alto", "tenor"] as const;
 
 function plainChord(facts: CadenceSpanFacts, root: SpelledPitchClass, quality: "major" | "minor" | "dominant7", inversion: number) {
   const identity = facts.chord?.identity;
-  const structure = identity?.structure;
-  return identity && structure?.kind === "tertian" && structure.quality === quality &&
-    !structure.extensions.length && !structure.alterations.length && pitchClassEquals(identity.root, root) &&
+  return identity && isPlainTertian(identity, quality) && pitchClassEquals(identity.root, root) &&
     chordIdentityInversion(identity) === inversion ? identity : undefined;
 }
 
@@ -620,8 +666,7 @@ function resolvedSource(dominant: ChordIdentity, before: AnalysisSlice, landing:
   const [, leading, , seventh] = chordIdentityToneSpellings(dominant);
   const [root, third] = chordIdentityToneSpellings(tonic);
   const bass = writtenInterval(before.notes.bass!.pitch, landing.notes.bass!.pitch);
-  return ((bass.diatonicSteps === 3 && bass.semitones === 5) ||
-          (bass.diatonicSteps === -4 && bass.semitones === -7)) &&
+  return isRootDominantBassMotion(bass) &&
     (["soprano", ...inner] as const).every(voice => {
       const old = before.notes[voice]!, next = landing.notes[voice]!;
       const motion = writtenInterval(old.pitch, next.pitch);
@@ -632,6 +677,44 @@ function resolvedSource(dominant: ChordIdentity, before: AnalysisSlice, landing:
         (pitchClassEquals(next.pitch, third) && motion.diatonicSteps === -1 &&
           motion.semitones === (tonic.structure.kind === "tertian" && tonic.structure.quality === "minor" ? -2 : -1));
     });
+}
+
+function isClosingTonicPedalSequence(
+  dominant: CadenceSpanFacts, arrival: CadenceSpanFacts, applied: CadenceSpanFacts,
+  subdominant: CadenceSpanFacts, terminal: CadenceSpanFacts, beatTicks: number,
+) {
+  const key = arrival.key;
+  const sequence = [dominant, arrival, applied, subdominant, terminal];
+  if (key.mode !== "minor" || !arrival.isTonic || !terminal.isTonic || subdominant.degree !== 4 ||
+      !subdominant.isSubdominant || applied.span.status !== "complete" ||
+      [applied, subdominant].some(item => item.span.toTick - item.span.fromTick > beatTicks) ||
+      sequence.some((item, i) => !keyEquals(item.key, key) ||
+        (i > 0 && sequence[i - 1].span.toTick !== item.span.fromTick))) return false;
+
+  const semantics = applied.span.semantics;
+  if (!semantics || !["certain", "probable"].includes(harmonySemanticsConfidence(semantics))) return false;
+  const meaning = primaryHarmonyInterpretation(semantics);
+  return meaning.degree === 5 && meaning.degreeAlteration === 0 && meaning.appliedTarget?.degree === 4 &&
+    meaning.designation?.kind === "applied-dominant";
+}
+
+function resolvesInsideTonicPedal(
+  source: AnalysisSlice, target: AnalysisSlice, finish: AnalysisSlice,
+  applied: ChordIdentity, subdominant: ChordIdentity, fourth: SpelledPitchClass,
+) {
+  const [, appliedLeading, , appliedSeventh] = chordIdentityToneSpellings(applied);
+  const [, subdominantThird] = chordIdentityToneSpellings(subdominant);
+  return inner.every(voice => {
+    const old = source.notes[voice]!, middle = target.notes[voice]!, next = finish.notes[voice]!;
+    const into = writtenInterval(old.pitch, middle.pitch);
+    const out = writtenInterval(middle.pitch, next.pitch);
+    return old.startTick === source.tick && middle.startTick === target.tick && next.startTick === finish.tick &&
+      out.diatonicSteps === -1 && isWrittenStep(out) &&
+      ((pitchClassEquals(old.pitch, appliedLeading) && pitchClassEquals(middle.pitch, fourth) &&
+        into.diatonicSteps === 1 && into.semitones === 1) ||
+      (pitchClassEquals(old.pitch, appliedSeventh) && pitchClassEquals(middle.pitch, subdominantThird) &&
+        into.diatonicSteps === -1 && into.semitones === -2));
+  });
 }
 
 /** A single terminal tonic articulation contains the local V7/iv–iv–i
@@ -645,19 +728,9 @@ export function closingTonicPedalEvidence(
   slices: readonly AnalysisSlice[],
   beatTicks: number,
 ): CadenceEvidence | undefined {
-  const key = arrival.key;
-  const sequence = [dominant, arrival, applied, subdominant, terminal];
-  if (key.mode !== "minor" || !arrival.isTonic || !terminal.isTonic || subdominant.degree !== 4 ||
-      !subdominant.isSubdominant || applied.span.status !== "complete" ||
-      [applied, subdominant].some(item => item.span.toTick - item.span.fromTick > beatTicks) ||
-      sequence.some((item, i) => !keyEquals(item.key, key) ||
-        (i > 0 && sequence[i - 1].span.toTick !== item.span.fromTick))) return;
-  const semantics = applied.span.semantics;
-  if (!semantics || !["certain", "probable"].includes(harmonySemanticsConfidence(semantics))) return;
-  const meaning = primaryHarmonyInterpretation(semantics);
-  if (meaning.degree !== 5 || meaning.degreeAlteration !== 0 || meaning.appliedTarget?.degree !== 4 ||
-      meaning.designation?.kind !== "applied-dominant") return;
+  if (!isClosingTonicPedalSequence(dominant, arrival, applied, subdominant, terminal, beatTicks)) return;
 
+  const key = arrival.key;
   const root = key.tonic, fourth = scaleDegreePitchClass(key, 4);
   const d = plainChord(dominant, scaleDegreePitchClass(key, 5), "dominant7", 0);
   const t = plainChord(arrival, root, "minor", 0);
@@ -670,33 +743,19 @@ export function closingTonicPedalEvidence(
   if (!d || !t || !dOfS || !s || !end || !before?.completeSatb || !start?.completeSatb ||
       !source?.completeSatb || !target?.completeSatb || !finish?.completeSatb ||
       before.endTick !== start.tick || !resolvedSource(d, before, start, t)) return;
+
   const bass = start.notes.bass!, soprano = start.notes.soprano!;
   if (!pitchClassEquals(soprano.pitch, root) ||
-      [bass, soprano].some(note => note.startTick + note.durationTicks !== terminal.span.toTick)) return;
+      [bass, soprano].some(note => endOf(note) !== terminal.span.toTick)) return;
 
   const voicings = [[arrival, t, true], [applied, dOfS, true], [subdominant, s, false], [terminal, end, false]] as const;
-  for (const [facts, identity, allowOmittedFifth] of voicings) {
-    for (const index of facts.span.sliceIndices) {
-      const part = slices[index];
-      if (part.key.id !== before.key.id || part.notes.bass?.id !== bass.id || part.notes.soprano?.id !== soprano.id ||
-          !hasCadentialWrittenVoicing(part, identity, allowOmittedFifth)) return;
-    }
-  }
+  if (!voicings.every(([facts, identity, allowOmittedFifth]) => facts.span.sliceIndices.every(index => {
+    const part = slices[index];
+    return part.key.id === before.key.id && part.notes.bass?.id === bass.id && part.notes.soprano?.id === soprano.id &&
+      hasCadentialWrittenVoicing(part, identity, allowOmittedFifth);
+  }))) return;
+  if (!resolvesInsideTonicPedal(source, target, finish, dOfS, s, fourth)) return;
 
-  const [, appliedLeading, , appliedSeventh] = chordIdentityToneSpellings(dOfS);
-  const [, subdominantThird] = chordIdentityToneSpellings(s);
-  const resolvesInsidePedal = inner.every(voice => {
-    const old = source.notes[voice]!, middle = target.notes[voice]!, next = finish.notes[voice]!;
-    const into = writtenInterval(old.pitch, middle.pitch);
-    const out = writtenInterval(middle.pitch, next.pitch);
-    return old.startTick === source.tick && middle.startTick === target.tick && next.startTick === finish.tick &&
-      out.diatonicSteps === -1 && isWrittenStep(out) &&
-      ((pitchClassEquals(old.pitch, appliedLeading) && pitchClassEquals(middle.pitch, fourth) &&
-        into.diatonicSteps === 1 && into.semitones === 1) ||
-       (pitchClassEquals(old.pitch, appliedSeventh) && pitchClassEquals(middle.pitch, subdominantThird) &&
-        into.diatonicSteps === -1 && into.semitones === -2));
-  });
-  if (!resolvesInsidePedal) return;
   return {
     code: "closing-tonic-pedal",
     value: "落主后两个外声部持续同一主音，内声经下属回主至共同释放",
