@@ -545,7 +545,78 @@ function hasAuthenticTailAnchor(
 function deceptiveRepriseCandidate(phrase: PhraseSegment, earlier: NonNullable<ReturnType<typeof precedingDetachedDeception>>) {
   return candidate(phrase, "deceptive", [earlier.dominant, earlier.vi], [
     earlier.evidence, { code: "dominant-to-alternative", value: "本调原位属和弦到六级" },
-  ], { confidenceCap: "probable", observedLandingTick: earlier.vi.span.fromTick });
+  ], {
+    form: isFifthDegreeDominant(earlier.dominant) ? "authentic" : undefined,
+    confidenceCap: "probable",
+    observedLandingTick: earlier.vi.span.fromTick,
+  });
+}
+
+function isSubmediant(fact: CadenceSpanFacts) {
+  return fact.family === "tonic" && fact.degree === 6;
+}
+
+function continuesSubmediant(left: CadenceSpanFacts, right: CadenceSpanFacts) {
+  return isSubmediant(left) && isSubmediant(right) && connectionIsValid(left, right) &&
+    left.chord && right.chord && pitchClassEquals(left.chord.identity.root, right.chord.identity.root);
+}
+
+function deceptiveCadence(
+  phrase: PhraseSegment,
+  approach: DominantApproach,
+  ending: readonly CadenceSpanFacts[],
+  landingEvidence: CadenceEvidence,
+  confidenceCap?: CadenceConfidence,
+) {
+  const evidence: CadenceEvidence[] = [
+    landingEvidence,
+    ...approach.evidence,
+    { code: "dominant-to-alternative", value: "当前调性 D -> 非 I 级主功能" },
+  ];
+  if (approach.path[0].isCadential64) {
+    evidence.push({ code: "cadential64-chain", value: "K46 -> D -> VI" });
+  }
+  return candidate(phrase, "deceptive", [...approach.path, ...ending], evidence, {
+    form: isFifthDegreeDominant(approach.path.at(-1)!) ? "authentic" : undefined,
+    confidenceCap,
+    observedLandingTick: ending.length > 1 ? ending[0].span.fromTick : undefined,
+  });
+}
+
+function interiorDeceptiveEvidence(
+  phrase: PhraseSegment,
+  approach: DominantApproach,
+  dominant: CadenceSpanFacts,
+  ending: CadenceSpanFacts,
+  metricAt: (tick: number) => ReturnType<typeof metricPositionAt>,
+  writtenBeatAt: (tick: number) => number | undefined,
+): CadenceEvidence | undefined {
+  const onset = ending.span.fromTick;
+  const metric = metricAt(onset);
+  const beat = writtenBeatAt(onset);
+  if (!beat || !metric || metric.confidence !== "certain" || metric.level < 2 ||
+      ending.span.toTick - onset < beat * 2) return;
+  const preparation = approach.path[0];
+  if (preparation.isCadential64) {
+    return {
+      code: "metric-support",
+      value: "终止四六准备后，六级在强拍或次强拍持续至少两拍",
+      refs: [preparation.span.id, ending.span.id],
+    };
+  }
+
+  const dominantOnset = dominant.span.fromTick;
+  const dominantBeat = writtenBeatAt(dominantOnset);
+  if (metric.role === "downbeat" && onset >= phrase.fromTick + (phrase.toTick - phrase.fromTick) * 0.4 &&
+      (metricAt(dominantOnset)?.measureNumber ?? 0) >= 2 && dominantBeat &&
+      dominant.span.toTick - dominantOnset >= dominantBeat * 2 &&
+      isRootPosition(dominant) && writtenBassMatches(dominant)) {
+    return {
+      code: "metric-support",
+      value: "乐句中后段原位属与原位六级各持续至少两拍，六级落在小节强拍",
+      refs: [dominant.span.id, ending.span.id],
+    };
+  }
 }
 
 function articulatedInteriorCadences(
@@ -553,23 +624,31 @@ function articulatedInteriorCadences(
   facts: readonly CadenceSpanFacts[],
   slices: readonly AnalysisSlice[],
   measureFor: (tick: number) => MeasureInfo | undefined,
+  metricAt: (tick: number) => ReturnType<typeof metricPositionAt>,
+  writtenBeatAt: (tick: number) => number | undefined,
 ) {
-  if (phrase.startBoundary?.source === "manual" || phrase.endBoundary?.source === "manual") return [];
+  const hasManualBoundary = phrase.startBoundary?.source === "manual" || phrase.endBoundary?.source === "manual";
   const candidates: CadenceCandidate[] = [];
   for (let index = 1; index < facts.length - 1; index++) {
     const previous = facts[index - 1], ending = facts[index], following = facts[index + 1];
-    const deceptive = ending.family === "tonic" && ending.degree === 6;
-    if (!(ending.isTonic || deceptive) || !isFifthDegreeDominant(previous) ||
-        !connectionIsValid(previous, ending) || !connectionIsValid(ending, following)) continue;
-    const evidence = articulatedEndingEvidence(phrase, previous, ending, following, slices, measureFor);
-    if (!evidence) continue;
-    if (deceptive) {
-      candidates.push(candidate(phrase, "deceptive", [previous, ending], [
-        evidence,
-        { code: "dominant-to-alternative", value: "当前调性 D -> VI" },
-      ], { confidenceCap: "probable" }));
-    } else {
+    const deceptive = isSubmediant(ending);
+    if (!(deceptive || (ending.isTonic && !hasManualBoundary)) ||
+        !isFifthDegreeDominant(previous) || !connectionIsValid(previous, ending)) continue;
+    const evidence = connectionIsValid(ending, following)
+      ? articulatedEndingEvidence(phrase, previous, ending, following, slices, measureFor)
+      : undefined;
+    if (!deceptive) {
+      if (!evidence) continue;
       candidates.push(authenticCadence(phrase, dominantApproach(facts, index - 1), ending, evidence));
+      continue;
+    }
+
+    if (!isRootPosition(ending) || !writtenBassMatches(ending) ||
+        continuesSubmediant(ending, following) || beginsInsideManualCut(phrase, previous)) continue;
+    const approach = dominantApproach(facts, index - 1, undefined, item => !beginsInsideManualCut(phrase, item));
+    const support = evidence ?? interiorDeceptiveEvidence(phrase, approach, previous, ending, metricAt, writtenBeatAt);
+    if (support) {
+      candidates.push(deceptiveCadence(phrase, approach, [ending], support, "probable"));
     }
   }
   return candidates;
@@ -634,7 +713,7 @@ export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandi
     if (phrase.confidence === "ambiguous") continue;
     const facts = spansForPhrase(analysis, phrase)
       .map((span) => factsFor(analysis, span));
-    interiorCandidates.push(...articulatedInteriorCadences(phrase, facts, analysis.slices, measureFor));
+    interiorCandidates.push(...articulatedInteriorCadences(phrase, facts, analysis.slices, measureFor, metricAt, writtenBeatAt));
     const terminal = facts.at(-1);
     if (!terminal || terminal.interpretationStatus !== "resolved") continue;
     if (phrase.toTick === analysis.project.lengthTicks && terminal.span.toTick < phrase.toTick &&
@@ -876,24 +955,17 @@ export function detectCadences(analysis: CadenceAnalysis): readonly CadenceCandi
       );
     }
 
-    if (
-      previous &&
-      connectionIsValid(previous, terminal) &&
-      previous.isDominant &&
-      terminal.family === "tonic" &&
-      terminal.degree !== 1
-    ) {
-      allCandidates.push(
-        candidate(
-          phrase,
-          "deceptive",
-          [previous, terminal],
-          [
-            phraseEvidence,
-            { code: "dominant-to-alternative", value: "当前调性 D -> 非 I 级主功能" },
-          ],
-        ),
-      );
+    if (terminal.family === "tonic" && terminal.degree !== 1) {
+      let landingIndex = facts.length - 1;
+      while (landingIndex > 0 && continuesSubmediant(facts[landingIndex - 1], facts[landingIndex])) landingIndex--;
+      const ending = facts[landingIndex];
+      const dominantIndex = landingIndex - 1;
+      const dominant = facts[dominantIndex];
+      if (dominant?.isDominant && connectionIsValid(dominant, ending) &&
+          (ending === terminal || (isRootPosition(ending) && writtenBassMatches(ending)))) {
+        const approach = dominantApproach(facts, dominantIndex, gapEvidence);
+        allCandidates.push(deceptiveCadence(phrase, approach, facts.slice(landingIndex), phraseEvidence));
+      }
     }
 
     if (terminal.isSubdominant && terminal.degree === 4 && previous?.isTonic &&

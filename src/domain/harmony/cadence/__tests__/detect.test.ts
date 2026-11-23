@@ -71,6 +71,101 @@ function baseProject() {
   return project;
 }
 
+type CadenceTestBar = readonly [string, string, string, string, string];
+
+function deceptiveProject(bars: readonly CadenceTestBar[]) {
+  return compileScoreText([
+    "satb 1",
+    "key C major",
+    "meter 4/4",
+    `bars 1..${bars.length} {`,
+    ...["S", "A", "T", "B", "H"].map((voice, index) =>
+      `  ${voice}: | ${bars.map(bar => bar[index]).join(" | ")} |`),
+    "}",
+  ].join("\n")).project;
+}
+
+describe("阻碍终止", () => {
+  const tonic: CadenceTestBar = ["C5/1", "G4/1", "E4/1", "C3/1", "I/1"];
+  const subdominant: CadenceTestBar = ["A4/1", "F4/1", "C4/1", "F3/1", "IV/1"];
+  const dominant: CadenceTestBar = ["D5/1", "B4/1", "G4/1", "G2/1", "V/1"];
+  const submediant: CadenceTestBar = ["C5/1", "E4/1", "C4/1", "A2/1", "vi/1"];
+  const prepared: CadenceTestBar = [
+    "E5/4 D5/4 D5/2", "C5/4 B4/4 B4/2", "G4/4 G4/4 F4/2", "G2/4 G2/4 G2/2", "K46/4 V/4 V7/2",
+  ];
+  const interiorLanding: CadenceTestBar = [
+    "C5/2 A4/2", "E4/2 F4/2", "C4/2 C4/2", "A2/2 F3/2", "vi/2 IV/2",
+  ];
+  const deceptive = (project: ReturnType<typeof deceptiveProject>) =>
+    buildHarmonyAnalysis(project).cadenceCandidates.filter(cadence => cadence.kind === "deceptive");
+  const withManualCut = (bars: readonly CadenceTestBar[]) => {
+    const project = deceptiveProject(bars);
+    project.structure.phraseBoundaries.push({
+      id: "manual", tick: 8 * PPQ, source: "manual", confidence: "certain",
+    });
+    return project;
+  };
+
+  it("把句末五级属到六级标为正格阻碍终止", () => {
+    expect(deceptive(deceptiveProject([dominant, submediant]))).toMatchObject([
+      { form: "authentic", fromTick: 0, toTick: 8 * PPQ },
+    ]);
+  });
+
+  it("句末范围包含终止四六和随后的连续属功能", () => {
+    const analysis = buildHarmonyAnalysis(deceptiveProject([prepared, submediant]));
+    expect(analysis.cadenceCandidates).toMatchObject([{
+      kind: "deceptive", form: "authentic", fromTick: 0, toTick: 8 * PPQ,
+      spanIds: analysis.harmonySpans.map(span => span.id),
+      evidence: expect.arrayContaining([expect.objectContaining({ code: "cadential64-chain" })]),
+    }]);
+  });
+
+  it("句末六级转位延长区间并保留原位六级的实际落点", () => {
+    const revoiced: CadenceTestBar = [
+      "C5/2 A4/2", "E4/2 E4/2", "C4/2 C4/2", "A2/2 C3/2", "vi/2 vi6/2",
+    ];
+    const analysis = buildHarmonyAnalysis(deceptiveProject([dominant, revoiced]));
+    expect(analysis.cadenceCandidates).toMatchObject([{
+      kind: "deceptive", form: "authentic", fromTick: 0, toTick: 8 * PPQ, observedLandingTick: 4 * PPQ,
+      spanIds: analysis.harmonySpans.map(span => span.id),
+    }]);
+  });
+
+  it("人工分句后保留终止四六准备的句内强拍阻碍和后续全终止", () => {
+    const project = withManualCut([tonic, subdominant, tonic, prepared, interiorLanding, subdominant, dominant, tonic]);
+    const analysis = buildHarmonyAnalysis(project);
+    expect(analysis.cadenceCandidates).toContainEqual(expect.objectContaining({
+      kind: "deceptive", form: "authentic", phraseId: analysis.phraseSegments[1].id,
+      fromTick: 12 * PPQ, toTick: 18 * PPQ,
+    }));
+    expect(analysis.cadenceCandidates).toContainEqual(expect.objectContaining({
+      kind: "full", toTick: 32 * PPQ,
+    }));
+  });
+
+  it("人工乐句中后段的长原位属和强拍原位六级可独立支持阻碍终止", () => {
+    const approach: CadenceTestBar = ["A4/2 D5/2", "F4/2 B4/2", "C4/2 G4/2", "F3/2 G2/2", "IV/2 V/2"];
+    const project = withManualCut([tonic, subdominant, tonic, subdominant, approach, interiorLanding, dominant, tonic]);
+    expect(deceptive(project)).toMatchObject([
+      { form: "authentic", fromTick: 18 * PPQ, toTick: 22 * PPQ },
+    ]);
+  });
+
+  it("人工乐句开头的普通属到六级保留为句内连接", () => {
+    const project = withManualCut([tonic, subdominant, dominant, interiorLanding, tonic, subdominant, dominant, tonic]);
+    expect(deceptive(project)).toEqual([]);
+  });
+
+  it("即使前有终止四六，弱拍一拍的六级也保留为句内连接", () => {
+    const shortLanding: CadenceTestBar = [
+      "D5/4 C5/4 A4/2", "B4/4 E4/4 F4/2", "G4/4 C4/4 C4/2", "G2/4 A2/4 F3/2", "V/4 vi/4 IV/2",
+    ];
+    const project = withManualCut([tonic, subdominant, tonic, prepared, shortLanding, subdominant, dominant, tonic]);
+    expect(deceptive(project)).toEqual([]);
+  });
+});
+
 describe("终止候选检测", () => {
   function cadenceInD(source = 'symbol=V localKey="D major"', bass = "A2/4 D3/4", soprano = "E4/4 D4/4") {
     const score = `satb 1

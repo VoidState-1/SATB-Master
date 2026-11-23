@@ -13,6 +13,8 @@ import {
   phraseAtTick,
 } from "./index";
 import { compileScoreText } from "../../scoreText";
+import { buildHarmonyAnalysis } from "../analysis";
+import { applyHarmonyInference, inferHarmony } from "../inference";
 
 function note(id: string, startTick: number, durationTicks: number): NoteEvent {
   return {
@@ -67,6 +69,85 @@ bars 1..8 {
   auxiliary.semantics!.cadenceRole = "pedal64";
   return project;
 }
+
+function regularDominantPeriod(
+  fourthBar: readonly [string, string, string, string],
+  meter = "4/4",
+  fifthBar = ["C5", "G4", "C4", "E2"],
+) {
+  const wholeBar = meter === "2/4" ? "2" : "1";
+  return `satb 1
+key C major
+meter ${meter}
+bars 1..8 {
+  S: | E5/${wholeBar} | F5/${wholeBar} | C5/${wholeBar} | ${fourthBar[0]} | ${fifthBar[0]}/${wholeBar} | A4/${wholeBar} | D5/${wholeBar} | C5/${wholeBar} |
+  A: | G4/${wholeBar} | A4/${wholeBar} | G4/${wholeBar} | ${fourthBar[1]} | ${fifthBar[1]}/${wholeBar} | F4/${wholeBar} | G4/${wholeBar} | G4/${wholeBar} |
+  T: | C4/${wholeBar} | C4/${wholeBar} | E4/${wholeBar} | ${fourthBar[2]} | ${fifthBar[2]}/${wholeBar} | C4/${wholeBar} | B3/${wholeBar} | E4/${wholeBar} |
+  B: | C3/${wholeBar} | F3/${wholeBar} | C3/${wholeBar} | ${fourthBar[3]} | ${fifthBar[3]}/${wholeBar} | F3/${wholeBar} | G2/${wholeBar} | C3/${wholeBar} |
+}`;
+}
+
+function blindPhraseAnalysis(score: string) {
+  const project = compileScoreText(score).project;
+  const applied = applyHarmonyInference(project, inferHarmony(project), {
+    mode: "replace-unlocked", writeNonChordToneRoles: true,
+  });
+  return buildHarmonyAnalysis(applied.project);
+}
+
+describe("盲推规整乐段的属和弦中点", () => {
+  const revoicedDominant = ["D5/2. B4/4", "G4/2. D4/4", "B3/2. G3/4", "G2/2. G2/4"] as const;
+
+  it("原位属接属七三转位，在主六开始的小节线切出半终止", () => {
+    const score = regularDominantPeriod([
+      "D5/2 D5/2", "G4/2 G4/2", "B3/2 B3/2", "G2/2 F2/2",
+    ]);
+    const analysis = blindPhraseAnalysis(score);
+    expect(analysis.phraseSegments.map(phrase => phrase.toTick)).toEqual([16 * PPQ, 32 * PPQ]);
+    expect(analysis.cadenceCandidates).toContainEqual(expect.objectContaining({
+      kind: "half", form: "authentic", fromTick: 12 * PPQ, toTick: 16 * PPQ,
+    }));
+  });
+
+  it.each([
+    ["主六", ["C5", "G4", "C4", "E2"]],
+    ["下属", ["A4", "F4", "C4", "F3"]],
+  ])("原位属三拍后换位重奏一拍，下一小节进入%s时按合计时值分句", (_label, fifthBar) => {
+    const score = regularDominantPeriod(revoicedDominant, "4/4", fifthBar);
+    const analysis = blindPhraseAnalysis(score);
+    expect(analysis.phraseSegments.map(phrase => phrase.toTick)).toEqual([16 * PPQ, 32 * PPQ]);
+    expect(analysis.cadenceCandidates).toContainEqual(expect.objectContaining({
+      kind: "half", form: "authentic", fromTick: 12 * PPQ, toTick: 16 * PPQ,
+    }));
+  });
+
+  it("原位属的重奏延续到下一小节时保留连续乐句", () => {
+    const score = regularDominantPeriod(revoicedDominant, "4/4", ["D5", "G4", "B3", "G2"]);
+    const analysis = blindPhraseAnalysis(score);
+    expect(analysis.phraseSegments.map(phrase => phrase.toTick)).toEqual([32 * PPQ]);
+  });
+
+  it.each([
+    ["长音齐收", ["D5/2", "G4/2", "B3/2", "G2/2"]],
+    ["逐拍重奏", ["D5/4 B4/4", "G4/4 D4/4", "B3/4 G3/4", "G2/4 G2/4"]],
+  ] as const)("2/4 拍的整小节原位属在八小节乐段中点形成半终止（%s）", (_label, fourthBar) => {
+    const score = regularDominantPeriod(fourthBar, "2/4");
+    const analysis = blindPhraseAnalysis(score);
+    expect(analysis.phraseSegments.map(phrase => phrase.toTick)).toEqual([8 * PPQ, 16 * PPQ]);
+    expect(analysis.cadenceCandidates).toContainEqual(expect.objectContaining({
+      kind: "half", form: "authentic", fromTick: 6 * PPQ, toTick: 8 * PPQ,
+    }));
+  });
+
+  it("缺少原位属准备的非中点经过性属七三转位保留连续乐句", () => {
+    const score = regularDominantPeriod([
+      "C5/2 D5/4 C5/4", "G4/2 G4/4 G4/4", "E4/2 B3/4 C4/4", "C3/2 F2/4 E3/4",
+    ]).replace("E3/4 | E2/1", "E3/4 | C3/1");
+    const analysis = blindPhraseAnalysis(score);
+    expect(analysis.phraseSegments.map(phrase => phrase.toTick)).toEqual([32 * PPQ]);
+    expect(analysis.cadenceCandidates.some(candidate => candidate.kind === "half")).toBe(false);
+  });
+});
 
 describe("乐句分析", () => {
   it("将工程首尾作为确定边界并生成单个乐句", () => {

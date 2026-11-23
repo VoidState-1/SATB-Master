@@ -235,12 +235,12 @@ function longestEndingDuration(project: PhraseAnalysisInput, tick: number) {
     .map((note) => note.durationTicks)) ?? []));
 }
 
-function sixFourBassPath(
+function writtenBassPath(
   project: PhraseAnalysisInput,
   source: ChordRegion,
   middle: ChordRegion,
   target: ChordRegion,
-  role: "pedal64" | "passing64",
+  holdOuterChords: boolean,
 ) {
   const bass = project.satbTracks?.find(track => track.id === "bass");
   // A chord's bass spelling has no register and cannot rule out octave leaps.
@@ -264,9 +264,9 @@ function sixFourBassPath(
   };
   // A passing bass needs the two steps at the edges. A pedal must
   // stay on the same written pitch through all three harmonies.
-  const before = pitchAcross(role === "pedal64" ? source.startTick : middle.startTick - 1, middle.startTick);
+  const before = pitchAcross(holdOuterChords ? source.startTick : middle.startTick - 1, middle.startTick);
   const during = pitchAcross(middle.startTick, target.startTick);
-  const after = pitchAcross(target.startTick, target.startTick + (role === "pedal64" ? target.durationTicks : 1));
+  const after = pitchAcross(target.startTick, target.startTick + (holdOuterChords ? target.durationTicks : 1));
   if (!before || !during || !after ||
       !pitchClassEquals(before, source.identity.bass) ||
       !pitchClassEquals(during, middle.identity.bass) ||
@@ -308,7 +308,7 @@ function isProlongingSixFour(
       chordIdentityEquals(source.identity, { ...target.identity, bass: source.identity.bass });
   if (!sameHarmony) return false;
 
-  const bass = sixFourBassPath(project, source, middle, target, role);
+  const bass = writtenBassPath(project, source, middle, target, role === "pedal64");
   if (!bass) return false;
   const { before, during, after } = bass;
   if (role === "pedal64") {
@@ -320,12 +320,68 @@ function isProlongingSixFour(
   return isWrittenStep(into) && isWrittenStep(out) && into.diatonicSteps === out.diatonicSteps;
 }
 
+function hasMidpointDominantHold(
+  project: PhraseAnalysisInput,
+  regions: readonly ChordRegion[],
+  terminal: ChordRegion,
+  previous: ChordRegion | undefined,
+  following: ChordRegion,
+  beatLength: number,
+  longRelease: boolean,
+) {
+  const tick = following.startTick;
+  const followingFamily = functionalFamily(following);
+  if (terminal.startTick + terminal.durationTicks !== tick ||
+      !followingFamily || followingFamily === "dominant") return false;
+
+  const keyEvents = orderedEvents(project.keyEvents ?? []);
+  const localKeyOf = (region: ChordRegion) =>
+    (region.semantics && primaryHarmonyInterpretation(region.semantics).localKey) ??
+    (keyEvents.length ? eventAtTick(keyEvents, region.startTick) : undefined);
+  const key = localKeyOf(terminal);
+  const followingKey = localKeyOf(following);
+  if (!key || !followingKey || !sameKey(key, followingKey)) return false;
+
+  const inversion = chordIdentityInversion(terminal.identity);
+  if (inversion !== 0 && inversion !== 3) return false;
+  if (inversion === 0 && terminal.durationTicks >= beatLength * 2) return true;
+  if (inversion === 3) {
+    const followingInversion = chordIdentityInversion(following.identity);
+    if (!previous || followingFamily !== "tonic" || !following.semantics ||
+        primaryHarmonyInterpretation(following.semantics).degree !== 1 || followingInversion > 1) return false;
+    const preparation = previousRegion(regions, previous);
+    if (isProlongingSixFour(project, previousRegion(regions, preparation), preparation, previous)) return false;
+
+    const bass = writtenBassPath(project, previous, terminal, following, false);
+    if (!bass) return false;
+    const into = writtenInterval(bass.before, bass.during);
+    const out = writtenInterval(bass.during, bass.after);
+    if (!isWrittenStep(into) || into.diatonicSteps !== -1 ||
+        (followingInversion === 1 && (!isWrittenStep(out) || out.diatonicSteps !== -1))) return false;
+  }
+
+  let start = terminal;
+  for (let preceding = previous; preceding; preceding = previousRegion(regions, start)) {
+    if (preceding.startTick >= start.startTick || !preceding.semantics ||
+        functionalFamily(preceding) !== "dominant" ||
+        primaryHarmonyInterpretation(preceding.semantics).degree !== 5 ||
+        chordIdentityInversion(preceding.identity) !== 0 ||
+        !pitchClassEquals(preceding.identity.root, terminal.identity.root)) break;
+    const previousKey = localKeyOf(preceding);
+    if (!previousKey || !sameKey(key, previousKey)) break;
+    start = preceding;
+    if (tick - start.startTick >= beatLength * 2) return true;
+  }
+  return inversion === 3 && start !== terminal && longRelease;
+}
+
 function boundaryFacts(
   project: PhraseAnalysisInput,
   timeline: ReturnType<typeof buildMetricTimeline>,
   regions: readonly ChordRegion[],
   tick: number,
   atTemplateTarget: boolean,
+  hasRoomForTwoPhrases: boolean,
 ) {
   const evidence: PhraseEvidence[] = [];
   const trackCount = project.satbTracks?.length ?? 0;
@@ -413,9 +469,13 @@ function boundaryFacts(
   const articulatedCadence = reattack && atTemplateTarget && metric?.role === "downbeat" &&
     longRelease && evidence.some((item) => item.code === "cadential-connection");
   const rootPositionArrival = terminal && chordIdentityInversion(terminal.identity) === 0;
+  const midpointDominantHold = atTemplateTarget && hasRoomForTwoPhrases &&
+    metric?.role === "downbeat" && endsOnDominant && terminal && following &&
+    (reattack || (!rootPositionArrival && longRelease)) &&
+    hasMidpointDominantHold(project, regions, terminal, previous, following, beatLength, longRelease);
   const support: PhraseSupport = strongBreak
     ? "strong"
-    : (articulatedCadence && rootPositionArrival) ||
+    : midpointDominantHold || (articulatedCadence && rootPositionArrival) ||
       (moderate.size >= 2 && hasStructuralCategory && !sameMaterial && !reattack)
       ? "moderate"
       : "weak";
@@ -436,12 +496,19 @@ function candidateAtRatio(
     Math.min(measureLengthAt(timeline, targetTick), length * REGULAR_PHRASE_POLICY.searchWindowRatio),
   );
   const regions = regionsOf(project);
+  const hasRoomForTwoPhrases = targetRatio === "half" && [
+    [range.startTick, targetTick], [targetTick, range.endTick],
+  ].every(([start, end]) => timeline.measures.filter(measure =>
+    measure.startTick >= start && measure.endTick <= end &&
+    measure.endTick - measure.startTick === measure.numerator * measure.beatLength).length >= 3);
   const nearby = eventTicks(project, timeline)
     .filter((tick) =>
       tick >= targetTick - window && tick <= targetTick + window &&
       tick > range.startTick && tick < range.endTick)
     .map((tick) => {
-      const facts = boundaryFacts(project, timeline, regions, tick, targetRatio === "half" && tick === targetTick);
+      const facts = boundaryFacts(
+        project, timeline, regions, tick, targetRatio === "half" && tick === targetTick, hasRoomForTwoPhrases,
+      );
       const metric = metricPositionAt(timeline, tick);
       const snapPriority = metric?.role === "downbeat"
         ? 0
@@ -459,8 +526,7 @@ function candidateAtRatio(
         snapPriority,
       };
     });
-  // An inverted dominant can locate an already supported division at the
-  // exact barline, but by itself cannot justify cutting an ongoing V2–I6.
+  // An inverted dominant can also locate an independently supported division.
   const hasNearbyDivision = nearby.some(item => item.facts.support !== "weak" && item.distance > 0 &&
     item.distance <= measureLengthAt(timeline, targetTick) / 2);
   const candidates = nearby
