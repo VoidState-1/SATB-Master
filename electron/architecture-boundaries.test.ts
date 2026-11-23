@@ -10,7 +10,7 @@ function sourceFiles(root: string): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const path = join(root, entry.name);
     if (entry.isDirectory()) return sourceFiles(path);
-    return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+    return /\.(?:[cm]?[jt]s|[jt]sx)$/.test(entry.name) ? [path] : [];
   });
 }
 
@@ -22,11 +22,27 @@ function importSpecifiers(path: string) {
 
 describe("architecture boundaries", () => {
   it("keeps domain modules independent from runtime adapters", () => {
-    const forbidden = /from\s+["'](?:react|electron)["']|window\.desktop|\bAudioContext\b|document\./;
+    const forbidden = /from\s+["'](?:react|electron)["']|window\.desktop|\bAudioContext\b|document\.|services\/logging/;
     const violations = sourceFiles(join(srcRoot, "domain")).filter((path) =>
       forbidden.test(readFileSync(path, "utf8")),
     );
 
+    expect(violations).toEqual([]);
+  });
+
+  it("routes production warnings and Electron errors through the loggers", () => {
+    const violations = ["electron", "src"].flatMap((root) => {
+      const methods = root === "electron" ? "warn|error" : "warn";
+      const call = new RegExp(
+        String.raw`\bconsole\s*(?:(?:\?\.|\.)\s*(?:${methods})|(?:\?\.\s*)?\[\s*["'](?:${methods})["']\s*\])\s*(?:\?\.\s*)?\(`,
+      );
+      return sourceFiles(join(projectRoot, root)).flatMap((file) => {
+        const name = relative(projectRoot, file).split(sep).join("/");
+        if (/\.(?:test|spec|d)\.[^.]+$/.test(name) ||
+            name === "electron/logger.ts" || name === "src/services/logging/logger.ts") return [];
+        return call.test(readFileSync(file, "utf8")) ? [name] : [];
+      });
+    });
     expect(violations).toEqual([]);
   });
 

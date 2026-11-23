@@ -58,7 +58,10 @@ export interface DesktopInvokeMap {
   "window:close": { request: void; response: void };
   "project:open": {
     request: void;
-    response: { canceled: boolean; filePath?: string; project?: unknown };
+    response:
+      | { canceled: true }
+      | { canceled: false; filePath: string; project: unknown }
+      | { canceled: false; invalidMessage: string };
   };
   "project:save": {
     request: ProjectSaveRequest;
@@ -67,6 +70,10 @@ export interface DesktopInvokeMap {
       filePath?: string;
       migrationBackupPath?: string;
     };
+  };
+  "project:export-backup": {
+    request: { project: unknown; defaultName: string };
+    response: { canceled: boolean; filePath?: string };
   };
   "project:autosave": {
     request: ProjectRecoveryRequest;
@@ -204,6 +211,7 @@ export const DESKTOP_CHANNELS = Object.freeze({
   windowMaximizedChanged: "window:maximized-changed",
   projectOpen: "project:open",
   projectSave: "project:save",
+  projectExportBackup: "project:export-backup",
   projectAutosave: "project:autosave",
   projectRecovery: "project:recovery",
   projectDiscardRecovery: "project:discard-recovery",
@@ -252,6 +260,7 @@ export interface DesktopApi {
   project: {
     open(): Promise<DesktopInvokeMap["project:open"]["response"]>;
     save(request: ProjectSaveRequest): Promise<DesktopInvokeMap["project:save"]["response"]>;
+    exportBackup(request: DesktopInvokeMap["project:export-backup"]["request"]): Promise<DesktopInvokeMap["project:export-backup"]["response"]>;
     autosave(request: ProjectRecoveryRequest): Promise<DesktopInvokeMap["project:autosave"]["response"]>;
     recovery(): Promise<DesktopInvokeMap["project:recovery"]["response"]>;
     discardRecovery(): Promise<DesktopInvokeMap["project:discard-recovery"]["response"]>;

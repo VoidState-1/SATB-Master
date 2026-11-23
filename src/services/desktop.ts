@@ -1,5 +1,5 @@
 import type { DesktopInvokeMap } from "../../shared/desktop";
-import { MAX_DIAGNOSTIC_BUNDLE_BYTES, type LogEntry } from "../../shared/logging";
+import { AppError, MAX_DIAGNOSTIC_BUNDLE_BYTES, type LogEntry } from "../../shared/logging";
 import { migrateProject, type ProjectDocument } from "../domain/project";
 import type { PortableRuleProfile } from "../domain/ruleProfile";
 
@@ -36,16 +36,30 @@ export async function exportDiagnosticBundleFile(
 
   const blob = new Blob([bundleJson], { type: "application/json;charset=utf-8" });
   if (blob.size > MAX_DIAGNOSTIC_BUNDLE_BYTES) throw new Error("排错包大小超过 20 MB");
+  downloadBlob(blob, /\.json$/i.test(defaultName) ? defaultName : defaultName + ".json");
+  return { canceled: false };
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   try {
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = /\.json$/i.test(defaultName) ? defaultName : defaultName + ".json";
+    anchor.download = fileName;
     anchor.click();
-    return { canceled: false };
   } finally {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
+}
+
+export async function exportEmergencyProjectBackup(project: ProjectDocument) {
+  const title = project.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim().slice(0, 80) || "SATB";
+  const defaultName = `${title}-紧急备份`;
+  if (window.desktop) return window.desktop.project.exportBackup({ project, defaultName });
+  downloadBlob(new Blob([JSON.stringify(project, null, 2)], {
+    type: "application/json;charset=utf-8",
+  }), defaultName + ".satb");
+  return { canceled: false };
 }
 
 const BROWSER_PROJECT_KEY = "satb-master-browser-project";
@@ -93,10 +107,11 @@ export async function openProject(): Promise<
   if (window.desktop) {
     const result = await window.desktop.project.open();
     if (result.canceled) return undefined;
+    if ("invalidMessage" in result) throw new AppError("PROJECT_INVALID", result.invalidMessage);
     const sourceSchemaVersion = (result.project as { schemaVersion?: unknown })
       ?.schemaVersion;
     const project = migrateProject(result.project);
-    if (!project) throw new Error("所选文件不是受支持的 SATB 工程");
+    if (!project) throw new AppError("PROJECT_INVALID", "所选文件不是受支持的 SATB 工程");
     return {
       project,
       filePath: result.filePath,
@@ -106,9 +121,14 @@ export async function openProject(): Promise<
 
   const raw = localStorage.getItem(BROWSER_PROJECT_KEY);
   if (!raw) throw new Error("浏览器预览中还没有保存的工程");
-  const stored = JSON.parse(raw) as { schemaVersion?: unknown };
+  let stored: { schemaVersion?: unknown };
+  try {
+    stored = JSON.parse(raw) as { schemaVersion?: unknown };
+  } catch (cause) {
+    throw new AppError("PROJECT_INVALID", "浏览器中的工程数据无效", { cause });
+  }
   const project = migrateProject(stored);
-  if (!project) throw new Error("浏览器中的工程数据无效");
+  if (!project) throw new AppError("PROJECT_INVALID", "浏览器中的工程数据无效");
   return {
     project,
     migratedFromSchemaVersion: stored.schemaVersion === 2 ? 2 : undefined,
@@ -191,7 +211,7 @@ export async function findRecovery(): Promise<
     ?.schemaVersion;
   const project = migrateProject(result.project);
   if (typeof result.savedAt !== "string" || !project)
-    throw new Error("自动恢复文件无效");
+    throw new AppError("PROJECT_INVALID", "自动恢复文件无效");
   return {
     savedAt: result.savedAt,
     sourcePath:

@@ -1,4 +1,5 @@
 import { BrowserWindow, shell } from "electron";
+import { randomUUID } from "node:crypto";
 import { appendFileSync, closeSync, mkdirSync, openSync, readdirSync, statSync, truncateSync, unlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -11,7 +12,10 @@ import {
   MAX_RECENT_LOGS,
   sanitizeContext,
   serializeError,
+  type AppErrorCode,
   type LogEntry,
+  type LogLevel,
+  type LogScope,
 } from "../shared/logging.js";
 import { showExclusiveSaveDialog } from "./dialog-coordinator.js";
 import { handleDesktop } from "./typed-ipc.js";
@@ -178,6 +182,37 @@ export class MainLogger {
     }
     return written;
   }
+}
+
+let mainLogger: MainLogger | undefined;
+
+export function initializeMainLogger(directory: string) {
+  return mainLogger = new MainLogger(directory);
+}
+
+export function createMainLogEntry(
+  level: LogLevel,
+  scope: LogScope,
+  message: string,
+  details: { code?: AppErrorCode; error?: unknown; context?: unknown } = {},
+): LogEntry {
+  return {
+    id: randomUUID(),
+    timestamp: new Date().toISOString(),
+    process: "main",
+    level,
+    scope,
+    message,
+    code: details.code,
+    error: "error" in details ? serializeError(details.error) : undefined,
+    context: details.context === undefined ? undefined : sanitizeContext(details.context),
+  };
+}
+
+export function logMain(
+  ...args: Parameters<typeof createMainLogEntry>
+) {
+  if (mainLogger) void mainLogger.append(createMainLogEntry(...args));
 }
 
 function normalizeRendererEntry(value: LogEntry): LogEntry | undefined {

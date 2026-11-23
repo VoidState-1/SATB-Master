@@ -15,6 +15,7 @@ import {
 } from "../domain/time";
 import { installExclusiveSoundFont } from "./soundFontLifecycle";
 import { midiOutputManager } from "./midiOutput";
+import { logger } from "../services/logging";
 
 export type AudioEngineState =
   "idle" | "loading" | "ready-sf2" | "ready-fallback" | "playing" | "error";
@@ -101,10 +102,9 @@ export class SatbAudioEngine {
       this.synth = await this.createWorkletSynth();
       this.setState("ready-fallback", "SF2 尚未加载，使用回退音色");
     } catch (error) {
-      console.warn(
-        "SF2 AudioWorklet 初始化失败，将使用 Web Audio 回退音色。",
-        error,
-      );
+      logger.warn("audio", "SF2 AudioWorklet 初始化失败，使用 Web Audio 回退音色", {
+        code: "AUDIO_PLAYBACK_FAILED", error,
+      });
       this.synth = undefined;
       this.setState("ready-fallback", "SF2 引擎不可用，使用回退音色");
     }

@@ -1,8 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 import { sanitizePath, serializeError, type SerializedError } from "../../shared/logging";
-import { exportDiagnosticBundleFile } from "../services/desktop";
-import { buildDiagnosticBundle, logger } from "../services/logging";
+import { exportDiagnosticBundleFile, exportEmergencyProjectBackup } from "../services/desktop";
+import { buildDiagnosticBundle, getEmergencyProject, hasEmergencyProjectProvider, logger, summarizeEmergencyProject } from "../services/logging";
 import "./appErrorBoundary.css";
 
 interface AppErrorBoundaryProps {
@@ -14,6 +14,7 @@ interface AppErrorBoundaryState {
   error?: SerializedError;
   componentStack?: string;
   exporting?: boolean;
+  exportingBackup?: boolean;
   feedback?: string;
   backupStatus?: string;
 }
@@ -88,11 +89,35 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     }
   };
 
+  private exportBackup = async () => {
+    if (this.state.exportingBackup) return;
+    this.setState({ exportingBackup: true, backupStatus: "正在导出工程备份…" });
+    try {
+      logger.recordBreadcrumb("file", "导出当前工程备份");
+      const result = await logger.span("file", "导出当前工程备份", () => {
+        const project = getEmergencyProject();
+        if (!project) throw new Error("没有可导出的工程备份");
+        return exportEmergencyProjectBackup(project);
+      }, undefined, {
+        code: "RECOVERY_FAILED", level: "info", summarize: ({ canceled }) => ({ canceled }),
+      });
+      this.setState({ backupStatus: result.canceled ? "已取消导出工程备份。" : "已导出工程备份。" });
+    } catch {
+      this.setState({ backupStatus: "未能导出当前工程备份。" });
+    } finally {
+      this.setState({ exportingBackup: false });
+    }
+  };
+
   private exportBundle = async () => {
     if (this.state.exporting) return;
     this.setState({ exporting: true, feedback: "正在准备排错包…" });
     try {
-      const bundle = await buildDiagnosticBundle({ redactPaths: true });
+      const project = getEmergencyProject();
+      const bundle = await buildDiagnosticBundle({
+        redactPaths: true,
+        project: project && summarizeEmergencyProject(project),
+      });
       const result = await exportDiagnosticBundleFile(JSON.stringify(bundle, null, 2));
       this.setState({ feedback: result.canceled ? "已取消导出。" : "已导出排错包。" });
     } catch (error) {
@@ -108,7 +133,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
   }
 
   render() {
-    const { error, backupStatus, exporting, feedback } = this.state;
+    const { error, backupStatus, exporting, exportingBackup, feedback } = this.state;
     if (!error) return this.props.children;
 
     return (
@@ -132,6 +157,11 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
               重新加载界面
             </button>
             <button type="button" onClick={this.copyError}>复制错误信息</button>
+            {hasEmergencyProjectProvider() && (
+              <button type="button" onClick={this.exportBackup} disabled={exportingBackup}>
+                导出当前工程备份（.satb）
+              </button>
+            )}
             <button type="button" onClick={this.exportBundle} disabled={exporting}>导出排错包</button>
           </div>
 

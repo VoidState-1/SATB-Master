@@ -8,9 +8,9 @@ import { registerRuleLibraryIpc } from './rule-library.js'
 import { registerRuleTestCaseIpc } from './rule-test-cases.js'
 import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
 import { installReactDevToolsIfAvailable } from './dev-extensions.js'
-import { DESKTOP_CHANNELS, LOG_SESSION_ARGUMENT, MAX_AUDIT_FILE_BYTES } from '../shared/desktop.js'
-import { serializeError, type LogEntry } from '../shared/logging.js'
-import { MainLogger, registerLoggingIpc } from './logger.js'
+import { DESKTOP_CHANNELS, LOG_SESSION_ARGUMENT, MAX_AUDIT_FILE_BYTES, type DesktopInvokeChannel } from '../shared/desktop.js'
+import { type AppErrorCode, type LogScope } from '../shared/logging.js'
+import { createMainLogEntry, initializeMainLogger, logMain, registerLoggingIpc } from './logger.js'
 import { handleDesktop, setDesktopIpcReporter } from './typed-ipc.js'
 import {
   loadSavedWindowState,
@@ -29,31 +29,14 @@ const startupAuditPath = auditArgument < 0 ? undefined : process.argv[auditArgum
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
 
 if (e2eDirectory) app.setPath('userData', path.join(e2eDirectory, 'user-data'))
-const logger = new MainLogger(path.join(app.getPath('userData'), 'logs'))
+const logger = initializeMainLogger(path.join(app.getPath('userData'), 'logs'))
 const sessionId = randomUUID()
-
-function mainLogEntry(
-  level: LogEntry['level'],
-  scope: LogEntry['scope'],
-  message: string,
-  details: Pick<LogEntry, 'code' | 'context' | 'error'> = {},
-): LogEntry {
-  return {
-    id: randomUUID(),
-    timestamp: new Date().toISOString(),
-    process: 'main',
-    level,
-    scope,
-    message,
-    ...details,
-  }
-}
 
 process.on('uncaughtException', (error, origin) => {
   try {
-    logger.appendSync(mainLogEntry('fatal', 'app', '主进程发生未捕获异常', {
+    logger.appendSync(createMainLogEntry('fatal', 'app', '主进程发生未捕获异常', {
       code: 'UNCAUGHT_EXCEPTION',
-      error: serializeError(error),
+      error,
       context: { origin },
     }))
   } finally {
@@ -62,15 +45,15 @@ process.on('uncaughtException', (error, origin) => {
 })
 
 process.on('unhandledRejection', (reason) => {
-  logger.appendSync(mainLogEntry('fatal', 'app', '主进程存在未处理的 Promise 拒绝', {
+  logger.appendSync(createMainLogEntry('fatal', 'app', '主进程存在未处理的 Promise 拒绝', {
     code: 'UNHANDLED_REJECTION',
-    error: serializeError(reason),
+    error: reason,
   }))
 })
 
 app.on('render-process-gone', (_event, webContents, details) => {
   if (details.reason === 'clean-exit') return
-  logger.appendSync(mainLogEntry('fatal', 'app', '渲染进程异常退出', {
+  logger.appendSync(createMainLogEntry('fatal', 'app', '渲染进程异常退出', {
     code: 'RENDER_CRASH',
     context: { ...details, webContentsId: webContents.id },
   }))
@@ -78,22 +61,38 @@ app.on('render-process-gone', (_event, webContents, details) => {
 
 app.on('child-process-gone', (_event, details) => {
   if (details.reason === 'clean-exit') return
-  logger.appendSync(mainLogEntry('fatal', 'app', 'Electron 子进程异常退出', {
+  logger.appendSync(createMainLogEntry('fatal', 'app', 'Electron 子进程异常退出', {
     context: { ...details },
   }))
 })
 
+const ipcFailures: Partial<Record<DesktopInvokeChannel, [LogScope, AppErrorCode, string]>> = {
+  [DESKTOP_CHANNELS.projectOpen]: ['file', 'FILE_READ_FAILED', '打开工程失败'],
+  [DESKTOP_CHANNELS.projectSave]: ['file', 'FILE_WRITE_FAILED', '保存工程失败'],
+  [DESKTOP_CHANNELS.projectExportBackup]: ['file', 'RECOVERY_FAILED', '紧急备份导出失败'],
+  [DESKTOP_CHANNELS.projectAutosave]: ['file', 'RECOVERY_FAILED', '自动恢复保存失败'],
+  [DESKTOP_CHANNELS.projectRecovery]: ['file', 'RECOVERY_FAILED', '读取自动恢复失败'],
+  [DESKTOP_CHANNELS.projectDiscardRecovery]: ['file', 'RECOVERY_FAILED', '清除自动恢复失败'],
+  [DESKTOP_CHANNELS.midiExport]: ['file', 'FILE_WRITE_FAILED', '导出 MIDI 失败'],
+  [DESKTOP_CHANNELS.musicXmlExport]: ['file', 'FILE_WRITE_FAILED', '导出 MusicXML 失败'],
+  [DESKTOP_CHANNELS.ruleLibraryList]: ['external-rule', 'EXTERNAL_RULE_FAILED', '读取外置规则库失败'],
+  [DESKTOP_CHANNELS.ruleLibraryImport]: ['external-rule', 'EXTERNAL_RULE_FAILED', '读取外置规则包失败'],
+  [DESKTOP_CHANNELS.ruleLibraryInstall]: ['external-rule', 'EXTERNAL_RULE_FAILED', '安装外置规则包失败'],
+  [DESKTOP_CHANNELS.ruleLibraryLoadSource]: ['external-rule', 'EXTERNAL_RULE_FAILED', '读取外置规则源码失败'],
+  [DESKTOP_CHANNELS.ruleLibraryRemove]: ['external-rule', 'EXTERNAL_RULE_FAILED', '移除外置规则包失败'],
+}
+
 setDesktopIpcReporter((level, context, error) => {
-  const failed = level === 'error'
-  void logger.append(mainLogEntry(level, 'ipc', failed ? 'IPC 调用失败' : 'IPC 调用耗时过长', {
-    code: failed ? 'IPC_FAILED' : undefined,
-    error: failed ? serializeError(error) : undefined,
-    context,
-  }))
+  if (level === 'warn') {
+    logMain(level, 'ipc', 'IPC 调用耗时过长', { context })
+    return
+  }
+  const [scope, code, message] = ipcFailures[context.channel] ?? ['ipc', 'IPC_FAILED', 'IPC 调用失败']
+  logMain(level, scope, message, { code, error, context })
 })
 
 registerLoggingIpc(logger)
-void logger.append(mainLogEntry('info', 'app', 'SATB Master 启动', {
+logMain('info', 'app', 'SATB Master 启动', {
   context: {
     sessionId,
     appVersion: app.getVersion(),
@@ -102,7 +101,7 @@ void logger.append(mainLogEntry('info', 'app', 'SATB Master 启动', {
     electron: process.versions.electron ?? 'unknown',
     node: process.versions.node,
   },
-}))
+})
 registerSoundFontScheme()
 
 function createWindow() {

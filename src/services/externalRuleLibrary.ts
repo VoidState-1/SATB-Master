@@ -1,3 +1,4 @@
+import { logger } from "./logging";
 import {
   MAX_EXTERNAL_RULE_BYTES,
   validateExternalRulePackageMetadata,
@@ -105,8 +106,10 @@ export function createBrowserRuleLibraryPort(options: {
           )
             throw new Error("规则包私有副本缺失或大小不符");
           packages.push(metadata);
-        } catch {
-          // 浏览器预览中的损坏规则记录不应影响应用启动。
+        } catch (error) {
+          logger.warn("external-rule", "忽略损坏的浏览器外置规则记录", {
+            code: "EXTERNAL_RULE_FAILED", error,
+          });
         }
       }
       return sortPackages(packages);
@@ -180,7 +183,10 @@ export function createDesktopRuleLibraryPort(
           .map((value) => {
             try {
               return validateExternalRulePackageMetadata(value);
-            } catch {
+            } catch (error) {
+              logger.warn("external-rule", "忽略无效的桌面外置规则记录", {
+                code: "EXTERNAL_RULE_FAILED", error,
+              });
               return undefined;
             }
           })
@@ -235,45 +241,59 @@ function defaultPort(): RuleLibraryPort {
 }
 
 export async function listExternalRulePackages() {
-  return defaultPort().list();
+  return logger.span("external-rule", "读取外置规则库", () => defaultPort().list(), undefined, {
+    code: "EXTERNAL_RULE_FAILED",
+    summarize: (packages) => ({ packageCount: packages.length }),
+  });
 }
 
 export async function selectExternalRulePackage() {
-  return defaultPort().importCandidate();
+  logger.recordBreadcrumb("external-rule", "导入外置规则包");
+  return logger.span("external-rule", "读取待导入的外置规则包", () => defaultPort().importCandidate(), undefined, {
+    code: "EXTERNAL_RULE_FAILED",
+  });
 }
 
 export async function installExternalRulePackage(
   candidate: ExternalRuleImportCandidate,
   manifest: ExternalRuleManifest,
 ) {
-  const computedHash = await hashExternalRuleSource(candidate.source);
-  if (computedHash !== candidate.contentHash)
-    throw new Error("规则包内容摘要不匹配");
-  if (
-    candidate.sizeBytes < 1 ||
-    candidate.sizeBytes > MAX_EXTERNAL_RULE_BYTES
-  )
-    throw new Error("规则包大小无效");
-  const installed = await defaultPort().install(candidate, manifest);
-  sourceCache.set(candidate.contentHash, Promise.resolve(candidate.source));
-  return installed;
+  return logger.span("external-rule", "安装外置规则包", async () => {
+    const computedHash = await hashExternalRuleSource(candidate.source);
+    if (computedHash !== candidate.contentHash)
+      throw new Error("规则包内容摘要不匹配");
+    if (
+      candidate.sizeBytes < 1 ||
+      candidate.sizeBytes > MAX_EXTERNAL_RULE_BYTES
+    )
+      throw new Error("规则包大小无效");
+    const installed = await defaultPort().install(candidate, manifest);
+    sourceCache.set(candidate.contentHash, Promise.resolve(candidate.source));
+    return installed;
+  }, { contentHash: candidate.contentHash }, { code: "EXTERNAL_RULE_FAILED", level: "info" });
 }
 
 export function loadExternalRulePackageSource(contentHash: string) {
   let pending = sourceCache.get(contentHash);
   if (pending) return pending;
-  pending = (async () => {
+  pending = logger.span("external-rule", "读取外置规则源码", async () => {
     const source = await defaultPort().loadSource(contentHash);
     if ((await hashExternalRuleSource(source)) !== contentHash)
       throw new Error("规则包私有副本的内容摘要不匹配");
     return source;
-  })();
+  }, { contentHash }, { code: "EXTERNAL_RULE_FAILED" });
   sourceCache.set(contentHash, pending);
-  pending.catch(() => sourceCache.delete(contentHash));
+  void pending.catch(() => {
+    if (sourceCache.get(contentHash) === pending) sourceCache.delete(contentHash);
+  });
   return pending;
 }
 
 export async function removeExternalRulePackage(contentHash: string) {
   sourceCache.delete(contentHash);
-  await defaultPort().remove(contentHash);
+  logger.recordBreadcrumb("external-rule", "移除外置规则包", { contentHash });
+  await logger.span("external-rule", "移除外置规则包", () => defaultPort().remove(contentHash), { contentHash }, {
+    code: "EXTERNAL_RULE_FAILED",
+    level: "info",
+  });
 }

@@ -57,6 +57,7 @@ const desktop: DesktopApi = {
   project: {
     open: () => invokeDesktop(DESKTOP_CHANNELS.projectOpen),
     save: (request) => invokeDesktop(DESKTOP_CHANNELS.projectSave, request),
+    exportBackup: (request) => invokeDesktop(DESKTOP_CHANNELS.projectExportBackup, request),
     autosave: (request) => invokeDesktop(DESKTOP_CHANNELS.projectAutosave, request),
     recovery: () => invokeDesktop(DESKTOP_CHANNELS.projectRecovery),
     discardRecovery: () => invokeDesktop(DESKTOP_CHANNELS.projectDiscardRecovery),

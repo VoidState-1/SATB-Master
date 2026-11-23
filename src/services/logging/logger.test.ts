@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LogEntry } from "../../../shared/logging";
+import { AppError, type LogEntry } from "../../../shared/logging";
 import { installGlobalErrorHandlers, logger, RendererLogger } from "./logger";
 
 let uninstall: (() => void) | undefined;
@@ -93,6 +93,27 @@ describe("renderer logger", () => {
       details: { phase: "layout" },
     });
     expect(bus.getEntries()[3].error?.message).toBe("broken");
+  });
+
+  it("records a result summary and retains a classified error in a timed span", async () => {
+    const bus = new RendererLogger();
+    const invalid = new AppError("PROJECT_INVALID", "invalid score");
+    await bus.span("file", "open", async () => ({ canceled: false, privateData: "score" }), undefined, {
+      code: "FILE_READ_FAILED",
+      level: "info",
+      summarize: ({ canceled }) => ({ canceled }),
+    });
+    await expect(bus.span("file", "open", async () => { throw invalid; }, undefined, {
+      code: "FILE_READ_FAILED",
+    })).rejects.toBe(invalid);
+    expect(bus.getEntries()).toMatchObject([
+      { level: "info", scope: "file", context: { durationMs: expect.any(Number), result: { canceled: false } } },
+      { level: "error", scope: "file", code: "PROJECT_INVALID", error: { message: "invalid score" } },
+    ]);
+    expect(bus.getEntries()[0].context).toEqual({
+      durationMs: expect.any(Number),
+      result: { canceled: false },
+    });
   });
 
   it("installs global hooks once, protects against reentry and supports uninstall", async () => {

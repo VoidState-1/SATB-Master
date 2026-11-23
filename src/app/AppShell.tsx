@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BellRing,
   Cable,
@@ -103,6 +103,7 @@ import { useWindowController } from "./controllers/useWindowController";
 import { useRuleTestWorkspace } from "./controllers/useRuleTestWorkspace";
 import { formatShortcutBinding } from "../shortcuts/shortcutRegistry";
 import { copyText } from "../services/clipboard";
+import { logger, registerEmergencyProjectProvider } from "../services/logging";
 
 const BOTTOM_PANEL_TAB_STORAGE_KEY = "satb-master-bottom-panel-tab";
 
@@ -137,6 +138,10 @@ function AppShell() {
   );
   const { history, project, editor, resetWorkspace } =
     useProjectController(initialProject);
+  useLayoutEffect(() => {
+    // 崩溃会卸载 AppShell，恢复页仍需读取最后一次提交的工程快照。
+    registerEmergencyProjectProvider(() => project);
+  }, [project]);
   const cadenceAnalysis = useMemo(() => buildHarmonyAnalysis(project), [project]);
   const {
     activeVoice,
@@ -167,6 +172,10 @@ function AppShell() {
   const loopEndTick = project.loop.endTick;
   const [notice, setNotice] = useState<string>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const changeSettingsOpen = (open: boolean) => {
+    logger.recordBreadcrumb("editor", open ? "打开工程设置" : "关闭工程设置");
+    setSettingsOpen(open);
+  };
   const [chordInferenceOpen, setChordInferenceOpen] = useState(false);
   const [autoHarmonizationOpen, setAutoHarmonizationOpen] = useState(false);
   const [scorePreviewOpen, setScorePreviewOpen] = useState(false);
@@ -181,6 +190,16 @@ function AppShell() {
   const [ruleTestMode, setRuleTestMode] = useState(false);
   const [auditOpen, setAuditOpen] = useState<false | "startup" | "manual">(() =>
     window.desktop?.audit?.hasStartupPackage ? "startup" : false);
+  const previousAuditMode = useRef<typeof auditOpen>(false);
+  useEffect(() => {
+    if (previousAuditMode.current === auditOpen) return;
+    if (auditOpen) {
+      logger.recordBreadcrumb("editor", "进入教材审计工作台", { source: auditOpen });
+    } else {
+      logger.recordBreadcrumb("editor", "退出教材审计工作台");
+    }
+    previousAuditMode.current = auditOpen;
+  }, [auditOpen]);
   const panelLayout = usePanelLayout();
   const workspaceColumns = useMemo(() => {
     const cols: string[] = [];
@@ -483,56 +502,97 @@ function AppShell() {
   };
 
   const handleChordInferenceApply = (result: HarmonyInferenceResult, options: ChordInferenceApplyOptions) => {
-    const phraseApplied = options.selection ? undefined : applyHarmonyInference(project, result, options);
-    const applied = phraseApplied ?? applyChordInference(project, result.chordInference, options);
-    if (applied.project !== project) history.commit(applied.project);
-    const warningText = applied.skipped.length
-      ? `，跳过 ${applied.skipped.length} 个区段`
-      : "";
-    const roleText = applied.writtenNonChordToneRoleCount
-      ? `，写入 ${applied.writtenNonChordToneRoleCount} 个非和弦音角色`
-      : "";
-    const phraseTemplateLabels = {
-      single: "单乐句",
-      duple: "双乐句",
-      triple: "三乐句",
-      multi: "多乐句",
-    };
-    const phraseText = phraseApplied
-      ? `，按${phraseTemplateLabels[phraseApplied.appliedPhraseTemplate]}处理` +
-        (phraseApplied.appliedPhraseBoundaryCount ? `，生成 ${phraseApplied.appliedPhraseBoundaryCount} 个自动边界` : "")
-      : "";
-    const unresolvedText = !options.selection && result.chordInference.unresolvedObservationIndices.length
-      ? `，${result.chordInference.unresolvedObservationIndices.length} 个时间片未归类`
-      : "";
-    showNotice(
-      applied.appliedRegionCount > 0
-        ? `已应用 ${applied.appliedRegionCount} 个和弦区段${phraseText}${roleText}${unresolvedText}${warningText}`
-        : `没有应用和弦区段${unresolvedText}${warningText}`,
-    );
-    setChordInferenceOpen(false);
+    const context = { mode: options.mode, selectedRegionCount: options.selection?.size };
+    logger.recordBreadcrumb("inference", "应用和弦推导", context);
+    try {
+      const { phraseApplied, applied } = logger.span("inference", "应用和弦推导", () => {
+        const phraseApplied = options.selection ? undefined : applyHarmonyInference(project, result, options);
+        const applied = phraseApplied ?? applyChordInference(project, result.chordInference, options);
+        if (applied.project !== project) history.commit(applied.project);
+        return { phraseApplied, applied };
+      }, context, {
+        code: "INFERENCE_FAILED",
+        summarize: ({ applied }) => ({
+          appliedRegionCount: applied.appliedRegionCount,
+          skippedRegionCount: applied.skipped.length,
+          writtenNonChordToneRoleCount: applied.writtenNonChordToneRoleCount,
+        }),
+      });
+      const warningText = applied.skipped.length
+        ? `，跳过 ${applied.skipped.length} 个区段`
+        : "";
+      const roleText = applied.writtenNonChordToneRoleCount
+        ? `，写入 ${applied.writtenNonChordToneRoleCount} 个非和弦音角色`
+        : "";
+      const phraseTemplateLabels = {
+        single: "单乐句",
+        duple: "双乐句",
+        triple: "三乐句",
+        multi: "多乐句",
+      };
+      const phraseText = phraseApplied
+        ? `，按${phraseTemplateLabels[phraseApplied.appliedPhraseTemplate]}处理` +
+          (phraseApplied.appliedPhraseBoundaryCount ? `，生成 ${phraseApplied.appliedPhraseBoundaryCount} 个自动边界` : "")
+        : "";
+      const unresolvedText = !options.selection && result.chordInference.unresolvedObservationIndices.length
+        ? `，${result.chordInference.unresolvedObservationIndices.length} 个时间片未归类`
+        : "";
+      showNotice(
+        applied.appliedRegionCount > 0
+          ? `已应用 ${applied.appliedRegionCount} 个和弦区段${phraseText}${roleText}${unresolvedText}${warningText}`
+          : `没有应用和弦区段${unresolvedText}${warningText}`,
+      );
+      setChordInferenceOpen(false);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const handleAutoHarmonizationApply = (
     solution: HarmonizationSolution,
     options: AutoHarmonizationApplyOptions,
   ) => {
-    const applied = applyAutoHarmonization(project, solution, options);
-    if (applied !== project) {
-      history.commit(replaceProject(project, draft => {
-        draft.satbTracks = applied.satbTracks;
-        draft.chordTrack = applied.chordTrack;
-        draft.structure = applied.structure;
-      }));
-      const { fromTick, toTick } = solution.range;
-      const chordsInRange = applied.chordTrack.regions.filter(chord =>
-        chord.startTick < toTick && fromTick < chord.startTick + chord.durationTicks,
-      ).length;
-      const chordText = options.writeChords !== false ? ` · 和弦轨 ${chordsInRange} 个区段` : "";
-      const { errorCount, warningCount } = solution.diagnosticSummary;
-      showNotice(`已应用自动和声${chordText} · 方案诊断 ${errorCount} 错误、${warningCount} 警告`);
+    const context = {
+      givenVoice: solution.givenVoice,
+      relaxedLevel: solution.relaxedLevel,
+      writeChords: options.writeChords !== false,
+      writePhrasesAndCadences: options.writePhrasesAndCadences !== false,
+    };
+    logger.recordBreadcrumb("harmonization", "应用自动和声", context);
+    try {
+      const applied = logger.span("harmonization", "应用自动和声", () => {
+        const applied = applyAutoHarmonization(project, solution, options);
+        if (applied !== project) {
+          history.commit(replaceProject(project, draft => {
+            draft.satbTracks = applied.satbTracks;
+            draft.chordTrack = applied.chordTrack;
+            draft.structure = applied.structure;
+          }));
+        }
+        return applied;
+      }, context, {
+        code: "HARMONIZATION_FAILED",
+        summarize: (applied) => ({
+          applied: applied !== project,
+          bestErrors: solution.diagnosticSummary.errorCount,
+          bestWarnings: solution.diagnosticSummary.warningCount,
+        }),
+      });
+      if (applied !== project) {
+        const { fromTick, toTick } = solution.range;
+        const chordsInRange = applied.chordTrack.regions.filter(chord =>
+          chord.startTick < toTick && fromTick < chord.startTick + chord.durationTicks,
+        ).length;
+        const chordText = options.writeChords !== false ? ` · 和弦轨 ${chordsInRange} 个区段` : "";
+        const { errorCount, warningCount } = solution.diagnosticSummary;
+        showNotice(`已应用自动和声${chordText} · 方案诊断 ${errorCount} 错误、${warningCount} 警告`);
+      }
+      setAutoHarmonizationOpen(false);
+      return true;
+    } catch {
+      return false;
     }
-    setAutoHarmonizationOpen(false);
   };
 
   const measureCount = buildMeasures(project).length;
@@ -542,6 +602,7 @@ function AppShell() {
       const created = await ruleTestWorkspace.createFromProject(project);
       if (!created) return;
     }
+    logger.recordBreadcrumb("editor", "进入规则测试工作台");
     setRuleTestMode(true);
   };
   const leaveRuleTestMode = async () => {
@@ -558,6 +619,7 @@ function AppShell() {
     ruleTestWorkspace.cancelRun();
     ruleTestWorkspace.editor.setSelectedNoteIds(new Set());
     ruleTestWorkspace.editor.setSelectedChordIds(new Set());
+    logger.recordBreadcrumb("editor", "退出规则测试工作台");
     setRuleTestMode(false);
   };
   if (auditOpen) {
@@ -835,7 +897,7 @@ function AppShell() {
           <IconButton
             label="设置"
             icon={<Settings2 />}
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => changeSettingsOpen(true)}
           />
           <div className="grid-control" title="编辑吸附网格">
             <Magnet aria-hidden="true" />
@@ -1159,7 +1221,7 @@ function AppShell() {
           onSetFollowPlayhead={setFollowPlayhead}
           pausePlayheadBehavior={pausePlayheadBehavior}
           onSetPausePlayheadBehavior={setPausePlayheadBehavior}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => changeSettingsOpen(false)}
         />
       ) : null}
       {chordInferenceOpen ? (

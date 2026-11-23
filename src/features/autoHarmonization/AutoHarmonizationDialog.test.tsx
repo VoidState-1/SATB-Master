@@ -7,6 +7,7 @@ import * as harmonization from "../../domain/harmony/harmonization";
 import { checkHarmony } from "../../domain/harmony/registry";
 import { createEmptyProject, type ProjectDocument } from "../../domain/project";
 import { compileScoreText } from "../../domain/scoreText";
+import { logger } from "../../services/logging";
 import { AutoHarmonizationDialog } from "./AutoHarmonizationDialog";
 
 function exercise(voice: "S" | "B" = "S") {
@@ -46,6 +47,7 @@ describe("自动和声弹窗", () => {
     host.remove();
     Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
     Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
+    logger.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -123,6 +125,25 @@ describe("自动和声弹窗", () => {
     expect(onApply).toHaveBeenCalledWith(result.solutions[0], {
       respectLockedConstraints, writeChords: true, writePhrasesAndCadences: true,
     });
+  });
+
+  it("记录生成失败的错误码并保留可重试的对话框", () => {
+    vi.spyOn(harmonization, "autoHarmonize").mockImplementationOnce(() => {
+      throw new Error("solver unavailable");
+    });
+    mount(exercise());
+
+    click(button("生成和声方案"));
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("生成和声方案失败");
+    expect(logger.getBreadcrumbs()).toContainEqual(expect.objectContaining({
+      scope: "harmonization", message: "生成自动和声",
+    }));
+    expect(logger.getEntries()).toContainEqual(expect.objectContaining({
+      level: "error", scope: "harmonization", code: "HARMONIZATION_FAILED",
+      error: expect.objectContaining({ message: "solver unavailable" }),
+      context: expect.objectContaining({ durationMs: expect.any(Number) }),
+    }));
+    expect(button("生成和声方案").disabled).toBe(false);
   });
 
   it("显示实际和声检查结果，切换方案时停止试听，并应用所选方案", () => {

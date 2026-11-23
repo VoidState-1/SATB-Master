@@ -1,6 +1,7 @@
 import { version as appVersion } from "../../../package.json";
 import {
   APP_ERROR_CODES,
+  AppError,
   MAX_RECENT_LOGS,
   sanitizeContext,
   sanitizePath,
@@ -30,6 +31,13 @@ interface LogDetails {
   code?: AppErrorCode;
   error?: unknown;
   context?: unknown;
+}
+
+interface SpanOptions<T> {
+  code?: AppErrorCode;
+  summarize?: (result: T) => unknown;
+  level?: "debug" | "info";
+  failureLevel?: "warn" | "error";
 }
 
 interface DiagnosticBundleOptions {
@@ -136,29 +144,48 @@ export class RendererLogger {
     this.notify();
   }
 
-  span<T>(scope: LogScope, message: string, fn: () => PromiseLike<T>, context?: unknown): Promise<T>;
-  span<T>(scope: LogScope, message: string, fn: () => T, context?: unknown): T;
-  span<T>(scope: LogScope, message: string, fn: () => T | PromiseLike<T>, context?: unknown): T | Promise<T> {
+  span<T>(scope: LogScope, message: string, fn: () => PromiseLike<T>, context?: unknown, options?: SpanOptions<T>): Promise<T>;
+  span<T>(scope: LogScope, message: string, fn: () => T, context?: unknown, options?: SpanOptions<T>): T;
+  span<T>(
+    scope: LogScope,
+    message: string,
+    fn: () => T | PromiseLike<T>,
+    context?: unknown,
+    options: SpanOptions<T> = {},
+  ): T | Promise<T> {
     const start = performance.now();
     const spanContext = () => ({
       durationMs: performance.now() - start,
       ...(context === undefined ? {} : { details: context }),
     });
+    const success = (value: T) => {
+      const elapsed = spanContext();
+      let summary: unknown;
+      try {
+        summary = options.summarize?.(value);
+      } catch {
+        // A result summary must never change the operation's outcome.
+      }
+      this[options.level ?? "debug"](scope, message, {
+        context: summary === undefined ? elapsed : { ...elapsed, result: summary },
+      });
+      return value;
+    };
     const fail = (error: unknown): never => {
-      this.error(scope, message, { error, context: spanContext() });
+      this[options.failureLevel ?? "error"](scope, message, {
+        code: error instanceof AppError ? error.code : options.code,
+        error,
+        context: spanContext(),
+      });
       throw error;
     };
 
     try {
       const result = fn();
       if (result != null && typeof (result as PromiseLike<T>).then === "function") {
-        return Promise.resolve(result).then((value) => {
-          this.debug(scope, message, { context: spanContext() });
-          return value;
-        }, fail);
+        return Promise.resolve(result).then(success, fail);
       }
-      this.debug(scope, message, { context: spanContext() });
-      return result as T;
+      return success(result as T);
     } catch (error) {
       return fail(error);
     }

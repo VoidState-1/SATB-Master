@@ -49,6 +49,7 @@ import {
   keyAtTick,
   ticksPerBeat,
 } from "../../../domain/time";
+import { logger } from "../../../services/logging";
 import type { ClipboardNote } from "../useEditorState";
 import type { EditorCommandContext } from "./types";
 
@@ -107,6 +108,7 @@ export function useProjectCommands({
       history.commit(
         replaceProject(project, (draft) => Object.assign(draft, patch)),
       );
+      logger.recordBreadcrumb("editor", "修改工程设置", { fields: Object.keys(patch) });
     },
     [history, project, showNotice],
   );

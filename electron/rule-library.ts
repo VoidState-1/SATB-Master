@@ -13,6 +13,7 @@ import {
   type InstalledRulePackage,
 } from './rule-library-policy.js'
 import { DESKTOP_CHANNELS, type InstallExternalRuleRequest } from '../shared/desktop.js'
+import { logMain } from './logger.js'
 import { handleDesktop } from './typed-ipc.js'
 
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
@@ -55,7 +56,9 @@ async function listInstalledRulePackages() {
       }
       packages.push(metadata)
     } catch (error) {
-      console.warn(`忽略损坏的外置规则记录：${name}`, error)
+      logMain('warn', 'external-rule', '忽略损坏的外置规则记录', {
+        code: 'EXTERNAL_RULE_FAILED', error, context: { name },
+      })
     }
   }
   return packages.sort((left, right) =>

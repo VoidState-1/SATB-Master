@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LogEntry } from "../shared/logging.js";
-import { MainLogger, registerLoggingIpc } from "./logger.js";
+import { initializeMainLogger, logMain, MainLogger, registerLoggingIpc } from "./logger.js";
+import { registerProjectIpc } from "./project-ipc.js";
 import { handleDesktop, setDesktopIpcReporter } from "./typed-ipc.js";
 
 const { handlers, openPath, showSaveDialog } = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const { handlers, openPath, showSaveDialog } = vi.hoisted(() => ({
 }));
 
 vi.mock("electron", () => ({
+  app: { getPath: () => directory },
   BrowserWindow: { fromWebContents: () => null, getFocusedWindow: () => null },
   dialog: { showSaveDialog },
   shell: { openPath },
@@ -64,6 +66,39 @@ afterEach(() => {
 });
 
 describe("MainLogger", () => {
+  it("serializes errors reported by main-process adapters", async () => {
+    const logger = initializeMainLogger(directory);
+    logMain("warn", "file", "读取失败", {
+      code: "FILE_READ_FAILED",
+      error: new Error("permission denied"),
+      context: { kind: "project" },
+    });
+    expect(logger.getRecent()).toMatchObject([
+      {
+        level: "warn", scope: "file", process: "main", code: "FILE_READ_FAILED",
+        error: { name: "Error", message: "permission denied" },
+        context: { kind: "project" },
+      },
+    ]);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(readFileSync(logger.logFilePath!, "utf8")).toContain("FILE_READ_FAILED");
+  });
+
+  it("exports an emergency .satb copy and preserves the automatic recovery file", async () => {
+    registerProjectIpc();
+    const recoveryPath = path.join(directory, "recovery.json");
+    writeFileSync(recoveryPath, "existing recovery");
+    const selection = path.join(directory, "emergency");
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: selection });
+    const project = { schemaVersion: 3, satbTracks: [{}, {}, {}, {}], title: "紧急备份" };
+
+    await expect(invoke("project:export-backup", { project, defaultName: "紧急备份" }))
+      .resolves.toEqual({ canceled: false, filePath: selection + ".satb" });
+    expect(showSaveDialog).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "紧急备份.satb" }));
+    expect(JSON.parse(readFileSync(selection + ".satb", "utf8"))).toEqual(project);
+    expect(readFileSync(recoveryPath, "utf8")).toBe("existing recovery");
+  });
+
   it("writes UTF-8 JSONL, drains pending writes before a synchronous fatal and serves recent logs", async () => {
     const logger = new MainLogger(directory);
     const pending = logger.appendBatch([entry("a", "启动\n完成"), entry("b")]);

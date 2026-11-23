@@ -2,6 +2,7 @@ import { session } from 'electron'
 import { readdir, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { logMain } from './logger.js'
 
 const REACT_DEVTOOLS_EXTENSION_ID = 'fmkadmapgofadopljbjfkapdkoienihi'
 
@@ -56,16 +57,22 @@ export async function findReactDevToolsPath(): Promise<string | undefined> {
               if (manifestStat.isFile()) {
                 return candidatePath
               }
-            } catch {
-              // ignore invalid manifest
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                logMain('warn', 'app', '读取 React DevTools 扩展清单失败', { code: 'FILE_READ_FAILED', error })
+              }
             }
           }
-        } catch {
-          // ignore profile extension directory error
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            logMain('warn', 'app', '读取 React DevTools 扩展目录失败', { code: 'FILE_READ_FAILED', error })
+          }
         }
       }
-    } catch {
-      // ignore base directory error
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logMain('warn', 'app', '读取浏览器配置目录失败', { code: 'FILE_READ_FAILED', error })
+      }
     }
   }
 
@@ -76,16 +83,16 @@ export async function installReactDevToolsIfAvailable(): Promise<boolean> {
   try {
     const extensionPath = await findReactDevToolsPath()
     if (!extensionPath) {
-      console.info('[React DevTools] 未在本地 Chrome/Edge 找到已安装的 React 调试插件')
+      logMain('info', 'app', '未在本地 Chrome/Edge 找到已安装的 React 调试插件')
       return false
     }
     await session.defaultSession.loadExtension(extensionPath, {
       allowFileAccess: true,
     })
-    console.info(`[React DevTools] 成功加载扩展: ${extensionPath}`)
+    logMain('info', 'app', '已加载 React DevTools', { context: { extensionPath } })
     return true
   } catch (error) {
-    console.warn('[React DevTools] 加载扩展失败:', error)
+    logMain('warn', 'app', 'React DevTools 加载失败', { code: 'UNKNOWN', error })
     return false
   }
 }

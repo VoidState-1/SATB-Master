@@ -5,6 +5,7 @@ import {
   externalRuleReferenceKey,
   normalizeExternalRuleConfig,
   type ExternalRuleFailure,
+  type HarmonyCheckResult,
   type InstalledExternalRulePackage,
 } from "../../domain/harmony";
 import type {
@@ -35,6 +36,7 @@ import {
   ExternalRuleRuntime,
   mergeHarmonyWithExternalRules,
 } from "../../services/externalRuleRuntime";
+import { logger } from "../../services/logging";
 import type { ConfirmationState } from "./useConfirmationController";
 
 interface ProjectHistoryCommitter {
@@ -58,6 +60,7 @@ export function useHarmonyController({
   const harmonySchedulerRef = useRef(createHarmonyRuleScheduler());
   const externalRuleRuntimeRef = useRef(new ExternalRuleRuntime());
   const harmonyRevisionRef = useRef(0);
+  const previousRuleErrorsRef = useRef("");
   const profileUpgradePromptsRef = useRef(new Set<string>());
   const [externalRuleFailures, setExternalRuleFailures] = useState<
     ExternalRuleFailure[]
@@ -111,48 +114,76 @@ export function useHarmonyController({
   useEffect(() => {
     const controller = new AbortController();
     const revision = ++harmonyRevisionRef.current;
-    const analysis = harmonySchedulerRef.current.prepareAnalysis(
-      project,
-      revision,
-    );
-    const builtinRun = harmonySchedulerRef.current.run({
-      project,
-      analysis,
-      severities: resolvedRuleProfile.severities,
-      configs: resolvedRuleProfile.configs,
-      exceptions: resolvedRuleProfile.exceptions,
-      revision,
-      signal: controller.signal,
-    });
-    const externalRun = externalRuleRuntimeRef.current.run({
-      project,
-      packages: externalRuleLibrary.packages,
-      revision,
-      analysis,
-      signal: controller.signal,
-    });
-    void builtinRun.then((builtinResult) => {
-      // 外置规则即使超时或启动失败，也不能延迟或覆盖内置规则的可用结果。
-      if (!builtinResult.superseded && !controller.signal.aborted)
-        setHarmonyResult(builtinResult);
-    });
-    void Promise.all([builtinRun, externalRun])
-      .then(([builtinResult, externalResult]) => {
-        // 编辑动作可能连续触发多个 revision；被取消的旧结果绝不能覆盖较新的诊断。
-        if (
-          !builtinResult.superseded &&
-          !externalResult.superseded &&
-          !controller.signal.aborted
-        ) {
-          setHarmonyResult(
-            mergeHarmonyWithExternalRules(builtinResult, externalResult),
-          );
-          setExternalRuleFailures(externalResult.failures);
-        }
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) console.warn("外置规则调度失败", error);
+    const start = performance.now();
+    const elapsed = () => performance.now() - start;
+    const current = () => !controller.signal.aborted;
+    const reportResult = (result: HarmonyCheckResult) => {
+      const durationMs = elapsed();
+      const context = {
+        durationMs,
+        diagnosticCount: result.diagnostics.length,
+        skippedRuleCount: result.skippedRules.length,
+      };
+      const ruleErrors = [...new Set(result.skippedRules
+        .filter((skip) => skip.reason === "rule-error")
+        .map((skip) => skip.ruleId))].sort().join("\n");
+      if (ruleErrors && ruleErrors !== previousRuleErrorsRef.current) {
+        logger.warn("harmony", "部分规则执行失败", { code: "HARMONY_CHECK_FAILED", context });
+      } else if (durationMs >= 200) {
+        logger.warn("harmony", "和声检查耗时较长", { context });
+      } else {
+        logger.debug("harmony", "和声检查完成", { context });
+      }
+      previousRuleErrorsRef.current = ruleErrors;
+    };
+    const run = async () => {
+      const scheduler = harmonySchedulerRef.current;
+      const analysis = scheduler.prepareAnalysis(project, revision);
+      const builtinRun = scheduler.run({
+        project,
+        analysis,
+        severities: resolvedRuleProfile.severities,
+        configs: resolvedRuleProfile.configs,
+        exceptions: resolvedRuleProfile.exceptions,
+        revision,
+        signal: controller.signal,
       });
+      const externalRun = externalRuleRuntimeRef.current.run({
+        project,
+        packages: externalRuleLibrary.packages,
+        revision,
+        analysis,
+        signal: controller.signal,
+      }).catch((error) => {
+        if (current()) {
+          logger.error("external-rule", "外置规则调度失败", {
+            code: "EXTERNAL_RULE_FAILED", error, context: { durationMs: elapsed() },
+          });
+        }
+      });
+      const builtinResult = await builtinRun;
+      // 优先显示内置结果，外置规则完成后再合并。
+      if (!current() || builtinResult.superseded) return;
+      setHarmonyResult(builtinResult);
+      const externalResult = await externalRun;
+      if (!current() || externalResult?.superseded) return;
+      if (!externalResult) {
+        setExternalRuleFailures([]);
+        reportResult(builtinResult);
+        return;
+      }
+      const merged = mergeHarmonyWithExternalRules(builtinResult, externalResult);
+      setHarmonyResult(merged);
+      setExternalRuleFailures(externalResult.failures);
+      reportResult(merged);
+    };
+    void run().catch((error) => {
+      if (current()) {
+        logger.error("harmony", "和声检查调度失败", {
+          code: "HARMONY_CHECK_FAILED", error, context: { durationMs: elapsed() },
+        });
+      }
+    });
     return () => {
       controller.abort();
       externalRuleRuntimeRef.current.cancel();
@@ -398,7 +429,9 @@ export function useHarmonyController({
 
   const handleImportRuleProfile = useCallback(async () => {
     try {
-      const source = await openRuleProfileFile();
+      const source = await logger.span("file", "读取规则配置档案", openRuleProfileFile, undefined, {
+        code: "FILE_READ_FAILED",
+      });
       if (source === undefined) return;
       const prepared = prepareRuleProfileImport(
         source,
@@ -434,6 +467,11 @@ export function useHarmonyController({
           draft.ruleProfile = structuredClone(prepared.profile);
         }),
       );
+      logger.recordBreadcrumb("editor", "切换工程规则配置", {
+        changedRuleCount: report.changedRuleIds.length,
+        addedRuleCount: report.addedRuleIds.length,
+        removedRuleCount: report.removedRuleIds.length,
+      });
       showNotice(
         report.unknownBuiltinRuleIds.length > 0
           ? `配置已导入；未知内置规则：${report.unknownBuiltinRuleIds.join("、")}`

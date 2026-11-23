@@ -28,6 +28,7 @@ import type {
 import type { ProjectDocument } from "../domain/project";
 import { formatPosition } from "../domain/time";
 import { loadExternalRulePackageSource } from "./externalRuleLibrary";
+import { logger } from "./logging";
 
 let requestId = 0;
 
@@ -71,11 +72,16 @@ function requestWorker(
       cleanup();
       reject(new Error(event.message || "外置规则 Worker 启动失败"));
     };
+    const onMessageError = () => {
+      cleanup();
+      reject(new Error("无法读取外置规则 Worker 的响应"));
+    };
     const cleanup = () => {
       window.clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
       worker.removeEventListener("message", onMessage);
       worker.removeEventListener("error", onError);
+      worker.removeEventListener("messageerror", onMessageError);
     };
     if (signal?.aborted) {
       onAbort();
@@ -84,35 +90,43 @@ function requestWorker(
     signal?.addEventListener("abort", onAbort, { once: true });
     worker.addEventListener("message", onMessage);
     worker.addEventListener("error", onError);
-    worker.postMessage(request);
+    worker.addEventListener("messageerror", onMessageError);
+    try {
+      worker.postMessage(request);
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
 }
 
 export async function inspectExternalRuleCandidate(
   candidate: ExternalRuleImportCandidate,
 ) {
-  const worker = createRuleWorker();
-  try {
-    const response = await requestWorker(
-      worker,
-      { id: ++requestId, type: "inspect", source: candidate.source },
-      undefined,
-      10_000,
-    );
-    if (!response.ok || response.type !== "inspect")
-      throw new Error(response.ok ? "规则包检查返回类型无效" : response.error);
-    const manifest = parseExternalRuleManifest(response.inspection.manifest);
-    const executableRuleIds = response.inspection.executableRuleIds;
-    const manifestRuleIds = manifest.rules.map((rule) => rule.id);
-    if (
-      executableRuleIds.length !== manifestRuleIds.length ||
-      executableRuleIds.some((id, index) => id !== manifestRuleIds[index])
-    )
-      throw new Error("manifest 中的规则必须与可执行 rules 列表一一对应");
-    return manifest;
-  } finally {
-    worker.terminate();
-  }
+  return logger.span("external-rule", "检查外置规则包", async () => {
+    const worker = createRuleWorker();
+    try {
+      const response = await requestWorker(
+        worker,
+        { id: ++requestId, type: "inspect", source: candidate.source },
+        undefined,
+        10_000,
+      );
+      if (!response.ok || response.type !== "inspect")
+        throw new Error(response.ok ? "规则包检查返回类型无效" : response.error);
+      const manifest = parseExternalRuleManifest(response.inspection.manifest);
+      const executableRuleIds = response.inspection.executableRuleIds;
+      const manifestRuleIds = manifest.rules.map((rule) => rule.id);
+      if (
+        executableRuleIds.length !== manifestRuleIds.length ||
+        executableRuleIds.some((id, index) => id !== manifestRuleIds[index])
+      )
+        throw new Error("manifest 中的规则必须与可执行 rules 列表一一对应");
+      return manifest;
+    } finally {
+      worker.terminate();
+    }
+  }, { sizeBytes: candidate.sizeBytes }, { code: "EXTERNAL_RULE_FAILED" });
 }
 
 function completeExternalRun(options: {
@@ -316,9 +330,11 @@ export class ExternalRuleRuntime {
         legacyNoteAnalysis = buildHarmonyAnalysis(noteProject, revision);
       }
     }
-    const worker = createRuleWorker();
-    this.activeWorker = worker;
+    let worker: Worker | undefined;
     try {
+      worker = createRuleWorker();
+      this.activeWorker = worker;
+      const failureCountBeforeWorker = failures.length;
       const response = await requestWorker(
         worker,
         {
@@ -362,6 +378,13 @@ export class ExternalRuleRuntime {
           return [];
         }
       });
+      const workerFailureCount = failures.length - failureCountBeforeWorker;
+      if (workerFailureCount > 0 && !signal?.aborted) {
+        logger.warn("external-rule", "部分外置规则执行失败", {
+          code: "EXTERNAL_RULE_FAILED",
+          context: { failureCount: workerFailureCount, ruleCount: entries.length },
+        });
+      }
       return completeExternalRun({
         diagnostics,
         failures,
@@ -381,6 +404,9 @@ export class ExternalRuleRuntime {
           superseded: true,
         });
       }
+      logger.error("external-rule", "外置规则 Worker 执行失败", {
+        code: "EXTERNAL_RULE_FAILED", error, context: { ruleCount: entries.length },
+      });
       entries.forEach((entry) =>
         failures.push({
           packageId: entry.package.manifest.packageId,
@@ -399,7 +425,7 @@ export class ExternalRuleRuntime {
         superseded: false,
       });
     } finally {
-      worker.terminate();
+      worker?.terminate();
       if (this.activeWorker === worker) this.activeWorker = undefined;
     }
   }

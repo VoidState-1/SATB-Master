@@ -1,6 +1,7 @@
 import { app, BrowserWindow, screen } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { logMain } from './logger.js'
 
 export interface WindowState {
   width: number
@@ -87,14 +88,14 @@ export function loadSavedWindowState(): WindowState {
       ? screen.getAllDisplays().map((d) => d.workArea)
       : []
     const filePath = getWindowStatePath()
-    if (existsSync(filePath)) {
-      const raw = JSON.parse(readFileSync(filePath, 'utf8')) as unknown
-      return sanitizeWindowState(raw, displays)
-    }
+    const raw = JSON.parse(readFileSync(filePath, 'utf8')) as unknown
+    return sanitizeWindowState(raw, displays)
   } catch (error) {
-    console.warn('读取窗口尺寸记忆失败，使用默认尺寸。', error)
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logMain('warn', 'app', '读取窗口尺寸记忆失败，使用默认尺寸', { code: 'FILE_READ_FAILED', error })
+    }
+    return { ...DEFAULT_WINDOW_STATE }
   }
-  return { ...DEFAULT_WINDOW_STATE }
 }
 
 export function saveWindowState(state: WindowState): void {
@@ -102,7 +103,7 @@ export function saveWindowState(state: WindowState): void {
     const filePath = getWindowStatePath()
     writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf8')
   } catch (error) {
-    console.warn('保存窗口尺寸记忆失败。', error)
+    logMain('warn', 'app', '保存窗口尺寸记忆失败', { code: 'FILE_WRITE_FAILED', error })
   }
 }
 

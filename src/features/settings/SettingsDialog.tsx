@@ -1,3 +1,4 @@
+import { logger } from "../../services/logging";
 import {
   useEffect,
   useRef,
@@ -23,6 +24,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const shortcutSearchRef = useRef<HTMLInputElement>(null);
   const ruleSearchRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>("editor");
+  const selectTab = (tab: SettingsTab) => {
+    if (tab === activeTab) return;
+    logger.recordBreadcrumb("editor", "切换设置页面", { tab });
+    setActiveTab(tab);
+  };
 
   useEffect(() => {
     if (activeTab === "shortcuts") shortcutSearchRef.current?.focus();
@@ -82,7 +88,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               className={activeTab === "editor" ? "is-active" : ""}
               aria-current={activeTab === "editor" ? "page" : undefined}
               aria-label="编辑器"
-              onClick={() => setActiveTab("editor")}
+              onClick={() => selectTab("editor")}
             >
               <LayoutGrid aria-hidden="true" />
               <span>编辑器</span>
@@ -92,7 +98,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               className={activeTab === "shortcuts" ? "is-active" : ""}
               aria-current={activeTab === "shortcuts" ? "page" : undefined}
               aria-label="快捷键"
-              onClick={() => setActiveTab("shortcuts")}
+              onClick={() => selectTab("shortcuts")}
             >
               <Keyboard aria-hidden="true" />
               <span>快捷键</span>
@@ -102,7 +108,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               className={activeTab === "rules" ? "is-active" : ""}
               aria-current={activeTab === "rules" ? "page" : undefined}
               aria-label="检查规则"
-              onClick={() => setActiveTab("rules")}
+              onClick={() => selectTab("rules")}
             >
               <ShieldCheck aria-hidden="true" />
               <span>检查规则</span>
@@ -112,7 +118,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
               className={activeTab === "developer" ? "is-active" : ""}
               aria-current={activeTab === "developer" ? "page" : undefined}
               aria-label="开发者"
-              onClick={() => setActiveTab("developer")}
+              onClick={() => selectTab("developer")}
             >
               <Bug aria-hidden="true" />
               <span>开发者</span>

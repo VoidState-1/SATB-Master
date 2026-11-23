@@ -5,6 +5,7 @@ import {
 } from "../../domain/harmony/inference";
 import { buildMeasures, measureAtTick } from "../../domain/time";
 import type { ProjectDocument } from "../../domain/project";
+import { logger } from "../../services/logging";
 import { ChordInferencePreview } from "./ChordInferencePreview";
 import "./chordInference.css";
 
@@ -19,7 +20,7 @@ export interface ChordInferenceDialogOptions {
   selectedNoteIds: ReadonlySet<string>;
   selectedChordIds: ReadonlySet<string>;
   onClose(): void;
-  onApply(result: HarmonyInferenceResult, options: ChordInferenceApplyOptions): void;
+  onApply(result: HarmonyInferenceResult, options: ChordInferenceApplyOptions): boolean | void;
 }
 
 function selectedRange(
@@ -73,6 +74,7 @@ export function ChordInferenceDialog({
     mode: ChordInferenceApplyOptions["mode"];
     choices: ReadonlyMap<string, string>;
   }>();
+  const [applicationFailed, setApplicationFailed] = useState(false);
   const firstControlRef = useRef<HTMLSelectElement>(null);
 
   const selection = useMemo(
@@ -95,10 +97,38 @@ export function ChordInferenceDialog({
         ? { fromTick: measure.startTick, toTick: measure.endTick }
         : { fromTick: 0, toTick: project.lengthTicks };
   const { fromTick, toTick } = range;
-  const result = useMemo(() => inferHarmony(project, {
-    fromTick, toTick, allowAbsoluteFallback, allowIncompleteVoicing, minConfidence,
+  const inferenceRequest = useMemo(() => ({
+    project,
+    options: { fromTick, toTick, allowAbsoluteFallback, allowIncompleteVoicing, minConfidence },
   }), [project, fromTick, toTick, allowAbsoluteFallback, allowIncompleteVoicing, minConfidence]);
-  const candidateChoices = review?.result === result && review.mode === mode ? review.choices : undefined;
+  const lastRequest = useRef<typeof inferenceRequest>(undefined);
+  const [inference, setInference] = useState<{
+    request: typeof inferenceRequest;
+    result?: HarmonyInferenceResult;
+  }>();
+  const currentInference = inference?.request === inferenceRequest ? inference : undefined;
+  const result = currentInference?.result;
+  const candidateChoices = review?.result === result && review?.mode === mode ? review.choices : undefined;
+
+  useEffect(() => {
+    if (lastRequest.current === inferenceRequest) return;
+    lastRequest.current = inferenceRequest;
+    const { project, options } = inferenceRequest;
+    logger.recordBreadcrumb("inference", "推导和弦", options);
+    setApplicationFailed(false);
+    try {
+      const result = logger.span("inference", "推导和弦", () => inferHarmony(project, options), options, {
+        code: "INFERENCE_FAILED",
+        summarize: ({ chordInference }) => ({
+          regionCount: chordInference.regions.length,
+          unresolvedCount: chordInference.unresolvedObservationIndices.length,
+        }),
+      });
+      setInference({ request: inferenceRequest, result });
+    } catch {
+      setInference({ request: inferenceRequest });
+    }
+  }, [inferenceRequest]);
 
   useEffect(() => {
     firstControlRef.current?.focus();
@@ -106,7 +136,7 @@ export function ChordInferenceDialog({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    onApply(result, { mode, candidateChoices, writeNonChordToneRoles });
+    if (result) setApplicationFailed(onApply(result, { mode, candidateChoices, writeNonChordToneRoles }) === false);
   };
 
   return (
@@ -257,7 +287,9 @@ export function ChordInferenceDialog({
             </div>
           </div>
 
-          <ChordInferencePreview
+          {currentInference && !result && <p role="alert">和弦推导失败，请调整范围或选项后重试。</p>}
+          {applicationFailed && <p role="alert">应用和弦推导失败，请重试。</p>}
+          {result && <ChordInferencePreview
             project={project}
             regions={result.chordInference.regions}
             mode={mode}
@@ -269,19 +301,19 @@ export function ChordInferenceDialog({
                 return { result, mode, choices };
               });
             }}
-            onApplyRegion={(regionId, candidateId) => onApply(result, {
+            onApplyRegion={(regionId, candidateId) => setApplicationFailed(onApply(result, {
               mode,
               selection: new Set([regionId]),
               candidateChoices: new Map([[regionId, candidateId]]),
               writeNonChordToneRoles,
-            })}
-          />
+            }) === false)}
+          />}
         </form>
         <footer className="chord-inference-footer">
           <button type="button" className="chord-inference-btn-secondary" onClick={onClose}>
             取消
           </button>
-          <button type="submit" form="chord-inference-form" className="chord-inference-btn-primary">
+          <button type="submit" form="chord-inference-form" className="chord-inference-btn-primary" disabled={!result}>
             <WandSparkles size={15} aria-hidden="true" />
             <span>应用推导结果</span>
           </button>

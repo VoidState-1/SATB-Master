@@ -3,11 +3,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { logger } from "../services/logging";
+import { createEmptyProject } from "../domain/project";
+import { logger, registerEmergencyProjectProvider } from "../services/logging";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 
 let container: HTMLDivElement;
 let root: Root;
+let unregisterProject: (() => void) | undefined;
 
 function Crash(): never {
   throw new Error("不能渲染 /home/alice/score");
@@ -31,6 +33,8 @@ afterEach(async () => {
   container.remove();
   Reflect.deleteProperty(window, "desktop");
   Reflect.deleteProperty(navigator, "clipboard");
+  unregisterProject?.();
+  unregisterProject = undefined;
   logger.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -91,6 +95,61 @@ describe("AppErrorBoundary", () => {
       logs: [expect.objectContaining({ code: "RENDER_CRASH" })],
     });
     expect(container.querySelector('[role="status"]')?.textContent).toContain("已导出排错包");
+  });
+
+  it("exports the registered project on demand and adds its summary to the bundle", async () => {
+    const project = createEmptyProject();
+    project.title = "当前练习";
+    project.notes = "不随排错包分享的笔记";
+    unregisterProject = registerEmergencyProjectProvider(() => project);
+
+    const exportBackup = vi.fn().mockResolvedValue({ canceled: false });
+    const exportBundle = vi.fn().mockResolvedValue({ canceled: false });
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        project: { exportBackup },
+        log: { getRecent: vi.fn().mockResolvedValue({ entries: [] }), exportBundle },
+      },
+    });
+
+    await act(() => root.render(<AppErrorBoundary><Crash /></AppErrorBoundary>));
+    expect(exportBackup).not.toHaveBeenCalled();
+    await act(() => button("导出当前工程备份（.satb）").click());
+    expect(exportBackup).toHaveBeenCalledWith({ project, defaultName: "当前练习-紧急备份" });
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("已导出工程备份");
+    await act(() => button("导出排错包").click());
+    const bundle = exportBundle.mock.calls[0][0].bundleJson;
+    expect(JSON.parse(bundle).project).toEqual({
+      schemaVersion: project.schemaVersion,
+      lengthTicks: project.lengthTicks,
+      noteCounts: { soprano: 0, alto: 0, tenor: 0, bass: 0 },
+      chordRegionCount: 0,
+      auxiliaryTrackCount: 0,
+      externalRuleCount: 0,
+      soundFontKind: "default",
+    });
+    expect(bundle).not.toContain(project.notes);
+  });
+
+  it("reports emergency export failure and cancellation without retrying automatically", async () => {
+    unregisterProject = registerEmergencyProjectProvider(createEmptyProject);
+    const exportBackup = vi.fn()
+      .mockRejectedValueOnce(new Error("disk unavailable"))
+      .mockResolvedValueOnce({ canceled: true });
+    Object.defineProperty(window, "desktop", { configurable: true, value: { project: { exportBackup } } });
+    await act(() => root.render(<AppErrorBoundary><Crash /></AppErrorBoundary>));
+
+    await act(() => button("导出当前工程备份（.satb）").click());
+    expect(logger.getEntries()).toContainEqual(expect.objectContaining({
+      level: "error", scope: "file", code: "RECOVERY_FAILED",
+      error: expect.objectContaining({ message: "disk unavailable" }),
+    }));
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("未能导出当前工程备份");
+
+    await act(() => button("导出当前工程备份（.satb）").click());
+    expect(exportBackup).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("已取消导出工程备份");
   });
 
   it("downloads the bundle in browser mode and runs emergency backup once", async () => {

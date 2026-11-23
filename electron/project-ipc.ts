@@ -12,6 +12,7 @@ import {
   showExclusiveSaveDialog,
 } from './dialog-coordinator.js'
 import { DESKTOP_CHANNELS } from '../shared/desktop.js'
+import { logMain } from './logger.js'
 import { handleDesktop } from './typed-ipc.js'
 
 const MAX_PROJECT_BYTES = 20 * 1024 * 1024
@@ -87,7 +88,7 @@ async function loadDialogDirectories() {
     )
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn('读取最近文件夹记录失败，将使用系统默认目录。', error)
+      logMain('warn', 'file', '读取最近文件夹记录失败，使用系统默认目录', { code: 'FILE_READ_FAILED', error })
     }
     dialogDirectories = {}
   }
@@ -99,7 +100,10 @@ async function recentDialogDirectory(kind: DialogDirectoryKind) {
   if (!directory) return undefined
   try {
     return (await stat(directory)).isDirectory() ? directory : undefined
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logMain('warn', 'file', '无法访问最近文件夹', { code: 'FILE_READ_FAILED', error, context: { kind } })
+    }
     return undefined
   }
 }
@@ -116,7 +120,7 @@ export async function rememberDialogDirectory(kind: DialogDirectoryKind, filePat
   try {
     await dialogDirectoryWrite
   } catch (error) {
-    console.warn('保存最近文件夹记录失败。', error)
+    logMain('warn', 'file', '保存最近文件夹记录失败', { code: 'FILE_WRITE_FAILED', error, context: { kind } })
   }
 }
 
@@ -202,9 +206,15 @@ export function registerProjectIpc() {
 
     const info = await stat(filePath)
     if (info.size > MAX_PROJECT_BYTES) throw new Error('工程文件超过 20 MB 限制')
-    const project = JSON.parse(await readFile(filePath, 'utf8')) as unknown
-    assertProjectEnvelope(project)
-    return { canceled: false, filePath, project }
+    const source = await readFile(filePath, 'utf8')
+    try {
+      const project = JSON.parse(source) as unknown
+      assertProjectEnvelope(project)
+      return { canceled: false, filePath, project }
+    } catch (error) {
+      logMain('error', 'file', '工程内容无效', { code: 'PROJECT_INVALID', error })
+      return { canceled: false, invalidMessage: '所选文件不是受支持的 SATB 工程' }
+    }
   })
 
   handleDesktop(DESKTOP_CHANNELS.projectSave, async (event, request) => {
@@ -229,6 +239,20 @@ export function registerProjectIpc() {
     await writeProjectAtomic(filePath, request.project)
     await rm(recoveryPath(), { force: true })
     return { canceled: false, filePath, migrationBackupPath }
+  })
+
+  handleDesktop(DESKTOP_CHANNELS.projectExportBackup, async (event, request) => {
+    const defaultName = (typeof request.defaultName === 'string' ? request.defaultName : '')
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim().slice(0, 120) || 'SATB 紧急备份'
+    const selection = await showExclusiveSaveDialog(BrowserWindow.fromWebContents(event.sender) ?? undefined, {
+      title: '导出当前工程备份',
+      defaultPath: `${defaultName}.satb`,
+      filters: [{ name: 'SATB Master 工程', extensions: ['satb'] }],
+    })
+    if (selection.canceled || !selection.filePath) return { canceled: true }
+    const filePath = /\.satb$/i.test(selection.filePath) ? selection.filePath : `${selection.filePath}.satb`
+    await writeProjectAtomic(filePath, request.project)
+    return { canceled: false, filePath }
   })
 
   handleDesktop(DESKTOP_CHANNELS.projectAutosave, async (_event, request) => {

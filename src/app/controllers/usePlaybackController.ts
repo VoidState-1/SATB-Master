@@ -16,6 +16,7 @@ import {
   readSoundFontBuffer,
   type SoundFontLoadProgress,
 } from "../../services/desktop";
+import { logger } from "../../services/logging";
 import { createSingleFlight } from "./singleFlight";
 
 import type { PausePlayheadBehavior } from "../../hooks/usePausePlayheadBehavior";
@@ -137,6 +138,7 @@ export function usePlaybackController({
     useState<SoundFontLoadProgress>();
   const [soundFontSizeBytes, setSoundFontSizeBytes] = useState<number>();
   const playSessionRef = useRef(0);
+  const playbackStartingRef = useRef(false);
   const playbackStart = useRef(createSingleFlight<void>()).current;
 
   const reportSoundFontProgress = useCallback(
@@ -174,11 +176,21 @@ export function usePlaybackController({
         if (audioEngine.isSoundFontChangeCurrent(generation))
           reportSoundFontProgress(progress);
       };
+      const context = { kind: soundFont.kind };
+      logger.recordBreadcrumb("audio", "加载工程 SoundFont", context);
       const request: SoundFontLoadRequest = {
         id,
         loadKey,
         generation,
-        promise: ensureSoundFontLoaded(soundFont, generation, reportProgress),
+        promise: logger.span("audio", "加载工程 SoundFont",
+          () => ensureSoundFontLoaded(soundFont, generation, reportProgress),
+          context,
+          {
+            code: "SOUNDFONT_LOAD_FAILED",
+            failureLevel: "warn",
+            summarize: (result) => ({ loaded: Boolean(result), superseded: result === undefined }),
+          },
+        ),
       };
       activeSoundFontLoad = request;
       const clearRequest = () => {
@@ -222,9 +234,8 @@ export function usePlaybackController({
         if (soundFont && soundFont !== "already-loaded")
           setSoundFontSizeBytes(soundFont.sizeBytes);
       })
-      .catch((error) => {
+      .catch(() => {
         if (!active || !isLoadRequestCurrent(request)) return;
-        console.warn("工程 SoundFont 预加载失败，将使用回退音色。", error);
         showNotice(
           effectiveSoundFont.kind === "default"
             ? "默认音色不可用，已切换到回退音色"
@@ -270,7 +281,7 @@ export function usePlaybackController({
       };
       return generation;
     };
-    try {
+    const loadSelection = async () => {
       let name: string;
       let path: string | undefined;
       let hash: string | undefined;
@@ -316,6 +327,7 @@ export function usePlaybackController({
         input.accept = ".sf2,.sf3";
         const file = await new Promise<File | undefined>((resolve) => {
           input.onchange = () => resolve(input.files?.[0]);
+          input.oncancel = () => resolve(undefined);
           input.click();
         });
         if (!file) return;
@@ -375,6 +387,11 @@ export function usePlaybackController({
       }
       setSoundFontSizeBytes(sizeBytes);
       showNotice("SoundFont 已加载");
+    };
+    const context = { kind: "user" };
+    logger.recordBreadcrumb("audio", "选择 SoundFont", context);
+    try {
+      await logger.span("audio", "加载所选 SoundFont", loadSelection, context, { code: "SOUNDFONT_LOAD_FAILED" });
     } catch (error) {
       if (
         generation === undefined ||
@@ -408,6 +425,7 @@ export function usePlaybackController({
         }),
       );
     }
+    logger.recordBreadcrumb("audio", "切换到默认 SoundFont");
     const request = requestSoundFontLoad(defaultSoundFont);
     try {
       const soundFont = await request.promise;
@@ -435,6 +453,9 @@ export function usePlaybackController({
   const handleStop = useCallback(
     (returnToStart = false) => {
       const wasPlaying = isPlayingRef.current || isPlaying;
+      if (wasPlaying || playbackStartingRef.current) {
+        logger.recordBreadcrumb("audio", "停止播放", { returnToStart });
+      }
       playSessionRef.current += 1;
       audioEngine.stop();
       setIsPlaying(false);
@@ -464,12 +485,11 @@ export function usePlaybackController({
           if (!soundFont || !shouldStart()) return false;
           if (soundFont !== "already-loaded")
             setSoundFontSizeBytes(soundFont.sizeBytes);
-        } catch (error) {
+        } catch {
           if (!isLoadRequestCurrent(request) || !shouldStart()) return false;
           // 音源缺失、摘要变化或安装路径异常时清掉旧音色，防止误用上一个工程的音色。
           await audioEngine.unloadSoundFont();
           setSoundFontProgress(undefined);
-          console.warn("工程 SoundFont 加载失败，继续使用回退音色。", error);
           showNotice(
             soundFontConfig.kind === "default"
               ? "默认音色不可用，已切换到回退音色"
@@ -488,6 +508,15 @@ export function usePlaybackController({
   const startPlayback = useCallback(async () => {
     const session = ++playSessionRef.current;
     const shouldStart = () => playSessionRef.current === session;
+    playbackStartingRef.current = true;
+    logger.recordBreadcrumb("audio", "开始播放", { loopEnabled, metronomeEnabled });
+    const handlePlaybackFailure = (error: unknown) => {
+      if (!shouldStart()) return;
+      logger.error("audio", "播放失败", { code: "AUDIO_PLAYBACK_FAILED", error });
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      showNotice(error instanceof Error ? error.message : "播放失败");
+    };
     try {
       if (!(await preparePlaybackAudio(shouldStart))) return;
       setIsPlaying(true);
@@ -503,8 +532,9 @@ export function usePlaybackController({
             if (playSessionRef.current !== session) return;
             if (loopEnabled) {
               setPlayheadTick(loopStartTick);
-              void playSegment(loopStartTick);
+              void playSegment(loopStartTick).catch(handlePlaybackFailure);
             } else {
+              logger.recordBreadcrumb("audio", "播放结束");
               setIsPlaying(false);
               isPlayingRef.current = false;
             }
@@ -521,10 +551,9 @@ export function usePlaybackController({
       playbackStartTickRef.current = startTick;
       await playSegment(startTick);
     } catch (error) {
-      if (!shouldStart()) return;
-      setIsPlaying(false);
-      isPlayingRef.current = false;
-      showNotice(error instanceof Error ? error.message : "播放失败");
+      handlePlaybackFailure(error);
+    } finally {
+      playbackStartingRef.current = false;
     }
   }, [
     loopEnabled,
@@ -545,8 +574,12 @@ export function usePlaybackController({
     onEnded: () => void,
   ) => {
     if (signal.aborted) return;
+    logger.recordBreadcrumb("audio", "试听自动和声候选", range);
     const shouldStart = () => !signal.aborted;
-    const stop = () => audioEngine.stop();
+    const stop = () => {
+      logger.recordBreadcrumb("audio", "停止候选试听");
+      audioEngine.stop();
+    };
     const finish = () => {
       signal.removeEventListener("abort", stop);
       if (signal.aborted) return;
@@ -574,6 +607,7 @@ export function usePlaybackController({
     } catch (error) {
       signal.removeEventListener("abort", stop);
       if (signal.aborted) return;
+      logger.error("audio", "候选试听失败", { code: "AUDIO_PLAYBACK_FAILED", error });
       stop();
       throw error;
     }

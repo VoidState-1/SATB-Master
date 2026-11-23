@@ -11,6 +11,7 @@ import {
 } from "../../domain/harmony/harmonization";
 import type { ProjectDocument } from "../../domain/project";
 import { buildMeasures, measureAtTick } from "../../domain/time";
+import { logger } from "../../services/logging";
 import { AutoHarmonizationPreview } from "./AutoHarmonizationPreview";
 import "./autoHarmonization.css";
 
@@ -22,7 +23,7 @@ interface AutoHarmonizationDialogProps {
   selectedNoteIds: ReadonlySet<string>;
   selectedChordIds: ReadonlySet<string>;
   onClose(): void;
-  onApply(solution: HarmonizationSolution, options: AutoHarmonizationApplyOptions): void;
+  onApply(solution: HarmonizationSolution, options: AutoHarmonizationApplyOptions): boolean | void;
   onAudition(solution: HarmonizationSolution, signal: AbortSignal, onEnded: () => void): Promise<void>;
 }
 
@@ -125,9 +126,22 @@ export function AutoHarmonizationDialog({
     event.preventDefault();
     if (!hasGivenNotes) return;
     setMessage(undefined);
+    const context = { ...range, givenVoice, style };
+    logger.recordBreadcrumb("harmonization", "生成自动和声", context);
     try {
-      const result = autoHarmonize(project, {
-        ...range, givenVoice, style, respectLockedConstraints, allowPassingAndNeighborMelodies,
+      const result = logger.span("harmonization", "生成自动和声", () => autoHarmonize(project, {
+        ...context, respectLockedConstraints, allowPassingAndNeighborMelodies,
+      }), context, {
+        code: "HARMONIZATION_FAILED",
+        summarize: ({ solutions }) => {
+          const best = solutions[0];
+          return {
+            solutionCount: solutions.length,
+            bestErrors: best?.diagnosticSummary.errorCount,
+            bestWarnings: best?.diagnosticSummary.warningCount,
+            relaxedLevel: best?.relaxedLevel,
+          };
+        },
       });
       setSelectedId(result.solutions[0]?.id);
       setReview(result);
@@ -272,7 +286,10 @@ export function AutoHarmonizationDialog({
             <button type="button" className="auto-harmonization-button primary" disabled={!selected} onClick={() => {
               if (!selected) return;
               stopAudition();
-              onApply(selected, { writeChords, writePhrasesAndCadences, respectLockedConstraints });
+              if (onApply(selected, { writeChords, writePhrasesAndCadences, respectLockedConstraints }) === false) {
+                setMessage("应用自动和声失败，请重试。");
+                return;
+              }
               dialogRef.current?.close();
             }}>应用所选方案</button>
           </>
