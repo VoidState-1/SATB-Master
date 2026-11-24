@@ -37,7 +37,7 @@ TrackSidebar | PianoRoll + BottomPanel | Inspector
 - **和弦推导弹窗**：[`ChordInferenceDialog`](../src/features/chordInference/ChordInferenceDialog.tsx) 按全工程、选区或乐句范围推导候选并在应用前预览（见 [analysis-inference.md](./analysis-inference.md)）。
 - **自动和声弹窗**：[`AutoHarmonizationDialog`](../src/features/autoHarmonization/AutoHarmonizationDialog.tsx) 为给定高音或低音生成完整四部和声候选、支持试听并一次提交（见 [harmonization.md](./harmonization.md)）。
 - **独立五线谱大窗**：[`ScorePreviewDialog`](../src/features/scorePreview/ScorePreviewDialog.tsx) 以模态大窗口展示完整只读五线谱。
-- **统一导出弹窗**：[`ExportDialog`](../src/features/export/ExportDialog.tsx) 集中提供 MusicXML（`.musicxml`）与 MIDI（`.mid`）导出选项。
+- **统一导出弹窗**：[`ExportDialog`](../src/features/export/ExportDialog.tsx) 集中提供 MusicXML（`.musicxml`）与 MIDI（`.mid`）导出选项，两个格式均可逐轨选择额外声部。
 - **实时 MIDI 输出弹窗**：[`MidiOutDialog`](../src/features/midiOut/MidiOutDialog.tsx) 配置 Web MIDI 端口、通道路由与内置合成器静音联动（见 [audio-midi-and-time.md](./audio-midi-and-time.md)）。
 - **设置弹窗**：[`SettingsDialog`](../src/features/settings/SettingsDialog.tsx) 管理快捷键、规则配置、外置规则包、编辑器偏好与开发者选项。
 - **规则测试工作台**：[`RuleTestWorkbench`](../src/features/ruleTesting/RuleTestWorkbench.tsx) 提供独立的用例编辑与运行区，进入/退出时隔离面板布局偏好（见 [rule-testing.md](./rule-testing.md)）。
@@ -86,7 +86,7 @@ interface EditResult {
 
 命令层负责的约束包括：
 
-- SATB 同一声部音符不能重叠，辅助轨可以重叠。
+- SATB 同一声部禁止音符重叠。额外声部允许复音，起点、时值和 MIDI 音高均相同的音符会被编辑命令拒绝。
 - 音符必须位于工程范围和 MIDI 0-127 内。
 - 音符锁定、和弦锁定和练习可编辑区间必须生效。
 - 和弦区域不能重叠，也不能跨越调号事件。
@@ -198,6 +198,14 @@ Ctrl+滚轮横向缩放调用 `scrollLeftForZoom` 以鼠标所指 tick 为锚点
 - 切分点向适用的网格方向吸附，并保证两侧时值均大于零。
 
 实时隐藏与领域提交需要分开：若命令最终拒绝，隐藏集合要清空并恢复原画面。
+
+### 7.6 额外声部管理与复音编辑
+
+[`TrackSidebar.tsx`](../src/features/tracks/TrackSidebar.tsx) 在四个固定 SATB 声部下方列出额外声部，提供新增、重命名、配色、删除和输入轨切换。额外声部沿用可见、静音、独奏和锁定控制。音色等轨道属性可在声音检查器中调整。
+
+在钢琴卷帘使用画笔时，音符写入当前输入轨。额外声部可在同一时间写入多个音高，也可绘制起止不同的重叠音符。选择工具优先命中最上层可见音符。不同轨道在同一位置重叠时，双击可在命中的轨道之间循环切换输入轨。音符移动、改时值和批量操作由领域命令复核完全重叠和锁定条件。
+
+五线谱预览工具栏可逐轨显示或隐藏额外声部。记谱模型按音域选用高音或低音谱号，把同起止音符合为和弦，将错位重叠的片段分配到独立记谱声部。
 
 ## 8. 长工程性能模型
 

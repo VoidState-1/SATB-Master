@@ -1,6 +1,6 @@
 # 时间轴、音频与 MIDI
 
-本文说明 tick/秒/小节的统一换算、播放调度、SoundFont 生命周期和 MIDI Type 1 导出。工程时间事件见 [data-model.md](./data-model.md)，本地资源协议见 [desktop-and-persistence.md](./desktop-and-persistence.md)。
+本文说明 tick/秒/小节的统一换算、播放调度、SoundFont 生命周期以及 MIDI Type 1 和 MusicXML 导出。工程时间事件见 [data-model.md](./data-model.md)，本地资源协议见 [desktop-and-persistence.md](./desktop-and-persistence.md)。
 
 ## 1. 单一时间来源
 
@@ -232,10 +232,12 @@ SoundFont 读取和解析是异步的。`soundFontChangeGeneration` 与串行加
 
 ## 13. MIDI Type 1 与 MusicXML 导出
 
-工具栏导出按钮打开统一导出弹窗 [`ExportDialog.tsx`](../src/features/export/ExportDialog.tsx)，同时支持 **MusicXML（`.musicxml`）** 与 **MIDI Type 1（`.mid`）** 两种格式，并分别记忆上次选择的格式与参数（`satb_master_export_format`、`satb_master_midi_export_options`、`satb_master_musicxml_export_options`）。
+工具栏导出按钮打开统一导出弹窗 [`ExportDialog.tsx`](../src/features/export/ExportDialog.tsx)，同时支持 **MusicXML（`.musicxml`）** 与 **MIDI Type 1（`.mid`）** 两种格式，并记忆上次提交的格式及各格式参数（`satb_master_export_format`、`satb_master_midi_export_options`、`satb_master_musicxml_export_options`）。
 
-- **MusicXML 导出**：由 [`src/domain/musicxml/`](../src/domain/musicxml/index.ts) 实现，支持单行大谱表/钢琴大谱表/SATB 分谱（`single-staff` / `grand-staff` / `satb-separate`）以及可选和弦标记与罗马数字分析导出，能完整保留 `SpelledPitch` 书写拼写。
+- **MusicXML 导出**：由 [`src/domain/musicxml/`](../src/domain/musicxml/index.ts) 实现，支持单谱表、钢琴大谱表、SATB 分谱（`single-staff` / `grand-staff` / `satb-separate`）以及可选和弦标记与罗马数字分析导出，能完整保留 `SpelledPitch` 书写拼写。
 - **MIDI Type 1 导出**：由 [`src/domain/midi.ts`](../src/domain/midi.ts) 构建结构化事件并交 `midi-file` 序列化，使用工程 PPQ，所有轨道与标记文本经 `toMidiString` / `fromMidiString` 按 UTF-8 字节编码避免中文乱码。
+
+两种格式默认包含全部额外声部，弹窗支持总开关、逐轨勾选及全选和取消全选。提交时分别记忆各格式的总开关，重新打开时各轨均默认勾选。领域接口使用 `includeAuxiliaryTracks` 与 `auxiliaryTrackIds`，总开关关闭优先于白名单。未提供白名单时包含全部额外声部，空白名单排除全部，所选轨道始终按工程顺序输出。导出选择独立于五线谱预览的显示设置。
 
 ### 13.1 MIDI 轨道排版、音色预设与文件名
 
@@ -243,17 +245,25 @@ SoundFont 读取和解析是异步的。`soundFontChangeGeneration` 与串行加
 
 | 排版模式 (`layout`) | 轨道与通道组织 | `midiFileName` 默认后缀 |
 | --- | --- | --- |
-| `satb-separate`（默认） | SATB 四声部与各辅助轨各自独立成轨；按轨索引分配通道并跳过通道 10（打击乐）；轨名为中文声部名，乐器名为英文 `Soprano`/`Alto`/`Tenor`/`Bass` | `（分轨总谱）` |
-| `piano-grand-staff` | 高音谱表轨（Soprano + Alto）与低音谱表轨（Tenor + Bass）共用 Channel 0、轨名「钢琴」与乐器名 `Piano`，便于打谱软件自动合并为钢琴大谱表；辅助轨紧随其后分配至 Channel 1+ | `（大谱表）` |
-| `single-track` | 将全部可播放轨音符合并到单条主轨（Channel 0）；若存在辅助轨则另附于后方（Channel 1+） | `（单轨）` |
+| `satb-separate`（默认） | SATB 四声部各自独立成轨，所选额外声部分别追加。SATB 的轨名为中文声部名，乐器名为英文 `Soprano`/`Alto`/`Tenor`/`Bass` | `（分轨总谱）` |
+| `piano-grand-staff` | 高音谱表轨（Soprano + Alto）与低音谱表轨（Tenor + Bass）共用 Channel 0、轨名「钢琴」与乐器名 `Piano`，便于打谱软件自动合并为钢琴大谱表。所选额外声部分别追加 | `（大谱表）` |
+| `single-track` | 将四个 SATB 声部的音符合并到单条主轨（Channel 0），所选额外声部分别追加 | `（单轨）` |
 
 音色预设（`MidiExportTimbre`）控制写入的 `programChange`：
 
-- `piano`（默认）：统一使用 Program 0（Acoustic Grand Piano）。
-- `choir`：统一使用 Program 52（Choir Aahs）。
-- `project`：保留各轨道在工程中配置的 `track.program`（大谱表与单轨合并模式下默认回退为 0）。
+- `piano`（默认）使用 Program 0（Acoustic Grand Piano），`choir` 使用 Program 52（Choir Aahs）。
+- `project` 在分轨模式保留工程中各轨的 `track.program`，大谱表与单轨布局的 SATB 合并轨使用 Program 0。
+- 大谱表与单轨布局的额外声部使用各自的 `track.program`。
 
-辅助轨允许重叠，导出时不能套用 SATB 单声部过滤。Note On/Off 按绝对 tick 构造并排序（同一 tick 下 Note Off 优先于 Note On）再转为 delta time。MIDI 1.0 普通 Note On 不保留完整等音拼写，因此 `.satb` 与 MusicXML 更适合保留完整记谱语义。
+通道从 `[0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]` 这 15 个非打击乐通道中循环分配，跳过 0-based Channel 9。分轨布局从 Channel 0 依次分配，另两种布局的 SATB 使用 Channel 0，额外声部从 Channel 1 开始分配。通道用完后会复用，轨道仍独立写入。
+
+额外声部的重叠音符按各自的起止位置写出。Note On/Off 按绝对 tick 构造并排序（同一 tick 下 Note Off 优先于 Note On）再转为 delta time。MIDI 1.0 普通 Note On 不保留完整等音拼写，因此 `.satb` 与 MusicXML 更适合保留完整记谱语义。
+
+### 13.2 MusicXML 额外声部记谱
+
+所选额外声部在 SATB 后各占一个独立分谱，保留长短名称、所选谱号和复音。按记谱模型写出和弦音、独立 `voice`、休止与延音线。乐器配置将 GM Program 转为 1-based 编号，并循环使用 15 个非打击乐通道，跳过 1-based Channel 10。
+
+选中的轨道遇到非标准节奏时，导出错误会提示轨道名，并提示对齐网格或取消勾选。错位重叠超过记谱模型的分层上限时，可将音符拆到多条额外声部。未勾选的轨道不会进入记谱模型，因此其节奏不会阻断导出。
 
 ## 14. MIDI 导入的未来边界
 

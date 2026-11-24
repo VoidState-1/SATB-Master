@@ -130,15 +130,14 @@ soprano -> alto -> tenor -> bass
 
 数组顺序和 `VOICE_ORDER` 同时影响显示、相邻声部判断和规则输出。不要通过随意排序来改变界面顺序。
 
-### 4.2 辅助轨
+### 4.2 额外声部
 
-`auxiliaryTracks` 面向 MIDI 导入失败音符和非 SATB 素材：
+`auxiliaryTracks` 保存可自由复音的非 SATB 素材，轨道 ID 为非空字符串，并在工程内保持唯一。
 
-- 可以有任意字符串 ID。
-- 允许同一范围内多个音符重叠。
-- 不参与 SATB 和声规则判断。
-- 可以参与播放和 MIDI 导出。
-- 外置规则只得到受限的 `auxiliarySummary`，而不是完整辅助音符明细。
+- `name` 与 `shortName` 保存名称和短名称。可选的 `color` 保存 `#RRGGBB` 自定义颜色，缺省时按轨道顺序从默认调色板取色。
+- 可选的 `showInScorePreview` 控制五线谱预览的显示，缺省视为 `false`。MIDI 和 MusicXML 导出各自使用导出选项选择轨道。
+- 额外声部支持播放和音符预听。SATB 和声判断排除额外声部，外置规则可读取受限的 `auxiliarySummary`。
+- 轨道编辑经 [`editing.ts`](../src/domain/editing.ts) 的 `addAuxiliaryTrack`、`updateTrack`、`deleteAuxiliaryTrack` 提交。`updateTrack` 可调整名称、短名称、颜色、预览显示和通用轨道属性。删除会移除整条额外声部及其音符，锁定轨道需先解锁。
 
 “不参与和声判断”是模型边界，不只是 UI 默认。若未来规则需要读取辅助材料，应新增经过审查的摘要字段，不要直接把完整辅助轨注入外置沙箱。
 
@@ -151,7 +150,7 @@ soprano -> alto -> tenor -> bass
 - `startTick + durationTicks <= project.lengthTicks`。
 - 书写音高可转换到 MIDI 0-127。
 - 所属轨存在，ID 在工程内满足预期唯一性。
-- SATB 同轨不重叠；辅助轨可以重叠。
+- SATB 同轨禁止重叠。额外声部允许重叠，新增、移动、改时值及批量编辑等命令会拒绝同轨内起点、时值和 MIDI 音高均相同的音符。同一 MIDI 音高的等音异名也按此规则判定。
 
 当缩短工程总长度时，不能让现有事件静默落在工程之外。调整长度的命令需要明确拒绝、裁剪或迁移策略。
 

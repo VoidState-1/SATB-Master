@@ -26,3 +26,4 @@ StandardCase/Origin/
 !/StandardCase/Verified/
 tokei.exe
 .agents
+.impeccable
