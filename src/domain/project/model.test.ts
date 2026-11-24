@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { createChordRegion } from "../chords";
 import {
+  AUXILIARY_COLOR_PALETTE,
   createEmptyProject,
+  deriveAuxiliaryShortName,
+  isSatbTrackId,
+  isValidHexColor,
   migrateProject,
   PPQ,
   reconcileChordIdentities,
+  resolveAuxiliaryTrackColor,
+  resolveTrackColor,
   validateProject,
+  VOICE_CONFIG,
+  VOICE_ORDER,
+  type AuxiliaryTrack,
   type ProjectDocument,
 } from "./index";
 import { keySignatureFifths, pitchClassValue, toMidi } from "../pitch";
@@ -13,6 +22,59 @@ import {
   HARMONY_RULE_CATALOG_REVISION,
   HARMONY_RULE_DEFINITIONS,
 } from "../harmony/rules/catalog";
+
+const auxiliaryTrack: AuxiliaryTrack = {
+  id: "aux-reference",
+  kind: "auxiliary",
+  role: "reference",
+  name: "参考声部",
+  shortName: "参考",
+  notes: [],
+  participatesInHarmony: false,
+  monophonic: false,
+  visible: true,
+  muted: false,
+  solo: false,
+  locked: false,
+  volume: 0.85,
+  pan: 0,
+  program: 0,
+};
+
+describe("辅助轨颜色与标识", () => {
+  it("提供八种不同的辅助轨颜色，与 SATB 色板无冲突", () => {
+    expect(AUXILIARY_COLOR_PALETTE).toHaveLength(8);
+    expect(AUXILIARY_COLOR_PALETTE.every(isValidHexColor)).toBe(true);
+    const colors = [
+      ...AUXILIARY_COLOR_PALETTE,
+      ...Object.values(VOICE_CONFIG).map((voice) => voice.color),
+    ];
+    expect(new Set(colors.map((color) => color.toLowerCase())).size).toBe(12);
+  });
+
+  it("解析 SATB 固定颜色以及辅助轨的自定义颜色和循环默认色", () => {
+    for (const track of createEmptyProject().satbTracks) {
+      expect(resolveTrackColor(track, 3)).toBe(VOICE_CONFIG[track.id].color);
+      expect(isSatbTrackId(track.id)).toBe(true);
+    }
+    expect(isSatbTrackId(auxiliaryTrack.id)).toBe(false);
+    expect(isSatbTrackId("constructor")).toBe(false);
+    expect(resolveTrackColor(auxiliaryTrack)).toBe(AUXILIARY_COLOR_PALETTE[0]);
+    expect(resolveTrackColor(auxiliaryTrack, 10)).toBe(AUXILIARY_COLOR_PALETTE[2]);
+    expect(resolveTrackColor({ ...auxiliaryTrack, color: "#Ab09Ef" }, 3)).toBe("#Ab09Ef");
+    expect(resolveAuxiliaryTrackColor({ color: "#123" }, 3)).toBe(AUXILIARY_COLOR_PALETTE[3]);
+  });
+
+  it.each([
+    ["额外声部 1", 0, "E1"],
+    ["  额外 2  ", 0, "E2"],
+    [" piano ", 0, "PI"],
+    [" 参 考 声部 ", 0, "参考"],
+    [" ", 3, "E4"],
+  ])("将轨道名 %j 派生为紧凑短名", (name, fallbackIndex, shortName) => {
+    expect(deriveAuxiliaryShortName(name, fallbackIndex)).toBe(shortName);
+  });
+});
 
 function createV2Fixture() {
   const project = createEmptyProject("v2 迁移金样本");
@@ -140,6 +202,61 @@ function createV2Fixture() {
 describe("工程文件校验", () => {
   it("接受当前版本创建的完整工程", () => {
     expect(validateProject(createEmptyProject())).toBe(true);
+  });
+
+  it("接受没有颜色和五线谱预览设置的旧 schema v3 辅助轨", () => {
+    const project = createEmptyProject();
+    project.auxiliaryTracks = [{ ...auxiliaryTrack }];
+
+    expect(project.schemaVersion).toBe(3);
+    expect(validateProject(project)).toBe(true);
+  });
+
+  it.each([true, false])("接受合法颜色和五线谱预览设置 %s", (showInScorePreview) => {
+    const project = createEmptyProject();
+    project.auxiliaryTracks = [
+      { ...auxiliaryTrack, color: "#aB09eF", showInScorePreview },
+    ];
+
+    expect(validateProject(project)).toBe(true);
+  });
+
+  it.each([
+    { id: "" },
+    { id: " \t" },
+    { id: 1 },
+    { name: "" },
+    { name: " \t" },
+    { color: "#123" },
+    { color: "#12345678" },
+    { color: "#12345g" },
+    { color: "123456" },
+    { color: 123456 },
+    { color: null },
+    { showInScorePreview: "false" },
+    { showInScorePreview: null },
+  ])("拒绝辅助轨无效字段 %j", (fields) => {
+    const project = createEmptyProject();
+    const candidate = {
+      ...project,
+      auxiliaryTracks: [{ ...auxiliaryTrack, ...fields }],
+    };
+
+    expect(validateProject(candidate)).toBe(false);
+  });
+
+  it.each(VOICE_ORDER)("拒绝辅助轨使用 SATB ID %s", (id) => {
+    const project = createEmptyProject();
+    project.auxiliaryTracks = [{ ...auxiliaryTrack, id }];
+
+    expect(validateProject(project)).toBe(false);
+  });
+
+  it("拒绝两个辅助轨使用相同 ID", () => {
+    const project = createEmptyProject();
+    project.auxiliaryTracks = [auxiliaryTrack, { ...auxiliaryTrack, name: "另一个声部" }];
+
+    expect(validateProject(project)).toBe(false);
   });
 
   it("校验诊断忽略记录并拒绝重复 ID", () => {

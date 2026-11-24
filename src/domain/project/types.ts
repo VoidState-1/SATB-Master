@@ -167,6 +167,9 @@ export interface AuxiliaryTrack extends TrackBase {
   role: "midi-import" | "reference" | "other";
   participatesInHarmony: false;
   monophonic: false;
+  color?: string;
+  /** 未设置时视为 false。 */
+  showInScorePreview?: boolean;
 }
 
 export type VoiceTrack = SatbTrack;

@@ -1,9 +1,9 @@
 import { chordVoicingPolicy } from "./chordModel";
+import { isSatbTrackId } from "./project";
 import type {
   ChordRegion,
   HarmonyInterpretation,
   NoteEvent,
-  VoiceId,
 } from "./project";
 
 export type DeveloperFieldValue = string | number | boolean | undefined;
@@ -30,12 +30,12 @@ function row(
 }
 
 export function inspectNoteEvent(
-  voiceId: VoiceId,
+  trackId: string,
   note: NoteEvent,
 ): DeveloperEventInspection {
   return {
     modelName: "NoteEvent",
-    contextLabel: `satbTracks.${voiceId}.notes`,
+    contextLabel: `${isSatbTrackId(trackId) ? "satbTracks" : "auxiliaryTracks"}.${trackId}.notes`,
     rows: [
       row("id", "string", note.id),
       row("startTick", "number", note.startTick),

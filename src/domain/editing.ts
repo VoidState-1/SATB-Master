@@ -7,14 +7,21 @@ import {
   semanticsFromChordDraft,
 } from "./chordModel";
 import {
+  AUXILIARY_COLOR_PALETTE,
   cloneProject,
   createId,
+  deriveAuxiliaryShortName,
   getAllPlayableTracks,
   getMusicalTrack,
+  isSatbTrackId,
+  isValidHexColor,
+  resolveAuxiliaryTrackColor,
+  type AuxiliaryTrack,
   type ChordDraft,
   type CadenceAnnotation,
   type ChordRegion,
   type ChordTrack,
+  type MusicalTrack,
   type NoteEvent,
   type ProjectDocument,
 } from "./project";
@@ -24,10 +31,201 @@ import { cadenceChordCoverage } from "./project/cadenceCoverage";
 import { detectProjectCadences } from "./harmony/cadence/projectEvidence";
 import { matchingObservedCadence } from "./harmony/cadence/model";
 import { reconcileCadenceAnnotationStaleness } from "./project/normalize";
+import { isInteger, isNumber } from "./project/validation";
 
 export interface EditResult {
   project: ProjectDocument;
   error?: string;
+}
+
+type AuxiliaryTrackDetails = Partial<
+  Pick<AuxiliaryTrack, "name" | "shortName" | "color" | "showInScorePreview">
+>;
+
+export interface AddAuxiliaryTrackOptions extends AuxiliaryTrackDetails {
+  role?: AuxiliaryTrack["role"];
+  program?: number;
+}
+
+export type TrackPatch = Partial<
+  Pick<
+    MusicalTrack,
+    "visible" | "muted" | "solo" | "locked" | "volume" | "pan" | "program"
+  >
+> & AuxiliaryTrackDetails;
+
+function auxiliaryTrackDetailsError({
+  name,
+  shortName,
+  color,
+  showInScorePreview,
+}: AuxiliaryTrackDetails) {
+  if (name !== undefined && (typeof name !== "string" || !name.trim()))
+    return "轨道名称不能为空";
+  if (
+    shortName !== undefined &&
+    (typeof shortName !== "string" || !shortName.trim())
+  )
+    return "轨道短名称不能为空";
+  if (color !== undefined && !isValidHexColor(color))
+    return "轨道颜色格式无效";
+  if (
+    showInScorePreview !== undefined &&
+    typeof showInScorePreview !== "boolean"
+  )
+    return "五线谱预览显示设置无效";
+  return undefined;
+}
+
+export function addAuxiliaryTrack(
+  project: ProjectDocument,
+  options: AddAuxiliaryTrackOptions = {},
+): EditResult & { trackId?: string } {
+  const detailsError = auxiliaryTrackDetailsError(options);
+  if (detailsError) return { project, error: detailsError };
+  if (options.program !== undefined && !isInteger(options.program, 0, 127))
+    return { project, error: "轨道音色必须为 0 到 127 的整数" };
+  if (
+    options.role !== undefined &&
+    !["midi-import", "reference", "other"].includes(options.role)
+  ) {
+    return { project, error: "额外声部角色无效" };
+  }
+
+  const index = project.auxiliaryTracks.length;
+  const tracks = getAllPlayableTracks(project);
+  let name = options.name?.trim();
+  if (name === undefined) {
+    const usedNames = new Set(tracks.map((track) => track.name.trim()));
+    let number = 1;
+    do {
+      name = "额外声部 " + number++;
+    } while (usedNames.has(name));
+  }
+
+  let color = options.color;
+  if (color === undefined) {
+    const usedColors = new Set(
+      project.auxiliaryTracks.map((track, trackIndex) =>
+        resolveAuxiliaryTrackColor(track, trackIndex).toLowerCase(),
+      ),
+    );
+    color =
+      AUXILIARY_COLOR_PALETTE.find((candidate) => !usedColors.has(candidate)) ??
+      resolveAuxiliaryTrackColor({}, index);
+  }
+
+  const usedIds = new Set(tracks.map((track) => track.id));
+  let id = createId("aux");
+  while (usedIds.has(id)) id = createId("aux");
+  const track: AuxiliaryTrack = {
+    id,
+    name,
+    shortName:
+      options.shortName === undefined
+        ? deriveAuxiliaryShortName(name, index)
+        : Array.from(options.shortName.trim()).slice(0, 4).join(""),
+    color,
+    kind: "auxiliary",
+    role: options.role ?? "other",
+    participatesInHarmony: false,
+    monophonic: false,
+    notes: [],
+    visible: true,
+    muted: false,
+    solo: false,
+    locked: false,
+    volume: 0.85,
+    pan: 0,
+    program: options.program ?? 0,
+    showInScorePreview: options.showInScorePreview ?? false,
+  };
+  const next = cloneProject(project);
+  next.auxiliaryTracks.push(track);
+  next.updatedAt = new Date().toISOString();
+  return { project: next, trackId: id };
+}
+
+export function updateTrack(
+  project: ProjectDocument,
+  trackId: string,
+  patch: TrackPatch,
+): EditResult {
+  const track = getAllPlayableTracks(project).find((item) => item.id === trackId);
+  if (!track) return { project, error: "找不到要编辑的轨道" };
+
+  const { visible, muted, solo, locked, volume, pan, program } = patch;
+  if (
+    [visible, muted, solo, locked].some(
+      (value) => value !== undefined && typeof value !== "boolean",
+    )
+  ) {
+    return { project, error: "轨道开关设置无效" };
+  }
+  if (volume !== undefined && !isNumber(volume, 0, 1))
+    return { project, error: "轨道音量必须为 0 到 1 的数值" };
+  if (pan !== undefined && !isNumber(pan, -1, 1))
+    return { project, error: "轨道声像必须为 -1 到 1 的数值" };
+  if (program !== undefined && !isInteger(program, 0, 127))
+    return { project, error: "轨道音色必须为 0 到 127 的整数" };
+
+  const { name, shortName, color, showInScorePreview } = patch;
+  if (
+    track.kind === "satb" &&
+    [name, shortName, color, showInScorePreview].some(
+      (value) => value !== undefined,
+    )
+  ) {
+    return {
+      project,
+      error: "四部和声主声部的名称、颜色和五线谱预览设置不可修改",
+    };
+  }
+  const detailsError = auxiliaryTrackDetailsError(patch);
+  if (detailsError) return { project, error: detailsError };
+
+  const next = cloneProject(project);
+  const nextTrack = getMusicalTrack(next, trackId);
+  if (visible !== undefined) nextTrack.visible = visible;
+  if (muted !== undefined) nextTrack.muted = muted;
+  if (solo !== undefined) nextTrack.solo = solo;
+  if (locked !== undefined) nextTrack.locked = locked;
+  if (volume !== undefined) nextTrack.volume = volume;
+  if (pan !== undefined) nextTrack.pan = pan;
+  if (program !== undefined) nextTrack.program = program;
+  if (nextTrack.kind === "auxiliary") {
+    if (name !== undefined) nextTrack.name = name.trim();
+    if (shortName !== undefined) {
+      nextTrack.shortName = Array.from(shortName.trim()).slice(0, 4).join("");
+    } else if (name !== undefined) {
+      const index = next.auxiliaryTracks.indexOf(nextTrack);
+      nextTrack.shortName = deriveAuxiliaryShortName(nextTrack.name, index);
+    }
+    if (color !== undefined) nextTrack.color = color;
+    if (showInScorePreview !== undefined)
+      nextTrack.showInScorePreview = showInScorePreview;
+  }
+  next.updatedAt = new Date().toISOString();
+  return { project: next };
+}
+
+export function deleteAuxiliaryTrack(
+  project: ProjectDocument,
+  trackId: string,
+): EditResult {
+  if (isSatbTrackId(trackId))
+    return { project, error: "无法删除四部和声主声部" };
+  const index = project.auxiliaryTracks.findIndex(
+    (track) => track.id === trackId,
+  );
+  if (index === -1) return { project, error: "找不到要删除的额外声部" };
+  if (project.auxiliaryTracks[index].locked)
+    return { project, error: "该额外声部已锁定，请先解锁再删除" };
+
+  const next = cloneProject(project);
+  next.auxiliaryTracks.splice(index, 1);
+  next.updatedAt = new Date().toISOString();
+  return { project: next };
 }
 
 export function addPhraseBoundary(project: ProjectDocument, tick: number): EditResult {
@@ -94,6 +292,14 @@ function overlaps(a: NoteEvent, b: NoteEvent) {
   );
 }
 
+function exactDuplicateOverlap(a: NoteEvent, b: NoteEvent) {
+  return (
+    a.startTick === b.startTick &&
+    a.durationTicks === b.durationTicks &&
+    toMidi(a.pitch) === toMidi(b.pitch)
+  );
+}
+
 function hasValidNoteValues(note: NoteEvent) {
   return (
     Number.isInteger(note.startTick) &&
@@ -151,12 +357,14 @@ export function addNote(
   ) {
     return { project, error: "音符超出工程时间范围" };
   }
-  if (
-    track.monophonic &&
-    track.notes.some((candidate) => overlaps(candidate, note))
-  ) {
-    // 四部写作中的每条轨道是单旋律声部，重叠必须在命令层拒绝，不能依赖播放时“最后音符优先”。
-    return { project, error: "同一声部不能出现重叠音符" };
+  const conflicts = track.monophonic ? overlaps : exactDuplicateOverlap;
+  if (track.notes.some((candidate) => conflicts(candidate, note))) {
+    return {
+      project,
+      error: track.monophonic
+        ? "同一声部不能出现重叠音符"
+        : "同一声部不能出现完全重叠的相同音符",
+    };
   }
 
   const next = cloneProject(project);
@@ -203,13 +411,18 @@ export function updateNote(
   ) {
     return { project, error: "音符超出工程时间范围" };
   }
+  const conflicts = track.monophonic ? overlaps : exactDuplicateOverlap;
   if (
-    track.monophonic &&
     track.notes.some(
-      (candidate) => candidate.id !== noteId && overlaps(candidate, updated),
+      (candidate) => candidate.id !== noteId && conflicts(candidate, updated),
     )
   ) {
-    return { project, error: "移动后会与同声部音符重叠" };
+    return {
+      project,
+      error: track.monophonic
+        ? "移动后会与同声部音符重叠"
+        : "同一声部不能出现完全重叠的相同音符",
+    };
   }
   if (isRangeLocked(project, trackId, updated))
     return { project, error: "移动后会进入锁定区间" };
@@ -236,6 +449,7 @@ export function transformNotes(
   for (const track of getAllPlayableTracks(next)) {
     if (track.locked && track.notes.some((note) => noteIds.has(note.id)))
       return { project, error: `${track.name}已锁定` };
+    const transformedNotes = new Set<NoteEvent>();
     track.notes = track.notes.map((note) => {
       if (!noteIds.has(note.id)) return note;
       if (note.locked || isRangeLocked(project, track.id, note)) {
@@ -246,11 +460,13 @@ export function transformNotes(
       const updated = transform(note, track.id);
       if (!hasValidNoteValues(updated)) hasLockedNote = true;
       if (isRangeLocked(project, track.id, updated)) hasLockedNote = true;
+      transformedNotes.add(updated);
       return updated;
     });
     if (hasLockedNote)
       return { project, error: "选区包含锁定音符或会产生无效参数" };
     const ordered = [...track.notes].sort((a, b) => a.startTick - b.startTick);
+    const seenAuxiliaryNotes = new Map<string, boolean>();
     for (let index = 0; index < ordered.length; index += 1) {
       const note = ordered[index];
       if (
@@ -262,6 +478,15 @@ export function transformNotes(
       }
       if (track.monophonic && index > 0 && overlaps(ordered[index - 1], note))
         return { project, error: "批量操作会造成同声部音符重叠" };
+      if (!track.monophonic && transformedNotes.size > 0) {
+        const key = [note.startTick, note.durationTicks, toMidi(note.pitch)].join(":");
+        const seenTransformed = seenAuxiliaryNotes.get(key);
+        const isTransformed = transformedNotes.has(note);
+        // 旧工程可能已有重复音符，只拦截涉及本次编辑的冲突。
+        if (seenTransformed !== undefined && (isTransformed || seenTransformed))
+          return { project, error: "批量操作会造成完全重叠的相同音符" };
+        seenAuxiliaryNotes.set(key, isTransformed);
+      }
     }
     track.notes = ordered;
   }
@@ -312,18 +537,35 @@ export function splitNote(
   if (splitTick <= current.startTick || splitTick >= endTick)
     return { project, error: "切分点必须位于音符内部" };
 
+  const left = { ...current, durationTicks: splitTick - current.startTick };
+  const right = {
+    ...current,
+    startTick: splitTick,
+    durationTicks: endTick - splitTick,
+  };
+  if (
+    !track.monophonic &&
+    track.notes.some(
+      (note) =>
+        note.id !== noteId &&
+        (exactDuplicateOverlap(note, left) || exactDuplicateOverlap(note, right)),
+    )
+  ) {
+    return { project, error: "切分会造成完全重叠的相同音符" };
+  }
+
   const next = cloneProject(project);
   const nextTrack = getMusicalTrack(next, trackId);
   nextTrack.notes = nextTrack.notes
     .flatMap((note) =>
       note.id === noteId
         ? [
-            { ...note, durationTicks: splitTick - note.startTick },
+            { ...note, durationTicks: left.durationTicks },
             {
               ...note,
               id: createId("note"),
-              startTick: splitTick,
-              durationTicks: endTick - splitTick,
+              startTick: right.startTick,
+              durationTicks: right.durationTicks,
             },
           ]
         : note,
@@ -754,4 +996,17 @@ export function replaceProject(
   mutate(next);
   next.updatedAt = new Date().toISOString();
   return next;
+}
+
+export function setAuxiliaryTracksScorePreview(
+  project: ProjectDocument,
+  show: boolean,
+): ProjectDocument {
+  if (!project.auxiliaryTracks.some((track) => Boolean(track.showInScorePreview) !== show))
+    return project;
+  return replaceProject(project, (draft) => {
+    for (const track of draft.auxiliaryTracks) {
+      track.showInScorePreview = show;
+    }
+  });
 }

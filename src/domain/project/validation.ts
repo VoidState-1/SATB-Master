@@ -37,7 +37,7 @@ import {
   PPQ,
   PROJECT_SCHEMA_VERSION,
 } from "./types";
-import { VOICE_ORDER } from "./voice";
+import { isSatbTrackId, isValidHexColor, VOICE_ORDER } from "./voice";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -55,7 +55,7 @@ export function isInteger(
   );
 }
 
-function isNumber(value: unknown, minimum: number, maximum: number) {
+export function isNumber(value: unknown, minimum: number, maximum: number) {
   return (
     typeof value === "number" &&
     Number.isFinite(value) &&
@@ -178,9 +178,18 @@ function validateAuxiliaryTrack(value: unknown, projectLength: number) {
     return false;
   return (
     value.kind === "auxiliary" &&
+    typeof value.id === "string" &&
+    value.id.trim().length > 0 &&
+    !isSatbTrackId(value.id) &&
+    typeof value.name === "string" &&
+    value.name.trim().length > 0 &&
     ["midi-import", "reference", "other"].includes(value.role as string) &&
     value.participatesInHarmony === false &&
-    value.monophonic === false
+    value.monophonic === false &&
+    (value.color === undefined ||
+      (typeof value.color === "string" && isValidHexColor(value.color))) &&
+    (value.showInScorePreview === undefined ||
+      typeof value.showInScorePreview === "boolean")
   );
 }
 
