@@ -1452,6 +1452,58 @@ async function verifyDoubleClickVoiceActivation() {
   if (!sopranoActive) throw new Error('双击非当前声部音符未切换当前声部')
 }
 
+async function verifyProgressionAssistant() {
+  const tab = '#bottom-progression-tab'
+  const target = '.progression-target'
+  const ghost = '.roll-progression-note'
+  const slot = '.roll-progression-slot'
+  const playhead = '.position-readout'
+  const click = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
+  const waitForTargetBeat = beat => waitFor(`document.querySelector('${target}')?.textContent.includes('第 1 小节第 ${beat} 拍') &&
+    Boolean(document.querySelector('.progression-card'))`, `和声连接搜索第 ${beat} 拍`)
+  const soundLevel = `Number(document.querySelector('.output-meter')?.getAttribute('aria-valuenow'))`
+
+  await click(tab)
+  await waitForTargetBeat(1)
+  const candidate = `.progression-card:has(.progression-variants button:nth-child(2))`
+  const focusCandidate = () => evaluate(`document.querySelector(${JSON.stringify(candidate)}).focus()`)
+  await focusCandidate()
+  await waitFor(`document.querySelectorAll('${ghost}').length === 4 &&
+    getComputedStyle(document.querySelector('${ghost}')).pointerEvents === 'none' &&
+    Boolean(document.querySelector('.chord-progression-preview'))`, '四声部幽灵音符与和弦轨预览')
+  const ghostPitches = () => evaluate(`[...document.querySelectorAll('${ghost}')].map(note => note.textContent).join(' ')`)
+  const originalPitches = await ghostPitches()
+  await click(`${candidate} .progression-variants button:nth-child(2)`)
+  if (await ghostPitches() === originalPitches) throw new Error('排列切换未刷新幽灵音高')
+
+  const light = await evaluate(`getComputedStyle(document.querySelector('.progression-toolbar')).backgroundColor`)
+  await client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] })
+  await waitFor(`getComputedStyle(document.querySelector('.progression-toolbar')).backgroundColor !== ${JSON.stringify(light)}`, '和声连接暗色主题')
+  await client.send('Emulation.setEmulatedMedia', { features: [] })
+
+  await click(`${candidate} .progression-audition`)
+  await waitFor(`document.querySelector('.progression-audition[aria-pressed="true"]') && ${soundLevel} > 0.001`, '排列试听实际音频输出')
+  await evaluate(`[...document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent.includes('五线谱')).click()`)
+  await waitFor(`!document.querySelector('${slot}') && !document.querySelector('${ghost}') && ${soundLevel} <= 0.001`, '切换五线谱后停止试听与预览')
+  await assertSilence(180, '关闭和声连接试听')
+
+  await click(tab)
+  await waitForTargetBeat(1)
+  await click('.progression-card .progression-apply')
+  await waitForTargetBeat(2)
+  if (await evaluate(`document.querySelector('${playhead}').textContent`) !== '1:2:000') throw new Error('采纳后播放头未推进')
+  await dispatchShortcut('KeyZ', { ctrlKey: true })
+  await waitForTargetBeat(1)
+  if (await evaluate(`document.querySelector('${playhead}').textContent`) !== '1:1:000') throw new Error('撤销后播放头未恢复')
+  await clickButton('重做')
+  await waitForTargetBeat(2)
+  await clickButton('撤销')
+  await waitForTargetBeat(1)
+  await click('.progression-segments button:nth-child(2)')
+  await waitFor(`document.querySelector('.progression-card-title strong')?.textContent.split(' → ').length === 3`, '三拍短连接')
+  await evaluate(`[...document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent.includes('问题')).click()`)
+}
+
 async function verifySponsorDialog() {
   await clickButton('赞助作者')
   await waitFor(`(() => {
@@ -1499,6 +1551,7 @@ try {
     await waitFor(`window.desktop.project.recovery().then((result) => result.available === false)`, '确认放弃恢复内容')
   }
   await waitFor(`document.body.innerText.includes('SoundFont 已就绪')`, '应用启动时默认 SF2 预载', 20_000)
+  await verifyProgressionAssistant()
   await verifySponsorDialog()
   await verifyTimelineGuides()
   await verifyFullMidiRange()
@@ -1674,6 +1727,7 @@ try {
     sponsorDialog: 'asset-focus-dismiss-ready',
     userSoundFontReload: 'path-hash-ready',
     audibleOutput: 'play-pause-preview-ready',
+    progressionAssistant: 'short-search-preview-audition-apply-undo-redo-ready',
     selectionPreview: 'single-only-ready',
     liveErase: 'visual-before-commit-ready',
     noteLabels: 'pitch-ready',

@@ -100,6 +100,7 @@ import { useHarmonyController } from "./controllers/useHarmonyController";
 import { useFileWorkflow } from "./controllers/useFileWorkflow";
 import { useEditorCommands } from "./controllers/useEditorCommands";
 import { usePlaybackController } from "./controllers/usePlaybackController";
+import { useProgressionAssistant } from "./controllers/useProgressionAssistant";
 import { useKeyboardController } from "./controllers/useKeyboardController";
 import { useProjectController } from "./controllers/useProjectController";
 import { useWindowController } from "./controllers/useWindowController";
@@ -114,7 +115,7 @@ function getInitialBottomPanelTab(): BottomPanelTab {
   if (typeof window === "undefined") return "diagnostics";
   try {
     const stored = window.localStorage.getItem(BOTTOM_PANEL_TAB_STORAGE_KEY);
-    if (stored === "diagnostics" || stored === "score") return stored;
+    if (stored === "diagnostics" || stored === "score" || stored === "progression") return stored;
   } catch {
     // ignore
   }
@@ -281,7 +282,7 @@ function AppShell() {
     soundFontSizeBytes,
     handleChooseSoundFont,
     handleUseDefaultSoundFont,
-    handleStop,
+    handleStop: stopPlayback,
     handlePlay,
     handleAuditionProject,
     toggleLoop,
@@ -295,12 +296,31 @@ function AppShell() {
     showNotice,
   });
 
+  const progression = useProgressionAssistant({
+    enabled: panelLayout.visibility.bottom && activeBottomTab === "progression" &&
+      !ruleTestMode && !auditOpen && !autoHarmonizationOpen,
+    isPlaying,
+    project,
+    playheadTick,
+    setPlayheadTick,
+    gridTicks,
+    commit: history.commit,
+    stopPlayback,
+    auditionProject: handleAuditionProject,
+    showNotice,
+  });
+  const stopProgressionAudition = progression.stopAudition;
+  const handleStop = useCallback((returnToStart = false) => {
+    stopProgressionAudition();
+    stopPlayback(returnToStart);
+  }, [stopPlayback, stopProgressionAudition]);
   const onPlayWithFollowRestore = useCallback(() => {
+    stopProgressionAudition();
     if (!isPlaying && readStoredFollowPlayhead()) {
       setFollowPlayhead(true);
     }
     return handlePlay();
-  }, [handlePlay, isPlaying, setFollowPlayhead]);
+  }, [handlePlay, isPlaying, setFollowPlayhead, stopProgressionAudition]);
   const { confirmation, requestConfirmation, answerConfirmation } =
     useConfirmationController();
   const ruleTestWorkspace = useRuleTestWorkspace({
@@ -1044,6 +1064,7 @@ function AppShell() {
             chordBrush={chordBrush}
             diagnostics={activeDiagnostics}
             cadenceCandidates={cadenceAnalysis.cadenceCandidates}
+            progressionPreview={progression.preview}
             playheadTick={playheadTick}
             isPlaying={isPlaying}
             followPlayhead={followPlayhead}
@@ -1106,6 +1127,7 @@ function AppShell() {
                 selectedNoteIds={selectedNoteIds}
                 onSelectScoreNote={handleScorePreviewNoteSelection}
                 onOpenScoreDialog={() => setScorePreviewOpen(true)}
+                progression={progression.panel}
               />
             </>
           ) : null}

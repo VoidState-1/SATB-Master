@@ -1,3 +1,4 @@
+import type { SpelledPitch } from "../../domain/pitch";
 import type { ChordRegionPatch } from "../../domain/editing";
 import type { HarmonyDiagnostic } from "../../domain/harmony";
 import type { CadenceCandidate } from "../../domain/harmony";
@@ -11,7 +12,24 @@ import type {
 export type EditorTool = "select" | "pencil" | "eraser" | "split";
 export type EditorDomain = "notes" | "chords";
 
+export interface ProgressionPreview {
+  readonly slotRange: { readonly fromTick: number; readonly toTick: number };
+  readonly ghostNotes?: readonly {
+    readonly id: string;
+    readonly voice: VoiceId;
+    readonly startTick: number;
+    readonly durationTicks: number;
+    readonly pitch: SpelledPitch;
+  }[];
+  readonly ghostChords?: readonly {
+    readonly fromTick: number;
+    readonly toTick: number;
+    readonly label: string;
+  }[];
+}
+
 export interface PianoRollProps {
+  readonly progressionPreview?: ProgressionPreview;
   project: ProjectDocument;
   activeVoice: VoiceId;
   tool: EditorTool;

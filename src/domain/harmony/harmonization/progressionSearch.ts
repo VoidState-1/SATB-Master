@@ -41,6 +41,8 @@ export interface ProgressionSearchOptions {
   mode: ProgressionSearchMode;
   shortLength?: ProgressionShortLength;
   stepTicks?: number;
+  /** Empty-slot length in local meter beats when stepTicks is omitted. */
+  stepBeats?: 1 | 2;
   style?: HarmonizationStyle;
   maxCandidates?: number;
   respectLockedChords?: boolean;
@@ -74,6 +76,7 @@ export interface ProgressionVoicingVariant {
   steps: readonly ProgressionStep[];
   diagnosticSummary: DiagnosticSummary;
   score: number;
+  previewProject: ProjectDocument;
 }
 
 export interface ProgressionCandidate extends HarmonizationRange {
@@ -175,29 +178,29 @@ function timelineFor(project: ProjectDocument) {
 
 type Timeline = ReturnType<typeof timelineFor>;
 
-function stepLength(timeline: Timeline, tick: number, stepTicks?: number) {
+function stepLength(timeline: Timeline, tick: number, stepTicks?: number, stepBeats = 1) {
   return stepTicks !== undefined && Number.isFinite(stepTicks) && stepTicks > 0
-    ? Math.max(1, Math.round(stepTicks)) : timeline.beatAt(tick);
+    ? Math.max(1, Math.round(stepTicks)) : timeline.beatAt(tick) * stepBeats;
 }
 
-function openSliceAt(timeline: Timeline, fromTick: number, stepTicks?: number): OpenSlice | undefined {
+function openSliceAt(timeline: Timeline, fromTick: number, stepTicks?: number, stepBeats?: number): OpenSlice | undefined {
   if (fromTick >= timeline.project.lengthTicks) return undefined;
   const notes = timeline.notesAt(fromTick);
   const count = Object.keys(notes).length;
   if (count === VOICE_ORDER.length) return undefined;
   const nextChange = timeline.noteTicks[upperBound(timeline.noteTicks, fromTick, tick => tick)];
-  const toTick = count ? nextChange : Math.min(nextChange, fromTick + stepLength(timeline, fromTick, stepTicks));
+  const toTick = count ? nextChange : Math.min(nextChange, fromTick + stepLength(timeline, fromTick, stepTicks, stepBeats));
   return { fromTick, toTick, notes };
 }
 
-function firstOpenSlice(timeline: Timeline, fromTick: number, stepTicks?: number) {
+function firstOpenSlice(timeline: Timeline, fromTick: number, stepTicks?: number, stepBeats?: number) {
   if (!Number.isFinite(fromTick)) return undefined;
   const start = Math.max(0, Math.floor(fromTick));
-  const initial = openSliceAt(timeline, start, stepTicks);
+  const initial = openSliceAt(timeline, start, stepTicks, stepBeats);
   if (initial) return initial;
   // Beat-grid boundaries within a fully voiced slice cannot change its occupancy.
   for (let i = upperBound(timeline.noteTicks, start, tick => tick); i < timeline.noteTicks.length; i++) {
-    const slice = openSliceAt(timeline, timeline.noteTicks[i], stepTicks);
+    const slice = openSliceAt(timeline, timeline.noteTicks[i], stepTicks, stepBeats);
     if (slice) return slice;
   }
   return undefined;
@@ -454,7 +457,7 @@ export function findNextOpenSlot(project: ProjectDocument, fromTick: number, ste
     rightAnchorFor(timeline, first.toTick), stepLength(timeline, first.fromTick, stepTicks)));
 }
 
-function searchSliceAt(timeline: Timeline, tick: number, stepTicks: number | undefined, respectLocks: boolean) {
+function searchSliceAt(timeline: Timeline, tick: number, stepTicks: number, respectLocks: boolean) {
   const slice = openSliceAt(timeline, tick, stepTicks);
   if (!slice) return undefined;
   const nextKey = timeline.keyEvents[upperBound(timeline.keyEvents, tick, key => key.tick)];
@@ -476,7 +479,7 @@ function planSearch(timeline: Timeline, first: OpenSlice, options: ProgressionSe
   let bridgeEnd: number | undefined;
   if (mode === "short" && length === "bridge" && !Object.keys(first.notes).length) {
     const next = nextSoundingTick(timeline, first.toTick);
-    const step = stepLength(timeline, first.fromTick, stepTicks);
+    const step = stepLength(timeline, first.fromTick, stepTicks, options.stepBeats);
     if (next !== undefined && next - first.fromTick <= 4 * step) {
       bridgeEnd = next;
       const gap = next - first.fromTick;
@@ -487,7 +490,7 @@ function planSearch(timeline: Timeline, first: OpenSlice, options: ProgressionSe
   const slices: OpenSlice[] = [];
   let tick = first.fromTick;
   for (let index = 0; index < requested; index++) {
-    const slice = searchSliceAt(timeline, tick, stepTicks, respectLocks);
+    const slice = searchSliceAt(timeline, tick, stepLength(timeline, tick, stepTicks, options.stepBeats), respectLocks);
     if (!slice) break;
     slices.push(slice);
     tick = slice.toTick;
@@ -672,6 +675,12 @@ function searchPaths(
   return [...finals.values()].sort((a, b) => b[0].score - a[0].score);
 }
 
+function canGenerateInRange(project: ProjectDocument, track: ProjectDocument["satbTracks"][number], range: HarmonizationRange) {
+  return !track.locked && !project.exercise.editableRanges.some(item =>
+    !item.editable && item.voiceIds.includes(track.id) && item.fromTick < range.toTick && range.fromTick < item.toTick,
+  );
+}
+
 function writeSteps(project: ProjectDocument, steps: readonly ProgressionStep[], prefix: string, writeChords: boolean) {
   let addedNoteCount = 0;
   let addedChordCount = 0;
@@ -786,14 +795,14 @@ export function searchProgressionCandidates(project: ProjectDocument, options: P
     slot, candidates, warnings, elapsedMs: performance.now() - started,
   });
   const timeline = timelineFor(project);
-  const first = firstOpenSlice(timeline, options.fromTick, options.stepTicks);
+  const first = firstOpenSlice(timeline, options.fromTick, options.stepTicks, options.stepBeats);
   if (!first) return finish([]);
   const plan = planSearch(timeline, first, options);
   const end = plan.slices.at(-1)!.toTick;
   const left = leftAnchorFor(timeline, first.fromTick);
   const nearestRight = rightAnchorFor(timeline, end);
   const right = nearestRight?.range.fromTick === end ? nearestRight : undefined;
-  const step = stepLength(timeline, first.fromTick, options.stepTicks);
+  const step = stepLength(timeline, first.fromTick, options.stepTicks, options.stepBeats);
   const slot = structuredClone(contextFor(plan.slices[0], left, nearestRight, step));
   if (plan.mode === "short") slot.spanEndTick = end;
   if (!plan.enough) {
@@ -801,13 +810,18 @@ export function searchProgressionCandidates(project: ProjectDocument, options: P
     return finish([], slot);
   }
 
+  if (plan.slices.some(slice => project.satbTracks.some(track => !slice.notes[track.id] && !canGenerateInRange(project, track, slice)))) {
+    warnings.push("目标空位有待填声部或时段已锁定。");
+    return finish([], slot);
+  }
   const slices = plan.slices.map(item => asMelodySlice(timeline, item));
   const style = options.style ?? "textbook-standard";
   const maximum = Number.isFinite(options.maxCandidates)
     ? Math.max(0, Math.trunc(options.maxCandidates!)) : plan.mode === "single" ? 8 : 6;
   if (!maximum) return finish([], slot);
-  const previewStart = left?.range.fromTick ?? first.fromTick;
-  const contextStart = Math.max(0, previewStart - (left ? timeline.beatAt(Math.max(0, previewStart - 1)) : 0));
+  const anchorStart = left?.range.fromTick ?? first.fromTick;
+  const previewStart = Math.max(anchorStart, first.fromTick - timeline.beatAt(Math.max(0, first.fromTick - 1)));
+  const contextStart = Math.max(0, anchorStart - (left ? timeline.beatAt(Math.max(0, anchorStart - 1)) : 0));
   const previewEnd = right ? Math.min(right.range.toTick, end + timeline.beatAt(end)) : end;
   const template = cropProject(timeline, contextStart, previewEnd);
   addAnchorChord(template, left);
@@ -852,7 +866,10 @@ export function searchProgressionCandidates(project: ProjectDocument, options: P
         const checked = previewFor(template, steps, previewStart, previewEnd, right);
         if (!checked) continue;
         const { diagnosticSummary } = checked;
-        const variant = { id: `${id}-${variants.length}`, label, steps, score: state.score, diagnosticSummary };
+        const variant = {
+          id: `${id}-${variants.length}`, label, steps, score: state.score, diagnosticSummary,
+          previewProject: checked.preview,
+        };
         if (diagnosticSummary.errorCount) {
           if (level !== 2 || candidate ||
             (rejected && rejected.diagnosticSummary.errorCount <= diagnosticSummary.errorCount)) continue;
@@ -902,6 +919,7 @@ export function applyProgressionCandidate(
     for (const track of project.satbTracks) {
       const notes = track.notes.filter(note => overlaps(note, step));
       if (step.generatedVoices.includes(track.id)) {
+        if (!canGenerateInRange(project, track, step)) throw new Error("待填声部或时段已锁定。");
         if (notes.length) throw new Error("槽位已有新音符，请重新搜索和声连接。");
       } else {
         let covered = step.fromTick;
@@ -916,7 +934,8 @@ export function applyProgressionCandidate(
   if (tick !== candidate.toTick) throw new Error("候选区间或排列无效。");
 
   const output = structuredClone(project);
-  const counts = writeSteps(output, structuredClone(steps), createId("progression"), options.writeChords !== false);
+  const counts = writeSteps(output, structuredClone(steps), createId("progression"),
+    options.writeChords !== false && !project.chordTrack.locked);
   output.updatedAt = new Date().toISOString();
   if (!validateProject(output)) throw new Error("候选无法写入当前工程。");
   return { project: output, nextCursorTick: candidate.toTick, ...counts };

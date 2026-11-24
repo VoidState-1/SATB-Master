@@ -67,6 +67,7 @@ export function PianoRoll({
   selectedNoteIds,
   selectedChordIds,
   focusRange,
+  progressionPreview,
   chordBrush,
   diagnostics,
   missingExpectedNoteIds,
@@ -475,6 +476,7 @@ export function PianoRoll({
           diagnosticsByChord={diagnosticsByChord}
           missingExpectedChordIds={missingExpectedChordIds}
           cadenceCandidates={cadenceCandidates}
+          ghostChords={progressionPreview?.ghostChords}
           measureGuidePositions={measureGuidePositions}
           playheadX={playheadX}
           onPointerDown={handleChordPointerDown}
@@ -558,6 +560,7 @@ export function PianoRoll({
           missingExpectedNoteIds={missingExpectedNoteIds}
           interaction={interaction}
           noteRects={noteRects}
+          progressionPreview={progressionPreview}
           tool={tool}
           scaleGuideEnabled={scaleGuideEnabled}
           onPointerDown={handlePointerDown}

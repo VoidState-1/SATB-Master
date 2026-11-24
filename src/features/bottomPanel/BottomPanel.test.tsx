@@ -1,3 +1,7 @@
+// @vitest-environment jsdom
+
+import { act, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BottomPanel } from "./BottomPanel";
@@ -81,6 +85,46 @@ describe("BottomPanel", () => {
     expect(html).toContain('class="bottom-tab-badge warning"');
     expect(html).toContain(">1<");
     expect(html).toContain("平行五度");
+  });
+
+  it("switches to the permanent progression tab", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    const onTabChange = vi.fn();
+    function TestPanel() {
+      const [activeTab, setActiveTab] = useState<React.ComponentProps<typeof BottomPanel>["activeTab"]>("diagnostics");
+      return <BottomPanel
+        activeTab={activeTab}
+        onTabChange={tab => { onTabChange(tab); setActiveTab(tab); }}
+        project={dummyProject}
+        harmonyResult={mockHarmonyResult}
+        onSelectDiagnostic={vi.fn()}
+        onToggleIgnoredDiagnostic={vi.fn()}
+        revision={1}
+        playheadTick={0}
+        progression={{
+          status: "ready", mode: "single", shortLength: 3, stepPreset: "beat",
+          style: "textbook-standard", writeChords: true, onModeChange: vi.fn(),
+          onShortLengthChange: vi.fn(), onStepPresetChange: vi.fn(), onStyleChange: vi.fn(),
+          onWriteChordsChange: vi.fn(), onRefresh: vi.fn(), onHoverCandidate: vi.fn(),
+          onAudition: vi.fn(), onStopAudition: vi.fn(), onApply: vi.fn(),
+        }}
+      />;
+    }
+    try {
+      act(() => root.render(<TestPanel />));
+      expect([...host.querySelectorAll('[role="tab"]')].map(tab => tab.textContent))
+        .toEqual(["问题1", "五线谱", "和声连接"]);
+      const tab = host.querySelector<HTMLButtonElement>("#bottom-progression-tab")!;
+      act(() => tab.click());
+      expect(onTabChange).toHaveBeenCalledWith("progression");
+      expect(tab.getAttribute("aria-selected")).toBe("true");
+      expect(host.querySelector('[role="tabpanel"]')?.textContent).toContain("光标右侧暂无空位");
+    } finally {
+      act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
   });
 
   it("renders score tab controls when activeTab is score", () => {

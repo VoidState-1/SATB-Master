@@ -37,6 +37,46 @@
   touch-action: none;
 }
 
+.roll-progression-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.roll-progression-slot {
+  position: absolute;
+  border: 1px dashed #4e8575;
+  background: rgb(47 119 100 / 8%);
+}
+
+.roll-progression-note {
+  position: absolute;
+  overflow: hidden;
+  padding: 0 4px;
+  border: 1px dashed var(--ghost-ink);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ghost-fill) 23%, transparent);
+  color: var(--ghost-ink);
+  font: 600 10px/16px "Segoe UI", sans-serif;
+  white-space: nowrap;
+}
+
+.chord-progression-preview {
+  position: absolute;
+  top: 6px;
+  height: 29px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 6px;
+  border: 1px dashed #4e8575;
+  border-radius: 4px;
+  background: rgb(225 239 231 / 82%);
+  color: #265c4d;
+  font: 12px Georgia, serif;
+  white-space: nowrap;
+}
+
 .roll-playhead {
   position: absolute;
   left: 0;

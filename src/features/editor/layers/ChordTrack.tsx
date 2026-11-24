@@ -4,7 +4,7 @@ import { keyAtTick } from "../../../domain/time";
 import type { ChordDraft, ProjectDocument } from "../../../domain/project";
 import { primaryDiagnostic } from "../geometry";
 import type { ChordInteraction } from "../interactions/types";
-import type { EditorTool } from "../types";
+import type { EditorTool, ProgressionPreview } from "../types";
 import { durationToWidth, tickToX } from "../viewport";
 import { cadenceRangeLabel, cadencesOverlappingChord } from "../../../components/cadenceRanges";
 import type { ChordRect, MeasureGuidePosition } from "./types";
@@ -21,6 +21,7 @@ interface ChordTrackProps {
   diagnosticsByChord: Map<string, HarmonyDiagnostic[]>;
   missingExpectedChordIds?: ReadonlySet<string>;
   cadenceCandidates?: readonly CadenceCandidate[];
+  ghostChords?: ProgressionPreview["ghostChords"];
   measureGuidePositions: MeasureGuidePosition[];
   playheadX: number;
   onPointerDown(event: React.PointerEvent<HTMLDivElement>): void;
@@ -49,6 +50,7 @@ export function ChordTrack({
   diagnosticsByChord,
   missingExpectedChordIds,
   cadenceCandidates,
+  ghostChords,
   measureGuidePositions,
   playheadX,
   onPointerDown,
@@ -140,6 +142,18 @@ export function ChordTrack({
           );
         },
       )}
+      {ghostChords?.map(chord => (
+        <div
+          key={chord.fromTick}
+          className="chord-progression-preview"
+          aria-hidden="true"
+          style={{
+            pointerEvents: "none",
+            left: tickToX(chord.fromTick, project.ppq, pixelsPerBeat),
+            width: Math.max(5, durationToWidth(chord.toTick - chord.fromTick, project.ppq, pixelsPerBeat, 2)),
+          }}
+        >{chord.label}</div>
+      ))}
       {chordInteraction?.kind === "draw" ? (
         <div
           className="chord-block chord-preview"

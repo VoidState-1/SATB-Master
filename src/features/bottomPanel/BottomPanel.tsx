@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { AlertCircle, List, Maximize2, Music2 } from "lucide-react";
+import { AlertCircle, List, Maximize2, Music2, Waypoints } from "lucide-react";
 import { IconButton } from "../../components/IconButton";
 import type { ProjectDocument } from "../../domain/project";
 import type {
@@ -22,9 +22,10 @@ import {
   type ScoreHighlightMode,
   type ScoreNoteSelection,
 } from "../scorePreview";
+import { ProgressionAssistantPanel, type ProgressionAssistantPanelProps } from "../progressionAssistant";
 import type { ScorePreviewWarning } from "../../domain/notation";
 
-export type BottomPanelTab = "diagnostics" | "score" | "logs";
+export type BottomPanelTab = "diagnostics" | "score" | "progression" | "logs";
 
 export interface BottomPanelProps {
   activeTab: BottomPanelTab;
@@ -44,6 +45,7 @@ export interface BottomPanelProps {
   selectedNoteIds?: ReadonlySet<string>;
   onSelectScoreNote?(selection: ScoreNoteSelection): void;
   onOpenScoreDialog?(): void;
+  progression?: Omit<ProgressionAssistantPanelProps, "project">;
 }
 
 export function BottomPanel({
@@ -64,6 +66,7 @@ export function BottomPanel({
   selectedNoteIds,
   onSelectScoreNote,
   onOpenScoreDialog,
+  progression,
 }: BottomPanelProps) {
   // 五线谱面板状态
   const [scale, setScale] = useState(0.9);
@@ -147,6 +150,18 @@ export function BottomPanel({
               </span>
             ) : null}
           </button>
+          <button
+            type="button"
+            role="tab"
+            id="bottom-progression-tab"
+            aria-controls="bottom-progression-panel"
+            aria-selected={activeTab === "progression"}
+            className={`bottom-panel-tab ${activeTab === "progression" ? "is-active" : ""}`}
+            onClick={() => onTabChange("progression")}
+          >
+            <Waypoints aria-hidden="true" />
+            <span>和声连接</span>
+          </button>
           {developerMode || showLogs || unreadLogErrors > 0 || activeTab === "logs" ? (
             <button
               type="button"
@@ -213,6 +228,8 @@ export function BottomPanel({
             developerMode={developerMode}
             hideHeader
           />
+        ) : activeTab === "progression" ? (
+          progression && <ProgressionAssistantPanel project={project} {...progression} />
         ) : activeTab === "logs" ? (
           <LogsPanel project={project} harmonyResult={harmonyResult} focus={logFocus} />
         ) : (

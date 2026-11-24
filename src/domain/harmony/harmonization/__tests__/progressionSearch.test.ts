@@ -306,6 +306,51 @@ describe("progression search", () => {
     expectValidPreview(best);
   });
 
+  it("uses the target meter for a two-beat empty step and preserves the grid override", () => {
+    const project = fixture();
+    project.meterEvents.push({ id: "meter-6-8", tick: 4 * beat, numerator: 6, denominator: 8 });
+    addSatb(project, 0, tonic, 4 * beat);
+    const options = { mode: "single", fromTick: 0, stepBeats: 2 } as const;
+    expect(searchProgressionCandidates(project, options).slot)
+      .toMatchObject({ fromTick: 4 * beat, toTick: 5 * beat });
+    expect(searchProgressionCandidates(project, { ...options, stepTicks: beat / 4 }).slot)
+      .toMatchObject({ fromTick: 4 * beat, toTick: 4.25 * beat });
+  });
+
+  it("auditions each checked voicing with one preceding beat even when the anchor is sustained", () => {
+    const project = fixture();
+    addSatb(project, 0, tonic, 4 * beat);
+    chordAt(project, "I", 0, 4 * beat);
+    const { candidates } = searchProgressionCandidates(project, { mode: "single", fromTick: 4 * beat });
+    const candidate = candidates.find(item => item.variants.length > 1)!;
+    expect(candidate.previewRange).toEqual({ fromTick: 3 * beat, toTick: 5 * beat });
+    const auditions = candidate.variants.map(variant => variant.previewProject.satbTracks.map(track => {
+      const note = track.notes.find(item => item.startTick === 4 * beat)!;
+      expect(note.pitch).toEqual(variant.steps[0].notes[track.id]);
+      expect(track.notes[0].durationTicks).toBe(4 * beat);
+      return note.pitch;
+    }));
+    expect(auditions[0]).not.toEqual(auditions[1]);
+  });
+
+  it("keeps locked voices, ranges and the chord track intact when accepting a candidate", () => {
+    const project = fixture();
+    const options = { fromTick: 0, mode: "single" } as const;
+    const candidate = searchProgressionCandidates(project, options).candidates[0];
+    getSatbTrack(project, "alto").locked = true;
+    expect(searchProgressionCandidates(project, options).candidates).toEqual([]);
+    expect(() => applyProgressionCandidate(project, candidate)).toThrow(/已锁定/);
+    getSatbTrack(project, "alto").locked = false;
+    project.exercise.editableRanges.push({ id: "tenor-locked", voiceIds: ["tenor"], editable: false, fromTick: 0, toTick: beat });
+    expect(() => applyProgressionCandidate(project, candidate)).toThrow(/已锁定/);
+    project.exercise.editableRanges = [];
+    project.chordTrack.locked = true;
+    const applied = applyProgressionCandidate(project, candidate);
+    expect(applied.addedNoteCount).toBe(4);
+    expect(applied.addedChordCount).toBe(0);
+    expect(applied.project.chordTrack).toEqual(project.chordTrack);
+  });
+
   it("rejects stale notes, changed fixed pitches and invalid variants atomically", () => {
     const project = fixture();
     addNote(project, "soprano", 0, "E4");

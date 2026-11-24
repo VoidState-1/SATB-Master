@@ -1,0 +1,225 @@
+.progression-assistant {
+  color-scheme: light dark;
+  --progression-bg: light-dark(#f7f7f4, #242a26);
+  --progression-panel: light-dark(#eeeee9, #2b322d);
+  --progression-card: light-dark(#fdfdfb, #2a312c);
+  --progression-line: light-dark(#d2d6cc, #46534b);
+  --progression-ink: light-dark(#252a23, #edf1eb);
+  --progression-muted: light-dark(#545b51, #b8c5bb);
+  --progression-accent: light-dark(#246451, #9cdec7);
+  --progression-tint: light-dark(#e1efe7, #2c473b);
+  --progression-amber: light-dark(#804903, #ffcb88);
+  --progression-amber-bg: light-dark(#faedd8, #473824);
+  --progression-error: light-dark(#943526, #ffb5a7);
+  --progression-error-bg: light-dark(#fbe8e4, #492f2a);
+  display: flex;
+  flex-direction: column;
+  background: var(--progression-bg);
+  color: var(--progression-ink);
+  font-size: 12px;
+}
+
+.progression-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  overflow-x: auto;
+  padding: 5px 10px;
+  white-space: nowrap;
+  background: var(--progression-panel);
+  border-bottom: 1px solid var(--progression-line);
+}
+
+.progression-target,
+.progression-card-title,
+.progression-card-details,
+.progression-pitches,
+.progression-card-actions,
+.progression-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.progression-target {
+  min-width: max-content;
+  padding-right: 9px;
+  border-right: 1px solid var(--progression-line);
+  color: var(--progression-muted);
+}
+
+.progression-target strong {
+  color: var(--progression-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.progression-assistant :is(button, select) {
+  min-height: 25px;
+  color: inherit;
+  border: 1px solid var(--progression-line);
+  border-radius: 5px;
+  background: var(--progression-card);
+}
+
+.progression-assistant button {
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.progression-assistant button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.progression-assistant :is(button, select, input, article):focus-visible {
+  outline: 2px solid var(--progression-accent);
+  outline-offset: -2px;
+}
+
+.progression-assistant button:not(:disabled):hover,
+.progression-assistant button[aria-pressed="true"],
+.progression-assistant button.can-bridge {
+  color: var(--progression-accent);
+  background: var(--progression-tint);
+}
+
+.progression-assistant .can-bridge[aria-pressed="false"] {
+  box-shadow: inset 0 -2px var(--progression-accent);
+}
+
+.progression-segments {
+  display: inline-flex;
+  flex: none;
+}
+
+.progression-segments button:not(:first-child) {
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.progression-segments button:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.progression-field {
+  flex: none;
+  color: var(--progression-muted);
+}
+
+.progression-field select {
+  padding: 0 3px;
+}
+
+.progression-field input {
+  accent-color: var(--progression-accent);
+  margin: 0;
+}
+
+.progression-refresh,
+.progression-audition {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.progression-assistant button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.progression-warning {
+  margin: 3px 10px 0;
+  color: var(--progression-amber);
+}
+
+.progression-candidates {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  padding: 7px 10px;
+  overflow: auto;
+}
+
+.progression-card {
+  display: grid;
+  flex: 0 0 auto;
+  min-width: 218px;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid var(--progression-line);
+  border-radius: 8px;
+  background: var(--progression-card);
+  white-space: nowrap;
+}
+
+.progression-card:hover,
+.progression-card:focus-within {
+  border-color: var(--progression-accent);
+}
+
+.progression-card-title strong {
+  font-family: Georgia, "Segoe UI", serif;
+  font-size: 16px;
+  line-height: 1.1;
+}
+
+.progression-tag,
+.progression-badge {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--progression-panel);
+  color: var(--progression-muted);
+  font-size: 11px;
+}
+
+.progression-badge.is-clear {
+  color: var(--progression-accent);
+  background: var(--progression-tint);
+}
+
+.progression-badge.is-warning {
+  color: var(--progression-amber);
+  background: var(--progression-amber-bg);
+}
+
+.progression-badge.is-error {
+  color: var(--progression-error);
+  background: var(--progression-error-bg);
+}
+
+.progression-pitches {
+  color: var(--progression-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progression-variants {
+  display: flex;
+  gap: 3px;
+  margin-right: 4px;
+}
+
+.progression-variants button {
+  border-radius: 20px;
+  font-size: 11px;
+}
+
+.progression-card-actions .progression-audition {
+  margin-left: auto;
+}
+
+.progression-card-actions .progression-apply {
+  color: var(--progression-accent);
+  background: var(--progression-tint);
+  font-weight: 650;
+}
+
+.progression-card-actions .progression-apply:hover {
+  border-color: var(--progression-accent);
+}

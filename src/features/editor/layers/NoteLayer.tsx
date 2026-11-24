@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 import type { HarmonyDiagnostic } from "../../../domain/harmony";
 import { keyAtTick, type MeasureInfo } from "../../../domain/time";
 import {
@@ -8,10 +8,10 @@ import {
   type ProjectDocument,
   type VoiceId,
 } from "../../../domain/project";
-import { formatSpelledPitch, isDiatonicPitch, spellMidi } from "../../../domain/pitch";
+import { formatSpelledPitch, isDiatonicPitch, spellMidi, toMidi } from "../../../domain/pitch";
 import { isBlackKey, primaryDiagnostic } from "../geometry";
 import type { PointerInteraction } from "../interactions/types";
-import type { EditorTool } from "../types";
+import type { EditorTool, ProgressionPreview } from "../types";
 import {
   HEADER_HEIGHT,
   MAX_MIDI,
@@ -39,6 +39,7 @@ interface NoteLayerProps {
   missingExpectedNoteIds?: ReadonlySet<string>;
   interaction?: PointerInteraction;
   noteRects: NoteRect[];
+  progressionPreview?: ProgressionPreview;
   tool: EditorTool;
   scaleGuideEnabled?: boolean;
   onPointerDown(event: React.PointerEvent<HTMLCanvasElement>): void;
@@ -64,6 +65,7 @@ export function NoteLayer({
   missingExpectedNoteIds,
   interaction,
   noteRects,
+  progressionPreview,
   tool,
   scaleGuideEnabled,
   onPointerDown,
@@ -393,6 +395,36 @@ export function NoteLayer({
         className="roll-viewport-canvas"
         aria-hidden="true"
       />
+      {progressionPreview && (
+        <div className="roll-progression-preview" aria-hidden="true" style={{ pointerEvents: "none" }}>
+          <div
+            className="roll-progression-slot"
+            style={{
+              left: tickToX(progressionPreview.slotRange.fromTick, project.ppq, pixelsPerBeat),
+              top: HEADER_HEIGHT,
+              width: durationToWidth(progressionPreview.slotRange.toTick - progressionPreview.slotRange.fromTick, project.ppq, pixelsPerBeat),
+              height: rollHeight,
+            }}
+          />
+          {progressionPreview.ghostNotes?.map(note => {
+            const voice = VOICE_CONFIG[note.voice];
+            return (
+              <div
+                key={note.id}
+                className="roll-progression-note"
+                style={{
+                  left: tickToX(note.startTick, project.ppq, pixelsPerBeat),
+                  top: midiToY(toMidi(note.pitch)) + 2,
+                  width: Math.max(5, durationToWidth(note.durationTicks, project.ppq, pixelsPerBeat, 1)),
+                  height: ROW_HEIGHT - 4,
+                  "--ghost-fill": voice.color,
+                  "--ghost-ink": voice.darkColor,
+                } as CSSProperties}
+              >{formatSpelledPitch(note.pitch)}</div>
+            );
+          })}
+        </div>
+      )}
       <canvas
         className={`roll-canvas tool-${tool} ${interaction?.kind === "pan" ? "is-panning" : ""}`}
         width={1}
