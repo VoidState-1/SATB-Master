@@ -20,7 +20,7 @@ const intersects = (left: HarmonizationRange, right: HarmonizationRange) =>
   left.fromTick < right.toTick && right.fromTick < left.toTick;
 const itemRange = (item: Timed) => ({ fromTick: item.startTick, toTick: endOf(item) });
 
-function clip<T extends Timed>(item: T, fromTick: number, toTick: number, id = item.id): T {
+export function clip<T extends Timed>(item: T, fromTick: number, toTick: number, id = item.id): T {
   return { ...item, id, startTick: fromTick, durationTicks: toTick - fromTick };
 }
 
@@ -34,7 +34,7 @@ function withoutRange<T extends Timed>(item: T, range: HarmonizationRange): T[] 
   return pieces;
 }
 
-function replaceRange<T extends Timed & { locked: boolean }>(
+export function replaceRange<T extends Timed & { locked: boolean }>(
   original: readonly T[], additions: readonly T[], range: HarmonizationRange, respectLocks: boolean,
 ) {
   const anchors = respectLocks ? original.filter(item => item.locked && intersects(itemRange(item), range)) : [];
@@ -70,7 +70,7 @@ function mergeBoundaries(
   return [...boundaries.values()].sort((a, b) => a.tick - b.tick);
 }
 
-function reconcileCadences(project: ProjectDocument, annotations: readonly CadenceAnnotation[]) {
+export function reconcileCadences(project: ProjectDocument, annotations: readonly CadenceAnnotation[]) {
   return annotations.map(annotation => {
     if (annotation.stale || annotation.observedLandingTick !== undefined ||
       cadenceChordCoverage(annotation, project.chordTrack.regions, project.structure.phraseBoundaries).aligned) {

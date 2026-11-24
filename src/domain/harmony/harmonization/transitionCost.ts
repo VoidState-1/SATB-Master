@@ -1,4 +1,5 @@
 import { pitchClassEquals, spelledPitchEquals } from "../../pitch";
+import type { VoiceId } from "../../project/types";
 import type { MelodySlice, OrnamentRole } from "./melodyGrid";
 import type { HarmonizationGivenVoice, HarmonizationRelaxedLevel, HarmonizationStyle } from "./types";
 import { type HarmonizationChord, type Voicing, type WrittenNote } from "./vocabulary";
@@ -15,6 +16,9 @@ export interface Obligations {
   bassDirection: number;
   pedalOrigin?: string;
   sopranoHeldTicks: number;
+  cadential64?: boolean;
+  seventhVoices?: readonly VoiceId[];
+  leadingToneVoices?: readonly VoiceId[];
 }
 
 export interface TransitionState {
@@ -111,7 +115,7 @@ export function scoreTransition(
   current: Choice,
   from: MelodySlice,
   to: MelodySlice,
-  givenVoice: HarmonizationGivenVoice,
+  givenVoice: HarmonizationGivenVoice | undefined,
   level: HarmonizationRelaxedLevel,
   style: HarmonizationStyle,
 ) {
@@ -129,6 +133,7 @@ export function scoreTransition(
   const sameChord = sameKey && left.signature === right.signature;
   const contiguous = from.endTick === to.tick;
   const givenIndex = givenVoice === "soprano" ? 0 : 3;
+  const fixedIndex = givenVoice ? givenIndex : -1;
   let score = 0;
 
   if (!contiguous) {
@@ -137,7 +142,7 @@ export function scoreTransition(
 
   if (current.ornament && (!sameChord || prior.ornament ||
     a.some((note, voice) => voice !== givenIndex && !spelledPitchEquals(note.pitch, b[voice].pitch)))) return REJECT;
-  if (prior.ornament && (current.ornament || b[givenIndex].tone < 0 ||
+  if (prior.ornament && (current.ornament || !givenVoice || b[givenIndex].tone < 0 ||
     (givenIndex === 3 && !pitchClassEquals(b[3].pitch, right.identity.bass)))) return REJECT;
   if (left.applied && !left.locked && (!sameKey || !validAppliedContinuation(prior, current))) return REJECT;
 
@@ -177,7 +182,7 @@ export function scoreTransition(
     const irregular = (written === 1 && distance >= 3) ||
       ((written === 3 || written === 4) && distance === 6) || (written === 3 && distance === 4);
     if (distance > 12 || irregular) {
-      if (strict && (distance > 12 || voice !== givenIndex)) return REJECT;
+      if (strict && (distance > 12 || voice !== fixedIndex)) return REJECT;
       score -= distance > 12 ? 140 : 13;
     }
     score += distance === 0 ? (style === "classic-basic" ? 1.35 : 0.9)
@@ -232,8 +237,8 @@ export function scoreTransition(
         if (a[voice].tone !== 3) continue;
         const step = stepDirection(a[voice], b[voice]);
         if (!retainsSeventh && step !== -1) {
-          if (level === 0 && voice !== givenIndex) return REJECT;
-          score -= voice === givenIndex ? 22 : 28;
+          if (level === 0 && voice !== fixedIndex) return REJECT;
+          score -= voice === fixedIndex ? 22 : 28;
         }
         if (retainsSeventh && b[voice].tone === 0 && step === 1) {
           if (strict && voice === 3 && isRootDominant(right)) return REJECT;
@@ -256,7 +261,7 @@ export function scoreTransition(
         if (innerDescent) score -= 2;
         else {
           if (strict && (isTonic(right) || isDeceptive(left, right)) && (voice === 0 || voice === 3) &&
-            voice !== givenIndex) return REJECT;
+            voice !== fixedIndex) return REJECT;
           score -= sameChord ? 9 : 19;
         }
       }

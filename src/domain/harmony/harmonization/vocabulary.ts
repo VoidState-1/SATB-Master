@@ -227,16 +227,27 @@ function makeVoicing(notes: VoicedNotes, penalty: number, present: number): Voic
   return { notes, penalty, present, perfectMask, diminishedFifthMask };
 }
 
+export function voicingFromPitches(
+  chord: HarmonizationChord, pitches: Record<VoiceId, SpelledPitch>,
+): Voicing {
+  const notes: VoicedNotes = [
+    noteFact(pitches.soprano, chord), noteFact(pitches.alto, chord),
+    noteFact(pitches.tenor, chord), noteFact(pitches.bass, chord),
+  ];
+  const present = notes.reduce((mask, note) => note.tone < 0 ? mask : mask | (1 << note.tone), 0);
+  return makeVoicing(notes, 0, present);
+}
+
 /** Level 2 ranks unavoidable conflicts while keeping the input pitches as written. */
 export function enumerateVoicings(
   chord: HarmonizationChord,
   givenVoice: HarmonizationGivenVoice,
-  givenPitch: SpelledPitch,
+  givenPitch: SpelledPitch | undefined,
   lockedVoicePitches: Partial<Record<VoiceId, SpelledPitch>>,
   relaxedLevel: HarmonizationRelaxedLevel,
   context: { allowOmittedTonicFifth?: boolean } = {},
 ): Voicing[] {
-  const fixed = { ...lockedVoicePitches, [givenVoice]: givenPitch };
+  const fixed = givenPitch ? { ...lockedVoicePitches, [givenVoice]: givenPitch } : lockedVoicePitches;
   const pools = VOICE_ORDER.map(voice => {
     const pitch = fixed[voice];
     if (!pitch) return allowedPitches(chord, voice);

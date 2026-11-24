@@ -16,6 +16,7 @@ export type {
   HarmonizationStyle,
 } from "./types";
 export { applyAutoHarmonization } from "./verifyAndApply";
+export * from "./progressionSearch";
 
 export function autoHarmonize(project: ProjectDocument, options: AutoHarmonizationOptions = {}): AutoHarmonizationResult {
   const start = performance.now();
