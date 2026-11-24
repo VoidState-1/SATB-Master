@@ -4,6 +4,7 @@ import type { LogEntry } from "./logging.js";
 export const LOG_SESSION_ARGUMENT = "--satb-log-session=";
 export const MAX_RULE_TEST_CASE_BYTES = 20 * 1024 * 1024;
 export const MAX_AUDIT_FILE_BYTES = 32 * 1024 * 1024;
+export const MAX_MIDI_IMPORT_BYTES = 10 * 1024 * 1024;
 
 export interface ProjectSaveRequest {
   project: unknown;
@@ -125,6 +126,12 @@ export interface DesktopInvokeMap {
     request: { filePath: string };
     response: { deleted: boolean };
   };
+  "midi:import": {
+    request: void;
+    response:
+      | { canceled: true }
+      | { canceled: false; filePath: string; fileName: string; bytes: Uint8Array };
+  };
   "midi:export": {
     request: { bytes: Uint8Array; defaultName: string };
     response: { canceled: boolean; filePath?: string };
@@ -221,6 +228,7 @@ export const DESKTOP_CHANNELS = Object.freeze({
   ruleTestCaseSave: "rule-test-case:save",
   ruleTestCaseOpenDirectory: "rule-test-case:open-directory",
   ruleTestCaseDelete: "rule-test-case:delete",
+  midiImport: "midi:import",
   midiExport: "midi:export",
   musicXmlExport: "musicxml:export",
   ruleProfileOpen: "rule-profile:open",
@@ -275,6 +283,7 @@ export interface DesktopApi {
     delete(request: DesktopInvokeMap["rule-test-case:delete"]["request"]): Promise<DesktopInvokeMap["rule-test-case:delete"]["response"]>;
   };
   midi: {
+    import(): Promise<DesktopInvokeMap["midi:import"]["response"]>;
     export(bytes: Uint8Array, defaultName: string): Promise<DesktopInvokeMap["midi:export"]["response"]>;
   };
   musicXml: {

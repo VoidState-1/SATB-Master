@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from 'electron'
-import { constants } from 'node:fs'
+import { constants, createReadStream } from 'node:fs'
 import { copyFile, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
@@ -11,7 +11,7 @@ import {
   showExclusiveOpenDialog,
   showExclusiveSaveDialog,
 } from './dialog-coordinator.js'
-import { DESKTOP_CHANNELS } from '../shared/desktop.js'
+import { DESKTOP_CHANNELS, MAX_MIDI_IMPORT_BYTES } from '../shared/desktop.js'
 import { logMain } from './logger.js'
 import { handleDesktop } from './typed-ipc.js'
 
@@ -298,6 +298,36 @@ export function registerProjectIpc() {
   handleDesktop(DESKTOP_CHANNELS.projectDiscardRecovery, async () => {
     await rm(recoveryPath(), { force: true })
     return { discarded: true }
+  })
+
+  handleDesktop(DESKTOP_CHANNELS.midiImport, async (event) => {
+    let filePath: string
+    if (e2eDirectory) {
+      filePath = path.join(e2eDirectory, 'import.mid')
+    } else {
+      const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
+      const selection = await showExclusiveOpenDialog(parentWindow, {
+        title: '导入 MIDI',
+        defaultPath: await rememberedDefaultPath('midi'),
+        properties: ['openFile'],
+        filters: [{ name: 'Standard MIDI File', extensions: ['mid', 'midi'] }],
+      })
+      if (selection.canceled || !selection.filePaths[0]) return { canceled: true }
+      filePath = selection.filePaths[0]
+    }
+
+    const info = await stat(filePath)
+    if (!info.isFile()) throw new Error('请选择 MIDI 文件')
+    if (info.size < 1) throw new Error('MIDI 文件为空')
+    if (info.size > MAX_MIDI_IMPORT_BYTES) throw new Error('MIDI 文件超过 10 MB 限制')
+    await rememberDialogDirectory('midi', filePath)
+
+    // end 是包含端点，多读一个字节即可检测文件在校验后增大。
+    const stream = createReadStream(filePath, { start: 0, end: MAX_MIDI_IMPORT_BYTES })
+    const buffer = Buffer.concat(await stream.toArray())
+    if (buffer.length < 1) throw new Error('MIDI 文件为空')
+    if (buffer.length > MAX_MIDI_IMPORT_BYTES) throw new Error('MIDI 文件超过 10 MB 限制')
+    return { canceled: false, filePath, fileName: path.basename(filePath), bytes: new Uint8Array(buffer) }
   })
 
   handleDesktop(DESKTOP_CHANNELS.midiExport, async (event, request) => {

@@ -387,6 +387,17 @@
   padding-inline: 10px;
 }
 
+.auxiliary-track-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.auxiliary-track-heading-actions .icon-button {
+  width: 26px;
+  height: 26px;
+}
+
 .auxiliary-track-count {
   margin-inline-start: 3px;
   font-variant-numeric: tabular-nums;

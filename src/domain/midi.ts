@@ -59,12 +59,15 @@ export function toMidiString(text: string): string {
   return binary;
 }
 
-export function fromMidiString(binary: string): string {
+export function fromMidiString(
+  binary: string,
+  options?: TextDecoderOptions,
+): string {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
     bytes[i] = binary.charCodeAt(i);
   }
-  return new TextDecoder().decode(bytes);
+  return new TextDecoder("utf-8", options).decode(bytes);
 }
 
 type WithoutDelta<T> = T extends unknown ? Omit<T, "deltaTime"> : never;

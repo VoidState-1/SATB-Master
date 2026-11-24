@@ -8,6 +8,13 @@ import {
   type MidiExportOptions,
 } from "../../domain/midi";
 import {
+  importMidiToAuxiliaryTracks,
+  parseMidiForImport,
+  type MidiImportApplyOptions,
+  type MidiImportResult,
+  type ParsedMidiFile,
+} from "../../domain/midiImport";
+import {
   buildMusicXml,
   musicXmlFileName,
   type MusicXmlExportOptions,
@@ -19,6 +26,7 @@ import {
   exportMidi,
   exportMusicXml,
   findRecovery,
+  openMidiFile,
   openProject,
   saveProject,
 } from "../../services/desktop";
@@ -38,6 +46,7 @@ interface FileWorkflowOptions {
   history: ProjectHistoryFilePort;
   createProject(): ProjectDocument;
   onWorkspaceReset(project: ProjectDocument): void;
+  onImportedAuxiliaryTracks?(trackIds: string[]): void;
   showNotice: ShowNotice;
   requestConfirmation(options: ConfirmationState): Promise<boolean>;
 }
@@ -47,12 +56,14 @@ export function useFileWorkflow({
   history,
   createProject,
   onWorkspaceReset,
+  onImportedAuxiliaryTracks,
   showNotice,
   requestConfirmation,
 }: FileWorkflowOptions) {
   const [filePath, setFilePath] = useState<string>();
   const [migrationBackupSourcePath, setMigrationBackupSourcePath] =
     useState<string>();
+  const [pendingMidiImport, setPendingMidiImport] = useState<ParsedMidiFile>();
   const recoveryCheckedRef = useRef(false);
   const isBusyRef = useRef(false);
 
@@ -203,6 +214,76 @@ export function useFileWorkflow({
     [filePath, history, migrationBackupSourcePath, project, showNotice],
   );
 
+  const handleImportMidi = useCallback(async () => {
+    if (isBusyRef.current || pendingMidiImport) return;
+    isBusyRef.current = true;
+    let logEntryId: string | undefined;
+    try {
+      logger.recordBreadcrumb("file", "导入 MIDI");
+      const parsed = await logger.span("file", "读取 MIDI 文件", async () => {
+        const file = await openMidiFile();
+        return file ? parseMidiForImport(file.bytes, file.fileName) : undefined;
+      }, undefined, {
+        code: "FILE_READ_FAILED",
+        level: "info",
+        summarize: (parsed) => parsed
+          ? { canceled: false, trackCount: parsed.tracks.length, warningCount: parsed.warnings.length }
+          : { canceled: true },
+        onFailure: (entry) => { logEntryId = entry.id; },
+      });
+      if (parsed) setPendingMidiImport(parsed);
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "读取 MIDI 文件失败", { level: "error", logEntryId });
+    } finally {
+      isBusyRef.current = false;
+    }
+  }, [pendingMidiImport, showNotice]);
+
+  const handleConfirmMidiImport = useCallback((options: MidiImportApplyOptions) => {
+    if (!pendingMidiImport) return;
+    let logEntryId: string | undefined;
+    let result: MidiImportResult;
+    try {
+      result = logger.span("file", "应用 MIDI 导入", () => {
+        const imported = importMidiToAuxiliaryTracks(project, pendingMidiImport, options);
+        if (imported.error) throw new AppError("PROJECT_INVALID", imported.error);
+        return imported;
+      }, undefined, {
+        code: "PROJECT_INVALID",
+        level: "info",
+        failureLevel: "warn",
+        summarize: (imported) => ({
+          trackCount: imported.importedTrackIds.length,
+          noteCount: imported.importedNoteCount,
+          deduplicatedNoteCount: imported.deduplicatedNoteCount,
+          extendedLengthTicks: imported.extendedLengthTicks,
+        }),
+        onFailure: (entry) => { logEntryId = entry.id; },
+      });
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "MIDI 导入失败", { level: "error", logEntryId });
+      return;
+    }
+
+    audioEngine.stop();
+    history.commit(result.project);
+    setPendingMidiImport(undefined);
+    onImportedAuxiliaryTracks?.(result.importedTrackIds);
+
+    const details = [];
+    if (result.deduplicatedNoteCount > 0) {
+      details.push(`已合并 ${result.deduplicatedNoteCount} 个完全重叠的音符`);
+    }
+    if (result.extendedLengthTicks !== undefined) details.push("已自动延长工程");
+    if (result.warnings.length > pendingMidiImport.warnings.length) details.push("已跳过部分调号变更");
+    const summary = `已导入 ${result.importedTrackIds.length} 条额外声部、${result.importedNoteCount} 个音符`;
+    showNotice([summary, ...details].join("，"), { level: "success" });
+  }, [history, onImportedAuxiliaryTracks, pendingMidiImport, project, showNotice]);
+
+  const handleCancelMidiImport = useCallback(() => {
+    setPendingMidiImport(undefined);
+  }, []);
+
   const handleExportMidi = useCallback(
     async (options?: MidiExportOptions) => {
       if (isBusyRef.current) return;
@@ -258,6 +339,10 @@ export function useFileWorkflow({
     handleNew,
     handleOpen,
     handleSave,
+    pendingMidiImport,
+    handleImportMidi,
+    handleConfirmMidiImport,
+    handleCancelMidiImport,
     handleExportMidi,
     handleExportMusicXml,
   } as const;

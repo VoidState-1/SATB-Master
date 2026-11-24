@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
+import { writeMidi } from "midi-file";
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { audioEngine } from "../../audio/audioEngine";
-import { createEmptyProject } from "../../domain/project";
+import { createEmptyProject, PPQ } from "../../domain/project";
+import { useProjectHistory } from "../../hooks/useProjectHistory";
 import * as desktop from "../../services/desktop";
 import { ExternalRuleRuntime } from "../../services/externalRuleRuntime";
 import { logger } from "../../services/logging";
@@ -80,6 +82,127 @@ describe("controller logging", () => {
     expect(logger.getBreadcrumbs().map(({ message }) => message)).toEqual([
       "打开工程", "打开工程", "保存工程", "导出 MIDI", "导出 MusicXML",
     ]);
+  });
+
+  it("logs MIDI read and parse failures with notice IDs, and treats file picker cancellation as normal", async () => {
+    const importFile = vi.fn()
+      .mockRejectedValueOnce(new Error("无法读取 MIDI"))
+      .mockResolvedValueOnce({ canceled: false, fileName: "invalid.mid", bytes: Uint8Array.of(1) })
+      .mockResolvedValueOnce({ canceled: true });
+    Object.defineProperty(window, "desktop", { configurable: true, value: {
+      project: { recovery: vi.fn().mockResolvedValue({ available: false }) },
+      midi: { import: importFile },
+    } });
+    const project = createEmptyProject();
+    const commit = vi.fn();
+    const showNotice = vi.fn();
+    const controller = await mount(() => useFileWorkflow({
+      project,
+      history: { isDirty: false, commit, load: vi.fn(), markSaved: vi.fn(), recover: vi.fn() },
+      createProject: createEmptyProject,
+      onWorkspaceReset: vi.fn(),
+      showNotice,
+      requestConfirmation: vi.fn(),
+    }));
+
+    await act(() => controller().handleImportMidi());
+    await act(() => controller().handleImportMidi());
+    await act(() => controller().handleImportMidi());
+
+    const entries = logger.getEntries();
+    expect(entries.map(({ level, scope, code, message }) => [level, scope, code, message])).toEqual([
+      ["error", "file", "FILE_READ_FAILED", "读取 MIDI 文件"],
+      ["error", "file", "FILE_READ_FAILED", "读取 MIDI 文件"],
+      ["info", "file", undefined, "读取 MIDI 文件"],
+    ]);
+    expect(showNotice.mock.calls).toEqual([
+      ["无法读取 MIDI", { level: "error", logEntryId: entries[0].id }],
+      [entries[1].error?.message, { level: "error", logEntryId: entries[1].id }],
+    ]);
+    expect(entries[2].context).toMatchObject({ result: { canceled: true } });
+    expect(logger.getBreadcrumbs().map(({ message }) => message)).toEqual(Array(3).fill("导入 MIDI"));
+    expect(controller().pendingMidiImport).toBeUndefined();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("keeps a rejected MIDI import open and commits all successful changes in one undoable operation", async () => {
+    const stop = vi.spyOn(audioEngine, "stop").mockImplementation(() => {});
+    const bytes = Uint8Array.from(writeMidi({
+      header: { format: 0, numTracks: 1, ticksPerBeat: PPQ },
+      tracks: [[
+        { type: "setTempo", deltaTime: 0, microsecondsPerBeat: 500_000 },
+        { type: "noteOn", deltaTime: 0, channel: 0, noteNumber: 60, velocity: 80 },
+        { type: "noteOn", deltaTime: 0, channel: 0, noteNumber: 60, velocity: 80 },
+        { type: "noteOff", deltaTime: PPQ, channel: 0, noteNumber: 60, velocity: 0 },
+        { type: "noteOff", deltaTime: 0, channel: 0, noteNumber: 60, velocity: 0 },
+        { type: "endOfTrack", deltaTime: 0 },
+      ]],
+    }));
+    const importFile = vi.fn().mockResolvedValue({ canceled: false, fileName: "phrase.mid", bytes });
+    Object.defineProperty(window, "desktop", { configurable: true, value: {
+      project: { recovery: vi.fn().mockResolvedValue({ available: false }) },
+      midi: { import: importFile },
+    } });
+    const initial = createEmptyProject();
+    const showNotice = vi.fn();
+    const onImportedAuxiliaryTracks = vi.fn();
+    const controller = await mount(() => {
+      const history = useProjectHistory(initial);
+      const workflow = useFileWorkflow({
+        project: history.project,
+        history,
+        createProject: createEmptyProject,
+        onWorkspaceReset: vi.fn(),
+        onImportedAuxiliaryTracks,
+        showNotice,
+        requestConfirmation: vi.fn(),
+      });
+      return { history, workflow };
+    });
+    await act(async () => {
+      const { handleImportMidi } = controller().workflow;
+      await Promise.all([handleImportMidi(), handleImportMidi()]);
+    });
+    expect(importFile).toHaveBeenCalledOnce();
+    expect(controller().workflow.pendingMidiImport?.fileName).toBe("phrase.mid");
+    expect(controller().history.canUndo).toBe(false);
+    expect(logger.getEntries()[0]).toMatchObject({
+      level: "info", scope: "file", message: "读取 MIDI 文件",
+      context: { result: { canceled: false, trackCount: 1, warningCount: 0 } },
+    });
+
+    act(() => controller().workflow.handleConfirmMidiImport({ selectedTrackKeys: [] }));
+    expect(controller().workflow.pendingMidiImport).toBeDefined();
+    expect(controller().history.canUndo).toBe(false);
+    expect(stop).not.toHaveBeenCalled();
+    const failure = logger.getEntries().at(-1)!;
+    expect(failure).toMatchObject({ level: "warn", scope: "file", code: "PROJECT_INVALID", message: "应用 MIDI 导入" });
+    expect(showNotice).toHaveBeenLastCalledWith("请至少选择一条要导入的轨道", { level: "error", logEntryId: failure.id });
+
+    const startTickOffset = initial.lengthTicks - PPQ / 2;
+    act(() => controller().workflow.handleConfirmMidiImport({ startTickOffset, applyTimingEvents: true }));
+    const imported = controller().history.project;
+    expect(imported.auxiliaryTracks[0].notes).toEqual([expect.objectContaining({ startTick: startTickOffset })]);
+    expect(imported.satbTracks).toEqual(initial.satbTracks);
+    expect(imported.tempoEvents.at(-1)).toMatchObject({ tick: startTickOffset, bpm: 120 });
+    expect(imported.lengthTicks).toBeGreaterThan(initial.lengthTicks);
+    expect(controller().workflow.pendingMidiImport).toBeUndefined();
+    expect(stop).toHaveBeenCalledOnce();
+    expect(onImportedAuxiliaryTracks).toHaveBeenCalledExactlyOnceWith([imported.auxiliaryTracks[0].id]);
+    expect(showNotice).toHaveBeenLastCalledWith(
+      "已导入 1 条额外声部、1 个音符，已合并 1 个完全重叠的音符，已自动延长工程", { level: "success" },
+    );
+    expect(logger.getEntries().at(-1)).toMatchObject({
+      level: "info", scope: "file", message: "应用 MIDI 导入",
+      context: { result: {
+        trackCount: 1, noteCount: 1, deduplicatedNoteCount: 1, extendedLengthTicks: imported.lengthTicks,
+      } },
+    });
+    act(() => controller().history.undo());
+    expect(controller().history.project).toEqual(initial);
+    expect(controller().history.canUndo).toBe(false);
+    act(() => controller().history.redo());
+    expect(controller().history.project).toEqual(imported);
   });
 
   it("reports failed SoundFont loading and failed playback with their own codes", async () => {

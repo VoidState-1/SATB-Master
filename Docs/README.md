@@ -18,7 +18,7 @@ SATB Master 是一款离线优先的四部和声学习与编辑软件。主要�
 | 桌面壳 | Electron | 文件、无边框窗口、滚动日志、安装包和本地资源访问 |
 | 跨进程契约 | `shared/` | Desktop IPC 通道与类型、双进程结构化日志契约、外置规则协议 |
 | 音频与外设 | SpessaSynth Worklet、Web Audio、Web MIDI | SF2/SF3 合成、预听、播放、回退音色与实时外部 MIDI 输出 |
-| 记谱与导出 | VexFlow 5、`midi-file`、自研 MusicXML/文本谱 | 五线谱实时预览、MIDI Type 1 导出、MusicXML 导出与 `scoreText` 分块文本谱 |
+| 记谱与导入导出 | VexFlow 5、`midi-file`、自研 MusicXML/文本谱 | 五线谱实时预览、MIDI 导入与 Type 1 导出、MusicXML 导出与 `scoreText` 分块文本谱 |
 | 规则沙箱与异步搜索 | QuickJS WASM、Web Worker | 隔离执行外置和声规则（`externalRule.worker.ts`）与半自动和声连接搜索（`progressionSearch.worker.ts`） |
 | 测试与验证 | Vitest、自有 Electron CDP 脚本 | 领域测试、架构边界门禁、规则基准与桌面端 E2E（含会话零错误日志门禁） |
 
@@ -39,6 +39,7 @@ SATB Master 是一款离线优先的四部和声学习与编辑软件。主要�
 - 自动和声分析与和弦推导，包含候选预览、空白填充/替换未锁定写回与乐句结构联动。
 - 自动配和声（高音题/低音题）与半自动和声连接助手（底部面板 + Web Worker 异步搜索 + 钢琴卷帘幽灵音符预览 + 衔接试听）。
 - 底部四标签工作台：问题（和声诊断）、五线谱（基于 VexFlow 的实时大谱表预览与独立大窗口预览）、和声连接、日志（开发者模式常驻，普通模式仅出错显现）。
+- 支持将标准 MIDI 文件中选中的轨道直接导入为自由复音的额外声部，可选用文件中的速度、拍号和调号。
 - 默认及本地 SF2/SF3、播放/暂停/循环/节拍器、实时 Web MIDI 输出、MIDI Type 1 导出与 MusicXML（`.musicxml`）导出。
 - `.satb` 工程文件、自动恢复、v2 到 v3 迁移与原文件备份、分类型最近对话框目录、无边框窗口尺寸记忆和开发者属性检查器。
 - 主进程 JSONL 滚动日志、渲染进程日志总线与面包屑、IPC 异常与慢调用埋点、根级崩溃恢复边界（紧急备份 `.satb` + 脱敏排错包导出）以及操作通知栈。
@@ -48,7 +49,7 @@ SATB Master 是一款离线优先的四部和声学习与编辑软件。主要�
 
 尚未实现或仍需完善：
 
-- MIDI 导入及“解析为四声部/全部放入辅助轨”两种导入模式。
+- 将 MIDI 自动拆分为 SATB 四声部导入模式。
 - 每次发布前的 Windows 安装后端到端验证；该结果依赖具体机器环境，不能由一次历史通过长期替代。
 - 70 条内置规则的教材例题与院校口径持续校准；缺少人工语义或上下文时，部分规则会保守跳过，这不同于“尚未实现”。
 - 自动和弦推导、自动配和声、乐句边界与终止式检测的持续校准；歧义时保守跳过或降级为 `ambiguous`，不会伪造确定结论。
@@ -157,6 +158,7 @@ src/
     editor/                  钢琴卷帘编辑器与视口坐标系统
     export/                  MIDI / MusicXML 统一导出对话框
     inspector/               属性检查器、和弦语义、终止式与开发者事件视图
+    midiImport/              MIDI 导入确认对话框
     midiOut/                 实时 Web MIDI 输出配置对话框
     progressionAssistant/    半自动和声连接面板
     ruleTesting/             规则测试工作台

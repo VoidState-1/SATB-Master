@@ -70,6 +70,7 @@ const desktop: DesktopApi = {
     delete: (request) => invokeDesktop(DESKTOP_CHANNELS.ruleTestCaseDelete, request),
   },
   midi: {
+    import: () => invokeDesktop(DESKTOP_CHANNELS.midiImport),
     export: (bytes: Uint8Array, defaultName: string) =>
       invokeDesktop(DESKTOP_CHANNELS.midiExport, { bytes, defaultName }),
   },

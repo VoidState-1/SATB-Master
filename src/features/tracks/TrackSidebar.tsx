@@ -7,6 +7,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  Upload,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -30,6 +31,7 @@ interface TrackSidebarProps {
   onSetActive(voiceId: string): void;
   onUpdateTrack(voiceId: string, patch: TrackPatch): void;
   onAddAuxiliaryTrack(): void;
+  onImportMidi?(): void;
   onDeleteAuxiliaryTrack(trackId: string): void;
 }
 
@@ -242,6 +244,7 @@ export function TrackSidebar({
   onSetActive,
   onUpdateTrack,
   onAddAuxiliaryTrack,
+  onImportMidi,
   onDeleteAuxiliaryTrack,
 }: TrackSidebarProps) {
   const [sponsorDialogOpen, setSponsorDialogOpen] = useState(false);
@@ -262,15 +265,25 @@ export function TrackSidebar({
         <section aria-label="额外声部">
           <div className="sidebar-heading auxiliary-track-heading">
             <span>额外声部 <span className="auxiliary-track-count">{project.auxiliaryTracks.length}</span></span>
-            <button
-              type="button"
-              className="command-button"
-              aria-label="添加额外声部"
-              onClick={() => onAddAuxiliaryTrack()}
-            >
-              <Plus aria-hidden="true" />
-              添加
-            </button>
+            <div className="auxiliary-track-heading-actions">
+              {onImportMidi ? (
+                <IconButton
+                  label="导入 MIDI"
+                  title="导入 MIDI 到额外声部"
+                  icon={<Upload aria-hidden="true" />}
+                  onClick={onImportMidi}
+                />
+              ) : null}
+              <button
+                type="button"
+                className="command-button"
+                aria-label="添加额外声部"
+                onClick={() => onAddAuxiliaryTrack()}
+              >
+                <Plus aria-hidden="true" />
+                添加
+              </button>
+            </div>
           </div>
           {project.auxiliaryTracks.length === 0 ? (
             <p className="auxiliary-track-empty">可添加多条自由复音轨，不参与和声规则检查。</p>

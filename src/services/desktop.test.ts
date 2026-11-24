@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { MAX_MIDI_IMPORT_BYTES } from "../../shared/desktop";
 import { compileScoreText } from "../domain/scoreText";
-import { autosaveProject, findRecovery, openProject, readSoundFontBuffer, saveProject } from "./desktop";
+import { autosaveProject, findRecovery, openMidiFile, openProject, readSoundFontBuffer, saveProject } from "./desktop";
 
 it("保存、恢复和通过桌面桥接重开保留倍增三四与实写音符", async () => {
   const { project } = compileScoreText(`satb 1
@@ -42,6 +43,51 @@ bars 1..1 {
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+describe("browser MIDI file picker", () => {
+  async function chooseMidi(file?: File) {
+    const input = new EventTarget();
+    Object.assign(input, {
+      type: "",
+      accept: "",
+      oncancel: null,
+      files: file ? [file] : [],
+      click() { input.dispatchEvent(new Event(file ? "change" : "cancel")); },
+    });
+    const createElement = vi.fn().mockReturnValue(input);
+    vi.stubGlobal("document", { createElement });
+    vi.stubGlobal("window", new EventTarget());
+    try {
+      const result = openMidiFile();
+      expect(createElement).toHaveBeenCalledWith("input");
+      expect(input).toMatchObject({ type: "file", accept: ".mid,.midi" });
+      return await result;
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it("settles with no file when the picker is canceled", async () => {
+    await expect(chooseMidi()).resolves.toBeUndefined();
+  });
+
+  it("returns the chosen file name and bytes", async () => {
+    const bytes = Uint8Array.of(77, 84, 104, 100);
+    await expect(chooseMidi(new File([bytes], "练习.midi"))).resolves.toEqual({
+      fileName: "练习.midi", bytes,
+    });
+  });
+
+  it.each([
+    [0, "MIDI 文件为空"],
+    [MAX_MIDI_IMPORT_BYTES + 1, "MIDI 文件超过 10 MB 限制"],
+  ])("rejects a file of %i bytes before reading it", async (size, message) => {
+    const file = new File([new Uint8Array(size)], "invalid.mid");
+    const read = vi.spyOn(file, "arrayBuffer");
+    await expect(chooseMidi(file)).rejects.toThrow(message);
+    expect(read).not.toHaveBeenCalled();
+  });
 });
 
 describe("SoundFont streaming reader", () => {

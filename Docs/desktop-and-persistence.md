@@ -11,7 +11,7 @@
 - 自动恢复与 schema v2 原文件备份。
 - 本地 SoundFont 大文件安全流式读取。
 - 本机外置规则库与规则测试用例目录读写。
-- MIDI 与 MusicXML 系统保存对话框。
+- MIDI 系统打开对话框，以及 MIDI 与 MusicXML 系统保存对话框。
 - 主进程 JSONL 滚动日志、崩溃同步落盘与排错包导出。
 - 启动命令行直达教材审计包（`--audit-package`）与安装包资源路径。
 
@@ -64,7 +64,7 @@ preload API 按能力分为 11 个分组：
 | `windowControls` | `minimize`、`toggleMaximize`、`isMaximized`、`isFocused`、`close`、`onMaximizedChange` |
 | `versions` | 只读版本信息对象：`electron`、`chrome`、`node` |
 | `project` | `open`、`save`、`exportBackup`、`autosave`、`recovery`、`discardRecovery` |
-| `midi` | `export(bytes, defaultName)` |
+| `midi` | `import()`、`export(bytes, defaultName)` |
 | `musicXml` | `export(xml, defaultName)` |
 | `soundFont` | `open`、`loadPath`、`loadDefault`、`hash`（带进度订阅）、`release` |
 | `ruleLibrary` | `list`、`importFile`、`install`、`loadSource`、`remove` |
@@ -239,8 +239,9 @@ userData/rule-library/
 
 用例格式与运行器见 [rule-testing.md](./rule-testing.md)。用例文件不进入工程、不参与自动恢复，也不受工程 schema 迁移影响。
 
-## 10. MIDI 与 MusicXML 导出
+## 10. MIDI 导入与 MIDI / MusicXML 导出
 
+- **MIDI 导入（`midi:import`）** 由主进程用互斥打开对话框选择 `.mid` 或 `.midi` 文件。通道无请求参数，仅返回取消状态，或所选文件的文件名、路径和 `Uint8Array`。主进程拒绝空文件并限制实际读取量，允许的文件大小上限为 10 MB（`MAX_MIDI_IMPORT_BYTES`）。renderer 使用返回的字节解析。导入与导出共用 `midi` 最近目录。E2E 模式读取固定的 `<e2e>/import.mid`。
 - **MIDI 导出（`midi:export`）：** renderer 在 [`src/domain/midi.ts`](../src/domain/midi.ts) 构建字节流，主进程只负责互斥保存对话框、`midi` 目录记忆与写盘（E2E 模式下写入 `<e2e>/export.mid`）。
 - **MusicXML 导出（`musicxml:export`）：** renderer 在 [`src/domain/musicxml/`](../src/domain/musicxml) 生成 UTF-8 XML 字符串，主进程负责互斥保存对话框、`musicxml` 目录记忆与写盘（E2E 模式下写入 `<e2e>/export.musicxml`）。
 
@@ -284,7 +285,8 @@ Windows 无边框窗口（`frame: false`）在 `show()` 的同一调用栈内立
 无 `window.desktop` 时：
 
 - **工程与恢复：** 使用 `localStorage`（`satb-master-browser-project` / `satb-master-browser-project-recovery`）。
-- **MIDI、MusicXML、规则档案、紧急 `.satb` 备份与排错包：** 使用浏览器 `Blob` + 临时对象 URL 触发下载（排错包仍检查 20 MiB 上限）。
+- **MIDI 导入** 使用浏览器文件选择器与 `File.arrayBuffer()`，同样拒绝空文件并限制 10 MB。
+- **MIDI、MusicXML、规则档案、紧急 `.satb` 备份与排错包导出** 使用浏览器 `Blob` + 临时对象 URL 触发下载（排错包仍检查 20 MiB 上限）。
 - **教材审计会话：** 使用浏览器 `IndexedDB`（`satb-master-audit` 数据库）按内容指纹独立持久化（无命令行 `--audit-package` 启动直达）。
 - **外置规则库与规则测试用例：** 使用 `localStorage` / 浏览器文件选择。
 - **运行时日志：** 保留渲染进程 1000 条内存缓冲与 100 条面包屑，可查看和下载排错包，但无磁盘 JSONL 落盘、无主进程日志拉取、无「打开日志目录」按钮。

@@ -1,0 +1,204 @@
+.confirmation-dialog.midi-import-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(500px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.midi-import-header,
+.midi-import-actions {
+  padding: 12px 18px;
+  background: var(--bg-surface-2);
+}
+
+.midi-import-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.midi-import-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-base);
+  font-weight: 700;
+}
+
+.midi-import-header h2 svg {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  color: var(--accent-ink);
+}
+
+.midi-import-form {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.midi-import-content {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.midi-import-summary {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.midi-import-summary strong,
+.midi-import-track-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.midi-import-file-meta,
+.midi-import-track-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.midi-import-warnings {
+  padding: 6px 8px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft);
+  color: var(--warning-ink);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.midi-import-warnings summary {
+  cursor: pointer;
+}
+
+.midi-import-warnings ul {
+  max-height: 100px;
+  margin: 5px 0 0;
+  padding-inline-start: 20px;
+  overflow-y: auto;
+}
+
+.midi-import-section,
+.midi-import-position {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.midi-import-section h3,
+.midi-import-position legend {
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.midi-import-track-heading,
+.midi-import-track-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+
+.midi-import-track-heading {
+  justify-content: space-between;
+}
+
+.midi-import-track-heading [role="status"],
+.midi-import-option small,
+.midi-import-hint {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.midi-import-track-actions .command-button {
+  height: 26px;
+  padding-inline: 8px;
+  font-size: var(--text-xs);
+}
+
+.midi-import-track-list {
+  max-height: min(180px, 30dvh);
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+}
+
+.midi-import-track-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 8px;
+  padding: 6px 8px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.midi-import-track-row + .midi-import-track-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.midi-import-track-row:hover,
+.midi-import-track-row:focus-within {
+  background: var(--bg-hover);
+}
+
+.midi-import-dialog input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.midi-import-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.midi-import-hint {
+  margin: -4px 0 1px 21px;
+}
+
+.midi-import-position {
+  margin: 4px 0 0;
+  padding: 5px 0 0;
+  border: 0;
+}
+
+.midi-import-actions {
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 440px) {
+  .midi-import-track-meta {
+    grid-column: 2 / -1;
+  }
+
+  .midi-import-track-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}

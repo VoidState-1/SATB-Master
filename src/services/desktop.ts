@@ -1,4 +1,4 @@
-import type { DesktopInvokeMap } from "../../shared/desktop";
+import { MAX_MIDI_IMPORT_BYTES, type DesktopInvokeMap } from "../../shared/desktop";
 import { AppError, MAX_DIAGNOSTIC_BUNDLE_BYTES, type LogEntry } from "../../shared/logging";
 import { migrateProject, type ProjectDocument } from "../domain/project";
 import type { PortableRuleProfile } from "../domain/ruleProfile";
@@ -235,6 +235,23 @@ export async function discardRecovery() {
   return { discarded: true };
 }
 
+export async function openMidiFile(): Promise<
+  { fileName: string; filePath?: string; bytes: Uint8Array } | undefined
+> {
+  if (window.desktop) {
+    const result = await window.desktop.midi.import();
+    if (result.canceled) return undefined;
+    const { fileName, filePath, bytes } = result;
+    return { fileName, filePath, bytes };
+  }
+
+  const file = await chooseBrowserFile(".mid,.midi");
+  if (!file) return undefined;
+  if (file.size < 1) throw new Error("MIDI 文件为空");
+  if (file.size > MAX_MIDI_IMPORT_BYTES) throw new Error("MIDI 文件超过 10 MB 限制");
+  return { fileName: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
+}
+
 export async function exportMidi(bytes: Uint8Array, defaultName: string) {
   if (window.desktop) return window.desktop.midi.export(bytes, defaultName);
   const blob = new Blob([bytes as BlobPart], { type: "audio/midi" });
@@ -259,11 +276,11 @@ export async function exportMusicXml(xml: string, defaultName: string) {
   return { canceled: false };
 }
 
-function chooseBrowserJsonFile() {
+function chooseBrowserFile(accept: string) {
   return new Promise<File | undefined>((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".json,.satb-rule-profile.json";
+    input.accept = accept;
     let settled = false;
     const finish = (file?: File) => {
       if (settled) return;
@@ -277,7 +294,10 @@ function chooseBrowserJsonFile() {
     input.addEventListener("change", () => finish(input.files?.[0]), {
       once: true,
     });
-    window.addEventListener("focus", handleWindowFocus, { once: true });
+    input.addEventListener("cancel", () => finish(), { once: true });
+    if (!("oncancel" in input)) {
+      window.addEventListener("focus", handleWindowFocus, { once: true });
+    }
     input.click();
   });
 }
@@ -287,7 +307,7 @@ export async function openRuleProfileFile(): Promise<unknown | undefined> {
     const result = await window.desktop.ruleProfile.open();
     return result.canceled ? undefined : result.profile;
   }
-  const file = await chooseBrowserJsonFile();
+  const file = await chooseBrowserFile(".json,.satb-rule-profile.json");
   if (!file) return undefined;
   if (file.size < 1 || file.size > 2 * 1024 * 1024)
     throw new Error("规则配置档案必须小于等于 2 MB 且不能为空");

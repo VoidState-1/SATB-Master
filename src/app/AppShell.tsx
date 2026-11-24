@@ -36,6 +36,7 @@ import {
   Sun,
   Trash2,
   Undo2,
+  Upload,
   WandSparkles,
   ZoomIn,
   ZoomOut,
@@ -62,6 +63,7 @@ import { ChordInferenceDialog } from "../features/chordInference";
 import { AutoHarmonizationDialog } from "../features/autoHarmonization";
 import { ScorePreviewDialog, loadVexFlow, type ScoreNoteSelection } from "../features/scorePreview";
 import { ExportDialog } from "../features/export";
+import { MidiImportDialog } from "../features/midiImport";
 import { MidiOutDialog } from "../features/midiOut";
 import { midiOutputManager } from "../audio/midiOutput";
 import { toMidi } from "../domain/pitch";
@@ -401,6 +403,10 @@ function AppShell() {
     handleNew,
     handleOpen,
     handleSave,
+    pendingMidiImport,
+    handleImportMidi,
+    handleConfirmMidiImport,
+    handleCancelMidiImport,
     handleExportMidi,
     handleExportMusicXml,
   } = useFileWorkflow({
@@ -408,6 +414,13 @@ function AppShell() {
     history,
     createProject: createProjectWithRuleProfileTemplate,
     onWorkspaceReset: resetWorkspaceForProject,
+    onImportedAuxiliaryTracks: ([trackId]) => {
+      if (!trackId) return;
+      setActiveVoice(trackId);
+      setEditorDomain("notes");
+      setSelectedNoteIds(new Set());
+      setSelectedChordIds(new Set());
+    },
     showNotice,
     requestConfirmation,
   });
@@ -439,7 +452,7 @@ function AppShell() {
     requestConfirmation,
   });
   useKeyboardController({
-    enabled: !ruleTestMode && !auditOpen && !autoHarmonizationOpen,
+    enabled: !ruleTestMode && !auditOpen && !autoHarmonizationOpen && !pendingMidiImport,
     bindings: shortcutSettings.bindings,
     confirmation,
     settingsOpen,
@@ -794,6 +807,12 @@ function AppShell() {
             icon={<Download />}
             onClick={() => setExportOpen(true)}
           />
+          <IconButton
+            label="导入 MIDI"
+            title="导入 MIDI 到额外声部"
+            icon={<Upload />}
+            onClick={() => void handleImportMidi()}
+          />
           <div className="toolbar-divider" />
           <IconButton
             label="实时 MIDI 输出"
@@ -1058,6 +1077,7 @@ function AppShell() {
               onSetActive={setActiveVoice}
               onUpdateTrack={handleUpdateTrack}
               onAddAuxiliaryTrack={handleAddAuxiliaryTrack}
+              onImportMidi={handleImportMidi}
               onDeleteAuxiliaryTrack={handleDeleteAuxiliaryTrack}
             />
             <PanelResizeHandle
@@ -1349,6 +1369,15 @@ function AppShell() {
           onSelectNote={handleScorePreviewNoteSelection}
           onToggleAuxiliaryTrack={handleToggleScoreAuxiliaryTrack}
           onSetAllAuxiliaryTracks={handleSetAllScoreAuxiliaryTracks}
+        />
+      ) : null}
+      {pendingMidiImport ? (
+        <MidiImportDialog
+          parsed={pendingMidiImport}
+          project={project}
+          playheadTick={playheadTick}
+          onClose={handleCancelMidiImport}
+          onConfirm={handleConfirmMidiImport}
         />
       ) : null}
       {exportOpen ? (
