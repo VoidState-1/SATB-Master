@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import { defaultChordDraftAtTick } from "../../domain/chords";
+import { getAllPlayableTracks } from "../../domain/project";
 import type {
   ChordDraft,
   ChordRegion,
   NoteEvent,
   ProjectDocument,
-  VoiceId,
 } from "../../domain/project";
 import {
   DEFAULT_GRID_TICKS,
@@ -14,7 +14,7 @@ import {
 } from "../../features/editor";
 
 export interface ClipboardNote {
-  voiceId: VoiceId;
+  voiceId: string;
   note: NoteEvent;
   offset: number;
 }
@@ -34,7 +34,11 @@ export function useEditorState(
   initialProject: ProjectDocument,
   project: ProjectDocument,
 ) {
-  const [activeVoice, setActiveVoice] = useState<VoiceId>("soprano");
+  const [activeTrackId, setActiveVoice] = useState("soprano");
+  const playableTracks = useMemo(() => getAllPlayableTracks(project), [project]);
+  const activeVoice = playableTracks.some((track) => track.id === activeTrackId)
+    ? activeTrackId
+    : "soprano";
   const [tool, setTool] = useState<EditorTool>("select");
   const [editorDomain, setEditorDomain] = useState<EditorDomain>("notes");
   const [toolModifiers, setToolModifiers] = useState({
@@ -68,12 +72,12 @@ export function useEditorState(
   const selectedNote = useMemo(() => {
     const id = selectedNoteIds.values().next().value as string | undefined;
     if (!id) return undefined;
-    for (const track of project.satbTracks) {
+    for (const track of playableTracks) {
       const note = track.notes.find((candidate) => candidate.id === id);
       if (note) return { voiceId: track.id, note };
     }
     return undefined;
-  }, [project, selectedNoteIds]);
+  }, [playableTracks, selectedNoteIds]);
   const selectedChord =
     selectedChordIds.size === 1
       ? project.chordTrack.regions.find(

@@ -2,7 +2,7 @@ import type { HarmonyDiagnostic } from "../../../domain/harmony";
 import type {
   ChordRegion,
   NoteEvent,
-  SatbTrack,
+  MusicalTrack,
 } from "../../../domain/project";
 
 export interface MeasureGuidePosition {
@@ -11,7 +11,7 @@ export interface MeasureGuidePosition {
 }
 
 export interface NoteRect {
-  track: SatbTrack;
+  track: MusicalTrack;
   note: NoteEvent;
   midiNote: number;
   label: string;

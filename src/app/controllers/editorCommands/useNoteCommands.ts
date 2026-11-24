@@ -1,95 +1,74 @@
 import { useCallback } from "react";
 import { audioEngine } from "../../../audio/audioEngine";
+import { chordDraftFromRegion } from "../../../domain/chords";
 import {
-  chordDraftFromRegion,
-  createChordRegion,
-  defaultChordDraftAtTick,
-} from "../../../domain/chords";
-import {
-  addChordRegion,
+  addAuxiliaryTrack,
   addNote,
-  deleteChordRegions,
+  deleteAuxiliaryTrack,
   deleteNotes,
-  replaceProject,
-  setChordTrackState,
-  splitChordRegion,
   splitNote,
-  transformChordRegions,
   transformNotes,
-  updateChordRegion,
   updateNote,
-  type ChordRegionPatch,
+  updateTrack,
+  type AddAuxiliaryTrackOptions,
+  type TrackPatch,
 } from "../../../domain/editing";
 import {
   createId,
   getAllPlayableTracks,
-  getTrack,
-  reconcileChordIdentities,
-  type ChordDraft,
-  type ChordRegion,
-  type EditableRange,
+  getMusicalTrack,
   type NoteEvent,
-  type ProjectDocument,
-  type SatbTrack,
-  type VoiceId,
 } from "../../../domain/project";
 import {
-  coerceKeyTonicForMode,
-  parsePitchClass,
   spellMidi,
   toMidi,
   transposeSpelledPitch,
 } from "../../../domain/pitch";
-import {
-  buildMeasures,
-  eventAtTick,
-  formatPosition,
-  keyAtTick,
-  ticksPerBeat,
-} from "../../../domain/time";
-import type { ClipboardNote } from "../useEditorState";
+import { keyAtTick } from "../../../domain/time";
 import type { EditorCommandContext } from "./types";
 
 export function useNoteCommands({
   project,
-  history,
   editor,
-  playheadTick,
-  setPlayheadTick,
   showNotice,
   commitResult,
 }: EditorCommandContext) {
   const {
     activeVoice,
     setActiveVoice,
-    tool,
-    setTool,
-    editorDomain,
     setEditorDomain,
-    setToolModifiers,
-    editorInteractionActive,
-    setCancelEditorRequest,
     gridTicks,
-    setGridTicks,
-    setPixelsPerBeat,
     selectedNoteIds,
     setSelectedNoteIds,
-    selectedChordIds,
     setSelectedChordIds,
-    chordBrush,
     setChordBrush,
-    clipboardRef,
   } = editor;
+
+  const handlePreviewNote = useCallback(
+    (trackId: string, midiNote: number) => {
+      const tracks = getAllPlayableTracks(project);
+      const trackIndex = tracks.findIndex((track) => track.id === trackId);
+      const track = tracks[trackIndex];
+      if (track) {
+        void audioEngine.previewNote(midiNote, trackId, {
+          trackIndex,
+          program: track.program,
+        });
+      }
+    },
+    [project],
+  );
 
   const handleAddNote = useCallback(
     (
-      voiceId: VoiceId,
+      trackId: string,
       tick: number,
       midiNote: number,
       durationTicks = gridTicks,
     ) => {
-      const result = addNote(project, voiceId, {
-        id: createId("note"),
+      const id = createId("note");
+      const result = addNote(project, trackId, {
+        id,
         startTick: tick,
         durationTicks,
         pitch: spellMidi(midiNote, keyAtTick(project.keyEvents, tick)),
@@ -98,17 +77,15 @@ export function useNoteCommands({
         spellingSource: "manual",
       });
       if (commitResult(result)) {
-        const note = getTrack(result.project, voiceId).notes.find(
-          (candidate) =>
-            candidate.startTick === tick &&
-            toMidi(candidate.pitch) === midiNote,
+        const note = getMusicalTrack(result.project, trackId).notes.find(
+          (candidate) => candidate.id === id,
         );
         if (note) setSelectedNoteIds(new Set([note.id]));
         setSelectedChordIds(new Set());
-        void audioEngine.previewNote(midiNote, voiceId);
+        handlePreviewNote(trackId, midiNote);
       }
     },
-    [commitResult, gridTicks, project],
+    [commitResult, gridTicks, handlePreviewNote, project, setSelectedChordIds, setSelectedNoteIds],
   );
 
   const handleMoveNotes = useCallback(
@@ -140,15 +117,15 @@ export function useNoteCommands({
       }
       if (noteIds.size !== 1) return;
       const noteId = noteIds.values().next().value;
-      for (const track of project.satbTracks) {
+      for (const track of getAllPlayableTracks(project)) {
         const note = track.notes.find((candidate) => candidate.id === noteId);
         if (note) {
-          void audioEngine.previewNote(toMidi(note.pitch), track.id);
+          handlePreviewNote(track.id, toMidi(note.pitch));
           return;
         }
       }
     },
-    [project],
+    [handlePreviewNote, project, setEditorDomain, setSelectedChordIds, setSelectedNoteIds],
   );
 
   const handleSelectChords = useCallback(
@@ -168,32 +145,25 @@ export function useNoteCommands({
     [project.chordTrack.regions],
   );
 
-  const handlePreviewNote = useCallback(
-    (voiceId: VoiceId, midiNote: number) => {
-      void audioEngine.previewNote(midiNote, voiceId);
-    },
-    [],
-  );
-
   const handleSplitNote = useCallback(
-    (voiceId: VoiceId, noteId: string, splitTick: number) => {
-      commitResult(splitNote(project, voiceId, noteId, splitTick));
+    (trackId: string, noteId: string, splitTick: number) => {
+      commitResult(splitNote(project, trackId, noteId, splitTick));
     },
     [commitResult, project],
   );
 
   const handleUpdateNote = useCallback(
-    (voiceId: VoiceId, noteId: string, patch: Partial<NoteEvent>) => {
-      const result = updateNote(project, voiceId, noteId, patch);
+    (trackId: string, noteId: string, patch: Partial<NoteEvent>) => {
+      const result = updateNote(project, trackId, noteId, patch);
       if (
         commitResult(result) &&
         patch.pitch !== undefined &&
         selectedNoteIds.size === 1
       ) {
-        void audioEngine.previewNote(toMidi(patch.pitch), voiceId);
+        handlePreviewNote(trackId, toMidi(patch.pitch));
       }
     },
-    [commitResult, project, selectedNoteIds.size],
+    [commitResult, handlePreviewNote, project, selectedNoteIds.size],
   );
 
   const handleDeleteNotes = useCallback(
@@ -205,14 +175,33 @@ export function useNoteCommands({
   );
 
   const handleUpdateTrack = useCallback(
-    (voiceId: VoiceId, patch: Partial<SatbTrack>) => {
-      history.commit(
-        replaceProject(project, (draft) =>
-          Object.assign(getTrack(draft, voiceId), patch),
-        ),
-      );
+    (trackId: string, patch: TrackPatch) => {
+      commitResult(updateTrack(project, trackId, patch));
     },
-    [history, project],
+    [commitResult, project],
+  );
+
+  const handleAddAuxiliaryTrack = useCallback(
+    (options?: AddAuxiliaryTrackOptions) => {
+      const result = addAuxiliaryTrack(project, options);
+      if (!commitResult(result) || !result.trackId) return;
+      setActiveVoice(result.trackId);
+      showNotice(`已添加 ${getMusicalTrack(result.project, result.trackId).name}`);
+    },
+    [commitResult, project, setActiveVoice, showNotice],
+  );
+
+  const handleDeleteAuxiliaryTrack = useCallback(
+    (trackId: string) => {
+      if (!commitResult(deleteAuxiliaryTrack(project, trackId))) return;
+      const track = getMusicalTrack(project, trackId);
+      const removedNoteIds = new Set(track.notes.map((note) => note.id));
+      setSelectedNoteIds((current) =>
+        new Set([...current].filter((id) => !removedNoteIds.has(id))),
+      );
+      if (activeVoice === trackId) setActiveVoice("soprano");
+    },
+    [activeVoice, commitResult, project, setActiveVoice, setSelectedNoteIds],
   );
 
   return {
@@ -225,5 +214,7 @@ export function useNoteCommands({
     handleUpdateNote,
     handleDeleteNotes,
     handleUpdateTrack,
+    handleAddAuxiliaryTrack,
+    handleDeleteAuxiliaryTrack,
   } as const;
 }

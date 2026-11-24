@@ -48,6 +48,8 @@ export interface BottomPanelProps {
   isPlaying?: boolean;
   selectedNoteIds?: ReadonlySet<string>;
   onSelectScoreNote?(selection: ScoreNoteSelection): void;
+  onToggleAuxiliaryTrack?(trackId: string, show: boolean): void;
+  onSetAllAuxiliaryTracks?(show: boolean): void;
   onOpenScoreDialog?(): void;
   progression?: Omit<ProgressionAssistantPanelProps, "project">;
 }
@@ -69,6 +71,8 @@ export function BottomPanel({
   isPlaying = false,
   selectedNoteIds,
   onSelectScoreNote,
+  onToggleAuxiliaryTrack,
+  onSetAllAuxiliaryTracks,
   onOpenScoreDialog,
   progression,
 }: BottomPanelProps) {
@@ -207,6 +211,9 @@ export function BottomPanel({
               onHighlightModeChange={setHighlightMode}
               measureCount={scoreModelInfo.measureCount}
               revision={scoreModelInfo.revision}
+              auxiliaryTracks={project.auxiliaryTracks}
+              onToggleAuxiliaryTrack={onToggleAuxiliaryTrack}
+              onSetAllAuxiliaryTracks={onSetAllAuxiliaryTracks}
               extra={
                 onOpenScoreDialog ? (
                   <IconButton

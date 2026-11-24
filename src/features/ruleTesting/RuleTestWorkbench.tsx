@@ -362,6 +362,8 @@ export function RuleTestWorkbench({
               activeVoice={editor.activeVoice}
               onSetActive={editor.setActiveVoice}
               onUpdateTrack={commands.handleUpdateTrack}
+              onAddAuxiliaryTrack={commands.handleAddAuxiliaryTrack}
+              onDeleteAuxiliaryTrack={commands.handleDeleteAuxiliaryTrack}
             />
             </div>
           ) : null}

@@ -56,7 +56,7 @@ export function useEditorCommands({
   const chordCommands = useChordCommands(context);
   const timingCommands = useTimingCommands(context);
   const selectionCommands = useSelectionCommands(context);
-  const viewCommands = useViewCommands(context);
+  const viewCommands = useViewCommands(context, noteCommands.handlePreviewNote);
 
   const { setToolModifiers, editorInteractionActive, setCancelEditorRequest } =
     editor;

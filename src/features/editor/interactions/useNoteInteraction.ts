@@ -7,10 +7,9 @@ import {
   snapTickForward,
 } from "../../../domain/time";
 import {
-  VOICE_CONFIG,
+  getAllPlayableTracks,
   type NoteEvent,
   type ProjectDocument,
-  type VoiceId,
 } from "../../../domain/project";
 import {
   formatSpelledPitch,
@@ -18,7 +17,7 @@ import {
   transposeSpelledPitch,
 } from "../../../domain/pitch";
 import type { EditorDomain, EditorTool } from "../types";
-import type { NoteInteraction, PointerInteraction } from "./types";
+import type { PointerInteraction } from "./types";
 import {
   HEADER_HEIGHT,
   MAX_MIDI,
@@ -36,7 +35,7 @@ import type { NoteRect } from "../layers/types";
 
 interface UseNoteInteractionProps {
   project: ProjectDocument;
-  activeVoice: VoiceId;
+  activeVoice: string;
   tool: EditorTool;
   gridTicks: number;
   pixelsPerBeat: number;
@@ -47,18 +46,18 @@ interface UseNoteInteractionProps {
   onSetPlayhead(tick: number): void;
   seekOnClick?: boolean;
   onSetEditorDomain(domain: EditorDomain): void;
-  onSetActiveVoice(voiceId: VoiceId): void;
+  onSetActiveVoice(voiceId: string): void;
   onSelectNotes(noteIds: Set<string>): void;
   onSelectChords(chordIds: Set<string>): void;
-  onPreviewNote(voiceId: VoiceId, midiNote: number): void;
+  onPreviewNote(voiceId: string, midiNote: number): void;
   onAddNote(
-    voiceId: VoiceId,
+    voiceId: string,
     tick: number,
     midiNote: number,
     durationTicks?: number,
   ): void;
   onUpdateNote(
-    voiceId: VoiceId,
+    voiceId: string,
     noteId: string,
     patch: Partial<NoteEvent>,
   ): void;
@@ -68,7 +67,7 @@ interface UseNoteInteractionProps {
     pitchDelta: number,
   ): void;
   onDeleteNotes(noteIds: Set<string>): void;
-  onSplitNote(voiceId: VoiceId, noteId: string, splitTick: number): void;
+  onSplitNote(voiceId: string, noteId: string, splitTick: number): void;
   showDiagnosticTooltip(
     event: React.PointerEvent,
     targetId: string,
@@ -104,11 +103,12 @@ export function useNoteInteraction({
   clearDiagnosticTooltip,
 }: UseNoteInteractionProps) {
   const [interaction, setInteraction] = useState<PointerInteraction>();
+  const playableTracks = useMemo(() => getAllPlayableTracks(project), [project]);
   const noteRects = useMemo<NoteRect[]>(() => {
     const erasedNoteIds =
       interaction?.kind === "erase" ? interaction.noteIds : undefined;
     const orderedTracks = orderTracksForRendering(
-      project.satbTracks,
+      playableTracks,
       activeVoice,
     );
     return orderedTracks.flatMap((track) => {
@@ -160,7 +160,7 @@ export function useNoteInteraction({
           };
         });
     });
-  }, [activeVoice, interaction, pixelsPerBeat, project]);
+  }, [activeVoice, interaction, pixelsPerBeat, playableTracks, project]);
 
   useEffect(() => {
     setInteraction(undefined);
@@ -170,16 +170,11 @@ export function useNoteInteraction({
     const rect = event.currentTarget.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
+  const containsPoint = (rect: NoteRect, x: number, y: number) =>
+    x >= rect.x && x <= rect.x + rect.width &&
+    y >= rect.y && y <= rect.y + rect.height;
   const hitTest = (x: number, y: number) =>
-    [...noteRects]
-      .reverse()
-      .find(
-        (rect) =>
-          x >= rect.x &&
-          x <= rect.x + rect.width &&
-          y >= rect.y &&
-          y <= rect.y + rect.height,
-      );
+    [...noteRects].reverse().find((rect) => containsPoint(rect, x, y));
   const rawTickAtX = (x: number) =>
     xToTick(x, project.ppq, pixelsPerBeat, project.lengthTicks);
   const snapStartTick = (x: number) =>
@@ -216,11 +211,13 @@ export function useNoteInteraction({
       event.currentTarget.setPointerCapture(event.pointerId);
       setInteraction({
         kind: "erase",
-        noteIds: new Set(hit ? [hit.note.id] : []),
+        noteIds: new Set(hit && !hit.track.locked && !hit.note.locked ? [hit.note.id] : []),
       });
       return;
     }
     if (tool === "pencil") {
+      const track = playableTracks.find((candidate) => candidate.id === activeVoice);
+      if (!track || track.locked) return;
       const originRawTick = rawTickAtX(point.x);
       const originTick = snapTickBackward(
         originRawTick,
@@ -239,7 +236,8 @@ export function useNoteInteraction({
       return;
     }
     if (tool === "split") {
-      if (hit) onSplitNote(hit.track.id, hit.note.id, snapStartTick(point.x));
+      if (hit && !hit.track.locked && !hit.note.locked)
+        onSplitNote(hit.track.id, hit.note.id, snapStartTick(point.x));
       return;
     }
 
@@ -268,6 +266,10 @@ export function useNoteInteraction({
     onSelectNotes(nextSelection);
     onSelectChords(new Set());
     if (!nextSelection.has(hit.note.id)) return;
+    if (hit.track.locked || hit.note.locked) {
+      if (seekOnClick) onSetPlayhead(snapStartTick(point.x));
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     const resize = point.x >= hit.x + hit.width - 7;
     setInteraction({
@@ -292,14 +294,14 @@ export function useNoteInteraction({
     if (!interaction) {
       const point = localPoint(event);
       const hit = hitTest(point.x, point.y);
-      if (!hit) {
+      if (!hit || hit.track.kind !== "satb") {
         clearDiagnosticTooltip();
         return;
       }
       showDiagnosticTooltip(
         event,
         `note:${hit.note.id}`,
-        `${hit.label} · ${VOICE_CONFIG[hit.track.id].name}`,
+        `${hit.label} · ${hit.track.name}`,
         diagnosticsByNote.get(hit.note.id) ?? [],
       );
       return;
@@ -346,7 +348,7 @@ export function useNoteInteraction({
     }
     if (interaction.kind === "erase") {
       const hit = hitTest(point.x, point.y);
-      if (hit && !interaction.noteIds.has(hit.note.id)) {
+      if (hit && !hit.track.locked && !hit.note.locked && !interaction.noteIds.has(hit.note.id)) {
         const noteIds = new Set(interaction.noteIds);
         noteIds.add(hit.note.id);
         setInteraction({ ...interaction, noteIds });
@@ -380,19 +382,22 @@ export function useNoteInteraction({
         nextDurationTicks: duration,
       });
     } else {
-      const selectedRects = noteRects.filter((rect) =>
-        interaction.selectedIds.includes(rect.note.id),
+      const selectedIds = new Set(interaction.selectedIds);
+      const selectedNotes = playableTracks.flatMap((track) =>
+        track.notes.filter((note) => selectedIds.has(note.id)),
       );
+      if (!selectedNotes.length) return;
       const minStart = Math.min(
-        ...selectedRects.map((rect) => rect.note.startTick),
+        ...selectedNotes.map((note) => note.startTick),
       );
       const maxEnd = Math.max(
-        ...selectedRects.map(
-          (rect) => rect.note.startTick + rect.note.durationTicks,
+        ...selectedNotes.map(
+          (note) => note.startTick + note.durationTicks,
         ),
       );
-      const minPitch = Math.min(...selectedRects.map((rect) => rect.midiNote));
-      const maxPitch = Math.max(...selectedRects.map((rect) => rect.midiNote));
+      const pitches = selectedNotes.map((note) => toMidi(note.pitch));
+      const minPitch = Math.min(...pitches);
+      const maxPitch = Math.max(...pitches);
       const tickDelta = Math.max(
         -minStart,
         Math.min(project.lengthTicks - maxEnd, requestedTickDelta),
@@ -421,6 +426,13 @@ export function useNoteInteraction({
     if (!interaction) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
+    if (
+      "voiceId" in interaction &&
+      !playableTracks.some((track) => track.id === interaction.voiceId)
+    ) {
+      setInteraction(undefined);
+      return;
+    }
     if (interaction.kind === "pan") {
       setInteraction(undefined);
       return;
@@ -485,26 +497,17 @@ export function useNoteInteraction({
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
     };
-    const overlapping = noteRects.filter(
-      (r) =>
-        point.x >= r.x &&
-        point.x <= r.x + r.width &&
-        point.y >= r.y &&
-        point.y <= r.y + r.height,
-    );
-    if (overlapping.length > 1) {
-      const currentIdx = overlapping.findIndex(
-        (r) => r.track.id === activeVoice,
-      );
-      const nextIdx =
-        currentIdx >= 0 ? (currentIdx + 1) % overlapping.length : 0;
-      const target = overlapping[nextIdx];
-      onSetActiveVoice(target.track.id);
-      return;
-    }
-    const hit = hitTest(point.x, point.y);
-    if (hit && hit.track.id !== activeVoice) {
-      onSetActiveVoice(hit.track.id);
+    const hits = new Set(noteRects
+      .filter((rect) => containsPoint(rect, point.x, point.y))
+      .map((rect) => rect.track.id));
+    if (hits.size === 0) return;
+    const overlappingTracks = playableTracks
+      .filter((track) => hits.has(track.id))
+      .map((track) => track.id);
+    const currentIndex = overlappingTracks.indexOf(activeVoice);
+    const target = overlappingTracks[(currentIndex + 1) % overlappingTracks.length];
+    if (target && target !== activeVoice) {
+      onSetActiveVoice(target);
     }
   };
 

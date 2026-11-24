@@ -11,7 +11,8 @@ import {
   inspectNoteEvent,
 } from "../../domain/developerInspection";
 import {
-  VOICE_CONFIG,
+  getAllPlayableTracks,
+  resolveTrackColor,
   type Alteration,
   type DiatonicStep,
   type NoteEvent,
@@ -63,6 +64,9 @@ export function SelectionInspector({
   onUpdateCadenceAnnotation,
   onDeleteCadenceAnnotation,
 }: SelectionInspectorProps) {
+  const noteTrack = selectedNote && getAllPlayableTracks(project).find(
+    (track) => track.id === selectedNote.voiceId,
+  );
   const noteInspection = useMemo(
     () =>
       developerMode && selectedNote
@@ -87,14 +91,19 @@ export function SelectionInspector({
 
   return (
     <>
-      {selectedNote ? (
+      {selectedNote && noteTrack ? (
         <section className="property-section">
           <header>
             <span
               className="voice-dot"
-              style={{ background: VOICE_CONFIG[selectedNote.voiceId].color }}
+              style={{
+                background: resolveTrackColor(
+                  noteTrack,
+                  noteTrack.kind === "auxiliary" ? project.auxiliaryTracks.indexOf(noteTrack) : 0,
+                ),
+              }}
             />
-            音符 · {VOICE_CONFIG[selectedNote.voiceId].name}
+            音符 · {noteTrack.name}
           </header>
           <label>
             <span>音名</span>
@@ -238,26 +247,30 @@ export function SelectionInspector({
               }
             />
           </label>
-          <label>
-            <span>非和弦音角色</span>
-            <select
-              value={selectedNote.note.nonChordToneRole ?? ""}
-              onChange={(event) =>
-                onUpdateNote(selectedNote.voiceId, selectedNote.note.id, {
-                  nonChordToneRole: event.target.value
-                    ? (event.target.value as NoteEvent["nonChordToneRole"])
-                    : undefined,
-                })
-              }
-            >
-              <option value="">未标注</option>
-              {nonChordToneOptions.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {noteTrack.kind === "satb" ? (
+            <label>
+              <span>非和弦音角色</span>
+              <select
+                value={selectedNote.note.nonChordToneRole ?? ""}
+                onChange={(event) =>
+                  onUpdateNote(selectedNote.voiceId, selectedNote.note.id, {
+                    nonChordToneRole: event.target.value
+                      ? (event.target.value as NoteEvent["nonChordToneRole"])
+                      : undefined,
+                  })
+                }
+              >
+                <option value="">未标注</option>
+                {nonChordToneOptions.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="property-hint">额外声部不参与和声检查</p>
+          )}
           <button
             type="button"
             className="command-button"

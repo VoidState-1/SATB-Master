@@ -9,7 +9,7 @@ import { useProjectHistory } from "../../hooks/useProjectHistory";
 import { useShortcutBindings } from "../../hooks/useShortcutBindings";
 import type { BoundAuditItem } from "../../domain/audit";
 import { formatPosition } from "../../domain/time";
-import { VOICE_ORDER, VOICE_CONFIG, type ProjectDocument, type VoiceId } from "../../domain/project";
+import { getAllPlayableTracks, type ProjectDocument } from "../../domain/project";
 import { downloadAuditProject } from "../../services/audit";
 import { GRID_OPTIONS, PianoRoll, stepTimelineZoom, type EditorTool } from "../editor";
 import { SelectionInspector } from "../inspector";
@@ -106,7 +106,7 @@ export function AuditProjectEditor({ initialProject, originalProject, selected, 
         <button className={`audit-evidence-icon ${playback.isPlaying ? "is-active" : ""}`} aria-label={playback.isPlaying ? "暂停工程" : "播放工程"} title={playback.isPlaying ? "暂停工程 (Space)" : "播放工程 (Space)"} onClick={() => void playback.handlePlay()}>{playback.isPlaying ? <Pause size={15} /> : <Play size={15} />}</button>
         <button className="audit-evidence-icon" aria-label="停止工程" title="停止工程" onClick={() => playback.handleStop()}><Square size={14} /></button>
       </div>
-      <label><span className="audit-evidence-sr">声部</span><select aria-label="工程声部" title="当前声部" value={editor.activeVoice} onChange={(e) => editor.setActiveVoice(e.target.value as VoiceId)}>{VOICE_ORDER.map((voice) => <option key={voice} value={voice}>{VOICE_CONFIG[voice].name}</option>)}</select></label>
+      <label><span className="audit-evidence-sr">声部</span><select aria-label="工程声部" title="当前声部" value={editor.activeVoice} onChange={(e) => editor.setActiveVoice(e.target.value)}>{getAllPlayableTracks(project).map((track) => <option key={track.id} value={track.id}>{track.name}</option>)}</select></label>
       <div className="audit-evidence-tool-group" role="group" aria-label="编辑工具">
         {([["select", "选择", MousePointer2], ["pencil", "画笔", Pencil], ["eraser", "橡皮", Eraser], ["split", "切分", Scissors]] as const).map(([tool, label, Icon]) => <button key={tool} aria-label={`工程${label}`} title={label} aria-pressed={editor.tool === tool} className={`audit-evidence-icon ${editor.tool === tool ? "is-active" : ""}`} disabled={readOnly && tool !== "select"} onClick={() => editor.setTool(tool as EditorTool)}><Icon size={15} /></button>)}
       </div>

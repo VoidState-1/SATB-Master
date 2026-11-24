@@ -5,6 +5,7 @@ import {
 } from "../../domain/chords";
 import { buildMeasures, keyAtTick, snapTickBackward } from "../../domain/time";
 import { toMidi } from "../../domain/pitch";
+import { getAllPlayableTracks } from "../../domain/project";
 import type { HarmonyDiagnostic } from "../../domain/harmony";
 import {
   buildTimelineRulerTicks,
@@ -230,7 +231,7 @@ export function PianoRoll({
     if (!scroll || !focusRange) return;
     scroll.scrollLeft = Math.max(0, tickToX(focusRange.fromTick, project.ppq, pixelsPerBeat) - PIANO_WIDTH - 24);
     lastScrollLeftRef.current = scroll.scrollLeft;
-    const pitches = project.satbTracks.flatMap((track) => track.notes.filter((note) => focusRange.noteIds?.size
+    const pitches = getAllPlayableTracks(project).flatMap((track) => track.notes.filter((note) => focusRange.noteIds?.size
       ? focusRange.noteIds.has(note.id)
       : note.startTick < focusRange.toTick && focusRange.fromTick < note.startTick + note.durationTicks).map((note) => toMidi(note.pitch)));
     if (pitches.length) {

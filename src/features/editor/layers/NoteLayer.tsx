@@ -5,7 +5,10 @@ import type { HarmonyDiagnostic } from "../../../domain/harmony";
 import { keyAtTick, type MeasureInfo } from "../../../domain/time";
 import {
   VOICE_CONFIG,
+  getAllPlayableTracks,
+  resolveAuxiliaryTrackColor,
   type KeyEvent,
+  type MusicalTrack,
   type ProjectDocument,
   type VoiceId,
 } from "../../../domain/project";
@@ -34,7 +37,7 @@ interface NoteLayerProps {
   rollHeight: number;
   totalWidth: number;
   totalHeight: number;
-  activeVoice: VoiceId;
+  activeVoice: string;
   selectedNoteIds: Set<string>;
   diagnosticsByNote: Map<string, HarmonyDiagnostic[]>;
   missingExpectedNoteIds?: ReadonlySet<string>;
@@ -107,6 +110,21 @@ function readRollCanvasTheme() {
   };
 }
 
+function auxiliaryNoteInk(color: string, background: string, opacity: number) {
+  const rgb = Number.parseInt(color.slice(1), 16);
+  const backdrop = Number.parseInt(background.slice(1), 16);
+  const linearComponent = (shift: number) => {
+    const value = (
+      ((rgb >> shift) & 255) * opacity +
+      ((backdrop >> shift) & 255) * (1 - opacity)
+    ) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * linearComponent(16) +
+    0.7152 * linearComponent(8) + 0.0722 * linearComponent(0);
+  return luminance > 0.179 ? "#000" : "#fff";
+}
+
 export function NoteLayer({
   scrollRef,
   viewportSize,
@@ -149,6 +167,16 @@ export function NoteLayer({
     const context = canvas.getContext("2d");
     if (!context) return;
     const rollTheme = readRollCanvasTheme();
+    const auxiliaryColors = new Map(project.auxiliaryTracks.map((track, index) => [
+      track.id,
+      resolveAuxiliaryTrackColor(track, index),
+    ]));
+    const colorForTrack = (track: MusicalTrack) => track.kind === "satb"
+      ? rollTheme.voices[track.id]
+      : auxiliaryColors.get(track.id) ?? resolveAuxiliaryTrackColor(track);
+    const drawingTrack = interaction?.kind === "draw"
+      ? getAllPlayableTracks(project).find((track) => track.id === interaction.voiceId)
+      : undefined;
     const ratio = window.devicePixelRatio || 1;
     const renderWidth = viewportSize.width;
     const renderHeight = viewportSize.height;
@@ -332,9 +360,13 @@ export function NoteLayer({
           y + height < visibleTop
         )
           return;
-        const voiceColor = rollTheme.voices[track.id];
-        context.fillStyle =
-          track.id === activeVoice ? voiceColor : `${voiceColor}b8`;
+        const voiceColor = colorForTrack(track);
+        const active = track.id === activeVoice;
+        const locked = note.locked || track.locked;
+        const ink = track.kind === "auxiliary"
+          ? auxiliaryNoteInk(voiceColor, rollTheme.bg, active ? 1 : 184 / 255)
+          : "#fff";
+        context.fillStyle = active ? voiceColor : `${voiceColor}b8`;
         context.beginPath();
         context.roundRect(x, y, width, height, 3);
         context.fill();
@@ -344,7 +376,15 @@ export function NoteLayer({
           context.lineWidth = 2;
           context.stroke();
         }
-        if (missingExpectedNoteIds?.has(note.id)) {
+        if (track.kind === "auxiliary" && locked && width <= 48) {
+          context.save();
+          context.setLineDash([2, 2]);
+          context.strokeStyle = ink;
+          context.lineWidth = 1;
+          context.strokeRect(x + 1.5, y + 1.5, width - 3, height - 3);
+          context.restore();
+        }
+        if (track.kind === "satb" && missingExpectedNoteIds?.has(note.id)) {
           context.save();
           context.setLineDash([4, 3]);
           context.strokeStyle = rollTheme.danger;
@@ -352,7 +392,9 @@ export function NoteLayer({
           context.stroke();
           context.restore();
         }
-        const issue = primaryDiagnostic(diagnosticsByNote.get(note.id) ?? []);
+        const issue = track.kind === "satb"
+          ? primaryDiagnostic(diagnosticsByNote.get(note.id) ?? [])
+          : undefined;
         if (issue) {
           context.fillStyle =
             issue.severity === "error"
@@ -363,18 +405,18 @@ export function NoteLayer({
           context.fillRect(x, y + height - 3, width, 3);
         }
         if (width > 25) {
-          context.fillStyle = "#fff";
+          context.fillStyle = ink;
           context.font = "600 10px Segoe UI";
           context.fillText(label, x + 5, y + 12);
         }
-        if ((note.locked || track.locked) && width > 48) {
-          context.fillStyle = "rgba(255,255,255,.72)";
+        if (locked && width > 48) {
+          context.fillStyle = track.kind === "auxiliary" ? ink : "rgba(255,255,255,.72)";
           context.font = "10px Segoe UI";
           context.fillText("锁", x + width - 15, y + 12);
         }
       });
 
-      if (interaction?.kind === "draw") {
+      if (interaction?.kind === "draw" && drawingTrack) {
         const x = tickToX(
           interaction.nextStartTick,
           project.ppq,
@@ -390,12 +432,17 @@ export function NoteLayer({
             1,
           ),
         );
-        context.fillStyle = `${VOICE_CONFIG[interaction.voiceId].color}70`;
+        const color = colorForTrack(drawingTrack);
+        context.fillStyle = `${color}70`;
         context.fillRect(x, y, width, ROW_HEIGHT - 4);
-        context.strokeStyle = VOICE_CONFIG[interaction.voiceId].darkColor;
+        context.strokeStyle = drawingTrack.kind === "satb"
+          ? VOICE_CONFIG[drawingTrack.id].darkColor
+          : color;
         context.strokeRect(x + 0.5, y + 0.5, width - 1, ROW_HEIGHT - 5);
         if (width > 25) {
-          context.fillStyle = "#fff";
+          context.fillStyle = drawingTrack.kind === "auxiliary"
+            ? auxiliaryNoteInk(color, rollTheme.bg, 112 / 255)
+            : "#fff";
           context.font = "600 10px Segoe UI";
           context.fillText(
             formatSpelledPitch(
@@ -456,6 +503,7 @@ export function NoteLayer({
     viewportSize,
     scaleGuideEnabled,
     themeRevision,
+    totalWidth,
   ]);
 
   return (

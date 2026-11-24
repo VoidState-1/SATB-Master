@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Cable, FolderOpen } from "lucide-react";
 import { CommitField } from "./CommitField";
 import type { SoundInspectorProps } from "./types";
+import { getAllPlayableTracks, resolveAuxiliaryTrackColor } from "../../domain/project";
 import {
   midiOutputManager,
   type MidiOutputConfig,
@@ -20,9 +21,9 @@ export function SoundInspector({
   onUseDefaultSoundFont,
   onOpenMidiOut,
 }: SoundInspectorProps) {
-  const activeTrack = project.satbTracks.find(
+  const activeTrack = getAllPlayableTracks(project).find(
     (track) => track.id === activeVoice,
-  )!;
+  ) ?? project.satbTracks[0];
 
   const [midiConfig, setMidiConfig] = useState<MidiOutputConfig>(() =>
     midiOutputManager.getConfig(),
@@ -87,7 +88,7 @@ export function SoundInspector({
         <strong>{project.audio.soundFont.name}</strong>
         <div className="soundfont-status">
           {midiConfig.muteInternalSynth ? (
-            <small style={{ color: "#9e5c3b" }}>内置音源已静音</small>
+            <small style={{ color: "var(--warning-ink)" }}>内置音源已静音</small>
           ) : (
             <small>{audioStatus}</small>
           )}
@@ -163,7 +164,7 @@ export function SoundInspector({
           <div
             style={{
               fontSize: 11,
-              color: "#5b5f56",
+              color: "var(--text-secondary)",
               display: "grid",
               gap: 4,
               marginTop: 4,
@@ -171,11 +172,11 @@ export function SoundInspector({
           >
             <div>
               目标设备：
-              <strong style={{ color: "#252822" }}>
+              <strong style={{ color: "var(--text-primary)" }}>
                 {currentDevice?.name ?? "未选择端口"}
               </strong>
             </div>
-            <div style={{ color: "#74786f" }}>
+            <div style={{ color: "var(--text-muted)" }}>
               路由：
               {midiConfig.channelMode === "track-channel"
                 ? "多通道分轨 (S1/A2/T3/B4)"
@@ -197,7 +198,7 @@ export function SoundInspector({
             ) : null}
           </div>
         ) : (
-          <small style={{ color: "#8c9085", fontSize: 11 }}>
+          <small style={{ color: "var(--text-muted)", fontSize: 11 }}>
             MIDI信号输出已关闭
           </small>
         )}
@@ -220,6 +221,18 @@ export function SoundInspector({
 
       <section className="property-section">
         <header>{activeTrack.name}音源</header>
+        {activeTrack.kind === "auxiliary" ? (
+          <label>
+            <span>声部颜色</span>
+            <input
+              type="color"
+              value={resolveAuxiliaryTrackColor(activeTrack, project.auxiliaryTracks.indexOf(activeTrack))}
+              onChange={(event) =>
+                onUpdateTrack(activeTrack.id, { color: event.target.value })
+              }
+            />
+          </label>
+        ) : null}
         <label>
           <span>GM Program</span>
           <CommitField
@@ -228,10 +241,25 @@ export function SoundInspector({
             max="127"
             value={activeTrack.program}
             onCommit={(value) =>
-              onUpdateTrack(activeVoice, { program: Number(value) })
+              onUpdateTrack(activeTrack.id, { program: Number(value) })
             }
           />
         </label>
+        {activeTrack.kind === "auxiliary" ? (
+          <label className="stacked">
+            <span>音量 {Math.round(activeTrack.volume * 100)}%</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={activeTrack.volume}
+              onChange={(event) =>
+                onUpdateTrack(activeTrack.id, { volume: Number(event.target.value) })
+              }
+            />
+          </label>
+        ) : null}
         <label className="stacked">
           <span>声像 {Math.round(activeTrack.pan * 100)}</span>
           <input
@@ -241,7 +269,7 @@ export function SoundInspector({
             step="0.01"
             value={activeTrack.pan}
             onChange={(event) =>
-              onUpdateTrack(activeVoice, { pan: Number(event.target.value) })
+              onUpdateTrack(activeTrack.id, { pan: Number(event.target.value) })
             }
           />
         </label>

@@ -60,12 +60,12 @@ import { RuleTestWorkbench } from "../features/ruleTesting";
 import { AuditWorkbench } from "../features/audit";
 import { ChordInferenceDialog } from "../features/chordInference";
 import { AutoHarmonizationDialog } from "../features/autoHarmonization";
-import { ScorePreviewDialog, loadVexFlow } from "../features/scorePreview";
+import { ScorePreviewDialog, loadVexFlow, type ScoreNoteSelection } from "../features/scorePreview";
 import { ExportDialog } from "../features/export";
 import { MidiOutDialog } from "../features/midiOut";
 import { midiOutputManager } from "../audio/midiOutput";
 import { toMidi } from "../domain/pitch";
-import { replaceProject } from "../domain/editing";
+import { replaceProject, setAuxiliaryTracksScorePreview } from "../domain/editing";
 import {
   applyAutoHarmonization,
   type AutoHarmonizationApplyOptions,
@@ -80,7 +80,7 @@ import {
   type HarmonyInferenceResult,
   type HarmonyDiagnostic,
 } from "../domain/harmony";
-import { createEmptyProject, type ProjectDocument } from "../domain/project";
+import { createEmptyProject, getAllPlayableTracks, type ProjectDocument } from "../domain/project";
 import { buildMeasures, formatPosition } from "../domain/time";
 import { loadNewProjectRuleProfile } from "../domain/ruleProfile";
 import {
@@ -355,6 +355,8 @@ function AppShell() {
     handleUpdateNote,
     handleDeleteNotes,
     handleUpdateTrack,
+    handleAddAuxiliaryTrack,
+    handleDeleteAuxiliaryTrack,
     handleUpdateProject,
     handleUpdateInstructions,
     handleAddEditableRange,
@@ -501,29 +503,25 @@ function AppShell() {
   const handleScorePreviewNoteSelection = useCallback(
     ({
       sourceNoteId,
+      sourceNoteIds,
       voiceId,
       tick,
-    }: {
-      sourceNoteId: string;
-      voiceId: ProjectDocument["satbTracks"][number]["id"];
-      tick: number;
-    }) => {
+    }: ScoreNoteSelection) => {
+      const track = getAllPlayableTracks(project).find((candidate) => candidate.id === voiceId);
+      const note = track?.notes.find((candidate) => candidate.id === sourceNoteId);
+      if (!note) return;
       // 谱面是只读投影；点击只更新编辑器选择和播放头，不提交历史。
       setEditorDomain("notes");
       setActiveVoice(voiceId);
-      setSelectedNoteIds(new Set([sourceNoteId]));
+      setSelectedNoteIds(new Set(sourceNoteIds ?? [sourceNoteId]));
       setSelectedChordIds(new Set());
       setPlayheadTick(tick);
 
-      const track = project.satbTracks.find((t) => t.id === voiceId);
-      const note = track?.notes.find((n) => n.id === sourceNoteId);
-      if (note) {
-        handlePreviewNote(voiceId, toMidi(note.pitch));
-      }
+      handlePreviewNote(voiceId, toMidi(note.pitch));
     },
     [
       handlePreviewNote,
-      project.satbTracks,
+      project,
       setActiveVoice,
       setEditorDomain,
       setPlayheadTick,
@@ -531,6 +529,14 @@ function AppShell() {
       setSelectedNoteIds,
     ],
   );
+
+  const handleToggleScoreAuxiliaryTrack = (trackId: string, show: boolean) =>
+    handleUpdateTrack(trackId, { showInScorePreview: show });
+
+  const handleSetAllScoreAuxiliaryTracks = (show: boolean) => {
+    const nextProject = setAuxiliaryTracksScorePreview(project, show);
+    if (nextProject !== project) history.commit(nextProject);
+  };
 
   const handleCopyDiagnostic = async (diagnostic: HarmonyDiagnostic) => {
     const copied = await copyText(formatDiagnosticDebugReport(diagnostic));
@@ -1051,6 +1057,8 @@ function AppShell() {
               activeVoice={activeVoice}
               onSetActive={setActiveVoice}
               onUpdateTrack={handleUpdateTrack}
+              onAddAuxiliaryTrack={handleAddAuxiliaryTrack}
+              onDeleteAuxiliaryTrack={handleDeleteAuxiliaryTrack}
             />
             <PanelResizeHandle
               orientation="vertical"
@@ -1143,6 +1151,8 @@ function AppShell() {
                 isPlaying={isPlaying}
                 selectedNoteIds={selectedNoteIds}
                 onSelectScoreNote={handleScorePreviewNoteSelection}
+                onToggleAuxiliaryTrack={handleToggleScoreAuxiliaryTrack}
+                onSetAllAuxiliaryTracks={handleSetAllScoreAuxiliaryTracks}
                 onOpenScoreDialog={() => setScorePreviewOpen(true)}
                 progression={progression.panel}
               />
@@ -1337,6 +1347,8 @@ function AppShell() {
           selectedNoteIds={selectedNoteIds}
           onClose={() => setScorePreviewOpen(false)}
           onSelectNote={handleScorePreviewNoteSelection}
+          onToggleAuxiliaryTrack={handleToggleScoreAuxiliaryTrack}
+          onSetAllAuxiliaryTracks={handleSetAllScoreAuxiliaryTracks}
         />
       ) : null}
       {exportOpen ? (

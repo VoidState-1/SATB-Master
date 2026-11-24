@@ -1,8 +1,6 @@
-import type { VoiceId } from "../../../domain/project";
-
 export interface NoteInteraction {
   kind: "move" | "resize";
-  voiceId: VoiceId;
+  voiceId: string;
   noteId: string;
   selectedIds: string[];
   originX: number;
@@ -28,7 +26,7 @@ export interface MarqueeInteraction {
 
 export interface DrawInteraction {
   kind: "draw";
-  voiceId: VoiceId;
+  voiceId: string;
   midiNote: number;
   originRawTick: number;
   nextStartTick: number;

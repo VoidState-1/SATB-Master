@@ -100,7 +100,7 @@ export function useSelectionCommands({
     }
     const selected: ClipboardNote[] = [];
     let earliest = Number.POSITIVE_INFINITY;
-    project.satbTracks.forEach((track) =>
+    getAllPlayableTracks(project).forEach((track) =>
       track.notes.forEach((note) => {
         if (selectedNoteIds.has(note.id)) {
           earliest = Math.min(earliest, note.startTick);
@@ -147,7 +147,11 @@ export function useSelectionCommands({
     const newIds = new Set<string>();
     for (const item of payload.items) {
       const id = createId("note");
-      const result = addNote(nextProject, item.voiceId, {
+      const tracks = getAllPlayableTracks(nextProject);
+      const trackId = tracks.some((track) => track.id === item.voiceId)
+        ? item.voiceId
+        : activeVoice;
+      const result = addNote(nextProject, trackId, {
         ...item.note,
         id,
         startTick: playheadTick + item.offset,
@@ -161,7 +165,7 @@ export function useSelectionCommands({
     setEditorDomain("notes");
     setSelectedNoteIds(newIds);
     setSelectedChordIds(new Set());
-  }, [history, playheadTick, project, showNotice]);
+  }, [activeVoice, history, playheadTick, project, showNotice]);
 
   const clearSelection = useCallback(() => {
     setSelectedNoteIds(new Set());
@@ -178,7 +182,7 @@ export function useSelectionCommands({
     }
     setSelectedNoteIds(
       new Set(
-        project.satbTracks
+        getAllPlayableTracks(project)
           .filter((track) => track.visible)
           .flatMap((track) => track.notes.map((note) => note.id)),
       ),
@@ -214,7 +218,7 @@ export function useSelectionCommands({
 
     const selected: ClipboardNote[] = [];
     let earliest = Number.POSITIVE_INFINITY;
-    project.satbTracks.forEach((track) =>
+    getAllPlayableTracks(project).forEach((track) =>
       track.notes.forEach((note) => {
         if (!selectedNoteIds.has(note.id)) return;
         earliest = Math.min(earliest, note.startTick);
@@ -223,7 +227,7 @@ export function useSelectionCommands({
     );
     if (selected.length === 0) return showNotice("没有选中的音符");
     const result = deleteNotes(project, selectedNoteIds);
-    const remaining = result.project.satbTracks.reduce(
+    const remaining = getAllPlayableTracks(result.project).reduce(
       (count, track) =>
         count +
         track.notes.filter((note) => selectedNoteIds.has(note.id)).length,
@@ -283,7 +287,7 @@ export function useSelectionCommands({
       return;
     }
 
-    const selected = project.satbTracks.flatMap((track) =>
+    const selected = getAllPlayableTracks(project).flatMap((track) =>
       track.notes
         .filter((note) => selectedNoteIds.has(note.id))
         .map((note) => ({ voiceId: track.id, note })),

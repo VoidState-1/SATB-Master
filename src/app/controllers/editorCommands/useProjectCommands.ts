@@ -25,6 +25,7 @@ import {
 import {
   createId,
   getAllPlayableTracks,
+  isSatbTrackId,
   getTrack,
   reconcileChordIdentities,
   type ChordDraft,
@@ -125,6 +126,10 @@ export function useProjectCommands({
   );
 
   const handleAddEditableRange = useCallback(() => {
+    if (!isSatbTrackId(activeVoice)) {
+      showNotice("请先选择四部和声主声部，再添加练习锁定区间");
+      return;
+    }
     const measure = buildMeasures(project).find(
       (item) => playheadTick >= item.startTick && playheadTick < item.endTick,
     );
@@ -142,7 +147,7 @@ export function useProjectCommands({
         draft.exercise.editableRanges.push(range);
       }),
     );
-  }, [activeVoice, history, playheadTick, project]);
+  }, [activeVoice, history, playheadTick, project, showNotice]);
 
   const handleUpdateEditableRange = useCallback(
     (rangeId: string, patch: Partial<EditableRange>) => {

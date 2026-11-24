@@ -31,7 +31,7 @@ export interface ProgressionPreview {
 export interface PianoRollProps {
   readonly progressionPreview?: ProgressionPreview;
   project: ProjectDocument;
-  activeVoice: VoiceId;
+  activeVoice: string;
   tool: EditorTool;
   gridTicks: number;
   pixelsPerBeat: number;
@@ -57,20 +57,20 @@ export interface PianoRollProps {
   focusRange?: { fromTick: number; toTick: number; noteIds?: ReadonlySet<string>; requestKey?: number };
   onSetPlayhead(tick: number): void;
   onSetPixelsPerBeat(value: number): void;
-  onSetActiveVoice(voiceId: VoiceId): void;
+  onSetActiveVoice(voiceId: string): void;
   onSetEditorDomain(domain: EditorDomain): void;
   onInteractionActiveChange(active: boolean): void;
   onSelectNotes(noteIds: Set<string>): void;
-  onPreviewNote(voiceId: VoiceId, midiNote: number): void;
+  onPreviewNote(voiceId: string, midiNote: number): void;
   onSelectChords(chordIds: Set<string>): void;
   onAddNote(
-    voiceId: VoiceId,
+    voiceId: string,
     tick: number,
     midiNote: number,
     durationTicks?: number,
   ): void;
   onUpdateNote(
-    voiceId: VoiceId,
+    voiceId: string,
     noteId: string,
     patch: Partial<NoteEvent>,
   ): void;
@@ -80,7 +80,7 @@ export interface PianoRollProps {
     pitchDelta: number,
   ): void;
   onDeleteNotes(noteIds: Set<string>): void;
-  onSplitNote(voiceId: VoiceId, noteId: string, splitTick: number): void;
+  onSplitNote(voiceId: string, noteId: string, splitTick: number): void;
   onAddChord(tick: number, durationTicks: number): string | undefined;
   onUpdateChord(chordId: string, patch: ChordRegionPatch): void;
   onMoveChords(chordIds: Set<string>, tickDelta: number): void;

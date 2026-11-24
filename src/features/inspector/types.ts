@@ -1,12 +1,10 @@
-import type { ChordRegionPatch } from "../../domain/editing";
+import type { ChordRegionPatch, TrackPatch } from "../../domain/editing";
 import type {
   ChordDraft,
   ChordRegion,
   EditableRange,
   NoteEvent,
   ProjectDocument,
-  SatbTrack,
-  VoiceId,
 } from "../../domain/project";
 import type {
   CadenceCandidate,
@@ -15,8 +13,8 @@ import type { CadenceAnnotationPatch } from "../../domain/editing";
 
 export interface InspectorProps {
   project: ProjectDocument;
-  activeVoice: VoiceId;
-  selectedNote?: { voiceId: VoiceId; note: NoteEvent };
+  activeVoice: string;
+  selectedNote?: { voiceId: string; note: NoteEvent };
   selectedChord?: ChordRegion;
   selectedChordIds: Set<string>;
   selectedChordCount: number;
@@ -39,7 +37,7 @@ export interface InspectorProps {
   onAddPhraseBoundary(): void;
   onDeletePhraseBoundary(boundaryId: string): void;
   onUpdateNote(
-    voiceId: VoiceId,
+    voiceId: string,
     noteId: string,
     patch: Partial<NoteEvent>,
   ): void;
@@ -62,7 +60,7 @@ export interface InspectorProps {
   ): void;
   onDeleteTimingEvent(type: "tempo" | "meter" | "key", id: string): void;
   onUpdateAudio(masterVolume: number): void;
-  onUpdateTrack(voiceId: VoiceId, patch: Partial<SatbTrack>): void;
+  onUpdateTrack(voiceId: string, patch: TrackPatch): void;
   onChooseSoundFont(): void;
   onUseDefaultSoundFont(): void;
   onOpenMidiOut?(): void;

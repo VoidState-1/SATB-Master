@@ -1,9 +1,8 @@
 import type { HarmonyDiagnostic } from "../../domain/harmony";
-import type { VoiceId } from "../../domain/project";
 
-export function orderTracksForRendering<T extends { id: VoiceId }>(
+export function orderTracksForRendering<T extends { id: string }>(
   tracks: readonly T[],
-  activeVoice: VoiceId,
+  activeVoice: string,
 ): T[] {
   const nonActive = tracks.filter((track) => track.id !== activeVoice);
   const active = tracks.filter((track) => track.id === activeVoice);

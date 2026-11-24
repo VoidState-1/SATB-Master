@@ -1,97 +1,38 @@
 import { useCallback } from "react";
-import { audioEngine } from "../../../audio/audioEngine";
 import {
-  chordDraftFromRegion,
-  createChordRegion,
-  defaultChordDraftAtTick,
-} from "../../../domain/chords";
-import {
-  addChordRegion,
-  addNote,
-  deleteChordRegions,
-  deleteNotes,
-  replaceProject,
-  setChordTrackState,
-  splitChordRegion,
-  splitNote,
   transformChordRegions,
   transformNotes,
-  updateChordRegion,
-  updateNote,
-  type ChordRegionPatch,
 } from "../../../domain/editing";
-import {
-  createId,
-  getAllPlayableTracks,
-  getTrack,
-  reconcileChordIdentities,
-  type ChordDraft,
-  type ChordRegion,
-  type EditableRange,
-  type NoteEvent,
-  type ProjectDocument,
-  type SatbTrack,
-  type VoiceId,
-} from "../../../domain/project";
-import {
-  coerceKeyTonicForMode,
-  parsePitchClass,
-  spellMidi,
-  toMidi,
-  transposeSpelledPitch,
-} from "../../../domain/pitch";
-import {
-  buildMeasures,
-  eventAtTick,
-  formatPosition,
-  keyAtTick,
-  nearestGridTick,
-  ticksPerBeat,
-} from "../../../domain/time";
+import { getAllPlayableTracks } from "../../../domain/project";
+import { toMidi, transposeSpelledPitch } from "../../../domain/pitch";
+import { buildMeasures, keyAtTick, nearestGridTick } from "../../../domain/time";
 import {
   nextGridResolution,
   stepTimelineZoom,
 } from "../../../features/editor";
-import type { ClipboardNote } from "../useEditorState";
 import type { EditorCommandContext } from "./types";
 
-export function useViewCommands({
-  project,
-  history,
-  editor,
-  playheadTick,
-  setPlayheadTick,
-  showNotice,
-  commitResult,
-}: EditorCommandContext) {
+export function useViewCommands(
+  { project, editor, playheadTick, setPlayheadTick, commitResult }: EditorCommandContext,
+  previewNote: (trackId: string, midiNote: number) => void,
+) {
   const {
     activeVoice,
     setActiveVoice,
-    tool,
-    setTool,
     editorDomain,
-    setEditorDomain,
-    setToolModifiers,
-    editorInteractionActive,
-    setCancelEditorRequest,
     gridTicks,
     setGridTicks,
     setPixelsPerBeat,
     selectedNoteIds,
-    setSelectedNoteIds,
     selectedChordIds,
-    setSelectedChordIds,
-    chordBrush,
-    setChordBrush,
-    clipboardRef,
   } = editor;
 
   const cycleActiveVoice = useCallback(
     (direction: 1 | -1) => {
-      const visibleVoices = project.satbTracks
+      const visibleVoices = getAllPlayableTracks(project)
         .filter((track) => track.visible)
         .map((track) => track.id);
-      if (visibleVoices.length <= 1) return;
+      if (visibleVoices.length === 0) return;
       const currentIndex = visibleVoices.indexOf(activeVoice);
       const nextIndex =
         currentIndex < 0
@@ -102,7 +43,7 @@ export function useViewCommands({
             visibleVoices.length;
       setActiveVoice(visibleVoices[nextIndex]);
     },
-    [activeVoice, project.satbTracks],
+    [activeVoice, project, setActiveVoice],
   );
 
   const movePlayheadByMeasure = useCallback(
@@ -166,12 +107,12 @@ export function useViewCommands({
       });
       if (!commitResult(result) || selectedNoteIds.size !== 1) return;
       const selectedId = selectedNoteIds.values().next().value;
-      for (const track of result.project.satbTracks) {
+      for (const track of getAllPlayableTracks(result.project)) {
         const note = track.notes.find(
           (candidate) => candidate.id === selectedId,
         );
         if (note) {
-          void audioEngine.previewNote(toMidi(note.pitch), track.id);
+          previewNote(track.id, toMidi(note.pitch));
           return;
         }
       }
@@ -180,6 +121,7 @@ export function useViewCommands({
       commitResult,
       editorDomain,
       gridTicks,
+      previewNote,
       project,
       selectedChordIds,
       selectedNoteIds,
