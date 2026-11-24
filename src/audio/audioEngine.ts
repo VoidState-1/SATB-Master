@@ -3,7 +3,7 @@ import {
   VOICE_ORDER,
   getAllPlayableTracks,
   type ProjectDocument,
-  type VoiceId,
+  isSatbTrackId,
 } from "../domain/project";
 import { toMidi } from "../domain/pitch";
 import {
@@ -40,7 +40,13 @@ interface ScheduledSynthEvent {
 }
 
 function channelForTrack(trackIndex: number) {
-  return trackIndex < 9 ? trackIndex : (trackIndex + 1) % 16;
+  const channel = trackIndex % 15;
+  return channel < 9 ? channel : channel + 1;
+}
+
+interface NotePreviewOptions {
+  trackIndex?: number;
+  program?: number;
 }
 
 export class SatbAudioEngine {
@@ -221,9 +227,25 @@ export class SatbAudioEngine {
     return Math.min(1, peak);
   }
 
-  async previewNote(midiNote: number, voiceId: VoiceId, duration = 0.35) {
+  async previewNote(
+    midiNote: number,
+    trackId: string,
+    durationOrOptions: number | NotePreviewOptions = 0.35,
+  ) {
+    const duration = typeof durationOrOptions === "number"
+      ? durationOrOptions
+      : 0.35;
+    const options = typeof durationOrOptions === "object"
+      ? durationOrOptions
+      : undefined;
+    const channel = isSatbTrackId(trackId)
+      ? VOICE_ORDER.indexOf(trackId)
+      : channelForTrack(options?.trackIndex ?? VOICE_ORDER.length);
+    const program = options?.program;
+
     if (midiOutputManager.shouldSendPreview()) {
-      const channel = VOICE_ORDER.indexOf(voiceId);
+      if (program !== undefined)
+        midiOutputManager.sendProgramChange(channel, program);
       midiOutputManager.sendNoteOn(channel, midiNote, 92);
       const midiTimer = window.setTimeout(() => {
         this.previewTimers.delete(midiTimer);
@@ -238,8 +260,8 @@ export class SatbAudioEngine {
 
     await this.resume();
     if (!this.context) return;
-    const channel = VOICE_ORDER.indexOf(voiceId);
     if (this.synth && this.soundBankId) {
+      if (program !== undefined) this.synth.programChange(channel, program);
       this.synth.noteOn(channel, midiNote, 92);
       const timer = window.setTimeout(() => {
         this.previewTimers.delete(timer);
