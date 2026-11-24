@@ -1,10 +1,22 @@
 # 基于 VexFlow 的五线谱预览设计
 
-状态：第一阶段实现依据（VexFlow SVG 只读预览已接入）
+状态：已实现（P1 设计基线归档；后续实现演进见下方摘要）
 
 目标版本：P1，第一阶段提供只读的 SATB 钢琴大谱表预览
 
 关联文档：[architecture.md](../Docs/architecture.md)、[data-model.md](../Docs/data-model.md)、[editor-and-state.md](../Docs/editor-and-state.md)、[audio-midi-and-time.md](../Docs/audio-midi-and-time.md)
+
+## 实现演进摘要（相对 P1 设计基线）
+
+下文的 1–13 节作为 P1 原始设计与只读契约基线完整归档保留；后续日常交互与架构演进请以 [Docs/editor-and-state.md](../Docs/editor-and-state.md) 为准。当前代码实现相对 P1 原稿的关键落地差异与扩展如下：
+
+| 维度 | 当前实现情况 |
+| --- | --- |
+| 组件拆分与 3 个宿主入口 | 渲染层拆分为 [`ScorePreviewPane.tsx`](../src/features/scorePreview/ScorePreviewPane.tsx)、[`ScorePreviewToolbar.tsx`](../src/features/scorePreview/ScorePreviewToolbar.tsx)、[`ScorePreviewDialog.tsx`](../src/features/scorePreview/ScorePreviewDialog.tsx) 与 [`vexflowRenderer.ts`](../src/features/scorePreview/vexflowRenderer.ts)，并接入 3 个宿主：主工作区 [`BottomPanel.tsx`](../src/features/bottomPanel/BottomPanel.tsx)「五线谱」常驻页签、独立模态大窗 `ScorePreviewDialog`，以及教材审计 [`AuditScore.tsx`](../src/features/audit/AuditScore.tsx)（通过 `onMeasureLayout` 回调获取小节与拍点像素坐标以叠加拍点按钮、和弦标注与共享走带红线）。 |
+| 已落地的扩展能力 | 1. **无重绘三态发音高亮**：`ScoreHighlightMode`（`"color"` / `"monochrome"` / `"none"`，持久化于 `satb-score-preview-highlight-mode`），播放期间直接基于缓存的 `noteElementRefs` 切换 `data-active`/`.is-active`，不触发 VexFlow 重排。<br>2. **选区同步与点击预听**：与钢琴卷帘共享 `selectedNoteIds`（切换 `data-selected`/`.is-selected`）；点击音符除导航选中外还会触发单音音频预听。<br>3. **后台预加载与字体等待**：`AppShell` 启动 600ms 后后台调用 `loadVexFlow()` 预热，并在加载阶段显式等待 `Bravura` 与 `Academico` 字体就绪（`document.fonts.load`）。<br>4. **自适应换行与自动符杠**：`ScorePreviewPane` 通过 `ResizeObserver` 监听宽度触发 `availableWidth` 重排与两端对齐（`justifyMeasures`），`vexflowRenderer` 调用 `Beam.generateBeams` 按拍号默认分组自动生成符杠。 |
+| 投影模型与渲染策略微调 | - 领域投影顶层类型统一命名为 `ScorePreviewModel`（[`src/domain/notation/types.ts`](../src/domain/notation/types.ts)）；`ScoreEvent` 增加 `ScoreUnsupportedEvent`（`kind: "unsupported"`）占位，告警区间使用 `fromTick` / `toTick`。<br>- 节奏分解（[`src/domain/notation/rhythm.ts`](../src/domain/notation/rhythm.ts)）仅支持单附点（`dots <= 1`）。<br>- VexFlow 声部采用 `Voice.Mode.SOFT` 以兼容跳过不可表示片段；小节内部调号变化记录 `unsupported-key` 告警并保留原始 `SpelledPitch` 拼写，不单独绘制小节内调号。<br>- 延音线在单个 system 内绘制；**跨 system 延音线**与 **system 虚拟化**暂未实现。<br>- 缩放采用固定 6 档离散值 `SCALE_STEPS = [0.75, 0.9, 1, 1.15, 1.3, 1.5]`（底栏默认 `0.9`，独立弹窗默认 `1`）。 |
+
+---
 
 ## 1. 背景与定位
 

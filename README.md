@@ -92,16 +92,24 @@ SATB-Master/
 ├── shared/                 # 跨进程共享契约（Desktop IPC、日志模型、外置规则协议）
 ├── src/
 │   ├── domain/             # 纯领域核心（零 React / Electron 依赖）
+│   │   ├── project/        # 工程 schema v3、校验、规范化与 v2 -> v3 迁移
 │   │   ├── pitch.ts        # 书写音高、音程与同音异名拼写
 │   │   ├── chordModel.ts   # 和弦模型、转位与功能语义
-│   │   └── harmony/        # rules / inference / phrase / cadence / harmonization / external
-│   ├── features/           # 前端功能模块（钢琴卷帘、五线谱、自动和声、半自动连接、诊断与日志等）
-│   ├── audio/              # SoundFont 音频引擎与 MIDI 输出
-│   ├── services/           # 桌面桥接、外置规则运行时、渲染层日志总线
-│   └── app/                # 应用外壳、控制器与撤销栈
+│   │   ├── harmony/        # rules / facts / inference / phrase / cadence / harmonization / external
+│   │   ├── notation/       # VexFlow 记谱中间模型与声部排版转换
+│   │   ├── musicxml/       # MusicXML 乐谱导出模型与序列化
+│   │   ├── scoreText/      # 分块 SATB 文本谱 (.satbt) 编译与渲染
+│   │   └── audit/          # 教材审计包模型与校验
+│   ├── features/           # 前端功能模块（钢琴卷帘、五线谱、自动和声、半自动连接、诊断与日志、审计等）
+│   ├── components/         # 跨 feature 复用的通用 UI 原语（含错误边界与通知栈）
+│   ├── hooks/              # 历史栈、快捷键、布局与编辑器偏好 Hook
+│   ├── audio/              # SoundFont 音频引擎与实时 Web MIDI 输出
+│   ├── services/           # 桌面桥接、外置规则运行时、审计存储与渲染层日志总线
+│   ├── workers/            # Web Worker（QuickJS 外置规则沙箱与半自动和声连接搜索）
+│   └── app/                # 应用外壳、工作流控制器与命令编排
 ├── RuleCases/              # 单规则金样本测试用例库
 ├── Docs/                   # 完整开发者架构与子系统文档
-└── scripts/                # 构建资源、桌面 E2E 与评测工具脚本
+└── scripts/                # 构建资源、桌面/审计 E2E（含日志门禁）与评测工具脚本
 ```
 
 更多架构细节与子系统规范请参阅 [开发者文档索引](./Docs/README.md) 与 [项目开发主线](./DesignDocs/project-mainlines.md)。

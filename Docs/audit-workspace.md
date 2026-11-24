@@ -1,28 +1,47 @@
 # 可视化教材审计区
 
-工具栏的 **教材审计** 打开独立工作区。模型提交原图、生成的工程、分析和预审问题，人工对照查看、试改工程并填写意见。返回普通工程后，原编辑会话保留。
+工具栏的 **教材审计** 打开内置的独立审计工作区（自 3.0.0 系列起已作为标准内置功能提供）。模型提交原图、生成的工程、分析和预审问题，人工对照查看、试改工程并填写意见。返回普通工程后，原编辑会话保留。
 
-Windows 审计版支持从快捷方式或命令行直接打开审计包，例如 `"SATB Master.exe" --audit-package "F:\教材\首轮三题.satb-audit.json"`。再次用同一入口打开时会恢复已保存的意见。已发布的 2.2.0 和 2.2.1 安装包早于教材审计功能。
+桌面端支持从快捷方式或命令行直接打开审计包，例如 `"SATB Master.exe" --audit-package "<path-to-batch>.satb-audit.json"`。再次用同一入口打开时会恢复已保存的意见。
 
 本功能不运行推导/规则检查、不自动执行修复、不自动将用例入库，专注承担人工审阅、意见往返与整谱核准工作。
 
+## 左侧目录、筛选与快捷键
+
+左侧「审计目录」按谱例分组列出条目，顶部显示总体进度条与各结论计数（已作答、已认可、补证、未认可、待审）：
+
+- **搜索与 4 维筛选**：支持按条目标题、谱例标题或 `ruleId` 实时搜索，并可展开 4 维筛选（谱例、层级 `severity`、状态、类型 `category`）与一键清除。
+- **按谱例折叠与窄屏抽屉**：每个谱例分组可折叠/展开（显示该谱例的转写复核状态与完成计数；变更搜索或筛选条件时自动展开匹配项）；窄屏下目录收起为侧滑抽屉，通过标题栏「审计目录」按钮或 `Escape` 开关。
+- **工作台快捷键**（标题栏键盘图标可随时查看）：
+  - `Alt+↑` / `Alt+↓`：切换筛选列表中的上一条 / 下一条。
+  - `1` / `2` / `3`：切换「原谱 / 转写谱 / 钢琴卷帘」（焦点位于输入控件或钢琴卷帘编辑器内时不拦截）。
+  - `C`：有原图时切换并排对照视图。
+  - `Space`：试听 / 暂停当前视图的谱面播放。
+  - `Ctrl+Enter`（审阅面板内）：提交当前答案并跳至下一条待审条目。
+
 ## 中间的谱面与依据
 
-打开条目时，光标位于争议范围的起点。识谱题优先显示原谱，和弦和终止题显示转写谱，声部交叉、平行进行等诊断优先显示钢琴卷帘。可切换视图，或勾选对照在同一拍查看两份谱面。
+打开条目时，光标位于争议范围的起点。[`AuditEvidenceWorkspace.tsx`](../src/features/audit/AuditEvidenceWorkspace.tsx) 的 `initialAuditView` 按条目性质自动选择初始视图：
 
-- 原谱可以缩放和按框聚焦。带拍点坐标的谱图可以直接点击跳拍；旧包只有范围框时按框定位。
-- 转写谱显示当前工程的四声部及和弦标记。点音符或拍位会移动共享光标，可单音试听或循环播放争议段。
-- 钢琴卷帘显示音高、时值和重叠关系，可编辑、撤销、恢复和导出当前条目副本。每个条目有独立的工程快照。
-- 谱面下方列出当前发声的四个音，包括延续音。工程和弦、随包的模型标注和程序推导分别标明来源。可以点标注范围跳至起拍，或展开教材依据和运行说明。
-- 「转写复核」用于查看只读基准、核准整个谱例。条目答案与整谱核准分别保存。
+- `category === "transcription"` 且存在原图 -> **原谱 (`source`)**；
+- `category === "diagnostic"` 且 `program.ruleId` 匹配声部进行类规则（`/parallel|contrary|crossing|overlap|voice-leading/i`） -> **钢琴卷帘 (`roll`)**；
+- 其余条目（如和弦、终止式、策略、方案或无原图识谱） -> **转写谱 (`score`)**。
 
-## 右侧的备选意见与自填答案
+可随时切换视图，或勾选对照在同一拍并排查看两份谱面：
+
+- **原谱（[`AuditSource.tsx`](../src/features/audit/AuditSource.tsx)）**：支持 **60%–200%**（步进 10%）缩放与范围框聚焦；当开启范围聚焦且当前活跃拍/谱行落在 `sourceRegion` 之外时，自动将裁剪视窗切换至当前活跃谱行，避免跨行跳拍时丢失定位。带拍点坐标的谱图可以直接点击跳拍；旧包只有范围框时按框定位。
+- **转写谱（[`AuditScore.tsx`](../src/features/audit/AuditScore.tsx)）**：默认采用**局部小节窗口**（围绕条目范围前后各留上下文，最多显示 8 小节；光标移出局部窗口时自动切换至光标附近 3 小节），并通过工具栏按钮在「查看全谱 / 问题附近」间切换。点音符触发单音预听（`audioEngine.previewNote`）并移动共享光标，点拍位标记或空白处同步跳拍，支持针对条目争议范围的循环试听。
+- **钢琴卷帘（[`AuditProjectEditor.tsx`](../src/features/audit/AuditProjectEditor.tsx)）**：显示音高、时值和重叠关系，每个条目拥有独立的工程快照与撤销历史（基于 `useProjectHistory`），可编辑、撤销、重做、还原和单独导出 `.satb`。
+- **试听联动（[`useAuditPlayback.ts`](../src/features/audit/useAuditPlayback.ts)）**：封装主播放控制器；在任意视图或拍位控制栏手动跳拍时，自动停止当前试听（详见 [audio-midi-and-time.md](./audio-midi-and-time.md)）。
+- **逐拍检视与转写复核**：谱面下方列出当前发声的四个音（含延续音），分别标明工程和弦、随包模型标注与程序推导来源，可点标注范围跳至起拍或展开教材依据与运行说明。「转写复核」用于查看只读基准、核准整个谱例；条目答案与整谱核准分别保存。
+
+## 右侧的备选意见、自填答案与底栏状态
 
 每个疑点通常设一道单选题，每个选项说清一种音乐判断。旧包中的多选题、文字题与已存回答仍可使用。模型可标出建议，人工作答前保持未选。
 
-选择备选意见，或在「自填答案」写下自己的判断，然后提交。自填可以替代预设答案。普通回答记为 `answered`；无预设问题的修复方案提供批准、拒绝和补证三个明确选项。只有显式批准才记为 `accept`。提交后跳至当前筛选下的下一条待审意见，可返回撤回或改答。
+选择备选意见，或在「自填答案」写下自己的判断，然后提交（或按 `Ctrl+Enter`）。自填可以替代预设答案。普通回答记为 `answered`；非 `proposal` 条目额外提供「**请模型补证**」快捷按钮直接记为 `needs-evidence`；无预设问题的 `proposal` 修复方案提供批准、拒绝和补证三个明确选项，只有显式批准才记为 `accept`。提交后跳至当前筛选下的下一条待审意见，可返回撤回或改答。
 
-切换谱面保留拍点和草稿。问答、已提交意见和条目副本自动保存到本机。可导出为 `.audit-feedback.json` 供模型读取，重导同版本可恢复。
+切换谱面保留拍点和草稿。问答、已提交意见和条目副本自动保存到本机 IndexedDB；底栏实时显示自动保存状态（正在保存 / 已自动保存 / 保存失败提示）、已审与转写核准计数以及「审计人」输入框。点击「导出意见」生成 `.audit-feedback.json` 供模型读取，若仍存在待审条目、未核准谱例或未填写审计人，会在导出提示中一并提醒；重导同版本可恢复。
 
 ## 模型提交: v2 清单与工程附件
 
@@ -218,10 +237,13 @@ npm run audit -- feedback batch.satb-audit.json opinions.audit-feedback.json
 
 旧 v1 包仍可导入，由 `score` 编译临时工程并为各条克隆副本，新提交应使用含附件的 v2。旧 v1 清单的 `scoreFile` 可过渡打包为 v2，自动生成快照；v2 清单必须用 `projectFile`。v1 意见仍按原指纹读取，换成新工程附件后需重新核准。
 
-- `src/domain/audit/`：格式校验、逐条工程隔离、定位、问答、指纹及意见恢复。
-- `src/services/audit.ts`：文件往返、SHA256、IndexedDB 存储。
-- `src/features/audit/`：选项卡、卷帘、预审与审计；复用 editor、inspector、scorePreview 公共入口。
-- `scripts/audit.mjs`：附件打包、校验和反馈读取。
-- `npm run e2e:audit`：使用合成工程在隔离 userData 验证附件、问答、独立编辑、导出恢复及版本失效，不依赖教材。真实包可作可选参数检查布局，产物在忽略的 `node_modules/.satb-audit-e2e/`。
+- [`src/domain/audit/`](../src/domain/audit/index.ts)：格式校验、逐条工程隔离、定位、问答、指纹及意见恢复。
+- [`src/services/audit.ts`](../src/services/audit.ts)：文件往返、SHA256、IndexedDB 存储。
+- [`src/features/audit/`](../src/features/audit/index.ts)：选项卡、卷帘、试听封装（`useAuditPlayback.ts`）、预审与审计；复用 editor、inspector、scorePreview 公共入口。
+- [`scripts/audit.mjs`](../scripts/audit.mjs)：附件打包、校验和反馈读取。
+- [`scripts/e2e-audit.mjs`](../scripts/e2e-audit.mjs)（`npm run e2e:audit`）：
+  - 默认模式使用合成工程在隔离 `userData` 验证附件、三视图拍点、问答、独立编辑、导出恢复、宽窄布局及版本失效，不依赖外部教材；也可附加一个本地审计包路径作为可选参数检查真实布局，产物输出到忽略目录 `node_modules/.satb-audit-e2e/`。
+  - 启动回归模式支持 `node scripts/e2e-audit.mjs --startup-package <pkg> [--exe <exe>]`，验证通过 `--audit-package` 命令行直达审计工作台、自动保存草稿与重启恢复。
+  - 两种模式末尾均执行 [`scripts/e2e-session-logs.mjs`](../scripts/e2e-session-logs.mjs) 的 `assertCleanSessionLogs`，作为 JSONL 会话日志的零未预期错误门禁（见 [logging-and-observability.md](./logging-and-observability.md)）。
 
-首批本地 v2 包为 `StandardCase/Pilot/2026-11-17/pilot-v2.satb-audit.json`，有三例、14 条待审意见及工程附件。旧包与中间资料保留，均未成为最终核准用例。图片批量导出和 MCP 服务仍为后续工作。
+本地试运行审计包与中间草稿（如 `<batch-dir>/<batch>.satb-audit.json`）均留在忽略目录中，不直接作为核准用例入库。图片批量导出与外部协议集成仍为后续工作。

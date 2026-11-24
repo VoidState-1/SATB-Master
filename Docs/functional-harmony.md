@@ -18,14 +18,22 @@ ChordRegion
 
 - [`chordModel.ts`](../src/domain/chordModel.ts)：实体、解释、草稿、拼写和配器策略。
 - [`functionalHarmonyCatalog.ts`](../src/domain/functionalHarmonyCatalog.ts)：A/B/C 范围唯一词汇注册表与组合操作。
+- [`chordEditorModel.ts`](../src/domain/chordEditorModel.ts)：调色盘与检查器共用的无界面和弦编辑模型与动作规约。
 - [`chords.ts`](../src/domain/chords.ts)：功能、罗马和绝对名称 formatter。
 - [`ChordPalette.tsx`](../src/features/editor/layers/ChordPalette.tsx)：组合式浮动调色盘。
+- [`ChordSemanticsEditor.tsx`](../src/features/inspector/ChordSemanticsEditor.tsx)：侧栏检查器中的和声语义与共同和弦编辑器。
 
 ## 2. 实体结构
 
 `ChordIdentity.structure` 是判别联合：
 
 ```ts
+type AugmentedSixthVariant =
+  | "italian"
+  | "french"
+  | "german"
+  | "doubleAugmented43";
+
 type ChordStructure =
   | {
       kind: "tertian";
@@ -35,19 +43,29 @@ type ChordStructure =
     }
   | {
       kind: "augmented-sixth";
-      variant: "italian" | "french" | "german";
+      variant: AugmentedSixthVariant;
     };
 ```
 
-增六和弦不能伪装为普通七和弦。其实际书写由变体直接生成，例如 C 大调中的德国增六保存为 A♭、C、E♭、F♯。
+增六和弦不能伪装为普通七和弦。其实际书写由变体直接生成，例如在 C 大调中：
 
-`D9` 的理论构成仍包含根、三、五、七、九音；四声部“省略五音”保存在 `ChordVoicingPolicy`：
+- 德国增六（`"german"`）保存为 `A♭-C-E♭-F♯`；
+- 重属倍增三四（`"doubleAugmented43"`）保存为 `A♭-C-D♯-F♯`。
 
-```text
-required    1, 3, 7, 9
-permitted   1, 3, 7, 9
-forbidden   5
-```
+`D9` 与原位 `D7` 的理论构成均保留完整三度叠置音，四声部省略策略保存在 `ChordVoicingPolicy`：
+
+- `D9`（四声部强制省略五音）：
+  ```text
+  requiredDegrees   [1, 3, 7, 9]
+  permittedDegrees  [1, 3, 7, 9]
+  forbiddenDegrees  [5]
+  ```
+- 原位 `D7`（允许省略五音，三音与七音不可省略）：
+  ```text
+  requiredDegrees   [1, 3, 7]
+  permittedDegrees  [1, 3, 5, 7]
+  forbiddenDegrees  []
+  ```
 
 不要为了四声部配置删除理论构成音，否则绝对名称、MIDI/谱面投影和未来规则会失去事实。
 
@@ -73,11 +91,11 @@ TSVI   primary=tonic, secondary=subdominant
 
 ## 4. 注册表范围
 
-当前注册表支持：
+`FUNCTIONAL_BASE_DEFINITIONS` 当前共注册 **20 项**基础功能定义，按范围划分为：
 
 - A：`T/t/S/s/D`、`SII`、`DTIII`、`TSVI`、`DVII`、`K46`、`DD`、`DDVII` 及已审定七和弦/转位。
 - B：`D` 或 `DVII` 指向 `SII/DTIII/S/TSVI`，formatter 输出 `D7->SII` 等名称。
-- C：`S7` 系列、大小调借用、`N6`、原位 `D9`、变化 D/DD、`It+6/Fr+6/Ger+6`、持续低音和共同和弦。
+- C：`d`（小属功能）、`dtIII`（自然小调 III 级大三和弦）、`dVII`（自然小调 VII 级大三和弦）、`S7`/`s7` 系列、大小调借用、`N6`、原位 `D9`、变化 D/DD、`It+6/Fr+6/Ger+6/DD++43`（重属倍增三四和弦）、持续低音和共同和弦。
 
 原位三和弦省略数字；转位采用 `K46`、`D56`、`D34`、`D2`。裸 `DD` 仅表示重属三和弦原位。未注册 `D11`、`D13` 或任意自由功能名称。
 
@@ -97,19 +115,28 @@ TSVI   primary=tonic, secondary=subdominant
 -> editing 命令校验并提交
 ```
 
-固定组合由 UI 和命令层同时执行：
+固定组合与调式约束由 UI、共享编辑模型和命令层同时执行：
 
 - `K46` 固定第二转位。
 - `N6` 固定第一转位。
-- `D9` 和三种增六和弦固定原位。
+- `D9` 和四种增六形态（`It+6`、`Fr+6`、`Ger+6`、`DD++43`）固定原位。
+- `DD++43` 仅限大调使用：编辑界面通过 `functionalDefinitionSupportsMode` 在小调下过滤该项，持久化与命令层通过 `harmonySemanticsCompatibleWithIdentity` 校验其局部调性（或工程调性）必须为 `major`。
 
 修改主要功能、形态、转位、目标或构成音时会清除已有第二解释，因为实体或主要解释可能已经变化。借用和持续低音不改变实体，可以保留第二解释。
+
+### 5.1 共享和弦编辑模型
+
+浮动调色盘（[`ChordPalette.tsx`](../src/features/editor/layers/ChordPalette.tsx)）与检查器（[`ChordSemanticsEditor.tsx`](../src/features/inspector/ChordSemanticsEditor.tsx)）不得各自维护功能切换或共同和弦的草稿修正逻辑，两者统一消费 [`chordEditorModel.ts`](../src/domain/chordEditorModel.ts)：
+
+- `createChordEditorModel(draft, keyEvent)`：根据当前草稿与调号派生只读视图模型，包含 `availableDefinitions`（已按调式过滤）、`form`、`maximumInversion`、`canApplyTarget`、`canAlterTone`、`compatibleCandidates`、`secondaryCandidates`、`secondaryKeyOptions` 与 `selectedSecondaryCandidate`。
+- `applyChordEditorAction(draft, keyEvent, action)`：集中处理全部领域编辑动作（如选择基础定义、形态、转位、离调目标、构成音变音与倾向、终止角色、持续低音及共同和弦第二解释切换），统一裁定何时清除第二解释与限制最大转位。
+- `CHORD_TONE_ALTERATIONS`：声明受控的构成音变音预设（`无`、`♭5`、`♯5`、`♭9`、`♯9`）及其默认解决倾向（`tendency: "up" | "down"`），用于驱动 `D` / `DD` 变音控件。
 
 ## 6. 共同和弦
 
 共同和弦不能通过复制主解释生成。`compatibleFunctionalInterpretations(identity)` 会枚举当前支持调性和注册表定义，只返回能够解析为同一实体、同一低音/转位的组合。
 
-调色盘和 Inspector 的“第二调性/第二功能”选项来自该候选集。没有其他合法解释时，共同和弦开关禁用。该约束同时在 validator 和编辑命令层执行，防止通过旧工程、快捷键或未来 API 写入互相矛盾的解释。
+调色盘和 Inspector 的“第二调性/第二功能”选项统一经由 `createChordEditorModel` 从该候选集派生。没有其他合法解释时，共同和弦开关禁用。该约束同时在 validator 和编辑命令层执行，防止通过旧工程、快捷键或未来 API 写入互相矛盾的解释。
 
 formatter 使用等号显示两个确认解释，例如：
 
@@ -133,15 +160,15 @@ functional-absolute
 roman-absolute
 ```
 
-三种名称始终由 `formatChordIdentity` 计算。tooltip 同时显示功能、罗马和绝对名称。旧 v2 工程的 `displayMode: "both"` 在 v2 -> v3 迁移时转换为 `roman-absolute`。
+三种名称始终由 `formatChordIdentity(identity, semantics?, keyMode?)` 计算；其中可选参数 `keyMode` 用于在缺少显式局部调性时结合当前调式反推准确功能定义（`formatChord` 与 `formatChordRegion` 会自动传入对应调式）。对于 `DD++43`（`identity.structure.kind === "augmented-sixth"` 且 `variant === "doubleAugmented43"`），`functional` 与 `roman` 模式统一显示为 `DD++43`，`absolute` 模式按实际书写音高输出（如 C 大调 `A♭-C-D♯-F♯`）。tooltip 同时显示功能、罗马和绝对名称。旧 v2 工程的 `displayMode: "both"` 在 v2 -> v3 迁移时转换为 `roman-absolute`。
 
 ## 8. 与规则引擎和外置 API 的边界
 
 当前规则引擎和外置 API v3 都原生读取完整实体与语义，不再经过 `FunctionalClass`、旧结构 projection 或 `chordProgressions`。连续同和弦区域先聚合为 `HarmonySpan`，相邻跨度再由精确连接器读取主要解释、功能标记、离调目标、终止角色和持续低音上下文。
 
-规则必须按自身所需处理 `D9`、方向性变音、增六和弦、阻碍进行、双解释与持续低音：能够可靠判断时读取结构化字段；语义歧义或上下文不足时返回保守结果、特例 context 或 skip，不能把新结构伪装成普通三和弦。变化音的 `tendency` 和阻碍进行的 `cadenceRole` 都是人工可编辑证据，规则不能从 accidental 或普通 `D -> VI` 连接反向猜写这些字段。
+规则必须按自身所需处理 `D9`、方向性变音、四种增六形态（含 `DD++43`）、阻碍进行、双解释与持续低音：能够可靠判断时读取结构化字段；语义歧义或上下文不足时返回保守结果、特例 context 或 skip，不能把新结构伪装成普通三和弦。变化音的 `tendency` 和阻碍进行的 `cadenceRole` 都是人工可编辑证据，规则不能从 accidental 或普通 `D -> VI` 连接反向猜写这些字段。
 
-外置 API v3 暴露裁剪后的完整 `ChordRegion`、`HarmonySpan` 和 `connections`，并保留一个或两个 `HarmonyInterpretation`。脚本不能读取辅助轨明细，也不能修改宿主语义。完整契约见 [external-rules.md](./external-rules.md)。
+外置 API v3 暴露裁剪后的完整 `ChordRegion`、`HarmonySpan` 和 `connections`，并保留一个或两个 `HarmonyInterpretation`。对于新增的 `DD++43` 增六变体，外置规则采用显式 opt-in 边界：规则需在 manifest 项声明 `supportsDoubleAugmented43: true` 才会接收包含实写 `DD++43` 的完整 v3 输入；未声明该标志的旧规则在工程含 `DD++43` 时，仅 `dependencyScope: "note"` 规则会以剔除不支持和弦后重建的分析继续运行，其余旧规则本次标为 `insufficient-context` 暂停运行。脚本不能读取辅助轨明细，也不能修改宿主语义。完整契约见 [external-rules.md](./external-rules.md)。
 
 终止式不再由单个和弦的 `cadenceRole` 承担“乐句末端整体类型”语义：完全/半/补充/阻碍终止属于工程级 `chordTrack.cadenceAnnotations`，由终止式检测产生候选、用户确认后写回（见 [analysis-inference.md](./analysis-inference.md)）。`cadenceRole` 仅保留终止四六、经过四六、辅助四六与阻碍进行起点等局部角色。
 

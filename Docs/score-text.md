@@ -118,9 +118,9 @@ annotations {
 
 和弦使用 `at` 加 `duration`，或者 `range`。`duration=4` 和 `duration=1/4` 均表示四分音符；范围可跨小节。
 
-支持功能记法 T、t、S、s、D、d、SII、DTIII、TSVI、DVII、DD、DDVII、K46、N6、It+6、Fr+6、Ger+6、DD++43，以及 I、ii6、V7、I64、viio7、V7/II 等级数记法。转位可使用 `64` 或 `6/4`、`65` 或 `6/5` 等。功能记法沿用目录的大小调含义与可用结构，T 与 t 分别表示大、小主和弦。DD++43 表示大调中有实写升二级和固定降六级低音的重属倍增三四和弦，也可通过和弦标注的 `localKey` 指定局部大调。
+支持功能记法 `T`、`t`、`S`、`s`、`D`、`d`、`SII`、`DTIII`、`dtIII`、`TSVI`、`DVII`、`dVII`、`K46`、`DD`、`DDVII`、`N6`、`It+6`、`Fr+6`、`Ger+6`、`DD++43`，以及 `I`、`ii6`、`V7`、`V9`、`I64`、`viio7`、`V7/II` 等级数记法。转位与结构数字支持 `6`、`64`/`6/4`（功能记法亦支持 `46`）、`7`、`65`/`6/5`、`43`/`4/3`、`42`/`4/2`/`2` 以及九和弦 `9`。功能记法沿用目录的大小调含义与可用结构，`T`/`t`、`DTIII`/`dtIII`、`DVII`/`dVII` 分别对应大/小调或自然小调功能变体。`DD++43` 表示大调中有实写升二级和固定降六级低音的重属倍增三四和弦，也可通过和弦标注的 `localKey` 指定局部大调。
 
-和弦用途 `role` 可为 `passing64`、`pedal64`、`cadential64`、`deceptive`。局部调性写为 `localKey="G major"`；`confidence` 支持 `certain`、`probable`、`ambiguous`、`unknown`，默认 `certain`，表示调用者明确声明的输入。
+和弦用途 `role` 可为 `passing64`、`pedal64`、`cadential64`、`deceptive`。局部调性写为 `localKey="G major"`；`confidence` 支持 `certain`、`probable`、`ambiguous`、`unknown`，默认 `certain`，表示调用者明确声明的输入；`locked` 支持 `true`/`false`，默认 `false`。
 
 H 行也可指定短别名，然后独立补充角色：
 
@@ -154,7 +154,7 @@ annotations {
 - `confidence`：certain 或 probable，默认 certain。
 - `locked`：默认 false。
 
-`annotations` 中的 `observedLanding` 用小节和拍位记录已确认候选的实际落点（如 `observedLanding=3:1`）。导入时，谱面须能复现该候选及其范围。`reference` 继续使用独立的答案范围。
+`annotations` 中的 `observedLanding` 用小节和拍位记录已确认候选的实际落点（如 `observedLanding=3:1`）：声明该属性时会将标注的 `source` 设为 `"accepted-candidate"`（未声明时 `source` 为 `"manual"`），导入时谱面须能复现该候选及其范围。`reference` 中不允许声明 `observedLanding`，声明会直接报错；参考层继续使用独立的答案范围。
 
 人工录入的终止式必须位于所属乐句内并覆盖连续的和弦区域，其起止可落在和弦边界或已保存的乐句边界。相邻两句重奏同一和弦时，可分别标记各句使用的部分。范围仍遵守不重叠及调号边界等编辑约束。半终止支持 `form=authentic` 与 `form=plagal`。参考终止式只验证自身范围与语义，可在尚无已知和弦时独立记录答案。
 
@@ -183,11 +183,27 @@ reference complete=cadence {
 
 ## 文本谱
 
-文本谱包含绝对位置、四声部和 H 行。音名带时值表示起奏，`~E#4` 表示原音保持，`r` 表示静音，H 行的 `?` 表示没有给定和弦。
+文本谱包含绝对位置、四声部和 H 行。音名带时值表示起奏，`~E#4` 表示原音保持，`r` 表示静音；H 行的和弦起始列直接输出记号（如 `T`），同一和弦在后续时间列持续时输出 `~` 前缀（如 `~T`），`?` 表示没有给定和弦。
 
 列包括各拍、音符起止和和弦边界，复杂节奏以精确分数位置显示，不会量化到四分拍。默认每组四小节，每行最多十六个时间列，长行继续分页并写明结束位置。`fromBar`/`toBar` 仅限制视图，不裁剪源工程；跨视图的标注仍显示完整范围。
 
-网格后输出和弦用途、非和弦音、已保存乐句边界及终止式范围。只有显式提供参考对象或 CLI 使用 `--reference`/`--reference-file` 才显示 REFERENCE 区域。辅助轨只报告存在及音符数量，不并入 SATB 网格。
+网格后输出 `ANNOTATIONS (input)` 区域，列出与当前视图相交的工程事实：
+
+- **和弦**：输出 `symbol`、`absolute`、`role`、`localKey`、`confidence`、`source`、`locked` 等字段；当和弦带有多解释、备选解释、`mixture`、`pedalContext` 或三度结构变音（`alterations`）时，自动在下一行缩进附加 `  draft=<JSON>` 行以保留完整语义数据。
+- **声部与音符**：若某声部轨道已锁定，输出 `voice S locked=true`（对应 `S`/`A`/`T`/`B`）；对带非和弦音角色、已锁定或开启 `includeIds` 的音符逐条列出。
+- **乐句与终止式**：输出已保存乐句边界及终止式范围；若工程中存在带 `observedLandingTick` 的终止标注，渲染前会自动调用 `detectProjectCadences` 与 `reviewObservedCadenceAnnotation` 动态复核，并在输出行中附带 `observedLanding=<位置>` 与（失效时）`stale=true`。
+- **参考层与辅助轨**：只有显式提供 `options.reference` 或 CLI 使用 `--reference`/`--reference-file` 时才显示 `REFERENCE (not input)` 区域。辅助轨只报告名称与音符数量，不并入 SATB 网格。
+
+`RenderScoreOptions` 完整选项如下：
+
+| 选项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `fromBar` | `1` | 起始小节号（从 1 开始，仅限制视图） |
+| `toBar` | 末小节 | 结束小节号（须满足 `1 <= fromBar <= toBar <= 总小节数`） |
+| `barsPerBlock` | `4` | 每组输出的小节数（须为正整数） |
+| `maxColumns` | `16` | 每分页最多显示的时间列数（须为 1–128 的整数） |
+| `includeIds` | `false` | 是否附加内部对象 `id=...` 字段并列出全部视图内音符 |
+| `reference` | `undefined` | 可选 `ScoreReference` 对象，渲染前校验工程 ID、PPQ 与总时长一致 |
 
 这是只读检查视图，不是可重新导入的完整工程格式，不承诺还原教材排版或证明原始识谱正确。
 
@@ -217,7 +233,22 @@ const next = replaceScoreBlock(project, {
 }).project;
 ```
 
-`compileScoreText` 从字符串编译，`parseScoreText` 可只解析语法并查看源码位置。编译结果还包含已知标注集、作者短名映射和音符源码位置。
+[`src/domain/scoreText/index.ts`](../src/domain/scoreText/index.ts) 导出清单：
+
+- **解析**：`parseScoreText`、`parseAnnotation`
+- **编译与局部替换**：`compileScore`、`compileScoreText`、`replaceScoreBlock`
+- **文本谱渲染**：`renderScoreText`、`RenderScoreOptions`
+- **值与位置转换**：`durationTicks`、`positionTick`、`positionText`、`readPitch`、`readKey`
+- **类型与错误**：`ScoreTextError`、`SCORE_TEXT_VERSION`、`SCORE_VOICES`、`ScoreSpec`、`ScoreBlock`、`ScoreAnnotation`、`ScoreAnnotationSet`、`ScoreReference`、`CompiledScore`、`SourceLocation` 等
+
+常用解析与校验边界约束：
+
+- **附点**：输入解析支持最多 **3 个附点**（`.{0,3}`），文本谱输出格式化时最多反推 **2 个附点**，更复杂的精确 tick 时值自动以 `/tN` 输出。
+- **拍号**：分子为 **1–32** 的整数，分母仅支持 **2、4、8、16**；变拍号只允许声明在内部小节起点且不可重复。
+- **速度**：`tempo` 须为 **1–1000 BPM** 的有限数值。
+- **音高、力度与规模**：音高须在 MIDI **0–127** 内；音符力度须为 **1–127** 的整数；单工程最多 **10000** 小节；渲染 `maxColumns` 范围为 **1–128**。
+
+`compileScoreText` 从字符串编译，`parseScoreText` / `parseAnnotation` 可单独解析语法并查看源码位置；错误统一抛出携带 `location` 的 `ScoreTextError`。编译结果还包含已知标注集、作者短名映射和音符源码位置。
 
 `replaceScoreBlock` 在副本中替换指定小节的四个声部，保留标题、音频、规则配置及其他区间。尊重轨道、音符和练习范围锁定，跨替换边界的长音需扩大范围后再改。省略 H 时保留原和弦；提供 H 时替换区间和弦，拒绝锁定或跨界和弦，并将相交的原终止标注标为过期。函数返回新工程，调用方负责一次性提交历史和更新 revision，旧工程可用于撤销。
 

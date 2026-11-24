@@ -16,7 +16,7 @@ export const PPQ = 960;
 - 所有事件位置和时值都以整数 tick 保存。
 - UI 可以按小节、拍或音符时值显示，但不能把显示单位直接写回为另一套时间基准。
 
-产品版本、schema 版本和外置规则 API 版本彼此独立。修改数据结构时只提升产品版本是不够的。
+产品版本、schema 版本、规则目录修订号和外置规则 API 版本彼此独立。修改数据结构时只提升产品版本是不够的。
 
 ## 2. `ProjectDocument` 总览
 
@@ -36,6 +36,7 @@ ProjectDocument
   auxiliaryTracks[]
     notes[]
   chordTrack
+    visible / locked / displayMode
     regions[]
     cadenceAnnotations[]
   loop
@@ -78,7 +79,7 @@ interface SpelledPitch {
 - 对斜需要比较“同字母、不同升降号”。
 - 增减音程需要同时使用字母距离和半音距离。
 - 导音、和弦构成音与调内音级依赖调号语境。
-- 自动和声或谱面显示需要知道实际记谱，而不只是琴键位置。
+- 自动和声、VexFlow 谱面预览或 MusicXML 导出需要知道实际记谱，而不只是琴键位置。
 
 维护原则：
 
@@ -91,7 +92,24 @@ interface SpelledPitch {
 
 ## 4. 音符与轨道
 
-`NoteEvent` 除 ID、位置、时值和书写音高外，还包含 `velocity`（力度）、`spellingSource`（`manual` / `migrated` / `midi-inferred`）、锁定、可选人工非和弦音角色与 MIDI 导入来源 `importOrigin`。人工角色包括经过音、辅助音、挂留音、延宕音、倚音、先现音、逃逸音和持续音；规则不会根据单个和弦外音自动写回角色（自动和弦推导写回角色时也遵守锁定，见 [analysis-inference.md](./analysis-inference.md)）。以后添加奏法或声部来源时，应先判断它是音符事实、分析结果还是临时 UI 状态。
+`NoteEvent` 除 ID、位置、时值和书写音高外，还包含 `velocity`（力度）、`spellingSource`（`manual` / `migrated` / `midi-inferred`）、锁定、可选人工非和弦音角色 `nonChordToneRole` 与 MIDI 导入来源 `importOrigin`。
+
+`NonChordToneRole` 包含 9 类取值：
+
+```ts
+type NonChordToneRole =
+  | "passing"
+  | "neighbor"
+  | "suspension"
+  | "retardation"
+  | "appoggiatura"
+  | "anticipation"
+  | "escape"
+  | "pedal"
+  | "other";
+```
+
+对应经过音、辅助音、挂留音、延宕音、倚音、先现音、逃逸音、持续音及其他外音。规则不会根据单个和弦外音自动写回角色（自动和弦推导写回角色时也遵守锁定，见 [analysis-inference.md](./analysis-inference.md)）。以后添加奏法或声部来源时，应先判断它是音符事实、分析结果还是临时 UI 状态。
 
 每条轨道（SATB 与辅助轨）都带可持久化的 `visible` / `muted` / `solo` / `locked` / `volume` / `pan` / `program` 字段。`muted` / `solo` / `volume` / `pan` 是播放属性，不影响和声分析；`locked` 是编辑权限，参与锁定判断。
 
@@ -153,9 +171,15 @@ soprano -> alto -> tenor -> bass
 
 变拍号意味着“总小节数”不是简单的 `lengthTicks / 固定每小节 tick`。任何小节计算都必须调用 [`src/domain/time.ts`](../src/domain/time.ts) 的 `buildMeasures`、`ticksForMeasures` 等函数。
 
-## 6. 和弦区域
+## 6. 和弦轨道与和弦区域
 
-`ChordTrack` 保存范围型 `ChordRegion`，不是零长度位置标记。每个区域有开始 tick 和持续时间，并将持久信息拆成两个层次：
+`ChordTrack` 除保存范围型 `regions: ChordRegion[]` 与终止式标注 `cadenceAnnotations: CadenceAnnotation[]` 外，还持久化轨道级显示与编辑状态：
+
+- `visible: boolean`：和弦轨显示开关。
+- `locked: boolean`：和弦轨整体编辑锁定。
+- `displayMode`：标记展示体系，取值为 `"functional" | "roman" | "absolute" | "functional-absolute" | "roman-absolute"`。
+
+每个 `ChordRegion` 不是零长度位置标记，它有开始 tick、持续时间和 `locked` 状态，并将持久和弦信息拆成两个层次：
 
 ```text
 ChordRegion
@@ -165,7 +189,12 @@ ChordRegion
 
 ### 6.1 `ChordIdentity`
 
-`ChordIdentity` 表示可由根音、结构和低音推导的和弦实体。`structure` 是 `tertian | augmented-sixth` 判别联合：普通三度叠置结构保存性质、扩展与构成音变化；意/法/德增六保存独立 variant。它回答“由哪些音构成”和“低音应是什么”，而不是“在当前语句里扮演什么角色”。
+`ChordIdentity` 表示可由根音、结构和低音推导的和弦实体。`structure` 是 `tertian | augmented-sixth` 判别联合：
+
+- 普通三度叠置结构（`tertian`）保存性质（`quality`）、扩展（`extensions`）与构成音变化（`alterations`）。
+- 增六和弦结构（`augmented-sixth`）保存独立 `variant: AugmentedSixthVariant`，取值为 `"italian" | "french" | "german" | "doubleAugmented43"`（意大利、法国、德国与倍增三四增六和弦）。
+
+它回答“由哪些音构成”和“低音应是什么”，而不是“在当前语句里扮演什么角色”。
 
 构成音变化可以显式声明横向解决方向：
 
@@ -181,7 +210,14 @@ interface ChordToneAlteration {
 
 ### 6.2 `HarmonySemantics`
 
-`HarmonySemantics` 保存一个或两个 `HarmonyInterpretation`，并用 `primaryInterpretationId` 指定主要解释。单项解释包含局部调性、级数、变化音、结构化目标、斯波索宾 `FunctionalDesignation`、来源和置信度；外层保存借用、`cadenceRole` 和持续低音上下文。`cadenceRole` 描述当前和弦在连接中的局部用途，取值限 `cadential64`、`passing64`、`pedal64` 或 `deceptive`。普通 `D -> VI` 不会仅凭局部连接自动获得阻碍标记。共同和弦的两个确认解释必须都能解析为同一实体，不能只复制不同 ID。
+`HarmonySemantics` 保存一个或两个确认的 `HarmonyInterpretation`，并用 `primaryInterpretationId` 指定主要解释，同时支持可选 `alternatives?: readonly HarmonyInterpretation[]` 保存备选语义解释（用于保留歧义或待核对解释，而不冒充共同和弦的第二个确认解释）。
+
+单项解释包含局部调性、级数、变化音、结构化目标、斯波索宾 `FunctionalDesignation`、来源和置信度：
+
+- `FunctionalDesignation.kind`（`FunctionalDesignationKind`）支持：`"primary" | "side-degree" | "applied-dominant" | "applied-leading-tone" | "double-dominant" | "double-dominant-leading-tone" | "cadential64" | "neapolitan" | "augmented-sixth" | "altered-dominant"`。
+- `FunctionalDesignation.specialRole` 支持：`"neapolitan" | "italian6" | "french6" | "german6" | "doubleAugmented43"`。
+
+外层保存借用（`mixture`）、`cadenceRole` 和持续低音上下文（`pedalContext`）。`cadenceRole` 描述当前和弦在连接中的局部用途，取值限 `cadential64`、`passing64`、`pedal64` 或 `deceptive`。普通 `D -> VI` 不会仅凭局部连接自动获得阻碍标记。共同和弦的两个确认解释必须都能解析为同一实体，不能只复制不同 ID。
 
 终止式类型不再保存在和弦语义中，而是工程级范围标注 `chordTrack.cadenceAnnotations`（见 [§7.4](#74-乐句边界与终止式标注) 与 [analysis-inference.md](./analysis-inference.md)）。`cadenceRole` 只表达单个和弦的局部角色，`CadenceAnnotation` 才表达乐句末端整体属于完全终止、半终止、补充终止还是阻碍终止。
 
@@ -246,7 +282,7 @@ interface RuleProfile {
 }
 ```
 
-`shared` 保存四声部建议音域和严格四声部织体开关。`catalogRevision` 是规则目录修订号（当前为 2），决定内置规则集合与默认配置的兼容性。每个内置规则实例保存严重程度、`configVersion`、声明式配置和特例策略。严重程度为：
+`shared` 保存四声部建议音域和严格四声部织体开关。`catalogRevision` 是规则目录修订号（当前为 `3`，见 [`HARMONY_RULE_CATALOG_REVISION`](../src/domain/harmony/rules/catalog.ts)），决定 70 条内置规则集合与默认配置的兼容性。每个内置规则实例保存严重程度、`configVersion`、声明式配置和特例策略。严重程度为：
 
 ```text
 error | warning | suggestion | off
@@ -260,27 +296,29 @@ error | warning | suggestion | off
 
 ### 7.4 乐句边界与终止式标注
 
-以下不变量是领域目标；具体命令和校验实现若未覆盖某项，不能仅凭 schema 说明视为已强制执行。当前分析参与规则前仍会过滤无效或 stale 结构。
-
 工程级结构 `structure.phraseBoundaries` 保存乐句边界（见 [analysis-inference.md](./analysis-inference.md)）。每个 `PhraseBoundary` 带 `id`、`tick`、`source`（`manual` / `inferred`）、`confidence`、可选 `locked`、自动推导用的 `inferenceFingerprint` 与 `stale` 标记。工程起点和终点由分析端点补全，不要求显式保存。
 
-`chordTrack.cadenceAnnotations` 保存乐句末端的终止式范围标注。确认跨休止、实音无和弦标签或落主后仍有延展的候选时，可选字段 `observedLandingTick` 记录谱面的实际落点。重开工程或重新分析时，程序会核对当前乐句、范围、类型和落点，证据失效的标注显示为待复核。每个 `CadenceAnnotation` 带 `id`、`phraseId`、`fromTick`、`toTick`、`kind`（`full` / `half` / `supplementary` / `deceptive`）、可选 `form`（`authentic` / `plagal`）与 `completion`（`perfect` / `imperfect`）、`source`（`manual` / `accepted-candidate`）、`confidence`、`locked` 与 `stale`。
+`chordTrack.cadenceAnnotations` 保存乐句末端的终止式范围标注。确认跨休止、实音无和弦标签或落主后仍有延展的候选时，可选字段 `observedLandingTick` 记录谱面的实际落点（仅 `source === "accepted-candidate"` 允许携带，且必须严格落在 `(fromTick, toTick)` 之间）。每个 `CadenceAnnotation` 带 `id`、`phraseId`、`fromTick`、`toTick`、`kind`（`full` / `half` / `supplementary` / `deceptive`）、可选 `form`（`authentic` / `plagal`）与 `completion`（`perfect` / `imperfect`）、`source`（`manual` / `accepted-candidate`）、`confidence`（`certain` / `probable`）、`locked` 与 `stale`。
 
-两者都是可编辑工程数据，遵循以下不变量：
+以下运行时校验与规范化规则已在 [`project/validation.ts`](../src/domain/project/validation.ts) 与 [`project/normalize.ts`](../src/domain/project/normalize.ts) 中落地：
 
-- 标注范围必须位于所属乐句内，且乐句 ID 有效。
-- 终止式标注不跨越乐句边界，也不与同一乐句内其它同类标注冲突。
-- 编辑命令负责校验范围、绑定和锁定；`stale` 标注保留供用户核对，但不参与规则分析。
+- **`validateProjectStructure`（`validation.ts`）：** 校验每条 `PhraseBoundary` 的字段与枚举类型，要求边界 `tick` 严格位于 `(0, lengthTicks)` 内部（排除首尾端点）且按 `tick` 严格递增无重复。
+- **`validateCadenceAnnotations`（`validation.ts`）：** 校验 `id` 唯一、区间 `[fromTick, toTick)` 互不重叠、`completion` 仅允许用于 `kind === "full"`、`supplementary` 必须配 `form === "plagal"`、`deceptive` 不得配 `form === "plagal"`；对非 `stale` 且无 `observedLandingTick` 的标注，调用 `cadenceChordCoverage` 检查是否与和弦区段及乐句边界对齐。
+- **`normalizeProject`（`normalize.ts`）：**
+  - `stripLegacyCadenceTypes`：剥离早期 V3 和弦语义中残留的旧 `cadenceType` 字段，保证终止式事实只存于 `cadenceAnnotations`。
+  - `normalizePhraseBoundaries`：裁剪越界边界、合并同 tick 边界（优先保留 `confidence === "certain"`）并按 `tick` 升序排列。
+  - `reconcileChordIdentities`：在调号变更后按生效调性重新解析带语义的和弦 `identity`，避免实体与语义脱节。
+  - `reconcileCadenceAnnotationStaleness`：带 `observedLandingTick` 的标注通过 `detectProjectCadences` 与 `reviewObservedCadenceAnnotation` 重新核对候选落点与证据；其余标注通过 `cadenceChordCoverage(...).continuous` 刷新 `stale` 标记。
 
-终止式检测产生的是候选（`CadenceCandidate`），只有用户确认或应用命令后才成为 `CadenceAnnotation`。和弦级的 `cadenceRole` 与乐句级的 `CadenceAnnotation.kind` 是不同层次的事实，不能互相替代。
+`stale` 标注保留在工程中供用户复核，但不参与规则分析。终止式检测产生的是候选（`CadenceCandidate`），只有用户确认或应用命令后才成为 `CadenceAnnotation`。和弦级的 `cadenceRole` 与乐句级的 `CadenceAnnotation.kind` 是不同层次的事实，不能互相替代。
 
 ### 7.5 诊断忽略偏好
 
-`diagnosticPreferences.ignoredDiagnosticIds` 保存用户手动忽略的稳定诊断 ID。忽略项仍保留在问题列表和规则统计中，但不再传给编辑器的音符或和弦高亮层；用户可随时取消忽略。该偏好是工程数据，随保存和历史记录同步，并不改变规则配置、规则执行或诊断仲裁。
+`diagnosticPreferences.ignoredDiagnosticIds` 保存用户手动忽略的稳定诊断 ID。`normalizeDiagnosticPreferences` 负责去重并排序。忽略项仍保留在问题列表和规则统计中，但不再传给编辑器的音符或和弦高亮层；用户可随时取消忽略。该偏好是工程数据，随保存和历史记录同步，并不改变规则配置、规则执行或诊断仲裁。
 
 ## 8. 音频引用
 
-工程的 `audio` 保存 `masterVolume` 与 `audio.soundFont` 音色选择。运行时加载状态、AudioContext、合成器实例和临时资源 token 不属于工程。
+工程的 `audio` 保存 `masterVolume` 与 `audio.soundFont` 音色选择。运行时加载状态、AudioContext、合成器实例、Web MIDI 输出配置和临时资源 token 不属于工程。
 
 本地 SoundFont 可能在另一台机器不存在。打开工程时应保留用户选择的引用和明确的缺失状态，不能因为播放按钮初始化音频而静默回退并覆盖工程选择。默认音色是可用性回退，不是用户引用的替代值。
 
@@ -317,11 +355,11 @@ schema v3 --补齐已发布的默认字段后验证-->
 - 在和弦区域保存 UI 已渲染的罗马数字字符串作为唯一事实。
 - 为解决拖拽预览而直接修改历史帧中的音符对象。
 - 把外置规则源码嵌入每个工程，绕过内容哈希和本机安装状态。
-- 将临时 playhead 或打开的弹窗写入 `ProjectDocument`。
+- 将临时 playhead、Web MIDI 端口或打开的弹窗写入 `ProjectDocument`。
 - 把 SATB 与辅助轨统一设为“允许重叠”，再依赖检查器报错。
 - 变拍号工程中用固定 `PPQ * 4` 推导所有小节。
 - 把终止式类型写回单个和弦语义，而不是乐句级 `cadenceAnnotations`。
-- 把自动分析候选直接写回工程，绕过 `editing.ts` 命令与锁定判断。
+- 把自动分析或自动配和声候选直接写回工程，绕过 `editing.ts` 命令与锁定判断。
 
 ## 11. 数据模型变更检查表
 
@@ -330,6 +368,6 @@ schema v3 --补齐已发布的默认字段后验证-->
 - validator 是否拒绝 NaN、越界、重复 ID、未排序和非法引用？
 - 旧 schema 如何迁移，无法确定时是否明确拒绝？
 - 编辑命令是否维护新不变量？
-- 和声快照、外置规则上下文、MIDI 和音频是否需要该字段？
+- 和声快照、外置规则上下文、记谱、MIDI、MusicXML 和音频是否需要该字段？
 - 保存、恢复、撤销、开发者检查器和测试是否同步？
 - `Docs` 中的数据契约是否同一提交更新？
