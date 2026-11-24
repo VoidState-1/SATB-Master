@@ -1028,14 +1028,14 @@ async function verifyShortcutSettings() {
 
   await evaluate(`document.querySelector('[aria-label="修改“选择工具”快捷键"]')?.click()`)
   await delay(60)
-  await dispatchShortcut('Digit5')
-  await waitFor(`document.querySelector('button[aria-label^="选择工具（5）"]') !== null`, '快捷键重映射更新工具提示')
+  await dispatchShortcut('Digit6')
+  await waitFor(`document.querySelector('button[aria-label^="选择工具（6）"]') !== null`, '快捷键重映射更新工具提示')
   const persistedBinding = await evaluate(`JSON.parse(localStorage.getItem('satb-master-shortcuts-v1')).selectTool`)
-  if (JSON.stringify(persistedBinding) !== JSON.stringify(['Digit5'])) {
+  if (JSON.stringify(persistedBinding) !== JSON.stringify(['Digit6'])) {
     throw new Error(`快捷键重映射未持久化：${JSON.stringify(persistedBinding)}`)
   }
   await clickButton('关闭设置')
-  await dispatchShortcut('Digit5')
+  await dispatchShortcut('Digit6')
   const remapped = await evaluate(`document.querySelector('button[aria-label^="选择工具"]')?.classList.contains('is-active') === true`)
   if (!remapped) throw new Error('重映射后的选择工具快捷键未生效')
 
@@ -1043,7 +1043,7 @@ async function verifyShortcutSettings() {
   await clickButton('快捷键')
   await evaluate(`document.querySelector('[aria-label="修改“铅笔工具”快捷键"]')?.click()`)
   await delay(60)
-  await dispatchShortcut('Digit5')
+  await dispatchShortcut('Digit6')
   await waitFor(`document.querySelector('.shortcut-capture-error')?.textContent?.includes('选择工具') === true`, '快捷键冲突提示')
   await dispatchShortcut('Escape')
   const resetAll = await evaluate(`(() => {
