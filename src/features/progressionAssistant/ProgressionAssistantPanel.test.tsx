@@ -149,4 +149,56 @@ describe("ProgressionAssistantPanel", () => {
     expect(host.textContent).toContain("光标右侧暂无空位");
     expect(host.querySelector(".progression-card")).toBeNull();
   });
+
+  it("keeps candidates visible without flicker while refreshing and renders recommendation tier", () => {
+    mount({ status: "searching", isRefreshing: true });
+    expect(host.querySelector('.progression-body[data-refreshing="true"]')).not.toBeNull();
+    expect(host.querySelector(".progression-progress-rail")).not.toBeNull();
+    const row = host.querySelector<HTMLElement>(".progression-card")!;
+    expect(["high", "medium", "low"]).toContain(row.dataset.tier);
+  });
+
+  it("groups candidates by attribute category and allows filtering", () => {
+    mount({ result });
+    expect(host.querySelector(".progression-table-head")).toBeNull();
+    const filterGroup = host.querySelector('[aria-label="按属性筛选"]')!;
+    const buttons = [...filterGroup.querySelectorAll("button")];
+    expect(buttons.length).toBeGreaterThan(1);
+    act(() => buttons[1]!.click());
+    expect(buttons[1]!.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelectorAll(".progression-card").length).toBeLessThan(result.candidates.length);
+    act(() => buttons[0]!.click());
+    expect(host.querySelectorAll(".progression-card").length).toBe(result.candidates.length);
+  });
+
+  it("immediately switches top category tags when changing from single to short during refresh", () => {
+    const { render } = mount({ result, mode: "single" });
+    render({ mode: "short", isRefreshing: true, status: "searching" });
+    const filterText = host.querySelector('[aria-label="按属性筛选"]')?.textContent ?? "";
+    expect(filterText).toContain("终止与收束");
+    expect(filterText).toContain("平稳推进");
+    expect(filterText).toContain("桥接与经过");
+  });
+
+  it("auditions a candidate row on double click", () => {
+    const { props } = mount();
+    const titleCell = host.querySelector<HTMLElement>(".progression-card .progression-card-title")!;
+    act(() => titleCell.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(props.onAudition).toHaveBeenCalledWith(candidate, 0);
+  });
+
+  it("places category filters inside the unified toolbar without legend and keeps audition running on hover", () => {
+    const other = result.candidates.find(item => item.id !== candidate.id) ?? candidate;
+    const { props } = mount({
+      result,
+      auditioning: { candidate, variantIndex: 0 },
+    });
+    expect(host.querySelector(".progression-legend")).toBeNull();
+    expect(host.querySelector(".progression-toolbar .progression-category-filters")).not.toBeNull();
+    expect(host.querySelector(".progression-toolbar .progression-controls")).not.toBeNull();
+    const cards = [...host.querySelectorAll<HTMLElement>(".progression-card")];
+    const targetCard = cards.find(el => el.getAttribute("aria-label")?.includes(other.headline)) ?? cards[0]!;
+    act(() => targetCard.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    expect(props.onStopAudition).not.toHaveBeenCalled();
+  });
 });

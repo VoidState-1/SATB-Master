@@ -73,16 +73,38 @@ export function useProgressionAssistant({
     } satisfies ProgressionSearchRequest,
     refresh,
   }), [cursor, mode, project, refresh, shortLength, stepPreset, stepTicks, style]);
-  const [completed, setCompleted] = useState<{ query: typeof query; response: ProgressionSearchResponse }>();
-  const response = query && completed?.query === query ? completed.response : undefined;
-  const result: ProgressionSearchResult | undefined = response && "result" in response ? response.result : undefined;
+  const [completed, setCompleted] = useState<{ query: NonNullable<typeof query>; response: ProgressionSearchResponse }>();
+  const isSameQuery = Boolean(
+    query &&
+    completed &&
+    completed.query.request.project === query.request.project &&
+    completed.query.refresh === query.refresh &&
+    completed.query.request.options.fromTick === query.request.options.fromTick &&
+    completed.query.request.options.mode === query.request.options.mode &&
+    completed.query.request.options.shortLength === query.request.options.shortLength &&
+    completed.query.request.options.stepTicks === query.request.options.stepTicks &&
+    completed.query.request.options.stepBeats === query.request.options.stepBeats &&
+    completed.query.request.options.style === query.request.options.style,
+  );
+  const response = isSameQuery ? completed?.response : undefined;
+  const freshResult: ProgressionSearchResult | undefined =
+    response && "result" in response ? response.result : undefined;
+  const previousResult: ProgressionSearchResult | undefined =
+    enabled && !isPlaying && completed?.response && "result" in completed.response
+      ? completed.response.result
+      : undefined;
+  const result: ProgressionSearchResult | undefined = freshResult;
+  const isSearching = !isPlaying && !response;
+  const displayResult: ProgressionSearchResult | undefined =
+    freshResult ?? (isSearching ? previousResult : undefined);
+  const isRefreshing = isSearching && Boolean(displayResult);
   const lastLog = useRef({ slow: -Infinity, error: -Infinity });
   const [hovered, setHovered] = useState<ProgressionSelection>();
   const [auditioning, setAuditioning] = useState<ProgressionSelection>();
   const audition = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
-    if (!query) return;
+    if (!query || isSameQuery) return;
     const { request } = query;
     let cancel: (() => void) | undefined;
     let active = true;
@@ -115,7 +137,7 @@ export function useProgressionAssistant({
       window.clearTimeout(timer);
       cancel?.();
     };
-  }, [query]);
+  }, [query, isSameQuery]);
 
   const stopAudition = useCallback(() => {
     if (!audition.current) return;
@@ -163,7 +185,8 @@ export function useProgressionAssistant({
 
   const panel: Omit<ProgressionAssistantPanelProps, "project"> = {
     status: isPlaying ? "paused" : !response ? "searching" : "error" in response ? "error" : "ready",
-    result,
+    isRefreshing,
+    result: displayResult,
     mode,
     shortLength,
     stepPreset,
@@ -177,7 +200,6 @@ export function useProgressionAssistant({
     onWriteChordsChange: setWriteChords,
     onRefresh: () => setRefresh(value => value + 1),
     onHoverCandidate(selection) {
-      if (selection && auditioning && auditioning.candidate !== selection.candidate) stopAudition();
       setHovered(current => current?.candidate === selection?.candidate && current?.variantIndex === selection?.variantIndex
         ? current : selection);
     },

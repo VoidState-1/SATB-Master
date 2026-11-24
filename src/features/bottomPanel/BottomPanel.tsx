@@ -22,7 +22,11 @@ import {
   type ScoreHighlightMode,
   type ScoreNoteSelection,
 } from "../scorePreview";
-import { ProgressionAssistantPanel, type ProgressionAssistantPanelProps } from "../progressionAssistant";
+import {
+  ProgressionAssistantPanel,
+  ProgressionContextSummary,
+  type ProgressionAssistantPanelProps,
+} from "../progressionAssistant";
 import type { ScorePreviewWarning } from "../../domain/notation";
 
 export type BottomPanelTab = "diagnostics" | "score" | "progression" | "logs";
@@ -213,6 +217,13 @@ export function BottomPanel({
                 ) : null
               }
             />
+          ) : activeTab === "progression" && progression ? (
+            <ProgressionContextSummary
+              compact
+              project={project}
+              result={progression.result}
+              status={progression.status}
+            />
           ) : null}
         </div>
       </header>
@@ -229,7 +240,13 @@ export function BottomPanel({
             hideHeader
           />
         ) : activeTab === "progression" ? (
-          progression && <ProgressionAssistantPanel project={project} {...progression} />
+          progression && (
+            <ProgressionAssistantPanel
+              project={project}
+              hideTargetSummary
+              {...progression}
+            />
+          )
         ) : activeTab === "logs" ? (
           <LogsPanel project={project} harmonyResult={harmonyResult} focus={logFocus} />
         ) : (

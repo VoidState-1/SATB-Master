@@ -120,6 +120,8 @@ describe("BottomPanel", () => {
       act(() => tab.click());
       expect(onTabChange).toHaveBeenCalledWith("progression");
       expect(tab.getAttribute("aria-selected")).toBe("true");
+      expect(host.querySelector(".bottom-panel-context .progression-target")?.textContent).toContain("光标右侧暂无空位");
+      expect(host.querySelector('[role="tabpanel"] .progression-target')).toBeNull();
       expect(host.querySelector('[role="tabpanel"]')?.textContent).toContain("光标右侧暂无空位");
     } finally {
       act(() => root.unmount());

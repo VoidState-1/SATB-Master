@@ -17,6 +17,7 @@ import {
   Music2,
   Minimize2,
   Minus,
+  Moon,
   MousePointer2,
   PanelBottom,
   PanelLeft,
@@ -32,6 +33,7 @@ import {
   SkipBack,
   Sparkles,
   Square,
+  Sun,
   Trash2,
   Undo2,
   WandSparkles,
@@ -95,6 +97,7 @@ import {
   useFollowPlayhead,
 } from "../hooks/useFollowPlayhead";
 import { useShortcutBindings } from "../hooks/useShortcutBindings";
+import { useTheme } from "../hooks/useTheme";
 import { useConfirmationController } from "./controllers/useConfirmationController";
 import { useHarmonyController } from "./controllers/useHarmonyController";
 import { useFileWorkflow } from "./controllers/useFileWorkflow";
@@ -243,6 +246,12 @@ function AppShell() {
   const { pausePlayheadBehavior, setPausePlayheadBehavior } =
     usePausePlayheadBehavior();
   const { followPlayhead, setFollowPlayhead } = useFollowPlayhead();
+  const {
+    themePreference,
+    resolvedTheme,
+    setThemePreference,
+    toggleLightDark,
+  } = useTheme();
 
   const setBottomPanelTab = useCallback((tab: BottomPanelTab) => {
     setBottomPanelTabState(tab);
@@ -779,6 +788,7 @@ function AppShell() {
             icon={<Download />}
             onClick={() => setExportOpen(true)}
           />
+          <div className="toolbar-divider" />
           <IconButton
             label="实时 MIDI 输出"
             icon={<Cable />}
@@ -806,11 +816,13 @@ function AppShell() {
               setAutoHarmonizationOpen(true);
             }}
           />
-          <IconButton
-            label="教材审计"
-            icon={<ClipboardCheck />}
-            onClick={() => { handleStop(); setAuditOpen("manual"); }}
-          />
+          {developerMode.enabled ? (
+            <IconButton
+              label="教材审计"
+              icon={<ClipboardCheck />}
+              onClick={() => { handleStop(); setAuditOpen("manual"); }}
+            />
+          ) : null}
           {developerMode.enabled && developerMode.showRuleTestEntry ? (
             <IconButton
               label="规则测试工作台"
@@ -947,6 +959,11 @@ function AppShell() {
           <span className="transport-meta">{measureCount} 小节</span>
         </div>
         <div className="toolbar-group toolbar-right">
+          <IconButton
+            label={resolvedTheme === "dark" ? "切换浅色主题" : "切换深色主题"}
+            icon={resolvedTheme === "dark" ? <Sun /> : <Moon />}
+            onClick={toggleLightDark}
+          />
           <IconButton
             label="设置"
             icon={<Settings2 />}
@@ -1279,6 +1296,8 @@ function AppShell() {
           onSetFollowPlayhead={setFollowPlayhead}
           pausePlayheadBehavior={pausePlayheadBehavior}
           onSetPausePlayheadBehavior={setPausePlayheadBehavior}
+          themePreference={themePreference}
+          onSetThemePreference={setThemePreference}
           onClose={() => changeSettingsOpen(false)}
         />
       ) : null}

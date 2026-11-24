@@ -1,2 +1,8 @@
-export { ProgressionAssistantPanel } from "./ProgressionAssistantPanel";
-export type { ProgressionAssistantPanelProps, ProgressionSelection } from "./ProgressionAssistantPanel";
+export {
+  ProgressionAssistantPanel,
+  ProgressionContextSummary,
+} from "./ProgressionAssistantPanel";
+export type {
+  ProgressionAssistantPanelProps,
+  ProgressionSelection,
+} from "./ProgressionAssistantPanel";

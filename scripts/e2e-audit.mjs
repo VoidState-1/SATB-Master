@@ -164,7 +164,25 @@ async function launch() {
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: directory });
 }
+async function enableDeveloperMode() {
+  await wait(`!!document.querySelector('button[aria-label="设置"]')`, "工作台未就绪");
+  if (await evaluate(`!!document.querySelector('button[aria-label="教材审计"]')`)) {
+    throw new Error("普通模式下不应显示教材审计入口");
+  }
+  await click("设置");
+  await click("开发者");
+  await wait(`!!document.querySelector('input[aria-label="启用开发者模式"]')`, "开发者设置页未就绪");
+  const enabled = await evaluate(`(() => {
+    const input = document.querySelector('input[aria-label="启用开发者模式"]');
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (!input.checked) input.click();
+    return input.checked;
+  })()`);
+  if (!enabled) throw new Error("无法启用开发者模式");
+  await click("关闭设置");
+}
 async function runWorkbenchChecks(packageValue) {
+  await enableDeveloperMode();
   await wait(`!!document.querySelector('button[aria-label="教材审计"]')`, "审计入口未出现");
   await click("教材审计");
   await wait(`!!document.querySelector('.audit-empty') && !document.querySelector('.audit-empty button.audit-primary').disabled`, "审计空态未就绪");

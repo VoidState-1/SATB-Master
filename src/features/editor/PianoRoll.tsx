@@ -108,6 +108,7 @@ export function PianoRoll({
 }: PianoRollProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isProgrammaticScrollRef = useRef(false);
+  const lastScrollLeftRef = useRef(0);
   const previousPixelsPerBeatRef = useRef(pixelsPerBeat);
   const pendingZoomViewportXRef = useRef<number | undefined>(undefined);
   const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 });
@@ -188,6 +189,7 @@ export function PianoRoll({
       nextPixelsPerBeat: pixelsPerBeat,
       ppq: project.ppq,
     });
+    lastScrollLeftRef.current = scroll.scrollLeft;
     previousPixelsPerBeatRef.current = pixelsPerBeat;
     pendingZoomViewportXRef.current = undefined;
   }, [pixelsPerBeat, project.ppq]);
@@ -204,6 +206,7 @@ export function PianoRoll({
     if (nextScrollLeft !== scroll.scrollLeft) {
       isProgrammaticScrollRef.current = true;
       scroll.scrollLeft = nextScrollLeft;
+      lastScrollLeftRef.current = scroll.scrollLeft;
       window.requestAnimationFrame(() => {
         isProgrammaticScrollRef.current = false;
       });
@@ -226,6 +229,7 @@ export function PianoRoll({
     const scroll = scrollRef.current;
     if (!scroll || !focusRange) return;
     scroll.scrollLeft = Math.max(0, tickToX(focusRange.fromTick, project.ppq, pixelsPerBeat) - PIANO_WIDTH - 24);
+    lastScrollLeftRef.current = scroll.scrollLeft;
     const pitches = project.satbTracks.flatMap((track) => track.notes.filter((note) => focusRange.noteIds?.size
       ? focusRange.noteIds.has(note.id)
       : note.startTick < focusRange.toTick && focusRange.fromTick < note.startTick + note.durationTicks).map((note) => toMidi(note.pitch)));
@@ -244,6 +248,7 @@ export function PianoRoll({
     const left = playheadX - scroll.scrollLeft;
     if (left < PIANO_WIDTH || left > scroll.clientWidth - 4) {
       scroll.scrollLeft = Math.max(0, playheadX - PIANO_WIDTH - 24);
+      lastScrollLeftRef.current = scroll.scrollLeft;
     }
   }, [seekOnClick, playheadX, isPlaying, focusRange]);
 
@@ -357,7 +362,12 @@ export function PianoRoll({
   }, [chordInteraction, interaction, onInteractionActiveChange]);
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    disengageFollow();
+    // 上下滚动音高视野不终止水平跟随；仅缩放或横向滚轮时解除跟随。
+    const isVerticalOnlyWheel =
+      !event.ctrlKey && !event.shiftKey && event.deltaX === 0;
+    if (!isVerticalOnlyWheel) {
+      disengageFollow();
+    }
     const scroll = scrollRef.current;
     if (!scroll) return;
     if (event.ctrlKey) {
@@ -427,11 +437,18 @@ export function PianoRoll({
       }}
       onWheel={handleWheel}
       onScroll={() => {
+        const scroll = scrollRef.current;
+        const currentScrollLeft = scroll?.scrollLeft ?? 0;
+        const horizontalChanged =
+          Math.abs(currentScrollLeft - lastScrollLeftRef.current) > 0.5;
+        lastScrollLeftRef.current = currentScrollLeft;
         if (isProgrammaticScrollRef.current) {
           isProgrammaticScrollRef.current = false;
           return;
         }
-        disengageFollow();
+        if (horizontalChanged) {
+          disengageFollow();
+        }
         if (diagnosticTooltip) setDiagnosticTooltip(undefined);
         if (timingMarkerEditor) setTimingMarkerEditor(undefined);
         if (rulerContextMenu) setRulerContextMenu(undefined);

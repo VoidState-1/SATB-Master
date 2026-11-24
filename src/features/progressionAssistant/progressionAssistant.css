@@ -1,42 +1,66 @@
 .progression-assistant {
-  color-scheme: light dark;
-  --progression-bg: light-dark(#f7f7f4, #242a26);
-  --progression-panel: light-dark(#eeeee9, #2b322d);
-  --progression-card: light-dark(#fdfdfb, #2a312c);
-  --progression-line: light-dark(#d2d6cc, #46534b);
-  --progression-ink: light-dark(#252a23, #edf1eb);
-  --progression-muted: light-dark(#545b51, #b8c5bb);
-  --progression-accent: light-dark(#246451, #9cdec7);
-  --progression-tint: light-dark(#e1efe7, #2c473b);
-  --progression-amber: light-dark(#804903, #ffcb88);
-  --progression-amber-bg: light-dark(#faedd8, #473824);
-  --progression-error: light-dark(#943526, #ffb5a7);
-  --progression-error-bg: light-dark(#fbe8e4, #492f2a);
   display: flex;
   flex-direction: column;
-  background: var(--progression-bg);
-  color: var(--progression-ink);
-  font-size: 12px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
 }
 
+/* ---------- 顶部统一栏（左分类筛选 + 右配置与刷新） ---------- */
 .progression-toolbar {
+  position: relative;
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 9px;
+  gap: 6px 12px;
   min-height: 40px;
-  overflow-x: auto;
-  padding: 5px 10px;
+  padding: 6px 10px;
   white-space: nowrap;
-  background: var(--progression-panel);
-  border-bottom: 1px solid var(--progression-line);
+  background: var(--bg-surface-2);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.progression-controls {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.progression-progress-rail {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 45%,
+    transparent 100%
+  );
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: progression-slide 900ms var(--ease-standard) infinite;
+  pointer-events: none;
+}
+
+@keyframes progression-slide {
+  0% {
+    background-position: -45% 0;
+  }
+  100% {
+    background-position: 145% 0;
+  }
 }
 
 .progression-target,
-.progression-card-title,
-.progression-card-details,
-.progression-pitches,
-.progression-card-actions,
 .progression-field {
   display: flex;
   align-items: center;
@@ -44,49 +68,114 @@
 }
 
 .progression-target {
-  min-width: max-content;
+  min-width: 0;
   padding-right: 9px;
-  border-right: 1px solid var(--progression-line);
-  color: var(--progression-muted);
+  border-right: 1px solid var(--border-default);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.progression-target.is-compact {
+  padding-right: 0;
+  border-right: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  font-size: var(--text-xs);
+}
+
+.progression-target.is-compact::-webkit-scrollbar {
+  display: none;
+}
+
+.progression-target-status {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
 .progression-target strong {
-  color: var(--progression-ink);
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
-.progression-assistant :is(button, select) {
-  min-height: 25px;
-  color: inherit;
-  border: 1px solid var(--progression-line);
-  border-radius: 5px;
-  background: var(--progression-card);
+.progression-tag,
+.progression-anchor-chip {
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-3);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
 }
 
-.progression-assistant button {
-  padding: 0 6px;
+.progression-anchor-chip {
+  font-family: var(--font-serif);
+}
+
+.progression-fixed-voice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  background: var(--bg-control);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.progression-fixed-voice i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--v-color);
+  flex: none;
+}
+
+.progression-toolbar :is(button, select),
+.progression-card .progression-card-actions button {
+  min-height: 26px;
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-control);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.progression-toolbar select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.progression-toolbar button,
+.progression-card button {
   cursor: pointer;
 }
 
-.progression-assistant button:disabled {
-  opacity: .55;
+.progression-toolbar button,
+.progression-card .progression-card-actions button {
+  padding: 0 7px;
+}
+
+.progression-toolbar button:disabled,
+.progression-card button:disabled {
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
-.progression-assistant :is(button, select, input, article):focus-visible {
-  outline: 2px solid var(--progression-accent);
-  outline-offset: -2px;
+.progression-controls button:not(:disabled):hover,
+.progression-controls button[aria-pressed="true"],
+.progression-controls button.can-bridge {
+  border-color: var(--accent-border);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
 }
 
-.progression-assistant button:not(:disabled):hover,
-.progression-assistant button[aria-pressed="true"],
-.progression-assistant button.can-bridge {
-  color: var(--progression-accent);
-  background: var(--progression-tint);
-}
-
-.progression-assistant .can-bridge[aria-pressed="false"] {
-  box-shadow: inset 0 -2px var(--progression-accent);
+.progression-controls .can-bridge[aria-pressed="false"] {
+  box-shadow: inset 0 -2px var(--accent);
 }
 
 .progression-segments {
@@ -107,119 +196,543 @@
 
 .progression-field {
   flex: none;
-  color: var(--progression-muted);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
 .progression-field select {
-  padding: 0 3px;
+  padding: 0 5px;
+  font-size: var(--text-xs);
 }
 
 .progression-field input {
-  accent-color: var(--progression-accent);
+  accent-color: var(--accent);
   margin: 0;
 }
 
-.progression-refresh,
-.progression-audition {
+.progression-refresh {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  width: 28px;
+  padding: 0;
 }
 
 .progression-assistant button svg {
   width: 13px;
   height: 13px;
+  flex: none;
 }
 
+/* ---------- 警告提示条 ---------- */
 .progression-warning {
-  margin: 3px 10px 0;
-  color: var(--progression-amber);
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning-ink);
+  font-size: var(--text-xs);
 }
 
-.progression-candidates {
+.progression-warning svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+/* ---------- 主体与内联分类筛选 ---------- */
+.progression-body {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
   flex: 1;
+  flex-direction: column;
+  min-width: 0;
   min-height: 0;
-  padding: 7px 10px;
-  overflow: auto;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
-.progression-card {
-  display: grid;
-  flex: 0 0 auto;
-  min-width: 218px;
-  gap: 5px;
-  padding: 7px 9px;
-  border: 1px solid var(--progression-line);
-  border-radius: 8px;
-  background: var(--progression-card);
-  white-space: nowrap;
+.progression-body[data-refreshing="true"] {
+  opacity: 0.68;
 }
 
-.progression-card:hover,
-.progression-card:focus-within {
-  border-color: var(--progression-accent);
-}
-
-.progression-card-title strong {
-  font-family: Georgia, "Segoe UI", serif;
-  font-size: 16px;
-  line-height: 1.1;
-}
-
-.progression-tag,
-.progression-badge {
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--progression-panel);
-  color: var(--progression-muted);
-  font-size: 11px;
-}
-
-.progression-badge.is-clear {
-  color: var(--progression-accent);
-  background: var(--progression-tint);
-}
-
-.progression-badge.is-warning {
-  color: var(--progression-amber);
-  background: var(--progression-amber-bg);
-}
-
-.progression-badge.is-error {
-  color: var(--progression-error);
-  background: var(--progression-error-bg);
-}
-
-.progression-pitches {
-  color: var(--progression-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.progression-variants {
+.progression-category-filters {
   display: flex;
-  gap: 3px;
-  margin-right: 4px;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.progression-variants button {
-  border-radius: 20px;
-  font-size: 11px;
+.progression-category-filters::-webkit-scrollbar {
+  display: none;
 }
 
-.progression-card-actions .progression-audition {
-  margin-left: auto;
+.progression-toolbar .progression-category-filters button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
 }
 
-.progression-card-actions .progression-apply {
-  color: var(--progression-accent);
-  background: var(--progression-tint);
+.progression-toolbar .progression-category-filters button:hover:not(:disabled) {
+  border-color: var(--border-default);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.progression-toolbar .progression-category-filters button[aria-pressed="true"] {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
   font-weight: 650;
 }
 
+.progression-toolbar .progression-category-filters button:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: default;
+}
+
+.progression-category-filters em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+/* ---------- 分类表格 ---------- */
+.progression-table-scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  container-type: inline-size;
+}
+
+.progression-row {
+  display: grid;
+  grid-template-columns:
+    68px
+    minmax(128px, 1.05fr)
+    minmax(90px, 0.75fr)
+    minmax(212px, 1.5fr)
+    minmax(142px, 1.1fr)
+    126px;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-control);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.progression-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 650;
+}
+
+.progression-group-header em {
+  margin-left: 2px;
+  font-style: normal;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.progression-row:hover,
+.progression-row:focus-within {
+  background: var(--bg-hover);
+}
+
+.progression-row[data-playing="true"] {
+  background: var(--accent-soft);
+}
+
+.progression-row:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.progression-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 5px;
+}
+
+/* ---------- 建议度列（绿/黄/红三格信号条） ---------- */
+.progression-rec-cell {
+  gap: 6px;
+  cursor: help;
+}
+
+.progression-signal {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+  flex: none;
+}
+
+.progression-signal i {
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--border-default);
+}
+
+.progression-signal i:nth-child(1) {
+  height: 5px;
+}
+.progression-signal i:nth-child(2) {
+  height: 8px;
+}
+.progression-signal i:nth-child(3) {
+  height: 12px;
+}
+
+.progression-signal.is-high i.is-lit {
+  background: var(--success);
+}
+.progression-signal.is-medium i.is-lit {
+  background: var(--warning);
+}
+.progression-signal.is-low i.is-lit {
+  background: var(--danger);
+}
+
+.progression-tier-label {
+  font-size: var(--text-xs);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.progression-tier-label.is-high {
+  color: var(--success-ink);
+}
+.progression-tier-label.is-medium {
+  color: var(--warning-ink);
+}
+.progression-tier-label.is-low {
+  color: var(--danger-ink);
+}
+
+/* ---------- 功能色标与和声列 ---------- */
+.progression-fn-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1;
+  background: var(--bg-surface-3);
+  color: var(--text-secondary);
+}
+
+.progression-fn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-faint);
+}
+
+.progression-fn-badge.is-tonic,
+.progression-fn-badge.is-cadence {
+  background: var(--success-soft);
+  color: var(--success-ink);
+}
+.progression-fn-dot.is-tonic,
+.progression-fn-dot.is-cadence {
+  background: var(--success);
+}
+
+.progression-fn-badge.is-subdominant,
+.progression-fn-badge.is-motion {
+  background: var(--info-soft);
+  color: var(--info-ink);
+}
+.progression-fn-dot.is-subdominant,
+.progression-fn-dot.is-motion {
+  background: var(--info);
+}
+
+.progression-fn-badge.is-dominant {
+  background: var(--warning-soft);
+  color: var(--warning-ink);
+}
+.progression-fn-dot.is-dominant {
+  background: var(--warning);
+}
+
+.progression-fn-badge.is-chromatic {
+  background: color-mix(in srgb, var(--voice-s) 16%, transparent);
+  color: var(--voice-s);
+}
+.progression-fn-dot.is-chromatic {
+  background: var(--voice-s);
+}
+
+.progression-card-title {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.progression-card-title strong {
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--text-base);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.progression-role-chip {
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ---------- 诊断检查列 ---------- */
+.progression-check-cell {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.progression-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.progression-badge svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.progression-badge.is-clear {
+  color: var(--success-ink);
+  background: var(--success-soft);
+}
+
+.progression-badge.is-warning {
+  color: var(--warning-ink);
+  background: var(--warning-soft);
+}
+
+.progression-badge.is-error {
+  color: var(--danger-ink);
+  background: var(--danger-soft);
+}
+
+/* ---------- SATB 声部织体列 ---------- */
+.progression-pitches {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.progression-voice-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.progression-voice-chip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--v-color);
+  flex: none;
+}
+
+.progression-voice-chip em {
+  font-style: normal;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.progression-step-chip {
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-3);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- 排列变体分段控件 ---------- */
+.progression-variants-cell {
+  flex-wrap: wrap;
+}
+
+.progression-card .progression-variants {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  gap: 1px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+}
+
+.progression-card .progression-variants button {
+  min-height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.progression-card .progression-variants button:hover:not([aria-pressed="true"]) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.progression-card .progression-variants button[aria-pressed="true"] {
+  background: var(--bg-control);
+  color: var(--accent-ink);
+  font-weight: 650;
+  box-shadow: var(--shadow-xs);
+}
+
+.progression-single-variant {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+/* ---------- 操作列 ---------- */
+.progression-card-actions {
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.progression-audition {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+}
+
+.progression-audition:hover,
+.progression-audition[aria-pressed="true"] {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.progression-card-actions .progression-apply {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 0 9px;
+}
+
 .progression-card-actions .progression-apply:hover {
-  border-color: var(--progression-accent);
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: var(--text-on-accent);
+}
+
+/* ---------- 空态 ---------- */
+.progression-empty-state {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ---------- 窄面板自适应（自动换行，绝无横向溢出） ---------- */
+@container (max-width: 780px) {
+  .progression-row {
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    row-gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .progression-check-cell {
+    grid-column: 2;
+  }
+
+  .progression-pitches {
+    grid-column: 1 / -1;
+  }
+
+  .progression-variants-cell {
+    grid-column: 1 / 3;
+  }
+
+  .progression-card-actions {
+    grid-column: 3;
+  }
 }
