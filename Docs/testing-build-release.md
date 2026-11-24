@@ -298,7 +298,7 @@ Windows 10 与 11 至少各验证一个受支持版本。大 SoundFont 测试记
 
 发布前分别评估：
 
-- `package.json` 产品版本（当前为 `3.0.0-beta.2`）。
+- `package.json` 产品版本（当前为 `3.0.0-beta.3`）。
 - `PROJECT_SCHEMA_VERSION`（当前为 `3`）。
 - `HARMONY_RULE_CATALOG_REVISION`（当前为 `3`）。
 - `EXTERNAL_RULE_API_VERSION`（当前为 `3`）。
