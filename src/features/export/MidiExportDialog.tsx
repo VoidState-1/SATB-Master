@@ -5,14 +5,14 @@ import type { ProjectDocument } from "../../domain/project";
 import {
   DEFAULT_MIDI_EXPORT_OPTIONS,
   type MidiExportLayout,
-  type MidiExportOptions,
+  type MidiExportPreferences,
   type MidiExportTimbre,
 } from "../../domain/midi";
 import "./midiExport.css";
 
 const MIDI_EXPORT_STORAGE_KEY = "satb_master_midi_export_options";
 
-function loadSavedOptions(): Required<MidiExportOptions> {
+function loadSavedOptions(): MidiExportPreferences {
   try {
     const raw = localStorage.getItem(MIDI_EXPORT_STORAGE_KEY);
     if (raw) {
@@ -32,6 +32,7 @@ function loadSavedOptions(): Required<MidiExportOptions> {
           typeof parsed.includeChords === "boolean"
             ? parsed.includeChords
             : true,
+        includeAuxiliaryTracks: parsed.includeAuxiliaryTracks !== false,
       };
     }
   } catch {
@@ -40,7 +41,7 @@ function loadSavedOptions(): Required<MidiExportOptions> {
   return DEFAULT_MIDI_EXPORT_OPTIONS;
 }
 
-function saveOptions(options: Required<MidiExportOptions>) {
+function saveOptions(options: MidiExportPreferences) {
   try {
     localStorage.setItem(MIDI_EXPORT_STORAGE_KEY, JSON.stringify(options));
   } catch {
@@ -51,7 +52,7 @@ function saveOptions(options: Required<MidiExportOptions>) {
 export interface MidiExportDialogProps {
   project: ProjectDocument;
   onClose(): void;
-  onExport(options: Required<MidiExportOptions>): void;
+  onExport(options: MidiExportPreferences): void;
 }
 
 export function MidiExportDialog({
@@ -79,10 +80,11 @@ export function MidiExportDialog({
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    const options: Required<MidiExportOptions> = {
+    const options: MidiExportPreferences = {
       layout,
       timbre,
       includeChords,
+      includeAuxiliaryTracks: saved.includeAuxiliaryTracks,
     };
     saveOptions(options);
     onExport(options);

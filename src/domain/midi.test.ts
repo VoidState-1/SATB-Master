@@ -5,10 +5,34 @@ import {
   fromMidiString,
   midiFileName,
   toMidiString,
-  type MidiExportOptions,
+  type MidiExportLayout,
 } from "./midi";
 import { createChordRegion } from "./chords";
+import { addAuxiliaryTrack } from "./editing";
 import { createEmptyProject, PPQ } from "./project";
+
+const layoutTrackCounts = [
+  ["satb-separate", 5],
+  ["piano-grand-staff", 3],
+  ["single-track", 2],
+] as const satisfies readonly (readonly [MidiExportLayout, number])[];
+
+function projectWithAuxiliaryTracks(count: number) {
+  let project = createEmptyProject();
+  for (let index = 0; index < count; index++) {
+    ({ project } = addAuxiliaryTrack(project, { name: `额外声部 ${index + 1}` }));
+    project.auxiliaryTracks[index].notes.push({
+      id: `aux-note-${index}`,
+      startTick: 0,
+      durationTicks: PPQ,
+      pitch: { step: "D", alter: 0, octave: 4 },
+      velocity: 80,
+      locked: false,
+      spellingSource: "manual",
+    });
+  }
+  return project;
+}
 
 describe("MIDI Type 1 导出", () => {
   it("支持 UTF-8 文本二进制安全无损转换", () => {
@@ -238,6 +262,67 @@ describe("MIDI Type 1 导出", () => {
         (event) => event.type === "noteOn" && event.noteNumber === 61,
       ),
     ).toBe(true);
+  });
+
+  it.each(layoutTrackCounts)("%s 按工程顺序选择独立的额外声部轨", (layout, baseCount) => {
+    const project = projectWithAuxiliaryTracks(3);
+    const [first, , last] = project.auxiliaryTracks;
+    const all = parseMidi(buildMidi(project, { layout, includeAuxiliaryTracks: true }));
+    expect(all.tracks).toHaveLength(baseCount + 3);
+
+    const selected = parseMidi(buildMidi(project, {
+      layout,
+      auxiliaryTrackIds: [last.id, "unknown-track", first.id, last.id],
+    }));
+    expect(selected.tracks).toHaveLength(baseCount + 2);
+    expect(selected.tracks.slice(baseCount).map((events) => {
+      const name = events.find((event) => event.type === "trackName");
+      return name && fromMidiString(name.text);
+    })).toEqual([first.name, last.name]);
+
+    for (const options of [
+      { includeAuxiliaryTracks: false, auxiliaryTrackIds: [first.id] },
+      { includeAuxiliaryTracks: true, auxiliaryTrackIds: [] },
+    ]) {
+      const excluded = parseMidi(buildMidi(project, { layout, ...options }));
+      expect(excluded.tracks).toHaveLength(baseCount);
+      expect(excluded.tracks.flat().some((event) => event.type === "noteOn")).toBe(false);
+    }
+  });
+
+  it.each(layoutTrackCounts)("%s 循环使用全部 15 个非鼓轨通道", (layout, baseCount) => {
+    const project = projectWithAuxiliaryTracks(20);
+    const { tracks } = parseMidi(buildMidi(project, { layout }));
+    const auxiliaryTracks = tracks.slice(baseCount);
+    const expectedChannels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15];
+    const offset = layout === "satb-separate" ? 4 : 1;
+    expect(auxiliaryTracks).toHaveLength(20);
+    auxiliaryTracks.forEach((events, index) => {
+      const channel = expectedChannels[(offset + index) % expectedChannels.length];
+      expect(events.filter((event) => "channel" in event)).toEqual([
+        expect.objectContaining({ type: "programChange", channel }),
+        expect.objectContaining({ type: "noteOn", channel }),
+        expect.objectContaining({ type: "noteOff", channel }),
+      ]);
+    });
+  });
+
+  it("单轨布局只在额外声部自己的轨道中写入其音符", () => {
+    const project = projectWithAuxiliaryTracks(1);
+    project.satbTracks[0].notes.push({
+      ...project.auxiliaryTracks[0].notes[0],
+      id: "soprano-note",
+      pitch: { step: "C", alter: 0, octave: 5 },
+    });
+    const { tracks } = parseMidi(buildMidi(project, { layout: "single-track" }));
+    expect(tracks.map((events) => events
+      .filter((event) => event.type === "noteOn" || event.type === "noteOff")
+      .map(({ type, noteNumber }) => [type, noteNumber]),
+    )).toEqual([
+      [],
+      [["noteOn", 72], ["noteOff", 72]],
+      [["noteOn", 62], ["noteOff", 62]],
+    ]);
   });
 
   it("正确生成不同排版模式的文件名后缀", () => {

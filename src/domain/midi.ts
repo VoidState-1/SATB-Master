@@ -1,7 +1,11 @@
 import { writeMidi, type MidiData, type MidiEvent } from "midi-file";
 import { formatChordRegion } from "./chords";
 import {
-  getAllPlayableTracks,
+  getExportAuxiliaryTracks,
+  melodicMidiChannel,
+  type AuxiliaryTrackExportOptions,
+} from "./exportTracks";
+import {
   type MusicalTrack,
   type NoteEvent,
   type ProjectDocument,
@@ -15,16 +19,21 @@ export type MidiExportLayout =
   | "satb-separate";
 export type MidiExportTimbre = "piano" | "choir" | "project";
 
-export interface MidiExportOptions {
+export interface MidiExportOptions extends AuxiliaryTrackExportOptions {
   layout?: MidiExportLayout;
   timbre?: MidiExportTimbre;
   includeChords?: boolean;
 }
 
-export const DEFAULT_MIDI_EXPORT_OPTIONS: Required<MidiExportOptions> = {
+export type MidiExportPreferences = Required<
+  Omit<MidiExportOptions, "auxiliaryTrackIds">
+>;
+
+export const DEFAULT_MIDI_EXPORT_OPTIONS: MidiExportPreferences = {
   layout: "satb-separate",
   timbre: "piano",
   includeChords: true,
+  includeAuxiliaryTracks: true,
 };
 
 const VOICE_INSTRUMENT_NAMES: Record<VoiceId, string> = {
@@ -176,53 +185,35 @@ function appendNoteEvents(
   });
 }
 
-function buildSatbSeparateTracks(
-  project: ProjectDocument,
-  timbre: MidiExportTimbre,
-): MidiEvent[][] {
-  const playable = getAllPlayableTracks(project);
-  return playable.map((track, trackIndex) => {
-    const channel = trackIndex < 9 ? trackIndex : (trackIndex + 1) % 16;
-    const isSatb = track.kind === "satb";
-    const voiceId = isSatb ? (track.id as VoiceId) : undefined;
-    const instrumentName = voiceId
-      ? VOICE_INSTRUMENT_NAMES[voiceId]
-      : track.name;
-    const displayName = voiceId ? VOICE_DISPLAY_NAMES[voiceId] : track.name;
-    const programNumber = resolveProgram(track.program, timbre);
-
-    const events: AbsoluteEvent[] = [
-      {
-        tick: 0,
-        priority: 0,
-        event: {
-          type: "trackName",
-          text: toMidiString(displayName),
-          meta: true,
-        },
-      },
-      {
-        tick: 0,
-        priority: 0,
-        event: {
-          type: "instrumentName",
-          text: toMidiString(instrumentName),
-          meta: true,
-        },
-      },
-      {
-        tick: 0,
-        priority: 1,
-        event: { type: "programChange", channel, programNumber },
-      },
-    ];
-
-    track.notes.forEach((note) => {
-      appendNoteEvents(events, note, channel);
+function buildNamedTrack(
+  track: MusicalTrack,
+  endTick: number,
+  channel: number,
+  programNumber: number,
+  instrumentName?: string,
+): MidiEvent[] {
+  const displayName = track.kind === "satb" ? VOICE_DISPLAY_NAMES[track.id] : track.name;
+  const events: AbsoluteEvent[] = [
+    {
+      tick: 0,
+      priority: 0,
+      event: { type: "trackName", text: toMidiString(displayName), meta: true },
+    },
+  ];
+  if (instrumentName !== undefined) {
+    events.push({
+      tick: 0,
+      priority: 0,
+      event: { type: "instrumentName", text: toMidiString(instrumentName), meta: true },
     });
-
-    return toDeltaEvents(events, project.lengthTicks);
+  }
+  events.push({
+    tick: 0,
+    priority: 1,
+    event: { type: "programChange", channel, programNumber },
   });
+  track.notes.forEach((note) => appendNoteEvents(events, note, channel));
+  return toDeltaEvents(events, endTick);
 }
 
 function buildPianoGrandStaffTracks(
@@ -306,38 +297,9 @@ function buildPianoGrandStaffTracks(
     appendNoteEvents(lowerEvents, note, 0);
   });
 
-  const auxTracks = project.auxiliaryTracks.map((track, index) => {
-    const channel = 1 + (index % 15);
-    const events: AbsoluteEvent[] = [
-      {
-        tick: 0,
-        priority: 0,
-        event: {
-          type: "trackName",
-          text: toMidiString(track.name),
-          meta: true,
-        },
-      },
-      {
-        tick: 0,
-        priority: 1,
-        event: {
-          type: "programChange",
-          channel,
-          programNumber: track.program,
-        },
-      },
-    ];
-    track.notes.forEach((note) => {
-      appendNoteEvents(events, note, channel);
-    });
-    return toDeltaEvents(events, project.lengthTicks);
-  });
-
   return [
     toDeltaEvents(upperEvents, project.lengthTicks),
     toDeltaEvents(lowerEvents, project.lengthTicks),
-    ...auxTracks,
   ];
 }
 
@@ -363,42 +325,13 @@ function buildSingleTrack(
     },
   ];
 
-  const satbTracks = getAllPlayableTracks(project);
-  satbTracks.forEach((track) => {
+  project.satbTracks.forEach((track) => {
     track.notes.forEach((note) => {
       appendNoteEvents(events, note, 0);
     });
   });
 
-  const auxTracks = project.auxiliaryTracks.map((track, index) => {
-    const channel = 1 + (index % 15);
-    const auxEvents: AbsoluteEvent[] = [
-      {
-        tick: 0,
-        priority: 0,
-        event: {
-          type: "trackName",
-          text: toMidiString(track.name),
-          meta: true,
-        },
-      },
-      {
-        tick: 0,
-        priority: 1,
-        event: {
-          type: "programChange",
-          channel,
-          programNumber: track.program,
-        },
-      },
-    ];
-    track.notes.forEach((note) => {
-      appendNoteEvents(auxEvents, note, channel);
-    });
-    return toDeltaEvents(auxEvents, project.lengthTicks);
-  });
-
-  return [toDeltaEvents(events, project.lengthTicks), ...auxTracks];
+  return [toDeltaEvents(events, project.lengthTicks)];
 }
 
 function chordTrack(project: ProjectDocument) {
@@ -439,19 +372,41 @@ export function buildMidi(
   project: ProjectDocument,
   options?: boolean | MidiExportOptions,
 ) {
-  const resolvedOptions: Required<MidiExportOptions> =
+  const resolvedOptions =
     typeof options === "boolean"
       ? { ...DEFAULT_MIDI_EXPORT_OPTIONS, includeChords: options }
       : { ...DEFAULT_MIDI_EXPORT_OPTIONS, ...options };
 
+  const layout = resolvedOptions.layout ?? DEFAULT_MIDI_EXPORT_OPTIONS.layout;
+  const timbre = resolvedOptions.timbre ?? DEFAULT_MIDI_EXPORT_OPTIONS.timbre;
+  const separate = layout === "satb-separate";
   const contentTracks =
-    resolvedOptions.layout === "single-track"
-      ? buildSingleTrack(project, resolvedOptions.timbre)
-      : resolvedOptions.layout === "piano-grand-staff"
-        ? buildPianoGrandStaffTracks(project, resolvedOptions.timbre)
-        : buildSatbSeparateTracks(project, resolvedOptions.timbre);
+    layout === "single-track"
+      ? buildSingleTrack(project, timbre)
+      : layout === "piano-grand-staff"
+        ? buildPianoGrandStaffTracks(project, timbre)
+        : project.satbTracks.map((track, index) =>
+            buildNamedTrack(
+              track,
+              project.lengthTicks,
+              melodicMidiChannel(index),
+              resolveProgram(track.program, timbre),
+              VOICE_INSTRUMENT_NAMES[track.id],
+            ),
+          );
 
-  const tracks = [globalTrack(project), ...contentTracks];
+  const auxiliaryChannelOffset = separate ? project.satbTracks.length : 1;
+  const auxiliaryTracks = getExportAuxiliaryTracks(project, resolvedOptions).map(
+    (track, index) =>
+      buildNamedTrack(
+        track,
+        project.lengthTicks,
+        melodicMidiChannel(auxiliaryChannelOffset + index),
+        separate ? resolveProgram(track.program, timbre) : track.program,
+        separate ? track.name : undefined,
+      ),
+  );
+  const tracks = [globalTrack(project), ...contentTracks, ...auxiliaryTracks];
 
   if (resolvedOptions.includeChords && project.chordTrack.regions.length > 0)
     tracks.push(chordTrack(project));

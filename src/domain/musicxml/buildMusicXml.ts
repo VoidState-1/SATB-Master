@@ -1,8 +1,17 @@
 import { buildScorePreviewModel } from "../notation/buildScorePreviewModel";
-import type { ScoreEvent, ScoreNoteEvent, ScoreRestEvent } from "../notation/types";
+import type {
+  NotationDuration,
+  ScoreAuxiliaryPitchEntry,
+  ScoreAuxiliaryStaff,
+  ScoreEvent,
+  ScoreMeasure,
+  ScoreRestEvent,
+  ScoreStaff,
+} from "../notation/types";
+import { getExportAuxiliaryTracks, melodicMidiChannel } from "../exportTracks";
 import { formatChordRegion } from "../chords";
 import { keySignatureFifths } from "../pitch";
-import type { ProjectDocument, VoiceId } from "../project";
+import type { ProjectDocument, TempoEvent, VoiceId } from "../project";
 import {
   DEFAULT_MUSICXML_EXPORT_OPTIONS,
   type MusicXmlExportOptions,
@@ -39,13 +48,18 @@ function durationTypeToMusicXml(value: string): string {
 }
 
 function formatNoteEventXml(
-  event: ScoreNoteEvent,
+  event: ScoreAuxiliaryPitchEntry,
+  duration: NotationDuration,
   voiceNumber: number,
-  staffNumber: number,
-  stemDirection: "up" | "down",
+  { staffNumber, stemDirection, chord }: {
+    staffNumber?: number;
+    stemDirection?: "up" | "down";
+    chord?: boolean;
+  },
 ): string {
   const lines: string[] = [];
   lines.push("      <note>");
+  if (chord) lines.push("        <chord/>");
   lines.push("        <pitch>");
   lines.push(`          <step>${event.pitch.step}</step>`);
   if (event.pitch.alter !== 0) {
@@ -53,7 +67,7 @@ function formatNoteEventXml(
   }
   lines.push(`          <octave>${event.pitch.octave}</octave>`);
   lines.push("        </pitch>");
-  lines.push(`        <duration>${event.duration.ticks}</duration>`);
+  lines.push(`        <duration>${duration.ticks}</duration>`);
 
   if (event.tieFromPrevious) {
     lines.push('        <tie type="stop"/>');
@@ -63,14 +77,14 @@ function formatNoteEventXml(
   }
 
   lines.push(`        <voice>${voiceNumber}</voice>`);
-  lines.push(`        <type>${durationTypeToMusicXml(event.duration.value)}</type>`);
+  lines.push(`        <type>${durationTypeToMusicXml(duration.value)}</type>`);
 
-  for (let i = 0; i < event.duration.dots; i++) {
+  for (let i = 0; i < duration.dots; i++) {
     lines.push("        <dot/>");
   }
 
-  lines.push(`        <stem>${stemDirection}</stem>`);
-  lines.push(`        <staff>${staffNumber}</staff>`);
+  if (stemDirection) lines.push(`        <stem>${stemDirection}</stem>`);
+  if (staffNumber !== undefined) lines.push(`        <staff>${staffNumber}</staff>`);
 
   if (event.tieFromPrevious || event.tieToNext) {
     lines.push("        <notations>");
@@ -90,7 +104,7 @@ function formatNoteEventXml(
 function formatRestEventXml(
   event: ScoreRestEvent,
   voiceNumber: number,
-  staffNumber: number,
+  staffNumber?: number,
 ): string {
   const lines: string[] = [];
   lines.push("      <note>");
@@ -101,7 +115,7 @@ function formatRestEventXml(
   for (let i = 0; i < event.duration.dots; i++) {
     lines.push("        <dot/>");
   }
-  lines.push(`        <staff>${staffNumber}</staff>`);
+  if (staffNumber !== undefined) lines.push(`        <staff>${staffNumber}</staff>`);
   lines.push("      </note>");
   return lines.join("\n");
 }
@@ -113,12 +127,114 @@ function formatEventXml(
   stemDirection: "up" | "down",
 ): string {
   if (event.kind === "note") {
-    return formatNoteEventXml(event, voiceNumber, staffNumber, stemDirection);
+    return formatNoteEventXml(event, event.duration, voiceNumber, { staffNumber, stemDirection });
   }
   if (event.kind === "rest") {
     return formatRestEventXml(event, voiceNumber, staffNumber);
   }
   throw new Error("检测到未识别的乐谱事件类型，无法导出。");
+}
+
+function appendMeasureAttributes(
+  lines: string[],
+  measure: ScoreMeasure,
+  previous: ScoreMeasure | undefined,
+  ppq: number,
+  clefs: readonly ScoreStaff[],
+) {
+  const keyChanged =
+    !previous ||
+    measure.key.tonic.step !== previous.key.tonic.step ||
+    measure.key.tonic.alter !== previous.key.tonic.alter ||
+    measure.key.mode !== previous.key.mode;
+  const timeChanged =
+    !previous ||
+    measure.numerator !== previous.numerator ||
+    measure.denominator !== previous.denominator;
+  if (!keyChanged && !timeChanged) return;
+
+  lines.push("      <attributes>");
+  if (!previous) lines.push(`        <divisions>${ppq}</divisions>`);
+  if (keyChanged) {
+    lines.push("        <key>");
+    lines.push(`          <fifths>${keySignatureFifths(measure.key)}</fifths>`);
+    lines.push(`          <mode>${measure.key.mode}</mode>`);
+    lines.push("        </key>");
+  }
+  if (timeChanged) {
+    lines.push("        <time>");
+    lines.push(`          <beats>${measure.numerator}</beats>`);
+    lines.push(`          <beat-type>${measure.denominator}</beat-type>`);
+    lines.push("        </time>");
+  }
+  if (!previous) {
+    const multiStaff = clefs.length > 1;
+    if (multiStaff) lines.push(`        <staves>${clefs.length}</staves>`);
+    clefs.forEach((clef, index) => {
+      lines.push(multiStaff ? `        <clef number="${index + 1}">` : "        <clef>");
+      lines.push(`          <sign>${clef === "bass" ? "F" : "G"}</sign>`);
+      lines.push(`          <line>${clef === "bass" ? 4 : 2}</line>`);
+      lines.push("        </clef>");
+    });
+  }
+  lines.push("      </attributes>");
+}
+
+function appendTempoDirections(
+  lines: string[],
+  measure: ScoreMeasure,
+  isFirst: boolean,
+  tempos: readonly TempoEvent[],
+) {
+  const inMeasure = tempos.filter(
+    ({ tick }) => tick >= measure.fromTick && tick < measure.toTick,
+  );
+  const directions = isFirst && inMeasure.length === 0
+    ? [{ tick: measure.fromTick, bpm: tempos[0]?.bpm ?? 120 }]
+    : inMeasure;
+  directions.forEach(({ tick, bpm }) => {
+    lines.push('      <direction placement="above">');
+    lines.push("        <direction-type>");
+    lines.push('          <metronome parentheses="no">');
+    lines.push("            <beat-unit>quarter</beat-unit>");
+    lines.push(`            <per-minute>${bpm}</per-minute>`);
+    lines.push("          </metronome>");
+    lines.push("        </direction-type>");
+    if (tick > measure.fromTick) {
+      lines.push(`        <offset sound="yes">${tick - measure.fromTick}</offset>`);
+    }
+    lines.push(`        <sound tempo="${bpm}"/>`);
+    lines.push("      </direction>");
+  });
+}
+
+function appendAuxiliaryStaff(
+  lines: string[],
+  staff: ScoreAuxiliaryStaff,
+  measureDuration: number,
+) {
+  staff.lanes.forEach((lane, index) => {
+    if (index > 0) {
+      lines.push("      <backup>");
+      lines.push(`        <duration>${measureDuration}</duration>`);
+      lines.push("      </backup>");
+    }
+    const voiceNumber = lane.laneIndex + 1;
+    for (const event of lane.events) {
+      if (event.kind === "rest") {
+        lines.push(formatRestEventXml(event, voiceNumber));
+      } else if (event.kind === "chord") {
+        event.notes.forEach((note, noteIndex) => {
+          lines.push(formatNoteEventXml(note, event.duration, voiceNumber, {
+            chord: noteIndex > 0,
+            stemDirection: lane.stemDirection,
+          }));
+        });
+      } else {
+        throw new Error("检测到未识别的乐谱事件类型，无法导出。");
+      }
+    }
+  });
 }
 
 function getAnalysisLabel(
@@ -152,17 +268,38 @@ export function buildMusicXml(
     ...userOptions,
   };
 
-  const scoreModel = buildScorePreviewModel(project);
+  const auxiliaryTracks = getExportAuxiliaryTracks(project, options);
+  const includedAuxiliaryTrackIds = auxiliaryTracks.map((track) => track.id);
+  const scoreModel = buildScorePreviewModel(project, { includedAuxiliaryTrackIds });
 
-  // 防护：如果存在无法精确转换的节奏音符，抛出明确错误避免静默数据丢失
-  const unsupportedWarning = scoreModel.warnings.find(
-    (w) => w.code === "unsupported-rhythm",
+  // 避免导出时静默丢弃无法记谱的片段。
+  const unsupportedRhythm = scoreModel.warnings.find(
+    (warning) => warning.code === "unsupported-rhythm",
   );
-  if (unsupportedWarning) {
+  if (unsupportedRhythm) {
+    const track = auxiliaryTracks.find(({ id }) => id === unsupportedRhythm.trackId);
+    const location = track ? `额外声部「${track.name}」在` : "在";
+    const remedy = track ? "请在导出选项中取消勾选该声部，或将音符对齐到网格时值。" : "请先将音符对齐到网格时值。";
     throw new Error(
-      `无法导出 MusicXML：在 Tick ${unsupportedWarning.fromTick} 处检测到非标准节奏音符，请先将音符对齐到网格时值。`,
+      `无法导出 MusicXML：${location} Tick ${unsupportedRhythm.fromTick} 处检测到非标准节奏音符。${remedy}`,
     );
   }
+  const omittedOverlap = scoreModel.warnings.find(
+    (warning) => warning.code === "invalid-overlap" && warning.trackId !== undefined,
+  );
+  if (omittedOverlap) {
+    const track = auxiliaryTracks.find(({ id }) => id === omittedOverlap.trackId);
+    throw new Error(
+      `无法导出 MusicXML：额外声部「${track?.name ?? omittedOverlap.trackId}」在 Tick ${omittedOverlap.fromTick} 处超出记谱声部上限。请在导出选项中取消勾选该声部，或将重叠音符拆到多条额外声部。`,
+    );
+  }
+
+  const satbPartCount = options.layout === "grand-staff" || options.layout === "single-staff" ? 1 : 4;
+  const auxiliaryParts = auxiliaryTracks.map((track, index) => ({
+    track,
+    id: `P${satbPartCount + index + 1}`,
+    channel: melodicMidiChannel(satbPartCount + index) + 1,
+  }));
 
   const title = project.title?.trim() || "SATB Score";
   const composer = project.author?.trim() || "SATB Master";
@@ -190,8 +327,8 @@ export function buildMusicXml(
   xmlLines.push("  </identification>");
 
   // Part List
-  if (options.layout === "grand-staff" || options.layout === "single-staff") {
-    xmlLines.push("  <part-list>");
+  xmlLines.push("  <part-list>");
+  if (satbPartCount === 1) {
     xmlLines.push('    <score-part id="P1">');
     xmlLines.push(
       options.layout === "single-staff"
@@ -207,10 +344,8 @@ export function buildMusicXml(
     xmlLines.push("        <midi-program>1</midi-program>");
     xmlLines.push("      </midi-instrument>");
     xmlLines.push("    </score-part>");
-    xmlLines.push("  </part-list>");
   } else {
     // SATB Separate: 按照 MusicXML 4.0 DTD，group-name 必须在 group-symbol 前面
-    xmlLines.push("  <part-list>");
     xmlLines.push('    <part-group type="start" number="1">');
     xmlLines.push("      <group-name>Choir</group-name>");
     xmlLines.push("      <group-symbol>bracket</group-symbol>");
@@ -236,8 +371,24 @@ export function buildMusicXml(
       xmlLines.push("    </score-part>");
     }
     xmlLines.push('    <part-group type="stop" number="1"/>');
-    xmlLines.push("  </part-list>");
   }
+
+  for (const { track, id, channel } of auxiliaryParts) {
+    const instrumentId = `${id}-I1`;
+    const name = xmlEscape(track.name);
+    xmlLines.push(`    <score-part id="${id}">`);
+    xmlLines.push(`      <part-name>${name}</part-name>`);
+    xmlLines.push(`      <part-abbreviation>${xmlEscape(track.shortName)}</part-abbreviation>`);
+    xmlLines.push(`      <score-instrument id="${instrumentId}">`);
+    xmlLines.push(`        <instrument-name>${name}</instrument-name>`);
+    xmlLines.push("      </score-instrument>");
+    xmlLines.push(`      <midi-instrument id="${instrumentId}">`);
+    xmlLines.push(`        <midi-channel>${channel}</midi-channel>`);
+    xmlLines.push(`        <midi-program>${track.program + 1}</midi-program>`);
+    xmlLines.push("      </midi-instrument>");
+    xmlLines.push("    </score-part>");
+  }
+  xmlLines.push("  </part-list>");
 
   // Pre-sort all chords and tempo events
   const allChords = [...project.chordTrack.regions].sort(
@@ -256,75 +407,8 @@ export function buildMusicXml(
         measureIndex > 0 ? scoreModel.measures[measureIndex - 1] : undefined;
       xmlLines.push(`    <measure number="${measure.number}">`);
 
-      const isFirst = measureIndex === 0;
-      const keyChanged =
-        !prevMeasure ||
-        measure.key.tonic.step !== prevMeasure.key.tonic.step ||
-        measure.key.tonic.alter !== prevMeasure.key.tonic.alter ||
-        measure.key.mode !== prevMeasure.key.mode;
-      const timeChanged =
-        !prevMeasure ||
-        measure.numerator !== prevMeasure.numerator ||
-        measure.denominator !== prevMeasure.denominator;
-
-      if (isFirst || keyChanged || timeChanged) {
-        xmlLines.push("      <attributes>");
-        if (isFirst) {
-          xmlLines.push(`        <divisions>${project.ppq}</divisions>`);
-        }
-        if (isFirst || keyChanged) {
-          xmlLines.push("        <key>");
-          xmlLines.push(`          <fifths>${keySignatureFifths(measure.key)}</fifths>`);
-          xmlLines.push(`          <mode>${measure.key.mode}</mode>`);
-          xmlLines.push("        </key>");
-        }
-        if (isFirst || timeChanged) {
-          xmlLines.push("        <time>");
-          xmlLines.push(`          <beats>${measure.numerator}</beats>`);
-          xmlLines.push(`          <beat-type>${measure.denominator}</beat-type>`);
-          xmlLines.push("        </time>");
-        }
-        if (isFirst) {
-          xmlLines.push("        <clef>");
-          xmlLines.push("          <sign>G</sign>");
-          xmlLines.push("          <line>2</line>");
-          xmlLines.push("        </clef>");
-        }
-        xmlLines.push("      </attributes>");
-      }
-
-      // Tempo Events
-      const temposInMeasure = allTempos.filter(
-        (t) => t.tick >= measure.fromTick && t.tick < measure.toTick,
-      );
-      if (isFirst && temposInMeasure.length === 0) {
-        const defaultBpm = allTempos[0]?.bpm ?? 120;
-        xmlLines.push('      <direction placement="above">');
-        xmlLines.push("        <direction-type>");
-        xmlLines.push('          <metronome parentheses="no">');
-        xmlLines.push("            <beat-unit>quarter</beat-unit>");
-        xmlLines.push(`            <per-minute>${defaultBpm}</per-minute>`);
-        xmlLines.push("          </metronome>");
-        xmlLines.push("        </direction-type>");
-        xmlLines.push(`        <sound tempo="${defaultBpm}"/>`);
-        xmlLines.push("      </direction>");
-      } else {
-        temposInMeasure.forEach((tempo) => {
-          const offsetTicks = tempo.tick - measure.fromTick;
-          xmlLines.push('      <direction placement="above">');
-          xmlLines.push("        <direction-type>");
-          xmlLines.push('          <metronome parentheses="no">');
-          xmlLines.push("            <beat-unit>quarter</beat-unit>");
-          xmlLines.push(`            <per-minute>${tempo.bpm}</per-minute>`);
-          xmlLines.push("          </metronome>");
-          xmlLines.push("        </direction-type>");
-          xmlLines.push(`        <sound tempo="${tempo.bpm}"/>`);
-          if (offsetTicks > 0) {
-            xmlLines.push(`        <offset>${offsetTicks}</offset>`);
-          }
-          xmlLines.push("      </direction>");
-        });
-      }
+      appendMeasureAttributes(xmlLines, measure, prevMeasure, project.ppq, ["treble"]);
+      appendTempoDirections(xmlLines, measure, measureIndex === 0, allTempos);
 
       // Chords on Voice 1 (Above)
       const chordsInMeasure = allChords.filter(
@@ -415,80 +499,8 @@ export function buildMusicXml(
         measureIndex > 0 ? scoreModel.measures[measureIndex - 1] : undefined;
       xmlLines.push(`    <measure number="${measure.number}">`);
 
-      const isFirst = measureIndex === 0;
-      const keyChanged =
-        !prevMeasure ||
-        measure.key.tonic.step !== prevMeasure.key.tonic.step ||
-        measure.key.tonic.alter !== prevMeasure.key.tonic.alter ||
-        measure.key.mode !== prevMeasure.key.mode;
-      const timeChanged =
-        !prevMeasure ||
-        measure.numerator !== prevMeasure.numerator ||
-        measure.denominator !== prevMeasure.denominator;
-
-      if (isFirst || keyChanged || timeChanged) {
-        xmlLines.push("      <attributes>");
-        if (isFirst) {
-          xmlLines.push(`        <divisions>${project.ppq}</divisions>`);
-        }
-        if (isFirst || keyChanged) {
-          xmlLines.push("        <key>");
-          xmlLines.push(`          <fifths>${keySignatureFifths(measure.key)}</fifths>`);
-          xmlLines.push(`          <mode>${measure.key.mode}</mode>`);
-          xmlLines.push("        </key>");
-        }
-        if (isFirst || timeChanged) {
-          xmlLines.push("        <time>");
-          xmlLines.push(`          <beats>${measure.numerator}</beats>`);
-          xmlLines.push(`          <beat-type>${measure.denominator}</beat-type>`);
-          xmlLines.push("        </time>");
-        }
-        if (isFirst) {
-          xmlLines.push("        <staves>2</staves>");
-          xmlLines.push('        <clef number="1">');
-          xmlLines.push("          <sign>G</sign>");
-          xmlLines.push("          <line>2</line>");
-          xmlLines.push("        </clef>");
-          xmlLines.push('        <clef number="2">');
-          xmlLines.push("          <sign>F</sign>");
-          xmlLines.push("          <line>4</line>");
-          xmlLines.push("        </clef>");
-        }
-        xmlLines.push("      </attributes>");
-      }
-
-      // Tempo Events
-      const temposInMeasure = allTempos.filter(
-        (t) => t.tick >= measure.fromTick && t.tick < measure.toTick,
-      );
-      if (isFirst && temposInMeasure.length === 0) {
-        const defaultBpm = allTempos[0]?.bpm ?? 120;
-        xmlLines.push('      <direction placement="above">');
-        xmlLines.push("        <direction-type>");
-        xmlLines.push('          <metronome parentheses="no">');
-        xmlLines.push("            <beat-unit>quarter</beat-unit>");
-        xmlLines.push(`            <per-minute>${defaultBpm}</per-minute>`);
-        xmlLines.push("          </metronome>");
-        xmlLines.push("        </direction-type>");
-        xmlLines.push(`        <sound tempo="${defaultBpm}"/>`);
-        xmlLines.push("      </direction>");
-      } else {
-        temposInMeasure.forEach((tempo) => {
-          const offsetTicks = tempo.tick - measure.fromTick;
-          xmlLines.push('      <direction placement="above">');
-          xmlLines.push("        <direction-type>");
-          xmlLines.push('          <metronome parentheses="no">');
-          xmlLines.push("            <beat-unit>quarter</beat-unit>");
-          xmlLines.push(`            <per-minute>${tempo.bpm}</per-minute>`);
-          xmlLines.push("          </metronome>");
-          xmlLines.push("        </direction-type>");
-          xmlLines.push(`        <sound tempo="${tempo.bpm}"/>`);
-          if (offsetTicks > 0) {
-            xmlLines.push(`        <offset>${offsetTicks}</offset>`);
-          }
-          xmlLines.push("      </direction>");
-        });
-      }
+      appendMeasureAttributes(xmlLines, measure, prevMeasure, project.ppq, ["treble", "bass"]);
+      appendTempoDirections(xmlLines, measure, measureIndex === 0, allTempos);
 
       // Chord Annotations on Staff 1 (Above Voice 1)
       const chordsInMeasure = allChords.filter(
@@ -576,93 +588,23 @@ export function buildMusicXml(
     const voiceConfigs: Array<{
       partId: string;
       voiceId: VoiceId;
-      clefSign: string;
-      clefLine: number;
+      clef: ScoreStaff;
     }> = [
-      { partId: "P1", voiceId: "soprano", clefSign: "G", clefLine: 2 },
-      { partId: "P2", voiceId: "alto", clefSign: "G", clefLine: 2 },
-      { partId: "P3", voiceId: "tenor", clefSign: "F", clefLine: 4 },
-      { partId: "P4", voiceId: "bass", clefSign: "F", clefLine: 4 },
+      { partId: "P1", voiceId: "soprano", clef: "treble" },
+      { partId: "P2", voiceId: "alto", clef: "treble" },
+      { partId: "P3", voiceId: "tenor", clef: "bass" },
+      { partId: "P4", voiceId: "bass", clef: "bass" },
     ];
 
-    voiceConfigs.forEach(({ partId, voiceId, clefSign, clefLine }) => {
+    voiceConfigs.forEach(({ partId, voiceId, clef }) => {
       xmlLines.push(`  <part id="${partId}">`);
       scoreModel.measures.forEach((measure, measureIndex) => {
         const prevMeasure =
           measureIndex > 0 ? scoreModel.measures[measureIndex - 1] : undefined;
         xmlLines.push(`    <measure number="${measure.number}">`);
 
-        const isFirst = measureIndex === 0;
-        const keyChanged =
-          !prevMeasure ||
-          measure.key.tonic.step !== prevMeasure.key.tonic.step ||
-          measure.key.tonic.alter !== prevMeasure.key.tonic.alter ||
-          measure.key.mode !== prevMeasure.key.mode;
-        const timeChanged =
-          !prevMeasure ||
-          measure.numerator !== prevMeasure.numerator ||
-          measure.denominator !== prevMeasure.denominator;
-
-        if (isFirst || keyChanged || timeChanged) {
-          xmlLines.push("      <attributes>");
-          if (isFirst) {
-            xmlLines.push(`        <divisions>${project.ppq}</divisions>`);
-          }
-          if (isFirst || keyChanged) {
-            xmlLines.push("        <key>");
-            xmlLines.push(`          <fifths>${keySignatureFifths(measure.key)}</fifths>`);
-            xmlLines.push(`          <mode>${measure.key.mode}</mode>`);
-            xmlLines.push("        </key>");
-          }
-          if (isFirst || timeChanged) {
-            xmlLines.push("        <time>");
-            xmlLines.push(`          <beats>${measure.numerator}</beats>`);
-            xmlLines.push(`          <beat-type>${measure.denominator}</beat-type>`);
-            xmlLines.push("        </time>");
-          }
-          if (isFirst) {
-            xmlLines.push("        <clef>");
-            xmlLines.push(`          <sign>${clefSign}</sign>`);
-            xmlLines.push(`          <line>${clefLine}</line>`);
-            xmlLines.push("        </clef>");
-          }
-          xmlLines.push("      </attributes>");
-        }
-
-        // Tempo events on Part 1 (Soprano)
-        if (partId === "P1") {
-          const temposInMeasure = allTempos.filter(
-            (t) => t.tick >= measure.fromTick && t.tick < measure.toTick,
-          );
-          if (isFirst && temposInMeasure.length === 0) {
-            const defaultBpm = allTempos[0]?.bpm ?? 120;
-            xmlLines.push('      <direction placement="above">');
-            xmlLines.push("        <direction-type>");
-            xmlLines.push('          <metronome parentheses="no">');
-            xmlLines.push("            <beat-unit>quarter</beat-unit>");
-            xmlLines.push(`            <per-minute>${defaultBpm}</per-minute>`);
-            xmlLines.push("          </metronome>");
-            xmlLines.push("        </direction-type>");
-            xmlLines.push(`        <sound tempo="${defaultBpm}"/>`);
-            xmlLines.push("      </direction>");
-          } else {
-            temposInMeasure.forEach((tempo) => {
-              const offsetTicks = tempo.tick - measure.fromTick;
-              xmlLines.push('      <direction placement="above">');
-              xmlLines.push("        <direction-type>");
-              xmlLines.push('          <metronome parentheses="no">');
-              xmlLines.push("            <beat-unit>quarter</beat-unit>");
-              xmlLines.push(`            <per-minute>${tempo.bpm}</per-minute>`);
-              xmlLines.push("          </metronome>");
-              xmlLines.push("        </direction-type>");
-              xmlLines.push(`        <sound tempo="${tempo.bpm}"/>`);
-              if (offsetTicks > 0) {
-                xmlLines.push(`        <offset>${offsetTicks}</offset>`);
-              }
-              xmlLines.push("      </direction>");
-            });
-          }
-        }
+        appendMeasureAttributes(xmlLines, measure, prevMeasure, project.ppq, [clef]);
+        if (partId === "P1") appendTempoDirections(xmlLines, measure, measureIndex === 0, allTempos);
 
         // Chords on Part 1 (Soprano)
         const chordsInMeasure = allChords.filter(
@@ -716,6 +658,24 @@ export function buildMusicXml(
       xmlLines.push("  </part>");
     });
   }
+
+  auxiliaryParts.forEach(({ id }, trackIndex) => {
+    xmlLines.push(`  <part id="${id}">`);
+    scoreModel.measures.forEach((measure, measureIndex) => {
+      const staff = measure.auxiliaryStaves[trackIndex];
+      xmlLines.push(`    <measure number="${measure.number}">`);
+      appendMeasureAttributes(
+        xmlLines,
+        measure,
+        scoreModel.measures[measureIndex - 1],
+        project.ppq,
+        [staff.clef],
+      );
+      appendAuxiliaryStaff(xmlLines, staff, measure.toTick - measure.fromTick);
+      xmlLines.push("    </measure>");
+    });
+    xmlLines.push("  </part>");
+  });
 
   xmlLines.push("</score-partwise>");
   return xmlLines.join("\n");
