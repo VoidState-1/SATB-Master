@@ -1,5 +1,6 @@
 import {
   keySignatureFifths,
+  toMidi,
   type KeyLike,
 } from "../pitch";
 import {
@@ -7,14 +8,18 @@ import {
   keyAtTick,
   type MeasureInfo,
 } from "../time";
-import { VOICE_ORDER } from "../project/voice";
+import { resolveAuxiliaryTrackColor, VOICE_ORDER } from "../project/voice";
 import type {
+  AuxiliaryTrack,
   NoteEvent,
   ProjectDocument,
   VoiceId,
 } from "../project";
 import { decomposeDuration } from "./rhythm";
 import type {
+  ScoreAuxiliaryEvent,
+  ScoreAuxiliaryLane,
+  ScoreAuxiliaryStaff,
   ScoreEvent,
   ScoreMeasure,
   ScorePreviewBuildOptions,
@@ -23,6 +28,20 @@ import type {
   ScorePreviewWarning,
   ScoreVoice,
 } from "./types";
+
+const MAX_AUXILIARY_LANES = 4;
+
+interface AuxiliarySegment {
+  fromTick: number;
+  toTick: number;
+  notes: NoteEvent[];
+}
+
+interface AuxiliaryStaffLayout {
+  track: AuxiliaryTrack;
+  clef: ScoreAuxiliaryStaff["clef"];
+  color: string;
+}
 
 export const SCORE_VOICE_LAYOUT = Object.freeze({
   soprano: Object.freeze({
@@ -164,9 +183,124 @@ function buildVoice(
   };
 }
 
+function addAuxiliaryDurationEvents(
+  events: ScoreAuxiliaryEvent[],
+  trackId: string,
+  fromTick: number,
+  toTick: number,
+  ppq: number,
+  warnings: ScorePreviewWarning[],
+  notes?: readonly NoteEvent[],
+) {
+  if (toTick <= fromTick) return;
+  const durations = decomposeDuration(ppq, toTick - fromTick);
+  if (!durations) {
+    const sourceNoteId = notes?.[0].id;
+    warning(warnings, {
+      code: "unsupported-rhythm",
+      message: "额外声部片段无法用二进制或附点时值精确表示。",
+      fromTick,
+      toTick,
+      trackId,
+      sourceNoteId,
+    });
+    events.push({ kind: "unsupported", fromTick, toTick, sourceNoteId });
+    return;
+  }
+
+  let cursor = fromTick;
+  durations.forEach((duration, index) => {
+    const next = cursor + duration.ticks;
+    if (notes) {
+      events.push({
+        kind: "chord",
+        trackId,
+        fromTick: cursor,
+        toTick: next,
+        notes: Object.freeze(notes.map((note) => ({
+          sourceNoteId: note.id,
+          pitch: note.pitch,
+          tieFromPrevious: cursor > note.startTick || index > 0,
+          tieToNext: next < note.startTick + note.durationTicks || index < durations.length - 1,
+        }))),
+        duration,
+      });
+    } else {
+      events.push({ kind: "rest", fromTick: cursor, toTick: next, duration });
+    }
+    cursor = next;
+  });
+}
+
+function buildAuxiliaryStaff(
+  { track, clef, color }: AuxiliaryStaffLayout,
+  measure: MeasureInfo,
+  ppq: number,
+  warnings: ScorePreviewWarning[],
+): ScoreAuxiliaryStaff {
+  const { startTick, endTick } = measure;
+  const segments = new Map<string, AuxiliarySegment>();
+  for (const note of track.notes) {
+    const fromTick = Math.max(startTick, note.startTick);
+    const toTick = Math.min(endTick, note.startTick + note.durationTicks);
+    if (fromTick >= toTick) continue;
+    const key = `${fromTick}:${toTick}`;
+    const segment = segments.get(key);
+    if (segment) segment.notes.push(note);
+    else segments.set(key, { fromTick, toTick, notes: [note] });
+  }
+
+  const lanes: { cursor: number; events: ScoreAuxiliaryEvent[] }[] = [
+    { cursor: startTick, events: [] },
+  ];
+  const orderedSegments = [...segments.values()].sort(
+    (left, right) => left.fromTick - right.fromTick || left.toTick - right.toTick,
+  );
+  for (const { fromTick, toTick, notes } of orderedSegments) {
+    notes.sort((left, right) => toMidi(left.pitch) - toMidi(right.pitch) || left.id.localeCompare(right.id));
+    let lane = lanes.find((candidate) => candidate.cursor <= fromTick);
+    if (!lane) {
+      if (lanes.length === MAX_AUXILIARY_LANES) {
+        warning(warnings, {
+          code: "invalid-overlap",
+          message: `额外声部「${track.name}」的重叠片段超过 4 条记谱声部，已跳过该片段。`,
+          fromTick,
+          toTick,
+          trackId: track.id,
+          sourceNoteId: notes[0].id,
+        });
+        continue;
+      }
+      lane = { cursor: startTick, events: [] };
+      lanes.push(lane);
+    }
+    addAuxiliaryDurationEvents(lane.events, track.id, lane.cursor, fromTick, ppq, warnings);
+    addAuxiliaryDurationEvents(lane.events, track.id, fromTick, toTick, ppq, warnings, notes);
+    lane.cursor = toTick;
+  }
+
+  return {
+    trackId: track.id,
+    name: track.name,
+    shortName: track.shortName,
+    color,
+    clef,
+    lanes: Object.freeze(lanes.map<ScoreAuxiliaryLane>(({ cursor, events }, laneIndex) => {
+      addAuxiliaryDurationEvents(events, track.id, cursor, endTick, ppq, warnings);
+      return {
+        laneIndex,
+        stemDirection: lanes.length === 1 ? undefined : laneIndex % 2 === 0 ? "up" : "down",
+        events: Object.freeze(events),
+        totalTicks: endTick - startTick,
+      };
+    })),
+  };
+}
+
 function buildMeasure(
   project: ScorePreviewProject,
   measure: MeasureInfo,
+  auxiliaryLayouts: readonly AuxiliaryStaffLayout[],
   warnings: ScorePreviewWarning[],
 ): ScoreMeasure {
   const key = keyAtTick(project.keyEvents, measure.startTick);
@@ -206,6 +340,9 @@ function buildMeasure(
     key,
     keySignature,
     voices,
+    auxiliaryStaves: Object.freeze(auxiliaryLayouts.map((layout) =>
+      buildAuxiliaryStaff(layout, measure, project.ppq, warnings),
+    )),
   };
 }
 
@@ -214,23 +351,33 @@ export function buildScorePreviewModel(
   options: ScorePreviewBuildOptions = {},
 ): ScorePreviewModel {
   const warnings: ScorePreviewWarning[] = [];
+  const included = options.includedAuxiliaryTrackIds
+    ? new Set(options.includedAuxiliaryTrackIds)
+    : undefined;
+  const auxiliaryLayouts: AuxiliaryStaffLayout[] = [];
+  let omittedAuxiliaryTrackCount = 0;
+  let omittedAuxiliaryNoteCount = 0;
+  project.auxiliaryTracks.forEach((track, index) => {
+    if (included ? !included.has(track.id) : track.showInScorePreview !== true) {
+      omittedAuxiliaryTrackCount += 1;
+      omittedAuxiliaryNoteCount += track.notes.length;
+      return;
+    }
+    const pitches = track.notes.map((note) => toMidi(note.pitch)).sort((a, b) => a - b);
+    const median = pitches[Math.floor(pitches.length / 2)] ?? 60;
+    auxiliaryLayouts.push({
+      track,
+      clef: median >= 60 ? "treble" : "bass",
+      color: resolveAuxiliaryTrackColor(track, index),
+    });
+  });
   const measures = buildMeasures(project).map((measure) =>
-    buildMeasure(project, measure, warnings),
-  );
-  const omittedAuxiliaryTrackCount = project.auxiliaryTracks.length;
-  const omittedAuxiliaryNoteCount = project.auxiliaryTracks.reduce(
-    (total, track) => total + track.notes.length,
-    0,
+    buildMeasure(project, measure, auxiliaryLayouts, warnings),
   );
   if (omittedAuxiliaryTrackCount > 0) {
     warning(warnings, {
       code: "omitted-auxiliary",
-      message:
-        "已省略 " +
-        omittedAuxiliaryTrackCount +
-        " 条辅助轨（" +
-        omittedAuxiliaryNoteCount +
-        " 个音符）。",
+      message: `已隐藏 ${omittedAuxiliaryTrackCount} 条额外声部（${omittedAuxiliaryNoteCount} 个音符），可在工具栏中开启预览。`,
     });
   }
   return Object.freeze({
@@ -239,6 +386,7 @@ export function buildScorePreviewModel(
     projectLengthTicks: project.lengthTicks,
     measures: Object.freeze(measures),
     warnings: Object.freeze(warnings),
+    includedAuxiliaryTrackIds: Object.freeze(auxiliaryLayouts.map(({ track }) => track.id)),
     omittedAuxiliaryTrackCount,
     omittedAuxiliaryNoteCount,
   });

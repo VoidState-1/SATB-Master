@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildScorePreviewModel } from "../../domain/notation";
-import type {
-  ScorePreviewModel,
-  ScorePreviewWarning,
-} from "../../domain/notation";
+import type { ScorePreviewWarning } from "../../domain/notation";
 import type { ProjectDocument } from "../../domain/project";
 import {
   loadVexFlow,
@@ -77,9 +74,7 @@ export function ScorePreviewPane({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const noteClickRef = useRef(onSelectNote);
   noteClickRef.current = onSelectNote;
-  const noteRefsRef = useRef<
-    Array<ScoreRenderedNoteRef & { isActive?: boolean; isSelected?: boolean }>
-  >([]);
+  const [noteRefs, setNoteRefs] = useState<readonly ScoreRenderedNoteRef[]>([]);
 
   const model = useMemo(
     () => buildScorePreviewModel(project, { revision }),
@@ -132,6 +127,7 @@ export function ScorePreviewPane({
     let cleanup: (() => void) | undefined;
     setRenderState("loading");
     setRenderWarnings([]);
+    setNoteRefs([]);
     surface.replaceChildren();
 
     void loadVexFlow()
@@ -152,34 +148,7 @@ export function ScorePreviewPane({
           return;
         }
         cleanup = rendered.cleanup;
-        const noteRefs: Array<
-          ScoreRenderedNoteRef & { isActive?: boolean; isSelected?: boolean }
-        > = rendered.noteElementRefs.map((item) => ({
-          ...item,
-          isActive: undefined,
-          isSelected: undefined,
-        }));
-        noteRefsRef.current = noteRefs;
-
-        // 初始化发音高亮状态
-        for (let i = 0; i < noteRefs.length; i++) {
-          const item = noteRefs[i];
-          const isSounding =
-            isPlaying &&
-            highlightMode !== "none" &&
-            playheadTick >= item.fromTick &&
-            playheadTick < item.toTick;
-          item.isActive = isSounding;
-          item.element.dataset.active = isSounding ? "true" : "false";
-          item.element.classList.toggle("is-active", isSounding);
-
-          const isSelected = Boolean(
-            selectedNoteIds?.has(item.sourceNoteId),
-          );
-          item.isSelected = isSelected;
-          item.element.dataset.selected = isSelected ? "true" : "false";
-          item.element.classList.toggle("is-selected", isSelected);
-        }
+        setNoteRefs(rendered.noteElementRefs);
         setRenderWarnings(rendered.warnings);
         setRenderState("ready");
       })
@@ -199,7 +168,6 @@ export function ScorePreviewPane({
 
     return () => {
       active = false;
-      noteRefsRef.current = [];
       cleanup?.();
     };
   }, [
@@ -235,74 +203,38 @@ export function ScorePreviewPane({
       activeSystem.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
 
-    const noteRefs = noteRefsRef.current;
-    if (noteRefs.length > 0) {
-      for (let i = 0; i < noteRefs.length; i++) {
-        const item = noteRefs[i];
-        const isSounding =
-          isPlaying &&
-          highlightMode !== "none" &&
-          playheadTick >= item.fromTick &&
-          playheadTick < item.toTick;
-        if (item.isActive !== isSounding) {
-          item.isActive = isSounding;
-          item.element.dataset.active = isSounding ? "true" : "false";
-          item.element.classList.toggle("is-active", isSounding);
-        }
+    for (const item of noteRefs) {
+      const isSounding =
+        isPlaying &&
+        highlightMode !== "none" &&
+        playheadTick >= item.fromTick &&
+        playheadTick < item.toTick;
+      if (item.element.dataset.active !== String(isSounding)) {
+        item.element.dataset.active = String(isSounding);
+        item.element.classList.toggle("is-active", isSounding);
       }
-    } else {
-      const noteEls = surface.querySelectorAll<SVGElement>(".score-note");
-      noteEls.forEach((el) => {
-        const fromTick = Number(el.dataset.fromTick);
-        const toTick = Number(el.dataset.toTick);
-        const isSounding =
-          isPlaying &&
-          highlightMode !== "none" &&
-          Number.isFinite(fromTick) &&
-          Number.isFinite(toTick) &&
-          playheadTick >= fromTick &&
-          playheadTick < toTick;
-        el.dataset.active = isSounding ? "true" : "false";
-        el.classList.toggle("is-active", isSounding);
-      });
     }
   }, [
     followPlayhead,
     playheadTick,
     isPlaying,
     highlightMode,
-    model,
-    scale,
-    renderState,
+    noteRefs,
   ]);
 
   // 更新选中音符状态（与上方 MIDI 钢琴卷帘选择状态同步）
   useEffect(() => {
-    const surface = surfaceRef.current;
-    if (!surface) return;
-    const noteRefs = noteRefsRef.current;
-    if (noteRefs.length > 0) {
-      for (let i = 0; i < noteRefs.length; i++) {
-        const item = noteRefs[i];
-        const isSelected = Boolean(selectedNoteIds?.has(item.sourceNoteId));
-        if (item.isSelected !== isSelected) {
-          item.isSelected = isSelected;
-          item.element.dataset.selected = isSelected ? "true" : "false";
-          item.element.classList.toggle("is-selected", isSelected);
-        }
+    for (const item of noteRefs) {
+      const isSelected = Boolean(selectedNoteIds && (
+        item.sourceNoteIds?.some((id) => selectedNoteIds.has(id)) ??
+        selectedNoteIds.has(item.sourceNoteId)
+      ));
+      if (item.element.dataset.selected !== String(isSelected)) {
+        item.element.dataset.selected = String(isSelected);
+        item.element.classList.toggle("is-selected", isSelected);
       }
-    } else {
-      const noteEls = surface.querySelectorAll<SVGElement>(".score-note");
-      noteEls.forEach((el) => {
-        const sourceNoteId = el.dataset.sourceNoteId;
-        const isSelected = Boolean(
-          sourceNoteId && selectedNoteIds?.has(sourceNoteId),
-        );
-        el.dataset.selected = isSelected ? "true" : "false";
-        el.classList.toggle("is-selected", isSelected);
-      });
     }
-  }, [selectedNoteIds]);
+  }, [noteRefs, selectedNoteIds]);
 
   const combinedWarnings = [...model.warnings, ...renderWarnings];
 

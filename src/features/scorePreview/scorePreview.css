@@ -15,7 +15,7 @@
   height: min(820px, calc(100vh - 40px));
   min-height: 460px;
   display: grid;
-  grid-template-rows: 58px 46px auto minmax(0, 1fr);
+  grid-template-rows: 58px minmax(46px, auto) minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
@@ -138,6 +138,150 @@
   border-color: var(--border-focus);
 }
 
+.score-preview-aux-trigger,
+.score-preview-aux-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-control);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.score-preview-aux-trigger {
+  margin-left: 6px;
+}
+
+.score-preview-aux-trigger svg {
+  width: 13px;
+  height: 13px;
+}
+
+.score-preview-aux-trigger:hover,
+.score-preview-aux-trigger[aria-expanded="true"],
+.score-preview-aux-actions button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.score-preview-aux-actions button:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.score-preview-aux-trigger:focus-visible,
+.score-preview-aux-actions button:focus-visible,
+.score-preview-aux-row input:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.score-preview-aux-popover {
+  position: fixed;
+  z-index: 111;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(264px, calc(100vw - 16px));
+  max-height: 320px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--text-sm);
+  -webkit-app-region: no-drag;
+}
+
+.score-preview-aux-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.score-preview-aux-list {
+  overflow: auto;
+  min-height: 0;
+  padding: 4px;
+}
+
+.score-preview-aux-row {
+  display: grid;
+  grid-template-columns: auto 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.score-preview-aux-row:hover {
+  background: var(--bg-hover);
+}
+
+.score-preview-aux-row input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.score-preview-aux-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.score-preview-aux-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.score-preview-aux-count {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.score-preview-toolbar:has(.score-preview-aux-trigger) .score-preview-actions {
+  flex-wrap: wrap;
+}
+
+.bottom-panel-header:has(.score-preview-aux-trigger) {
+  height: auto;
+  flex-wrap: wrap;
+}
+
+.bottom-panel-header:has(.score-preview-aux-trigger) .bottom-panel-tabs {
+  height: 38px;
+}
+
+.bottom-panel-header:has(.score-preview-aux-trigger) .bottom-panel-context {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.score-preview-toolbar.compact:has(.score-preview-aux-trigger) {
+  min-height: 38px;
+  height: auto;
+  flex-flow: row wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
 .score-preview-warning {
   display: flex;
   align-items: baseline;
@@ -215,6 +359,24 @@
   overflow: visible;
 }
 
+.score-aux-note,
+.vf-score-aux-staff-label {
+  --score-aux-ink: oklch(from var(--score-aux-color) min(l, var(--score-aux-max-lightness, 0.62)) c h);
+}
+
+:root[data-theme="dark"] .score-preview-surface {
+  --score-aux-max-lightness: 0.56;
+}
+
+.vf-score-aux-staff-label rect {
+  fill: var(--score-aux-ink, var(--score-aux-color));
+}
+
+.vf-score-aux-staff-label text {
+  fill: currentColor;
+  font-family: var(--font-sans);
+}
+
 /* 符头高亮（发音或选中）：彩色模式按 SATB 声部色彩呈现，纯色模式使用主强调墨绿 */
 
 /* 不高亮模式：保持五线谱默认纯黑原色 */
@@ -276,8 +438,8 @@
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected .vf-notehead *,
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected [class*="notehead"],
 .score-preview-surface:not([data-highlight-mode="none"]):not([data-highlight-mode="monochrome"]) .score-note.is-selected [class*="notehead"] * {
-  fill: #276d59 !important;
-  color: #276d59 !important;
+  fill: var(--score-aux-ink, #276d59) !important;
+  color: var(--score-aux-ink, #276d59) !important;
 }
 
 /* Soprano (紫色) */

@@ -12,6 +12,11 @@ export {
 export type {
   NotationDuration,
   NotationDurationValue,
+  ScoreAuxiliaryChordEvent,
+  ScoreAuxiliaryEvent,
+  ScoreAuxiliaryLane,
+  ScoreAuxiliaryPitchEntry,
+  ScoreAuxiliaryStaff,
   ScoreEvent,
   ScoreMeasure,
   ScoreNoteEvent,

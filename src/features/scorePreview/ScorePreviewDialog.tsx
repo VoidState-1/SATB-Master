@@ -24,6 +24,8 @@ export interface ScorePreviewDialogProps {
   selectedNoteIds?: ReadonlySet<string>;
   onClose(): void;
   onSelectNote?(selection: ScoreNoteSelection): void;
+  onToggleAuxiliaryTrack?(trackId: string, show: boolean): void;
+  onSetAllAuxiliaryTracks?(show: boolean): void;
 }
 
 export function ScorePreviewDialog({
@@ -34,6 +36,8 @@ export function ScorePreviewDialog({
   selectedNoteIds,
   onClose,
   onSelectNote,
+  onToggleAuxiliaryTrack,
+  onSetAllAuxiliaryTracks,
 }: ScorePreviewDialogProps) {
   const [scale, setScale] = useState(1);
   const [followPlayhead, setFollowPlayhead] = useState(false);
@@ -59,10 +63,11 @@ export function ScorePreviewDialog({
 
   const canZoomIn = scale < SCALE_STEPS[SCALE_STEPS.length - 1];
   const canZoomOut = scale > SCALE_STEPS[0];
+  const shownAuxiliaryCount = project.auxiliaryTracks.filter((track) => track.showInScorePreview).length;
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       event.preventDefault();
       onClose();
     };
@@ -88,7 +93,10 @@ export function ScorePreviewDialog({
             <Music2 aria-hidden="true" />
             <div>
               <h2 id="score-preview-title">五线谱预览</h2>
-              <p>只读钢琴大谱表 · S/A 高音谱表 · T/B 低音谱表</p>
+              <p>
+                只读钢琴大谱表 · S/A 高音谱表 · T/B 低音谱表
+                {shownAuxiliaryCount > 0 ? ` · 含 ${shownAuxiliaryCount} 条额外声部` : ""}
+              </p>
             </div>
           </div>
           <IconButton label="关闭五线谱预览" icon={<X />} onClick={onClose} />
@@ -106,6 +114,9 @@ export function ScorePreviewDialog({
           onHighlightModeChange={setHighlightMode}
           measureCount={modelInfo.measureCount}
           revision={modelInfo.revision}
+          auxiliaryTracks={project.auxiliaryTracks}
+          onToggleAuxiliaryTrack={onToggleAuxiliaryTrack}
+          onSetAllAuxiliaryTracks={onSetAllAuxiliaryTracks}
         />
 
         <ScorePreviewPane
