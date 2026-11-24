@@ -108,15 +108,13 @@ npm run generate:assets
 14. [desktop-and-persistence.md](./desktop-and-persistence.md)：Electron 安全边界、IPC、工程保存和恢复。
 15. [testing-build-release.md](./testing-build-release.md)：验证矩阵、桌面 E2E、打包和发布检查。
 16. [score-text.md](./score-text.md)：面向脚本和 AI 的分块 SATB 简写、语义标注、独立参考答案及文本谱。
-17. [textbook-case-workflow.md](./textbook-case-workflow.md)：教材转写、基线冻结、AI 自主迭代闭环与人工仲裁验收的三阶段工作流。
-18. [audit-workspace.md](./audit-workspace.md)：可视化教材审计区、模型打包接口、原图/转写谱对照、人工意见往返与版本失效。
+17. [audit-workspace.md](./audit-workspace.md)：可视化教材审计区、模型打包接口、原图/转写谱对照、人工意见往返与版本失效。
 
 按任务也可以直接定位：
 
 | 要做的工作 | 先读 |
 | --- | --- |
 | 修改音符、和弦、锁定或撤销 | [data-model.md](./data-model.md)、[editor-and-state.md](./editor-and-state.md) |
-| 审计分析算法的系统性误判并修复 | [Gemini 外部审计与修复工作流](./analysis-audit-workflow.md) |
 | 新增或修正规则 | [harmony-engine.md](./harmony-engine.md) |
 | 维护规则查询、领域视图或算子 | [harmony-query.md](./harmony-query.md)、[harmony-engine.md](./harmony-engine.md) |
 | 维护规则状态或跨切片义务 | [harmony-rule-runtime.md](./harmony-rule-runtime.md) |
