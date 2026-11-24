@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import path from 'node:path'
@@ -113,7 +113,7 @@ function createWindow() {
     y: windowState.y,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
-    backgroundColor: '#f4f3ef',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#171a17' : '#ecece8',
     show: false,
     frame: false,
     autoHideMenuBar: true,

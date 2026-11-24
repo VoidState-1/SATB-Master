@@ -1,10 +1,328 @@
-﻿:root {
-  font-family: Inter, "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
-  color: #22241f;
-  background: #ecece8;
+﻿/* ==========================================================================
+   SATB Master Design Tokens & Global Surface Baseline
+   Palette: Warm Paper Desk (Light) / Warm Charcoal Studio (Dark)
+   Accent: Deep Sage-Pine (#276d59 / #2a7a62)
+   ========================================================================== */
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* --- Typography --- */
+  --font-sans: Inter, "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-mono: "Cascadia Mono", Consolas, "SFMono-Regular", monospace;
+
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+
+  /* --- Radii (Compact Workspace + Soft Dialogs) --- */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* --- Motion & Interaction --- */
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --disabled-opacity: 0.42;
+
+  /* --- Surfaces (Warm Paper Desk) --- */
+  --bg-app: #ecece8;
+  --bg-surface: #f6f6f2;
+  --bg-surface-2: #efefea;
+  --bg-surface-3: #e5e6e0;
+  --bg-elevated: #fbfbf9;
+  --bg-control: #ffffff;
+  --bg-hover: #e9ebe4;
+  --bg-active: #e0ece6;
+  --bg-sunken: #e4e5df;
+  --bg-backdrop: rgba(24, 27, 23, 0.44);
+  --bg-tooltip: #272b26;
+  --bg-readout: #252822;
+  --bg-code: #232722;
+
+  /* --- Borders --- */
+  --border-subtle: #e0e2db;
+  --border-default: #cfd1ca;
+  --border-strong: #b9bcb3;
+  --border-focus: #276d59;
+
+  /* --- Ink / Text (WCAG AA >= 4.5:1 on surface & control) --- */
+  --text-primary: #1f231d;
+  --text-secondary: #3f443b;
+  --text-muted: #565b51;
+  --text-faint: #63685e;
+  --text-inverse: #f5f6f1;
+  --text-on-accent: #ffffff;
+  --text-on-tooltip: #f5f6f1;
+  --text-on-tooltip-muted: #cfd3ca;
+  --text-code: #dfe8e2;
+
+  /* --- Brand Accent (Single Canonical Sage-Pine) --- */
+  --accent: #276d59;
+  --accent-hover: #1f5948;
+  --accent-active: #18483a;
+  --accent-soft: #e3efe9;
+  --accent-soft-hover: #d4e6dd;
+  --accent-border: #8eb2a3;
+  --accent-ink: #1c5444;
+  --accent-ring: rgba(39, 109, 89, 0.24);
+  --accent-subtle-highlight: rgba(39, 109, 89, 0.06);
+
+  /* --- Semantic Status --- */
+  --success: #247853;
+  --success-soft: #e3f1e9;
+  --success-border: #8ebaa1;
+  --success-ink: #1b5a3e;
+
+  --warning: #b06f10;
+  --warning-soft: #fbf0da;
+  --warning-border: #d9b676;
+  --warning-ink: #7a4a06;
+
+  --danger: #c03c32;
+  --danger-hover: #a53128;
+  --danger-soft: #fbe8e5;
+  --danger-border: #dfa29c;
+  --danger-ink: #8c2820;
+
+  --info: #3f6799;
+  --info-soft: #e7eef6;
+  --info-border: #9fb7d4;
+  --info-ink: #2b4a70;
+
+  /* --- SATB Voice Colors --- */
+  --voice-s: #7552a3;
+  --voice-a: #2d7a68;
+  --voice-t: #3f6fa8;
+  --voice-b: #87643d;
+
+  /* --- Chord & Cadence Track Tokens --- */
+  --chord-bg: #ece4cb;
+  --chord-border: #c5bfa8;
+  --chord-text: #443d2c;
+  --chord-hover-bg: #e2d5ae;
+  --chord-hover-border: #7d7047;
+  --chord-lock-stripe: rgba(70, 63, 46, 0.09);
+
+  --cadence-full-bg: #dfe9df;
+  --cadence-full-border: #739477;
+  --cadence-full-hover-bg: #d0ded0;
+  --cadence-full-hover-border: #5b795f;
+
+  --cadence-half-bg: #e5e1ef;
+  --cadence-half-border: #8176a3;
+  --cadence-half-hover-bg: #d7d0e4;
+  --cadence-half-hover-border: #695e8c;
+
+  --cadence-supp-bg: #e8e1d4;
+  --cadence-supp-border: #a4875d;
+  --cadence-supp-hover-bg: #ded5c5;
+  --cadence-supp-hover-border: #8a6e47;
+
+  --cadence-dec-bg: #f1dfd8;
+  --cadence-dec-border: #b87762;
+  --cadence-dec-hover-bg: #e8d0c7;
+  --cadence-dec-hover-border: #9f614f;
+
+  /* --- Piano Roll Canvas & Keys --- */
+  --roll-bg: #f7f7f3;
+  --roll-row-alt: #eeeee9;
+  --roll-line-octave: #c4c5be;
+  --roll-line-row: #dedfd9;
+  --roll-line-measure: #aeb0a8;
+  --roll-line-beat: #d6d7d1;
+  --roll-line-sub: #e8e8e3;
+  --roll-lock-fill: rgba(52, 57, 50, 0.055);
+  --roll-lock-stroke: rgba(52, 57, 50, 0.38);
+  --roll-lock-text: rgba(52, 57, 50, 0.72);
+  --roll-select-stroke: #171914;
+  --roll-marquee-fill: rgba(39, 109, 89, 0.12);
+  --roll-marquee-stroke: #276d59;
+  --playhead: #c84132;
+  --piano-white-bg: #fcfcfa;
+  --piano-white-hover: #eef2ee;
+  --piano-white-text: #5a5e55;
+  --piano-black-bg: #32352f;
+  --piano-black-hover: #454940;
+  --piano-black-text: #d7dad2;
+
+  /* --- Score Preview Paper --- */
+  --score-desk: #e8e9e3;
+  --score-paper: #fffef9;
+
+  /* --- Elevation / Shadows --- */
+  --shadow-xs: 0 1px 2px rgba(24, 28, 23, 0.06);
+  --shadow-sm: 0 2px 8px rgba(24, 28, 23, 0.08);
+  --shadow-popover: 0 10px 28px rgba(20, 24, 20, 0.16), 0 2px 6px rgba(20, 24, 20, 0.06);
+  --shadow-dialog: 0 20px 52px rgba(18, 22, 18, 0.22), 0 4px 14px rgba(18, 22, 18, 0.08);
+  --inset-highlight: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+  --focus-ring: 0 0 0 2px var(--accent-ring);
+
+  /* --- Scrollbar --- */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(86, 91, 81, 0.28);
+  --scrollbar-thumb-hover: rgba(86, 91, 81, 0.48);
+
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-app);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* --- Surfaces (Warm Charcoal Studio) --- */
+  --bg-app: #171a17;
+  --bg-surface: #1e221e;
+  --bg-surface-2: #242924;
+  --bg-surface-3: #2c322c;
+  --bg-elevated: #252a25;
+  --bg-control: #1a1e1a;
+  --bg-hover: #2e352f;
+  --bg-active: #233b32;
+  --bg-sunken: #141714;
+  --bg-backdrop: rgba(8, 10, 8, 0.64);
+  --bg-tooltip: #111411;
+  --bg-readout: #111411;
+  --bg-code: #141714;
+
+  /* --- Borders --- */
+  --border-subtle: #2a302b;
+  --border-default: #363e37;
+  --border-strong: #49544a;
+  --border-focus: #68c2a3;
+
+  /* --- Ink / Text (WCAG AA >= 4.5:1 on dark surfaces) --- */
+  --text-primary: #ecefe9;
+  --text-secondary: #c9d0c5;
+  --text-muted: #9fa89c;
+  --text-faint: #8c9589;
+  --text-inverse: #1a1e1a;
+  --text-on-accent: #ffffff;
+  --text-on-tooltip: #eff2ec;
+  --text-on-tooltip-muted: #aab3a8;
+  --text-code: #dce6de;
+
+  /* --- Brand Accent --- */
+  --accent: #2a7a62;
+  --accent-hover: #338d72;
+  --accent-active: #226651;
+  --accent-soft: #20382f;
+  --accent-soft-hover: #28473b;
+  --accent-border: #3f7a65;
+  --accent-ink: #82d4b8;
+  --accent-ring: rgba(130, 212, 184, 0.28);
+  --accent-subtle-highlight: rgba(130, 212, 184, 0.08);
+
+  /* --- Semantic Status --- */
+  --success: #3ea878;
+  --success-soft: #1d362a;
+  --success-border: #36684f;
+  --success-ink: #85dbaf;
+
+  --warning: #d89b38;
+  --warning-soft: #3a301e;
+  --warning-border: #70582d;
+  --warning-ink: #f1c475;
+
+  --danger: #d6574a;
+  --danger-hover: #e26a5e;
+  --danger-soft: #3d2422;
+  --danger-border: #783f3a;
+  --danger-ink: #f6a49b;
+
+  --info: #6899d1;
+  --info-soft: #212e3d;
+  --info-border: #3d5a7a;
+  --info-ink: #a5c8f0;
+
+  /* --- SATB Voice Colors (Dark-tuned readability) --- */
+  --voice-s: #9370c4;
+  --voice-a: #3b9982;
+  --voice-t: #568bc7;
+  --voice-b: #ab8254;
+
+  /* --- Chord & Cadence Track Tokens --- */
+  --chord-bg: #353023;
+  --chord-border: #695e42;
+  --chord-text: #ebe1c5;
+  --chord-hover-bg: #453e2c;
+  --chord-hover-border: #9c8a5d;
+  --chord-lock-stripe: rgba(235, 225, 197, 0.1);
+
+  --cadence-full-bg: #223529;
+  --cadence-full-border: #4d7e5c;
+  --cadence-full-hover-bg: #2a4333;
+  --cadence-full-hover-border: #68a37a;
+
+  --cadence-half-bg: #2c273a;
+  --cadence-half-border: #6d6194;
+  --cadence-half-hover-bg: #373149;
+  --cadence-half-hover-border: #8b7db8;
+
+  --cadence-supp-bg: #362e23;
+  --cadence-supp-border: #876c47;
+  --cadence-supp-hover-bg: #443a2c;
+  --cadence-supp-hover-border: #a8875b;
+
+  --cadence-dec-bg: #3c2723;
+  --cadence-dec-border: #965b4a;
+  --cadence-dec-hover-bg: #4b312c;
+  --cadence-dec-hover-border: #b8735f;
+
+  /* --- Piano Roll Canvas & Keys --- */
+  --roll-bg: #1c201c;
+  --roll-row-alt: #161916;
+  --roll-line-octave: #3d453e;
+  --roll-line-row: #282e29;
+  --roll-line-measure: #4d574e;
+  --roll-line-beat: #303731;
+  --roll-line-sub: #232824;
+  --roll-lock-fill: rgba(210, 220, 208, 0.06);
+  --roll-lock-stroke: rgba(210, 220, 208, 0.32);
+  --roll-lock-text: rgba(226, 232, 224, 0.78);
+  --roll-select-stroke: #f2f5ef;
+  --roll-marquee-fill: rgba(130, 212, 184, 0.14);
+  --roll-marquee-stroke: #82d4b8;
+  --playhead: #e25b4d;
+  --piano-white-bg: #292e29;
+  --piano-white-hover: #353c36;
+  --piano-white-text: #aeb7ac;
+  --piano-black-bg: #141714;
+  --piano-black-hover: #1e231e;
+  --piano-black-text: #8c9589;
+
+  /* --- Score Preview Paper (Low-glare parchment on dark desk) --- */
+  --score-desk: #161916;
+  --score-paper: #e6e4dc;
+
+  /* --- Elevation / Shadows --- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.34);
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.48), 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-dialog: 0 24px 56px rgba(0, 0, 0, 0.56), 0 4px 16px rgba(0, 0, 0, 0.32);
+  --inset-highlight: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+  /* --- Scrollbar --- */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(180, 190, 178, 0.22);
+  --scrollbar-thumb-hover: rgba(180, 190, 178, 0.38);
+}
+
+/* ==========================================================================
+   Global Reset & Themed Browser Surfaces
+   ========================================================================== */
 
 * {
   box-sizing: border-box;
@@ -18,6 +336,8 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
+  color: var(--text-primary);
+  background: var(--bg-app);
 }
 
 button,
@@ -26,8 +346,49 @@ select,
 textarea {
   font: inherit;
   letter-spacing: 0;
+  caret-color: var(--accent-ink);
 }
 
 button {
   color: inherit;
+}
+
+::selection {
+  background: var(--accent-soft-hover);
+  color: var(--text-primary);
+}
+
+:where(button, input, select, textarea, summary, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+/* Native Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background-color: var(--scrollbar-thumb);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }

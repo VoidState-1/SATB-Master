@@ -78,6 +78,10 @@ export interface SettingsDialogProps {
   onSetPausePlayheadBehavior(
     behavior: import("../../hooks/usePausePlayheadBehavior").PausePlayheadBehavior,
   ): void;
+  themePreference: import("../../hooks/useTheme").ThemePreference;
+  onSetThemePreference(
+    theme: import("../../hooks/useTheme").ThemePreference,
+  ): void;
   onClose(): void;
 }
 

@@ -2,17 +2,18 @@
   width: min(500px, calc(100vw - 40px));
   max-height: calc(100vh - 40px);
   padding: 20px 22px;
-  background: #fbfbf9;
-  border-radius: 10px;
-  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.22);
-  border: 0;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
 }
 
 .midi-export-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .midi-export-header h2 {
@@ -20,26 +21,26 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  color: #242721;
-  font-size: 16px;
-  font-weight: 650;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 700;
 }
 
 .midi-export-header h2 svg {
   width: 18px;
   height: 18px;
-  color: #2f7764;
+  color: var(--accent-ink);
 }
 
-/* 格式切换选项卡 - 扁平背景分段控件 */
+/* 格式切换选项卡 */
 .export-format-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
   margin-bottom: 16px;
   padding: 3px;
-  border-radius: 7px;
-  background: #ebede7;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-3);
 }
 
 .export-format-tab {
@@ -49,25 +50,27 @@
   gap: 7px;
   height: 32px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #5d6357;
-  font-size: 12.5px;
-  font-weight: 550;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
 .export-format-tab:hover:not(.active) {
-  color: #242721;
-  background: rgba(255, 255, 255, 0.5);
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .export-format-tab.active {
-  background: #ffffff;
-  color: #1a4d40;
+  background: var(--bg-control);
+  color: var(--accent-ink);
   font-weight: 650;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-xs);
 }
 
 .midi-export-form {
@@ -81,13 +84,12 @@
 }
 
 .midi-export-section-title {
-  color: #63695c;
-  font-size: 11.5px;
-  font-weight: 650;
-  letter-spacing: 0.2px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
-/* 3 列扁平卡片网格 */
+/* 3 列卡片网格 */
 .midi-card-group-grid3 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -99,50 +101,57 @@
   gap: 8px;
 }
 
-/* 扁平无边框选择按钮 */
+/* 选择按钮 */
 .midi-flat-card {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 40px;
+  height: 38px;
   padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
-  background: #eeefe9;
-  color: #40453b;
-  font-size: 12.5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
   user-select: none;
-  transition: all 0.15s ease;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
 .midi-flat-card:hover:not(.active) {
-  background: #e3e6dd;
-  color: #1f231c;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .midi-flat-card.active {
-  background: #dcece2;
-  color: #184f40;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
   font-weight: 650;
 }
 
-/* 扁平复选卡片 */
+/* 复选卡片 */
 .midi-flat-checkbox-card {
   position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 9px 12px;
-  border: 0;
-  border-radius: 6px;
-  background: #eeefe9;
-  color: #40453b;
-  font-size: 12.5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
   cursor: pointer;
   user-select: none;
-  transition: all 0.15s ease;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
 .midi-flat-checkbox-card input[type="checkbox"] {
@@ -152,13 +161,14 @@
 }
 
 .midi-flat-checkbox-card:hover:not(.active) {
-  background: #e3e6dd;
-  color: #1f231c;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .midi-flat-checkbox-card.active {
-  background: #dcece2;
-  color: #184f40;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
   font-weight: 600;
 }
 
@@ -168,16 +178,21 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: 4px;
-  background: #ffffff;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--bg-control);
   color: transparent;
-  transition: all 0.15s ease;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
   flex-shrink: 0;
 }
 
 .midi-flat-checkbox-card.active .midi-checkbox-indicator {
-  background: #2f7764;
-  color: #ffffff;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
 .midi-checkbox-indicator svg {
@@ -191,42 +206,16 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 6px;
-  padding-top: 8px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .midi-export-dialog .command-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
   height: 34px;
   padding: 0 16px;
-  border: 0;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 550;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.midi-export-dialog .command-button:not(.primary) {
-  background: #eeefe9;
-  color: #4b5046;
-}
-
-.midi-export-dialog .command-button:not(.primary):hover {
-  background: #e3e6dd;
-  color: #20241d;
-}
-
-.midi-export-dialog .command-button.primary {
-  background: #2f7764;
-  color: #ffffff;
-}
-
-.midi-export-dialog .command-button.primary:hover {
-  background: #276555;
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .midi-export-dialog .command-button svg {

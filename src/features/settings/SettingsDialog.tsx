@@ -133,6 +133,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
               onSetFollowPlayhead={props.onSetFollowPlayhead}
               pausePlayheadBehavior={props.pausePlayheadBehavior}
               onSetPausePlayheadBehavior={props.onSetPausePlayheadBehavior}
+              themePreference={props.themePreference}
+              onSetThemePreference={props.onSetThemePreference}
             />
           ) : activeTab === "shortcuts" ? (
             <ShortcutSettingsPane

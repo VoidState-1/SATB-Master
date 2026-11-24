@@ -2,7 +2,8 @@
   display: grid;
   grid-template-rows: 42px auto minmax(0, 1fr);
   height: 100vh;
-  background: #ecece8;
+  background: var(--bg-app);
+  color: var(--text-primary);
   user-select: none;
 }
 
@@ -20,9 +21,10 @@
   gap: 10px;
   min-width: 0;
   padding: 0 150px 0 14px;
-  border-bottom: 1px solid #cacbc5;
-  background: #f8f8f5;
-  font-size: 13px;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--text-md);
   user-select: none;
   -webkit-app-region: drag;
 }
@@ -43,35 +45,39 @@
   height: 41px;
   border: 0;
   border-radius: 0;
+  color: var(--text-secondary);
 }
 
 .titlebar-controls .window-control:hover {
   border: 0;
-  background: #e4e5df;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .titlebar-controls .window-control.close:hover {
-  background: #c73b32;
-  color: #fff;
+  background: var(--danger);
+  color: var(--text-on-accent);
 }
 
 .brand-mark {
-  width: 27px;
-  height: 27px;
+  width: 26px;
+  height: 26px;
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 5px;
-  background: #252720;
-  color: #fff;
-  font-family: Georgia, serif;
-  font-size: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-family: var(--font-serif);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .project-title {
   max-width: 220px;
   overflow: hidden;
-  color: #565850;
+  color: var(--text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -79,8 +85,8 @@
 .file-path {
   min-width: 0;
   overflow: hidden;
-  color: #8a8b84;
-  font-size: 11px;
+  color: var(--text-faint);
+  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -91,28 +97,28 @@
   align-items: center;
   gap: 7px;
   margin-left: auto;
-  color: #666860;
-  font-size: 11px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
 .engine-status i {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #989a92;
+  background: var(--text-faint);
 }
 
 .engine-status.ready-sf2 i,
 .engine-status.ready-fallback i,
 .engine-status.playing i {
-  background: #2b8a60;
-  box-shadow: 0 0 0 3px rgba(43, 138, 96, 0.13);
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
 }
 
 .engine-status.loading i {
-  background: #d28a24;
+  background: var(--warning);
 }
 
 .engine-status.error i {
-  background: #c44737;
+  background: var(--danger);
 }

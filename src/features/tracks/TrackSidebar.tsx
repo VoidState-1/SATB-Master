@@ -24,6 +24,13 @@ interface TrackSidebarProps {
   onUpdateTrack(voiceId: VoiceId, patch: Partial<SatbTrack>): void;
 }
 
+const VOICE_CSS_VAR: Record<VoiceId, string> = {
+  soprano: "var(--voice-s)",
+  alto: "var(--voice-a)",
+  tenor: "var(--voice-t)",
+  bass: "var(--voice-b)",
+};
+
 export function TrackSidebar({
   project,
   activeVoice,
@@ -46,7 +53,7 @@ export function TrackSidebar({
             <section
               key={track.id}
               className={`voice-track ${activeVoice === track.id ? "is-active" : ""}`}
-              style={{ "--voice-color": config.color } as React.CSSProperties}
+              style={{ "--voice-color": VOICE_CSS_VAR[track.id] } as React.CSSProperties}
               onClick={() => onSetActive(track.id)}
             >
               <div className="voice-track-title">

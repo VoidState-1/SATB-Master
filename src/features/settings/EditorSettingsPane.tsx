@@ -1,5 +1,11 @@
-import { LayoutGrid, LocateFixed, SlidersHorizontal } from "lucide-react";
+import {
+  LayoutGrid,
+  LocateFixed,
+  Palette,
+  SlidersHorizontal,
+} from "lucide-react";
 import type { PausePlayheadBehavior } from "../../hooks/usePausePlayheadBehavior";
+import type { ThemePreference } from "../../hooks/useTheme";
 
 interface EditorSettingsPaneProps {
   scaleGuideEnabled: boolean;
@@ -8,6 +14,8 @@ interface EditorSettingsPaneProps {
   onSetFollowPlayhead(enabled: boolean): void;
   pausePlayheadBehavior: PausePlayheadBehavior;
   onSetPausePlayheadBehavior(behavior: PausePlayheadBehavior): void;
+  themePreference: ThemePreference;
+  onSetThemePreference(theme: ThemePreference): void;
 }
 
 export function EditorSettingsPane({
@@ -17,9 +25,35 @@ export function EditorSettingsPane({
   onSetFollowPlayhead,
   pausePlayheadBehavior,
   onSetPausePlayheadBehavior,
+  themePreference,
+  onSetThemePreference,
 }: EditorSettingsPaneProps) {
   return (
     <div className="developer-settings-content">
+      <section className="developer-settings-section">
+        <header>
+          <Palette aria-hidden="true" />
+          <div>
+            <h3>界面主题</h3>
+            <p>
+              切换浅色（暖纸）或深色（暖炭）工作台，或自动跟随操作系统外观设置。
+            </p>
+          </div>
+          <select
+            className="editor-settings-select"
+            value={themePreference}
+            aria-label="界面主题"
+            onChange={(event) =>
+              onSetThemePreference(event.target.value as ThemePreference)
+            }
+          >
+            <option value="system">跟随系统</option>
+            <option value="light">浅色（暖纸）</option>
+            <option value="dark">深色（暖炭）</option>
+          </select>
+        </header>
+      </section>
+
       <section className="developer-settings-section">
         <header>
           <LayoutGrid aria-hidden="true" />

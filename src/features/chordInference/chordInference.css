@@ -1,29 +1,19 @@
 /* ==========================================================================
-   Chord Inference Dialog Styles (Flat, Card-based, Minimalist, Borderless)
+   Chord Inference Dialog Styles
    ========================================================================== */
 
 .chord-inference-dialog {
-  width: min(480px, calc(100vw - 32px));
+  width: min(492px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
-  background: #fbfbf9;
-  border-radius: 12px;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.22), 0 4px 12px rgba(0, 0, 0, 0.06);
-  border: 1px solid #d5d8d0;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dialog);
+  border: 1px solid var(--border-strong);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: chordInferenceFadeIn 0.15s ease-out;
-}
-
-@keyframes chordInferenceFadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.97) translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+  animation: dialogEnter var(--duration-normal) var(--ease-standard);
 }
 
 .chord-inference-header {
@@ -31,49 +21,51 @@
   flex: none;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
-  background: #f2f4ee;
-  border-bottom: 1px solid #e1e4dc;
+  padding: 12px 18px;
+  background: var(--bg-surface-2);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .chord-inference-header-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 700;
-  color: #1b2018;
+  color: var(--text-primary);
 }
 
 .chord-inference-header-title svg {
-  color: #27715c;
+  color: var(--accent-ink);
 }
 
 .chord-inference-close-btn {
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #666a60;
+  color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
 .chord-inference-close-btn:hover {
-  background: rgba(0, 0, 0, 0.06);
-  color: #20241d;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .chord-inference-body {
-  padding: 18px 18px 0;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  gap: 16px;
+  gap: 14px;
   overflow-y: auto;
 }
 
@@ -85,9 +77,9 @@
 }
 
 .chord-inference-field-label {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
-  color: #61665b;
+  color: var(--text-muted);
 }
 
 .chord-inference-range-row {
@@ -100,17 +92,25 @@
   flex: 1;
   height: 34px;
   padding: 0 10px;
-  border-radius: 6px;
-  border: 1px solid #c8cbbf;
-  background: #ffffff;
-  color: #262923;
-  font-size: 12.5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-control);
+  color: var(--text-primary);
+  font-size: var(--text-md);
   outline: none;
-  transition: border-color 0.15s;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.chord-inference-select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
 }
 
 .chord-inference-select:focus {
-  border-color: #27715c;
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 
 .chord-inference-tick-badge {
@@ -118,21 +118,24 @@
   height: 34px;
   display: inline-flex;
   align-items: center;
-  background: #f1f3ed;
-  color: #72766c;
-  border-radius: 6px;
-  font: 11.5px Consolas, monospace;
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-/* --- Flat Segmented Route Tabs --- */
+/* --- Segmented Route Tabs --- */
 .chord-inference-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  background: #edece6;
-  padding: 4px;
-  border-radius: 8px;
+  gap: 4px;
+  background: var(--bg-surface-3);
+  padding: 3px;
+  border-radius: var(--radius-md);
 }
 
 .chord-inference-tabs.three-cols {
@@ -143,34 +146,36 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 36px;
+  height: 34px;
   padding: 0 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #55594f;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
   user-select: none;
 }
 
 .chord-inference-tab:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.55);
-  color: #242720;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .chord-inference-tab.active {
-  background: #ffffff;
-  color: #175243;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--bg-control);
+  color: var(--accent-ink);
+  box-shadow: var(--shadow-xs);
 }
 
 .chord-inference-tab-title {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-weight: 650;
 }
 
-/* --- Flat Card Option Rows --- */
+/* --- Option Rows --- */
 .chord-inference-options {
   display: flex;
   flex-direction: column;
@@ -181,37 +186,38 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: #f5f6f0;
-  color: #2c3027;
-  font-size: 12.5px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  font-size: var(--text-md);
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background-color var(--duration-fast) var(--ease-standard);
   user-select: none;
 }
 
 .chord-inference-option-row:hover {
-  background: #eaeee5;
+  background: var(--accent-soft);
 }
 
 .chord-inference-option-row input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: #27715c;
+  accent-color: var(--accent);
   cursor: pointer;
   margin: 0;
   flex-shrink: 0;
 }
 
 .chord-inference-option-row span {
-  font-size: 12.5px;
-  color: #262a22;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
 }
 
 .chord-inference-preview-title {
   margin: 0;
+  color: var(--text-primary);
 }
 
 .chord-inference-preview-list {
@@ -222,15 +228,16 @@
 .chord-inference-preview-region {
   min-width: 0;
   margin: 0;
-  padding: 5px 8px 8px;
-  border: 1px solid #d5d8d0;
-  border-radius: 6px;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-control);
 }
 
 .chord-inference-preview-region legend {
   padding: 0 4px;
-  color: #43473e;
-  font-size: 12px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -239,19 +246,19 @@
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  padding: 4px 6px;
-  border-radius: 4px;
-  color: #262923;
-  font-size: 12.5px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
 }
 
 .chord-inference-reading:has(input:checked) {
-  background: #f1f3ed;
+  background: var(--accent-soft);
 }
 
 .chord-inference-reading input {
   margin: 2px 0 0;
-  accent-color: #27715c;
+  accent-color: var(--accent);
 }
 
 .chord-inference-reading small {
@@ -260,8 +267,8 @@
 
 .chord-inference-reading small,
 .chord-inference-preview-action small {
-  color: #55594f;
-  font-size: 11.5px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
 .chord-inference-preview-action {
@@ -279,8 +286,8 @@
 }
 
 .chord-inference-preview-action button:disabled {
+  opacity: var(--disabled-opacity);
   cursor: default;
-  color: #61665b;
 }
 
 /* --- Footer Actions --- */
@@ -289,46 +296,53 @@
   flex: none;
   justify-content: flex-end;
   align-items: center;
-  gap: 10px;
-  margin: 20px 18px 18px;
-  padding-top: 14px;
-  border-top: 1px solid #edece6;
+  gap: 8px;
+  padding: 12px 18px;
+  background: var(--bg-surface-2);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .chord-inference-btn-secondary {
   height: 34px;
-  padding: 0 16px;
-  border-radius: 6px;
-  border: 1px solid #c8cbbf;
-  background: #fbfbf9;
-  color: #43473e;
-  font-size: 12.5px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-control);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
 .chord-inference-btn-secondary:hover {
-  background: #f1f3ed;
-  color: #20241d;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
 }
 
 .chord-inference-btn-primary {
   height: 34px;
-  padding: 0 18px;
-  border-radius: 6px;
-  border: 0;
-  background: #27715c;
-  color: #ffffff;
-  font-size: 12.5px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--text-sm);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
 .chord-inference-btn-primary:hover {
-  background: #1f5f4d;
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
 }

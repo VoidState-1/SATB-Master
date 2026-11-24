@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
+import { THEME_CHANGE_EVENT } from "../../../hooks/useTheme";
 import type { HarmonyDiagnostic } from "../../../domain/harmony";
 import { keyAtTick, type MeasureInfo } from "../../../domain/time";
 import {
@@ -50,6 +51,62 @@ interface NoteLayerProps {
   onDoubleClick(event: React.MouseEvent<HTMLCanvasElement>): void;
 }
 
+function readRollCanvasTheme() {
+  const fallback = {
+    bg: "#f7f7f3",
+    rowAlt: "#eeeee9",
+    lineOctave: "#c4c5be",
+    lineRow: "#dedfd9",
+    lineMeasure: "#aeb0a8",
+    lineBeat: "#d6d7d1",
+    lineSub: "#e8e8e3",
+    lockFill: "rgba(52, 57, 50, 0.055)",
+    lockStroke: "rgba(52, 57, 50, 0.38)",
+    lockText: "rgba(52, 57, 50, 0.72)",
+    selectStroke: "#171914",
+    marqueeFill: "rgba(39, 109, 89, 0.12)",
+    marqueeStroke: "#276d59",
+    danger: "#c03c32",
+    warning: "#b06f10",
+    suggestion: "#276d59",
+    voices: {
+      soprano: VOICE_CONFIG.soprano.color,
+      alto: VOICE_CONFIG.alto.color,
+      tenor: VOICE_CONFIG.tenor.color,
+      bass: VOICE_CONFIG.bass.color,
+    } as Record<VoiceId, string>,
+  };
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return fallback;
+  }
+  const style = window.getComputedStyle(document.documentElement);
+  const read = (name: string, fb: string) => style.getPropertyValue(name).trim() || fb;
+  return {
+    bg: read("--roll-bg", fallback.bg),
+    rowAlt: read("--roll-row-alt", fallback.rowAlt),
+    lineOctave: read("--roll-line-octave", fallback.lineOctave),
+    lineRow: read("--roll-line-row", fallback.lineRow),
+    lineMeasure: read("--roll-line-measure", fallback.lineMeasure),
+    lineBeat: read("--roll-line-beat", fallback.lineBeat),
+    lineSub: read("--roll-line-sub", fallback.lineSub),
+    lockFill: read("--roll-lock-fill", fallback.lockFill),
+    lockStroke: read("--roll-lock-stroke", fallback.lockStroke),
+    lockText: read("--roll-lock-text", fallback.lockText),
+    selectStroke: read("--roll-select-stroke", fallback.selectStroke),
+    marqueeFill: read("--roll-marquee-fill", fallback.marqueeFill),
+    marqueeStroke: read("--roll-marquee-stroke", fallback.marqueeStroke),
+    danger: read("--danger", fallback.danger),
+    warning: read("--warning", fallback.warning),
+    suggestion: read("--accent", fallback.suggestion),
+    voices: {
+      soprano: read("--voice-s", fallback.voices.soprano),
+      alto: read("--voice-a", fallback.voices.alto),
+      tenor: read("--voice-t", fallback.voices.tenor),
+      bass: read("--voice-b", fallback.voices.bass),
+    } as Record<VoiceId, string>,
+  };
+}
+
 export function NoteLayer({
   scrollRef,
   viewportSize,
@@ -76,6 +133,14 @@ export function NoteLayer({
   onDoubleClick,
 }: NoteLayerProps) {
   const viewportCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [themeRevision, setThemeRevision] = useState(0);
+
+  useEffect(() => {
+    const handleThemeChange = () => setThemeRevision((value) => value + 1);
+    window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+    return () =>
+      window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+  }, []);
 
   useEffect(() => {
     const canvas = viewportCanvasRef.current;
@@ -83,6 +148,7 @@ export function NoteLayer({
     if (!canvas || !scroll) return;
     const context = canvas.getContext("2d");
     if (!context) return;
+    const rollTheme = readRollCanvasTheme();
     const ratio = window.devicePixelRatio || 1;
     const renderWidth = viewportSize.width;
     const renderHeight = viewportSize.height;
@@ -114,7 +180,7 @@ export function NoteLayer({
       context.rect(visibleLeft, visibleTop, renderWidth, renderHeight);
       context.clip();
 
-      context.fillStyle = "#f7f7f3";
+      context.fillStyle = rollTheme.bg;
       context.fillRect(visibleLeft, visibleTop, renderWidth, renderHeight);
 
       if (scaleGuideEnabled) {
@@ -148,7 +214,7 @@ export function NoteLayer({
           keySegments.forEach((segment) => {
             if (segment.endX > segment.startX) {
               if (!isDiatonicPitch(midi, segment.key)) {
-                context.fillStyle = "#eeeee9";
+                context.fillStyle = rollTheme.rowAlt;
                 context.fillRect(
                   segment.startX,
                   y,
@@ -159,7 +225,8 @@ export function NoteLayer({
             }
           });
 
-          context.strokeStyle = midi % 12 === 0 ? "#c4c5be" : "#dedfd9";
+          context.strokeStyle =
+            midi % 12 === 0 ? rollTheme.lineOctave : rollTheme.lineRow;
           context.lineWidth = midi % 12 === 0 ? 1.2 : 1;
           context.beginPath();
           context.moveTo(rowLeft, y + ROW_HEIGHT);
@@ -172,10 +239,11 @@ export function NoteLayer({
           if (y > visibleBottom || y + ROW_HEIGHT < visibleTop) continue;
           const rowLeft = Math.max(PIANO_WIDTH, visibleLeft);
           if (isBlackKey(midi)) {
-            context.fillStyle = "#eeeee9";
+            context.fillStyle = rollTheme.rowAlt;
             context.fillRect(rowLeft, y, visibleRight - rowLeft, ROW_HEIGHT);
           }
-          context.strokeStyle = midi % 12 === 0 ? "#c4c5be" : "#dedfd9";
+          context.strokeStyle =
+            midi % 12 === 0 ? rollTheme.lineOctave : rollTheme.lineRow;
           context.lineWidth = midi % 12 === 0 ? 1.2 : 1;
           context.beginPath();
           context.moveTo(rowLeft, y + ROW_HEIGHT);
@@ -199,7 +267,8 @@ export function NoteLayer({
         measure.beatTicks.forEach((tick, beatIndex) => {
           const x = tickToX(tick, project.ppq, pixelsPerBeat);
           if (x >= visibleLeft - 1 && x <= visibleRight + 1) {
-            context.strokeStyle = beatIndex === 0 ? "#aeb0a8" : "#d6d7d1";
+            context.strokeStyle =
+              beatIndex === 0 ? rollTheme.lineMeasure : rollTheme.lineBeat;
             context.lineWidth = beatIndex === 0 ? 1.25 : 1;
             context.beginPath();
             context.moveTo(x, Math.max(HEADER_HEIGHT, visibleTop));
@@ -214,7 +283,7 @@ export function NoteLayer({
             if (subTick >= measure.endTick) continue;
             const subX = tickToX(subTick, project.ppq, pixelsPerBeat);
             if (subX < visibleLeft - 1 || subX > visibleRight + 1) continue;
-            context.strokeStyle = "#e8e8e3";
+            context.strokeStyle = rollTheme.lineSub;
             context.beginPath();
             context.moveTo(subX, Math.max(HEADER_HEIGHT, visibleTop));
             context.lineTo(subX, visibleBottom);
@@ -234,11 +303,11 @@ export function NoteLayer({
             pixelsPerBeat,
           );
           if (x > visibleRight || x + width < visibleLeft) return;
-          context.fillStyle = "rgba(52, 57, 50, 0.055)";
+          context.fillStyle = rollTheme.lockFill;
           context.fillRect(x, HEADER_HEIGHT, width, rollHeight);
           context.save();
           context.setLineDash([4, 3]);
-          context.strokeStyle = "rgba(52, 57, 50, 0.38)";
+          context.strokeStyle = rollTheme.lockStroke;
           context.strokeRect(
             x + 0.5,
             HEADER_HEIGHT + 0.5,
@@ -246,7 +315,7 @@ export function NoteLayer({
             rollHeight - 1,
           );
           context.restore();
-          context.fillStyle = "rgba(52, 57, 50, 0.7)";
+          context.fillStyle = rollTheme.lockText;
           context.font = "10px Segoe UI";
           context.fillText(
             `锁定 ${range.voiceIds.map((voiceId) => VOICE_CONFIG[voiceId].shortName).join("/")}`,
@@ -263,22 +332,22 @@ export function NoteLayer({
           y + height < visibleTop
         )
           return;
-        const config = VOICE_CONFIG[track.id];
+        const voiceColor = rollTheme.voices[track.id];
         context.fillStyle =
-          track.id === activeVoice ? config.color : `${config.color}b8`;
+          track.id === activeVoice ? voiceColor : `${voiceColor}b8`;
         context.beginPath();
         context.roundRect(x, y, width, height, 3);
         context.fill();
 
         if (selectedNoteIds.has(note.id)) {
-          context.strokeStyle = "#171914";
+          context.strokeStyle = rollTheme.selectStroke;
           context.lineWidth = 2;
           context.stroke();
         }
         if (missingExpectedNoteIds?.has(note.id)) {
           context.save();
           context.setLineDash([4, 3]);
-          context.strokeStyle = "#bd433b";
+          context.strokeStyle = rollTheme.danger;
           context.lineWidth = 1.5;
           context.stroke();
           context.restore();
@@ -287,10 +356,10 @@ export function NoteLayer({
         if (issue) {
           context.fillStyle =
             issue.severity === "error"
-              ? "#c93f34"
+              ? rollTheme.danger
               : issue.severity === "warning"
-                ? "#d49324"
-                : "#4d7469";
+                ? rollTheme.warning
+                : rollTheme.suggestion;
           context.fillRect(x, y + height - 3, width, 3);
         }
         if (width > 25) {
@@ -346,11 +415,11 @@ export function NoteLayer({
         const top = Math.min(interaction.originY, interaction.currentY);
         const width = Math.abs(interaction.currentX - interaction.originX);
         const height = Math.abs(interaction.currentY - interaction.originY);
-        context.fillStyle = "rgba(47, 119, 100, 0.11)";
+        context.fillStyle = rollTheme.marqueeFill;
         context.fillRect(left, top, width, height);
         context.save();
         context.setLineDash([4, 3]);
-        context.strokeStyle = "#2f7764";
+        context.strokeStyle = rollTheme.marqueeStroke;
         context.strokeRect(left + 0.5, top + 0.5, width, height);
         context.restore();
       }
@@ -386,6 +455,7 @@ export function NoteLayer({
     selectedNoteIds,
     viewportSize,
     scaleGuideEnabled,
+    themeRevision,
   ]);
 
   return (

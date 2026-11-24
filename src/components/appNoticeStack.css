@@ -2,9 +2,9 @@
   position: fixed;
   right: 16px;
   bottom: 20px;
-  z-index: 100;
+  z-index: 120;
   display: grid;
-  gap: 6px;
+  gap: 8px;
   width: min(400px, calc(100vw - 32px));
   pointer-events: none;
 }
@@ -13,19 +13,34 @@
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 7px 8px 7px 10px;
-  border: 1px solid #a7afa5;
-  border-radius: 5px;
-  background: #f7f7f4;
-  color: #2b312a;
-  font-size: 12px;
-  box-shadow: 0 4px 14px #242c2030;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  box-shadow: var(--shadow-popover);
   pointer-events: auto;
 }
 
-.app-notice[data-level="success"] { border-color: #8aa397; background: #edf4ed; color: #234e3f; }
-.app-notice[data-level="warn"] { border-color: #c8aa6e; background: #fff4da; color: #65440f; }
-.app-notice[data-level="error"] { border-color: #cb9694; background: #fcebe8; color: #752c29; }
+.app-notice[data-level="success"] {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+  color: var(--success-ink);
+}
+
+.app-notice[data-level="warn"] {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning-ink);
+}
+
+.app-notice[data-level="error"] {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
 
 .app-notice > span {
   flex: 1;
@@ -45,13 +60,14 @@
   align-items: center;
   gap: 4px;
   min-height: 26px;
-  padding: 2px 5px;
+  padding: 2px 6px;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: inherit;
   white-space: nowrap;
   font: inherit;
+  cursor: pointer;
 }
 
 .app-notice button:hover,
@@ -67,6 +83,6 @@
 
 .titlebar-log-link {
   -webkit-app-region: no-drag;
-  color: #8b2e2e;
-  font-size: 12px;
+  color: var(--danger-ink);
+  font-size: var(--text-sm);
 }

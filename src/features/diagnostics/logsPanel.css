@@ -3,9 +3,9 @@
   flex-direction: column;
   overflow: auto;
   container-type: size;
-  scrollbar-color: #a8aea4 transparent;
-  color: #292d26;
-  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  font-size: var(--text-sm);
 }
 
 .logs-toolbar {
@@ -15,8 +15,8 @@
   align-items: center;
   gap: 6px 14px;
   padding: 7px 10px;
-  border-bottom: 1px solid #d2d3cd;
-  background: #eeeee9;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-surface-2);
 }
 
 .logs-filters,
@@ -33,16 +33,22 @@
 .logs-detail button,
 .logs-search {
   min-height: 28px;
-  border: 1px solid #c8cac2;
-  border-radius: 4px;
-  background: #fafaf7;
-  color: inherit;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-control);
+  color: var(--text-primary);
   font: inherit;
 }
 
 .logs-toolbar :is(button, select),
 .logs-detail button {
-  padding: 3px 7px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.logs-toolbar select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
 }
 
 .logs-toolbar button,
@@ -55,12 +61,14 @@
 
 .logs-toolbar button:hover:not(:disabled),
 .logs-detail button:hover {
-  border-color: #84958a;
-  background: #e5ede6;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
 }
 
 .logs-toolbar button:disabled {
-  opacity: 0.55;
+  opacity: var(--disabled-opacity);
+  cursor: default;
 }
 
 .logs-toolbar svg,
@@ -85,10 +93,9 @@
   font: inherit;
 }
 
-.logs-panel :is(button, select):focus-visible,
 .logs-search:focus-within {
-  outline: 2px solid #2e6f5e;
-  outline-offset: 1px;
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 
 .logs-export-options {
@@ -100,7 +107,7 @@
   margin: 0;
   padding: 6px 0 0;
   border: 0;
-  border-top: 1px solid #d2d3cd;
+  border-top: 1px solid var(--border-subtle);
   min-inline-size: 0;
 }
 
@@ -111,22 +118,24 @@
 }
 
 .logs-export-options input {
-  accent-color: #2e6f5e;
+  accent-color: var(--accent);
 }
 
 .logs-export-options button {
-  border-color: #2e6f5e;
-  background: #2e6f5e;
-  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
 .logs-export-options button:hover:not(:disabled) {
-  background: #235747;
-  color: #fff;
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: var(--text-on-accent);
 }
 
 .logs-action-result {
   flex-basis: 100%;
+  color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
 
@@ -134,7 +143,6 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  scrollbar-color: #a8aea4 transparent;
 }
 
 .logs-list {
@@ -144,7 +152,7 @@
 }
 
 .logs-list > li {
-  border-bottom: 1px solid #e0e1db;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .logs-row {
@@ -153,13 +161,14 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 29px;
+  min-height: 30px;
   padding: 4px 10px;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
   font: inherit;
+  cursor: pointer;
 }
 
 .logs-panel .logs-row:focus-visible {
@@ -168,7 +177,7 @@
 
 .logs-row:hover,
 .logs-row[aria-expanded="true"] {
-  background: #edf0e9;
+  background: var(--bg-hover);
 }
 
 .logs-row[aria-expanded="true"] svg {
@@ -176,29 +185,42 @@
 }
 
 .logs-highlight .logs-row {
-  background: #dcece3;
+  background: var(--accent-soft);
 }
 
 .logs-row time,
 .logs-duration {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .logs-level {
   justify-self: start;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: #e4e7e1;
-  color: #414e44;
-  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-3);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
   font-weight: 700;
 }
 
-.logs-level[data-level="info"] { background: #dceae2; color: #255440; }
-.logs-level[data-level="warn"] { background: #f5e8cf; color: #75500d; }
-.logs-level[data-level="error"] { background: #f5dfdf; color: #862b2b; }
-.logs-level[data-level="fatal"] { background: #8c3030; color: #fff; }
+.logs-level[data-level="info"] {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.logs-level[data-level="warn"] {
+  background: var(--warning-soft);
+  color: var(--warning-ink);
+}
+.logs-level[data-level="error"] {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+.logs-level[data-level="fatal"] {
+  background: var(--danger);
+  color: var(--text-on-accent);
+}
 
 .logs-process {
   white-space: nowrap;
@@ -211,7 +233,8 @@
 
 .logs-code {
   margin-right: 8px;
-  color: #49594e;
+  color: var(--accent-ink);
+  font-family: var(--font-mono);
 }
 
 .logs-detail {
@@ -223,7 +246,12 @@
 .logs-detail pre {
   margin: 0;
   padding: 6px 8px;
-  background: #eeeee9;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
@@ -231,7 +259,7 @@
 
 .logs-empty {
   margin: 12px;
-  color: #565e53;
+  color: var(--text-muted);
 }
 
 @container (max-width: 520px) {
