@@ -127,7 +127,8 @@
   cursor: default;
 }
 
-.roll-canvas.tool-pencil {
+.roll-canvas.tool-pencil,
+.roll-canvas.tool-auto-brush {
   cursor: crosshair;
 }
 

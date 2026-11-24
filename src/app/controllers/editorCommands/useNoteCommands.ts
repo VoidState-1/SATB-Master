@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { audioEngine } from "../../../audio/audioEngine";
+import { applyAutoBrushNote } from "../../../domain/autoBrush";
 import { chordDraftFromRegion } from "../../../domain/chords";
 import {
   addAuxiliaryTrack,
@@ -83,6 +84,27 @@ export function useNoteCommands({
         if (note) setSelectedNoteIds(new Set([note.id]));
         setSelectedChordIds(new Set());
         handlePreviewNote(trackId, midiNote);
+      }
+    },
+    [commitResult, gridTicks, handlePreviewNote, project, setSelectedChordIds, setSelectedNoteIds],
+  );
+
+  const handleAutoBrushNote = useCallback(
+    (tick: number, midiNote: number, durationTicks = gridTicks) => {
+      const note: NoteEvent = {
+        id: createId("note"),
+        startTick: tick,
+        durationTicks,
+        pitch: spellMidi(midiNote, keyAtTick(project.keyEvents, tick)),
+        velocity: 88,
+        locked: false,
+        spellingSource: "manual",
+      };
+      const result = applyAutoBrushNote(project, note);
+      if (commitResult(result) && result.assignedVoice) {
+        setSelectedNoteIds(new Set([note.id]));
+        setSelectedChordIds(new Set());
+        handlePreviewNote(result.assignedVoice, midiNote);
       }
     },
     [commitResult, gridTicks, handlePreviewNote, project, setSelectedChordIds, setSelectedNoteIds],
@@ -206,6 +228,7 @@ export function useNoteCommands({
 
   return {
     handleAddNote,
+    handleAutoBrushNote,
     handleMoveNotes,
     handleSelectNotes,
     handleSelectChords,

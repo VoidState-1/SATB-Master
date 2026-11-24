@@ -28,6 +28,7 @@ import { SponsorDialog } from "./SponsorDialog";
 interface TrackSidebarProps {
   project: ProjectDocument;
   activeVoice: string;
+  autoBrushActive?: boolean;
   onSetActive(voiceId: string): void;
   onUpdateTrack(voiceId: string, patch: TrackPatch): void;
   onAddAuxiliaryTrack(): void;
@@ -241,6 +242,7 @@ function TrackCard({
 export function TrackSidebar({
   project,
   activeVoice,
+  autoBrushActive,
   onSetActive,
   onUpdateTrack,
   onAddAuxiliaryTrack,
@@ -250,6 +252,9 @@ export function TrackSidebar({
   const [sponsorDialogOpen, setSponsorDialogOpen] = useState(false);
   const sponsorButtonRef = useRef<HTMLButtonElement>(null);
   const activeTrack = getAllPlayableTracks(project).find((track) => track.id === activeVoice);
+  const inputLabel = autoBrushActive
+    ? "自动笔刷（SATB）"
+    : activeTrack?.name ?? VOICE_CONFIG.soprano.name;
   const trackActions = { onSetActive, onUpdateTrack, onDeleteAuxiliaryTrack };
 
   return (
@@ -310,8 +315,8 @@ export function TrackSidebar({
           <Heart aria-hidden="true" />
           <span>赞助作者</span>
         </button>
-        <div className="sidebar-footnote" title={activeTrack?.name ?? VOICE_CONFIG.soprano.name}>
-          当前输入：{activeTrack?.name ?? VOICE_CONFIG.soprano.name}
+        <div className="sidebar-footnote" title={inputLabel}>
+          当前输入：{inputLabel}
         </div>
       </div>
       {sponsorDialogOpen ? (

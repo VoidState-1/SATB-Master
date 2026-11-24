@@ -24,6 +24,7 @@ import {
   type MusicalTrack,
   type NoteEvent,
   type ProjectDocument,
+  type VoiceId,
 } from "./project";
 import { pitchClassEquals, toMidi } from "./pitch";
 import { keyAtTick } from "./time";
@@ -285,7 +286,9 @@ export function deletePhraseBoundary(
   return { project: next };
 }
 
-function overlaps(a: NoteEvent, b: NoteEvent) {
+type NoteRange = Pick<NoteEvent, "startTick" | "durationTicks">;
+
+export function overlaps(a: NoteRange, b: NoteRange) {
   return (
     a.startTick < b.startTick + b.durationTicks &&
     b.startTick < a.startTick + a.durationTicks
@@ -300,18 +303,30 @@ function exactDuplicateOverlap(a: NoteEvent, b: NoteEvent) {
   );
 }
 
-function hasValidNoteValues(note: NoteEvent) {
+export function hasValidNoteValues(
+  note: Pick<NoteEvent, "startTick" | "durationTicks" | "pitch" | "velocity">,
+) {
   return (
     Number.isInteger(note.startTick) &&
     note.startTick >= 0 &&
     Number.isInteger(note.durationTicks) &&
     note.durationTicks > 0 &&
-    Number.isInteger(toMidi(note.pitch)) &&
-    toMidi(note.pitch) >= 0 &&
-    toMidi(note.pitch) <= 127 &&
-    Number.isInteger(note.velocity) &&
-    note.velocity >= 1 &&
-    note.velocity <= 127
+    isInteger(toMidi(note.pitch), 0, 127) &&
+    isInteger(note.velocity, 1, 127)
+  );
+}
+
+export function isSatbRangeLocked(
+  project: ProjectDocument,
+  voiceId: VoiceId,
+  note: NoteRange,
+) {
+  return project.exercise.editableRanges.some(
+    (range) =>
+      range.editable === false &&
+      range.voiceIds.includes(voiceId) &&
+      note.startTick < range.toTick &&
+      note.startTick + note.durationTicks > range.fromTick,
   );
 }
 
@@ -321,14 +336,7 @@ function isRangeLocked(
   note: NoteEvent,
 ) {
   const track = getMusicalTrack(project, trackId);
-  if (track.kind === "auxiliary") return false;
-  return project.exercise.editableRanges.some(
-    (range) =>
-      range.editable === false &&
-      range.voiceIds.includes(track.voice) &&
-      note.startTick < range.toTick &&
-      note.startTick + note.durationTicks > range.fromTick,
-  );
+  return track.kind === "satb" && isSatbRangeLocked(project, track.voice, note);
 }
 
 function canEditNote(

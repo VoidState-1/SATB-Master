@@ -160,6 +160,7 @@ export function useKeyboardController({
         pencilTool: () => setTool("pencil"),
         eraserTool: () => setTool("eraser"),
         splitTool: () => setTool("split"),
+        autoBrushTool: () => setTool("auto-brush"),
         nextVoice: () => cycleActiveVoice(1),
         previousVoice: () => cycleActiveVoice(-1),
         playPause: () => void handlePlay(),

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
 import { THEME_CHANGE_EVENT } from "../../../hooks/useTheme";
+import type { AutoBrushPlanResult } from "../../../domain/autoBrush";
 import type { HarmonyDiagnostic } from "../../../domain/harmony";
 import { keyAtTick, type MeasureInfo } from "../../../domain/time";
 import {
@@ -42,6 +43,7 @@ interface NoteLayerProps {
   diagnosticsByNote: Map<string, HarmonyDiagnostic[]>;
   missingExpectedNoteIds?: ReadonlySet<string>;
   interaction?: PointerInteraction;
+  autoBrushPreview?: AutoBrushPlanResult;
   noteRects: NoteRect[];
   progressionPreview?: ProgressionPreview;
   tool: EditorTool;
@@ -110,7 +112,7 @@ function readRollCanvasTheme() {
   };
 }
 
-function auxiliaryNoteInk(color: string, background: string, opacity: number) {
+function noteInk(color: string, background: string, opacity: number) {
   const rgb = Number.parseInt(color.slice(1), 16);
   const backdrop = Number.parseInt(background.slice(1), 16);
   const linearComponent = (shift: number) => {
@@ -139,6 +141,7 @@ export function NoteLayer({
   diagnosticsByNote,
   missingExpectedNoteIds,
   interaction,
+  autoBrushPreview,
   noteRects,
   progressionPreview,
   tool,
@@ -174,8 +177,11 @@ export function NoteLayer({
     const colorForTrack = (track: MusicalTrack) => track.kind === "satb"
       ? rollTheme.voices[track.id]
       : auxiliaryColors.get(track.id) ?? resolveAuxiliaryTrackColor(track);
-    const drawingTrack = interaction?.kind === "draw"
+    const drawingTrack = interaction?.kind === "draw" && interaction.mode !== "auto-brush"
       ? getAllPlayableTracks(project).find((track) => track.id === interaction.voiceId)
+      : undefined;
+    const reassignments = autoBrushPreview?.ok
+      ? new Map(autoBrushPreview.reassignments.map((move) => [move.noteId, move]))
       : undefined;
     const ratio = window.devicePixelRatio || 1;
     const renderWidth = viewportSize.width;
@@ -360,11 +366,13 @@ export function NoteLayer({
           y + height < visibleTop
         )
           return;
-        const voiceColor = colorForTrack(track);
-        const active = track.id === activeVoice;
+        const reassignment = reassignments?.get(note.id);
+        const targetVoice = reassignment?.fromVoice === track.id ? reassignment.toVoice : undefined;
+        const voiceColor = targetVoice ? rollTheme.voices[targetVoice] : colorForTrack(track);
+        const active = (targetVoice ?? track.id) === activeVoice;
         const locked = note.locked || track.locked;
-        const ink = track.kind === "auxiliary"
-          ? auxiliaryNoteInk(voiceColor, rollTheme.bg, active ? 1 : 184 / 255)
+        const ink = targetVoice || track.kind === "auxiliary"
+          ? noteInk(voiceColor, rollTheme.bg, active ? 1 : 184 / 255)
           : "#fff";
         context.fillStyle = active ? voiceColor : `${voiceColor}b8`;
         context.beginPath();
@@ -375,6 +383,14 @@ export function NoteLayer({
           context.strokeStyle = rollTheme.selectStroke;
           context.lineWidth = 2;
           context.stroke();
+        }
+        if (targetVoice) {
+          context.save();
+          context.setLineDash([3, 2]);
+          context.strokeStyle = voiceColor;
+          context.lineWidth = 1;
+          context.stroke();
+          context.restore();
         }
         if (track.kind === "auxiliary" && locked && width <= 48) {
           context.save();
@@ -416,7 +432,7 @@ export function NoteLayer({
         }
       });
 
-      if (interaction?.kind === "draw" && drawingTrack) {
+      if (interaction?.kind === "draw" && (autoBrushPreview || drawingTrack)) {
         const x = tickToX(
           interaction.nextStartTick,
           project.ppq,
@@ -432,28 +448,47 @@ export function NoteLayer({
             1,
           ),
         );
-        const color = colorForTrack(drawingTrack);
-        context.fillStyle = `${color}70`;
-        context.fillRect(x, y, width, ROW_HEIGHT - 4);
-        context.strokeStyle = drawingTrack.kind === "satb"
-          ? VOICE_CONFIG[drawingTrack.id].darkColor
-          : color;
-        context.strokeRect(x + 0.5, y + 0.5, width - 1, ROW_HEIGHT - 5);
-        if (width > 25) {
-          context.fillStyle = drawingTrack.kind === "auxiliary"
-            ? auxiliaryNoteInk(color, rollTheme.bg, 112 / 255)
-            : "#fff";
-          context.font = "600 10px Segoe UI";
-          context.fillText(
-            formatSpelledPitch(
-              spellMidi(
-                interaction.midiNote,
-                keyAtTick(project.keyEvents, interaction.nextStartTick),
-              ),
-            ),
-            x + 5,
-            y + 12,
-          );
+        const pitchLabel = formatSpelledPitch(spellMidi(
+          interaction.midiNote,
+          keyAtTick(project.keyEvents, interaction.nextStartTick),
+        ));
+        if (autoBrushPreview) {
+          const voice = autoBrushPreview.ok ? autoBrushPreview.assignedVoice : undefined;
+          const color = voice ? rollTheme.voices[voice] : rollTheme.danger;
+          context.save();
+          context.fillStyle = color;
+          if (!voice) context.globalAlpha = 0.26;
+          context.fillRect(x, y, width, ROW_HEIGHT - 4);
+          if (voice) {
+            const label = `${VOICE_CONFIG[voice].shortName} · ${pitchLabel}`;
+            context.font = "600 10px Segoe UI";
+            if (context.measureText(label).width <= width - 10) {
+              context.fillStyle = noteInk(color, rollTheme.bg, 1);
+              context.fillText(label, x + 5, y + 12);
+            }
+          } else {
+            context.globalAlpha = 1;
+            context.setLineDash([4, 3]);
+            context.strokeStyle = color;
+            context.lineWidth = 1;
+            context.strokeRect(x + 0.5, y + 0.5, width - 1, ROW_HEIGHT - 5);
+          }
+          context.restore();
+        } else if (drawingTrack) {
+          const color = colorForTrack(drawingTrack);
+          context.fillStyle = `${color}70`;
+          context.fillRect(x, y, width, ROW_HEIGHT - 4);
+          context.strokeStyle = drawingTrack.kind === "satb"
+            ? VOICE_CONFIG[drawingTrack.id].darkColor
+            : color;
+          context.strokeRect(x + 0.5, y + 0.5, width - 1, ROW_HEIGHT - 5);
+          if (width > 25) {
+            context.fillStyle = drawingTrack.kind === "auxiliary"
+              ? noteInk(color, rollTheme.bg, 112 / 255)
+              : "#fff";
+            context.font = "600 10px Segoe UI";
+            context.fillText(pitchLabel, x + 5, y + 12);
+          }
         }
       }
 
@@ -490,6 +525,7 @@ export function NoteLayer({
     };
   }, [
     activeVoice,
+    autoBrushPreview,
     diagnosticsByNote,
     interaction,
     measures,

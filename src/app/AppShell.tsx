@@ -19,6 +19,7 @@ import {
   Minus,
   Moon,
   MousePointer2,
+  Paintbrush,
   PanelBottom,
   PanelLeft,
   PanelRight,
@@ -349,6 +350,7 @@ function AppShell() {
     resetWorkspace(nextProject, setPlayheadTick);
   const {
     handleAddNote,
+    handleAutoBrushNote,
     handleMoveNotes,
     handleSelectNotes,
     handleSelectChords,
@@ -914,6 +916,12 @@ function AppShell() {
             active={effectiveTool === "split"}
             onClick={() => setTool("split")}
           />
+          <IconButton
+            label={`自动笔刷（${shortcutSettings.bindings.autoBrushTool[0] ? formatShortcutBinding(shortcutSettings.bindings.autoBrushTool[0]) : "未设置"}）`}
+            icon={<Paintbrush />}
+            active={effectiveTool === "auto-brush"}
+            onClick={() => setTool("auto-brush")}
+          />
         </div>
         <div className="transport-group">
           <IconButton
@@ -1074,6 +1082,7 @@ function AppShell() {
             <TrackSidebar
               project={project}
               activeVoice={activeVoice}
+              autoBrushActive={effectiveTool === "auto-brush"}
               onSetActive={setActiveVoice}
               onUpdateTrack={handleUpdateTrack}
               onAddAuxiliaryTrack={handleAddAuxiliaryTrack}
@@ -1128,6 +1137,7 @@ function AppShell() {
             onPreviewNote={handlePreviewNote}
             onSelectChords={handleSelectChords}
             onAddNote={handleAddNote}
+            onAutoBrushNote={handleAutoBrushNote}
             onUpdateNote={handleUpdateNote}
             onMoveNotes={handleMoveNotes}
             onDeleteNotes={handleDeleteNotes}

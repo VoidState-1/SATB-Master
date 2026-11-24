@@ -169,6 +169,7 @@ export function useChordInteraction({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button === 0 && tool === "auto-brush") return;
     clearDiagnosticTooltip();
     focusEditor();
     if (event.button === 1) {

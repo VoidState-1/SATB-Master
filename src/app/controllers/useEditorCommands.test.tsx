@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { audioEngine } from "../../audio/audioEngine";
 import { createEmptyProject, getMusicalTrack } from "../../domain/project";
 import { useProjectHistory } from "../../hooks/useProjectHistory";
+import { defaultShortcutBindings } from "../../shortcuts/shortcutRegistry";
 import { useEditorCommands } from "./useEditorCommands";
 import { useEditorState } from "./useEditorState";
+import { useKeyboardController } from "./useKeyboardController";
 
-describe("编辑器额外声部命令", () => {
+describe("编辑器音符命令", () => {
   let root: Root;
   let state: {
     history: ReturnType<typeof useProjectHistory>;
@@ -24,6 +26,8 @@ describe("编辑器额外声部命令", () => {
     vi.spyOn(audioEngine, "previewNote").mockResolvedValue();
     showNotice.mockClear();
     const initial = createEmptyProject();
+    const bindings = defaultShortcutBindings();
+    const noopAsync = async () => {};
     function Harness() {
       const history = useProjectHistory(initial);
       const project = history.project;
@@ -31,6 +35,20 @@ describe("编辑器额外声部命令", () => {
       const [playheadTick, setPlayheadTick] = useState(0);
       const commands = useEditorCommands({
         project, history, editor, playheadTick, setPlayheadTick, showNotice,
+      });
+      useKeyboardController({
+        ...commands,
+        ...editor,
+        bindings,
+        confirmation: undefined,
+        settingsOpen: false,
+        projectLengthTicks: project.lengthTicks,
+        history,
+        setPlayheadTick,
+        handleNew: noopAsync,
+        handleOpen: noopAsync,
+        handleSave: noopAsync,
+        handlePlay: noopAsync,
       });
       state = { history, editor, commands, setPlayheadTick };
       return null;
@@ -119,5 +137,58 @@ describe("编辑器额外声部命令", () => {
     expect(state.editor.activeVoice).toBe("soprano");
     act(() => state.history.redo());
     expect(state.editor.activeVoice).toBe(id);
+  });
+
+  it("连续自动分配和重排，按实际声部预听并用一次快捷键撤销或重做", () => {
+    const press = (code: string, modifiers?: KeyboardEventInit) => {
+      act(() => window.dispatchEvent(new KeyboardEvent("keydown", {
+        code, cancelable: true, ...modifiers,
+      })));
+    };
+    press("Digit5");
+    expect(state.editor.effectiveTool).toBe("auto-brush");
+    act(() => state.commands.handleAddAuxiliaryTrack({ program: 42 }));
+    const auxiliaryVoice = state.editor.activeVoice;
+    const grid = state.editor.gridTicks;
+    act(() => state.commands.handleAutoBrushNote(0, 64));
+    const e4 = state.editor.selectedNote!.note;
+    expect(e4).toMatchObject({ startTick: 0, durationTicks: grid, velocity: 88, locked: false });
+    expect(audioEngine.previewNote).toHaveBeenLastCalledWith(64, "alto", expect.anything());
+
+    act(() => state.commands.handleAutoBrushNote(0, 67, grid));
+    const g4 = state.editor.selectedNote!.note;
+    expect(state.editor.selectedNote?.voiceId).toBe("soprano");
+    act(() => state.commands.handleAddChord(0, grid));
+    expect(state.editor.selectedChordIds.size).toBe(1);
+    const before = state.history.project;
+
+    act(() => state.commands.handleAutoBrushNote(0, 72, grid));
+    const updated = state.history.project;
+    const c5 = state.editor.selectedNote!.note;
+    expect(getMusicalTrack(updated, "soprano").notes).toEqual([c5]);
+    expect(getMusicalTrack(updated, "alto").notes).toEqual([g4]);
+    expect(getMusicalTrack(updated, "tenor").notes).toEqual([e4]);
+    expect(state.editor.selectedNoteIds).toEqual(new Set([c5.id]));
+    expect(state.editor.selectedChordIds.size).toBe(0);
+    expect(state.editor.activeVoice).toBe(auxiliaryVoice);
+    expect(getMusicalTrack(updated, auxiliaryVoice).notes).toEqual([]);
+    expect(audioEngine.previewNote).toHaveBeenLastCalledWith(72, "soprano", {
+      trackIndex: 0, program: getMusicalTrack(updated, "soprano").program,
+    });
+
+    press("KeyZ", { ctrlKey: true });
+    expect(state.history.project).toBe(before);
+    press("KeyZ", { ctrlKey: true, shiftKey: true });
+    expect(state.history.project).toBe(updated);
+
+    act(() => state.commands.handleAutoBrushNote(0, 48));
+    const full = state.history.project;
+    const previewCount = vi.mocked(audioEngine.previewNote).mock.calls.length;
+    act(() => state.commands.handleAutoBrushNote(0, 60));
+    expect(state.history.project).toBe(full);
+    expect(audioEngine.previewNote).toHaveBeenCalledTimes(previewCount);
+    expect(showNotice).toHaveBeenLastCalledWith("该时间位置四声部已满");
+    press("KeyZ", { ctrlKey: true });
+    expect(state.history.project).toBe(updated);
   });
 });

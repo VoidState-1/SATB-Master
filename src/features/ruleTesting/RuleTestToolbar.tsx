@@ -9,6 +9,7 @@ import {
   Magnet,
   MoreHorizontal,
   MousePointer2,
+  Paintbrush,
   Pause,
   Pencil,
   Play,
@@ -24,6 +25,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { IconButton } from "../../components/IconButton";
+import type { EditorTool } from "../editor";
 
 interface RuleTestToolbarProps {
   autoRun: boolean;
@@ -40,7 +42,7 @@ interface RuleTestToolbarProps {
   gridTicks: number;
   gridOptions: readonly { ticks: number; label: string }[];
   pixelsPerBeat: number;
-  effectiveTool: "select" | "pencil" | "eraser" | "split";
+  effectiveTool: EditorTool;
   canUndo: boolean;
   canRedo: boolean;
   onBack(): void;
@@ -57,7 +59,7 @@ interface RuleTestToolbarProps {
   onCopy(): void;
   onPaste(): void;
   onDelete(): void;
-  onSetTool(tool: "select" | "pencil" | "eraser" | "split"): void;
+  onSetTool(tool: EditorTool): void;
   onGoToStart(): void;
   onPlay(): void;
   onStop(): void;
@@ -135,6 +137,12 @@ export function RuleTestToolbar(props: RuleTestToolbarProps) {
           icon={<Scissors />}
           active={props.effectiveTool === "split"}
           onClick={() => props.onSetTool("split")}
+        />
+        <IconButton
+          label="自动笔刷"
+          icon={<Paintbrush />}
+          active={props.effectiveTool === "auto-brush"}
+          onClick={() => props.onSetTool("auto-brush")}
         />
       </div>
 

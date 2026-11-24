@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createChordRegion } from "../../domain/chords";
 import { addAuxiliaryTrack, addNote, updateTrack } from "../../domain/editing";
 import { spellMidi } from "../../domain/pitch";
 import { createEmptyProject, type NoteEvent } from "../../domain/project";
@@ -237,6 +238,78 @@ describe("PianoRoll", () => {
     expect(props.onSplitNote).toHaveBeenCalledTimes(1);
     expect(props.onDeleteNotes).toHaveBeenCalledTimes(1);
     expect(props.onSelectNotes).toHaveBeenLastCalledWith(new Set(["aux-high"]));
+  });
+
+  it.each([
+    ["额外声部", false],
+    ["已锁定 SATB 声部", true],
+  ])("从%s启动自动笔刷并向外吸附两端", (_, useLockedSatb) => {
+    const { props, id } = auxiliaryRoll();
+    const activeVoice = useLockedSatb ? "soprano" : id;
+    const project = updateTrack(props.project, "soprano", { locked: true }).project;
+    const onAutoBrushNote = vi.fn();
+    const pointer = interactWithRoll({
+      ...props, project, activeVoice, onAutoBrushNote, tool: "auto-brush",
+    });
+    const grid = props.gridTicks;
+
+    pointer("pointerdown", grid * 2, 67, 5);
+    expect(props.onInteractionActiveChange).toHaveBeenLastCalledWith(true);
+    pointer("pointermove", grid, 70, 5);
+    expect(onAutoBrushNote).not.toHaveBeenCalled();
+    pointer("pointerup", grid, 70, 5);
+    expect(onAutoBrushNote).toHaveBeenNthCalledWith(1, grid, 67, 2 * grid);
+    expect(props.onInteractionActiveChange).toHaveBeenLastCalledWith(false);
+
+    pointer("pointerdown", 0, 48, 2);
+    pointer("pointermove", 2 * grid, 48, -2);
+    pointer("pointerup", 2 * grid, 48, -2);
+    expect(onAutoBrushNote).toHaveBeenNthCalledWith(2, 0, 48, 2 * grid);
+    expect(props.onAddNote).not.toHaveBeenCalled();
+  });
+
+  it("取消自动笔刷拖绘时丢弃预览，缺少写入回调时不启动拖绘", () => {
+    const props = createProps(vi.fn());
+    const onAutoBrushNote = vi.fn();
+    const pointer = interactWithRoll({ ...props, tool: "auto-brush", onAutoBrushNote });
+    pointer("pointerdown", 0, 60, 2);
+    pointer("pointercancel", 0, 60, 2);
+    pointer("pointerup", 0, 60, 2);
+    expect(onAutoBrushNote).not.toHaveBeenCalled();
+    expect(props.onInteractionActiveChange).toHaveBeenLastCalledWith(false);
+
+    vi.mocked(props.onInteractionActiveChange).mockClear();
+    const readOnlyPointer = interactWithRoll({ ...props, tool: "auto-brush" });
+    readOnlyPointer("pointerdown", 0, 60, 2);
+    readOnlyPointer("pointerup", 0, 60, 2);
+    expect(props.onInteractionActiveChange).not.toHaveBeenCalledWith(true);
+    expect(props.onAddNote).not.toHaveBeenCalled();
+  });
+
+  it("自动笔刷在和弦轨上保持原有和弦和选区", () => {
+    const props = createProps(vi.fn());
+    const chord = createChordRegion(props.project, 0, props.project.ppq, props.chordBrush, "chord");
+    props.project.chordTrack.regions.push(chord);
+    props.selectedChordIds.add(chord.id);
+    const onAutoBrushNote = vi.fn();
+    interactWithRoll({ ...props, tool: "auto-brush", onAutoBrushNote });
+    const lane = host.querySelector<HTMLDivElement>(".chord-lane")!;
+    Object.assign(lane, { setPointerCapture: vi.fn(), hasPointerCapture: () => false });
+    for (const [type, tick] of [
+      ["pointerdown", 0], ["pointermove", props.project.ppq], ["pointerup", props.project.ppq],
+    ] as const) {
+      act(() => lane.dispatchEvent(new MouseEvent(type, {
+        bubbles: true,
+        clientX: tickToX(tick, props.project.ppq, props.pixelsPerBeat) + 20,
+      })));
+    }
+    expect(lane.setPointerCapture).not.toHaveBeenCalled();
+    expect(props.onSelectChords).not.toHaveBeenCalled();
+    expect(props.onMoveChords).not.toHaveBeenCalled();
+    expect(props.onUpdateChord).not.toHaveBeenCalled();
+    expect(props.onDeleteChords).not.toHaveBeenCalled();
+    expect(props.onAddChord).not.toHaveBeenCalled();
+    expect(onAutoBrushNote).not.toHaveBeenCalled();
   });
 
   it("does not disengage followPlayhead on vertical mouse wheel or vertical-only scroll", () => {

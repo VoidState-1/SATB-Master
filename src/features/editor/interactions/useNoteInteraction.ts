@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
+import { planAutoBrushNote } from "../../../domain/autoBrush";
 import type { HarmonyDiagnostic } from "../../../domain/harmony";
 import {
   keyAtTick,
@@ -13,6 +14,7 @@ import {
 } from "../../../domain/project";
 import {
   formatSpelledPitch,
+  spellMidi,
   toMidi,
   transposeSpelledPitch,
 } from "../../../domain/pitch";
@@ -56,6 +58,7 @@ interface UseNoteInteractionProps {
     midiNote: number,
     durationTicks?: number,
   ): void;
+  onAutoBrushNote?(tick: number, midiNote: number, durationTicks?: number): void;
   onUpdateNote(
     voiceId: string,
     noteId: string,
@@ -95,6 +98,7 @@ export function useNoteInteraction({
   onSelectChords,
   onPreviewNote,
   onAddNote,
+  onAutoBrushNote,
   onUpdateNote,
   onMoveNotes,
   onDeleteNotes,
@@ -104,9 +108,20 @@ export function useNoteInteraction({
 }: UseNoteInteractionProps) {
   const [interaction, setInteraction] = useState<PointerInteraction>();
   const playableTracks = useMemo(() => getAllPlayableTracks(project), [project]);
+  const autoBrushPreview = useMemo(() => {
+    if (interaction?.kind !== "draw" || interaction.mode !== "auto-brush") return;
+    const { nextStartTick: startTick, nextDurationTicks: durationTicks, midiNote } =
+      interaction;
+    return planAutoBrushNote(project, {
+      startTick,
+      durationTicks,
+      pitch: spellMidi(midiNote, keyAtTick(project.keyEvents, startTick)),
+    });
+  }, [interaction, project]);
+  const erasedNoteIds = interaction?.kind === "erase" ? interaction.noteIds : undefined;
+  const noteDrag =
+    interaction?.kind === "move" || interaction?.kind === "resize" ? interaction : undefined;
   const noteRects = useMemo<NoteRect[]>(() => {
-    const erasedNoteIds =
-      interaction?.kind === "erase" ? interaction.noteIds : undefined;
     const orderedTracks = orderTracksForRendering(
       playableTracks,
       activeVoice,
@@ -116,10 +131,6 @@ export function useNoteInteraction({
       return track.notes
         .filter((note) => !erasedNoteIds?.has(note.id))
         .map((note) => {
-          const noteDrag =
-            interaction?.kind === "move" || interaction?.kind === "resize"
-              ? interaction
-              : undefined;
           const isAnchor = noteDrag?.noteId === note.id;
           const isGroupMove =
             noteDrag?.kind === "move" && noteDrag.selectedIds.includes(note.id);
@@ -160,7 +171,7 @@ export function useNoteInteraction({
           };
         });
     });
-  }, [activeVoice, interaction, pixelsPerBeat, playableTracks, project]);
+  }, [activeVoice, erasedNoteIds, noteDrag, pixelsPerBeat, playableTracks, project]);
 
   useEffect(() => {
     setInteraction(undefined);
@@ -205,19 +216,11 @@ export function useNoteInteraction({
     if (event.button !== 0) return;
     const point = localPoint(event);
     if (point.y < HEADER_HEIGHT || point.x < PIANO_WIDTH) return;
-    const hit = hitTest(point.x, point.y);
-
-    if (tool === "eraser") {
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setInteraction({
-        kind: "erase",
-        noteIds: new Set(hit && !hit.track.locked && !hit.note.locked ? [hit.note.id] : []),
-      });
-      return;
-    }
-    if (tool === "pencil") {
-      const track = playableTracks.find((candidate) => candidate.id === activeVoice);
-      if (!track || track.locked) return;
+    if (tool === "pencil" || tool === "auto-brush") {
+      if (tool === "pencil") {
+        const track = playableTracks.find((candidate) => candidate.id === activeVoice);
+        if (!track || track.locked) return;
+      } else if (!onAutoBrushNote) return;
       const originRawTick = rawTickAtX(point.x);
       const originTick = snapTickBackward(
         originRawTick,
@@ -227,11 +230,23 @@ export function useNoteInteraction({
       event.currentTarget.setPointerCapture(event.pointerId);
       setInteraction({
         kind: "draw",
-        voiceId: activeVoice,
+        ...(tool === "auto-brush"
+          ? { mode: tool }
+          : { mode: tool, voiceId: activeVoice }),
         midiNote: midiAtY(point.y),
         originRawTick,
         nextStartTick: originTick,
         nextDurationTicks: gridTicks,
+      });
+      return;
+    }
+
+    const hit = hitTest(point.x, point.y);
+    if (tool === "eraser") {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setInteraction({
+        kind: "erase",
+        noteIds: new Set(hit && !hit.track.locked && !hit.note.locked ? [hit.note.id] : []),
       });
       return;
     }
@@ -339,11 +354,13 @@ export function useNoteInteraction({
           project.lengthTicks,
         ),
       );
-      setInteraction({
-        ...interaction,
-        nextStartTick,
-        nextDurationTicks: Math.max(gridTicks, nextEndTick - nextStartTick),
-      });
+      const nextDurationTicks = nextEndTick - nextStartTick;
+      if (
+        nextStartTick !== interaction.nextStartTick ||
+        nextDurationTicks !== interaction.nextDurationTicks
+      ) {
+        setInteraction({ ...interaction, nextStartTick, nextDurationTicks });
+      }
       return;
     }
     if (interaction.kind === "erase") {
@@ -455,12 +472,12 @@ export function useNoteInteraction({
     } else if (seekOnClick && (interaction.kind === "move" || interaction.kind === "resize")) {
       onSetPlayhead(snapStartTick(interaction.originX));
     } else if (interaction.kind === "draw") {
-      onAddNote(
-        interaction.voiceId,
-        interaction.nextStartTick,
-        interaction.midiNote,
-        interaction.nextDurationTicks,
-      );
+      const { nextStartTick, midiNote, nextDurationTicks } = interaction;
+      if (interaction.mode === "auto-brush") {
+        onAutoBrushNote?.(nextStartTick, midiNote, nextDurationTicks);
+      } else {
+        onAddNote(interaction.voiceId, nextStartTick, midiNote, nextDurationTicks);
+      }
     } else if (interaction.kind === "erase" && interaction.noteIds.size > 0) {
       onDeleteNotes(interaction.noteIds);
     } else if (interaction.kind === "marquee") {
@@ -513,6 +530,7 @@ export function useNoteInteraction({
 
   return {
     interaction,
+    autoBrushPreview,
     noteRects,
     handlePointerDown,
     handlePointerMove,

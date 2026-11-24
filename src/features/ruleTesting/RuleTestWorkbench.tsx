@@ -360,6 +360,7 @@ export function RuleTestWorkbench({
             <TrackSidebar
               project={project}
               activeVoice={editor.activeVoice}
+              autoBrushActive={effectiveTool === "auto-brush"}
               onSetActive={editor.setActiveVoice}
               onUpdateTrack={commands.handleUpdateTrack}
               onAddAuxiliaryTrack={commands.handleAddAuxiliaryTrack}
@@ -412,6 +413,7 @@ export function RuleTestWorkbench({
             onPreviewNote={commands.handlePreviewNote}
             onSelectChords={commands.handleSelectChords}
             onAddNote={commands.handleAddNote}
+            onAutoBrushNote={commands.handleAutoBrushNote}
             onUpdateNote={commands.handleUpdateNote}
             onMoveNotes={commands.handleMoveNotes}
             onDeleteNotes={commands.handleDeleteNotes}

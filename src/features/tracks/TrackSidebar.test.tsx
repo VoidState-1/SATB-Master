@@ -30,11 +30,12 @@ describe("TrackSidebar 额外声部", () => {
     vi.unstubAllGlobals();
   });
 
-  function render(project = createEmptyProject(), activeVoice = "soprano") {
+  function render(project = createEmptyProject(), activeVoice = "soprano", autoBrushActive?: boolean) {
     act(() => root.render(
       <TrackSidebar
         project={project}
         activeVoice={activeVoice}
+        autoBrushActive={autoBrushActive}
         onSetActive={onSetActive}
         onUpdateTrack={onUpdateTrack}
         onAddAuxiliaryTrack={onAddAuxiliaryTrack}
@@ -105,6 +106,16 @@ describe("TrackSidebar 额外声部", () => {
     expect(onUpdateTrack).toHaveBeenCalledTimes(2);
     expect(host.querySelector(".auxiliary-track-edit")).toBeNull();
     expect(document.activeElement).toBe(edit);
+  });
+
+  it("自动笔刷激活时显示 SATB 输入，退出后恢复当前轨道名称", () => {
+    const { project, trackId } = addAuxiliaryTrack(createEmptyProject());
+    render(project, trackId, true);
+    const footnote = host.querySelector<HTMLElement>(".sidebar-footnote")!;
+    expect(footnote.textContent).toBe("当前输入：自动笔刷（SATB）");
+    expect(footnote.title).toBe("自动笔刷（SATB）");
+    render(project, trackId, false);
+    expect(footnote.textContent).toBe(`当前输入：${name}`);
   });
 
   it("提供混音、显隐、锁定控件并禁止删除已锁定的声部", () => {

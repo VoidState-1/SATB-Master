@@ -1,4 +1,9 @@
+// @vitest-environment jsdom
+
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { useShortcutBindings } from "../hooks/useShortcutBindings";
 import {
   SHORTCUT_DEFINITIONS,
   commandForKeyboardEvent,
@@ -60,6 +65,37 @@ describe("shortcut registry", () => {
         { ignoreControl: true },
       )?.id,
     ).toBe("previousVoice");
+  });
+
+  it("keeps tools 1–4 and assigns auto brush to 5", () => {
+    const bindings = defaultShortcutBindings();
+    expect(bindings.autoBrushTool).toEqual(["Digit5"]);
+    expect(["Digit1", "Digit2", "Digit3", "Digit4", "Digit5"].map(
+      (code) => commandForKeyboardEvent(event(code), bindings)?.id,
+    )).toEqual(["selectTool", "pencilTool", "eraserTool", "splitTool", "autoBrushTool"]);
+    expect(formatShortcutBinding(bindings.autoBrushTool[0])).toBe("5");
+  });
+
+  it("fills the new shortcut when loading preferences saved before auto brush", () => {
+    const storageKey = "satb-master-shortcuts-v1";
+    localStorage.setItem(storageKey, JSON.stringify({
+      selectTool: ["Digit1"], pencilTool: ["KeyP"], eraserTool: ["Digit3"], splitTool: [],
+    }));
+    try {
+      function ShortcutHarness() {
+        expect(useShortcutBindings().bindings).toMatchObject({
+          selectTool: ["Digit1"],
+          pencilTool: ["KeyP"],
+          eraserTool: ["Digit3"],
+          splitTool: [],
+          autoBrushTool: ["Digit5"],
+        });
+        return null;
+      }
+      renderToStaticMarkup(createElement(ShortcutHarness));
+    } finally {
+      localStorage.removeItem(storageKey);
+    }
   });
 
   it("does not ship conflicting default bindings", () => {

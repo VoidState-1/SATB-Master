@@ -93,6 +93,7 @@ export function PianoRoll({
   onPreviewNote,
   onSelectChords,
   onAddNote,
+  onAutoBrushNote,
   onUpdateNote,
   onMoveNotes,
   onDeleteNotes,
@@ -296,6 +297,7 @@ export function PianoRoll({
 
   const {
     interaction,
+    autoBrushPreview,
     noteRects,
     handlePointerDown,
     handlePointerMove,
@@ -320,6 +322,7 @@ export function PianoRoll({
     onSelectChords,
     onPreviewNote,
     onAddNote,
+    onAutoBrushNote,
     onUpdateNote,
     onMoveNotes,
     onDeleteNotes,
@@ -577,6 +580,7 @@ export function PianoRoll({
           diagnosticsByNote={diagnosticsByNote}
           missingExpectedNoteIds={missingExpectedNoteIds}
           interaction={interaction}
+          autoBrushPreview={autoBrushPreview}
           noteRects={noteRects}
           progressionPreview={progressionPreview}
           tool={tool}

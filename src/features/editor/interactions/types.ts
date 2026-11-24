@@ -24,14 +24,13 @@ export interface MarqueeInteraction {
   append: boolean;
 }
 
-export interface DrawInteraction {
+export type DrawInteraction = {
   kind: "draw";
-  voiceId: string;
   midiNote: number;
   originRawTick: number;
   nextStartTick: number;
   nextDurationTicks: number;
-}
+} & ({ mode?: "pencil"; voiceId: string } | { mode: "auto-brush" });
 
 export interface EraseInteraction {
   kind: "erase";

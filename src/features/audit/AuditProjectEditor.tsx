@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Download, Eraser, Focus, LockKeyhole, MousePointer2, Pause, Pencil, Play, Redo2, RotateCcw, Scissors, SlidersHorizontal, Square, Trash2, Undo2, ZoomIn, ZoomOut } from "lucide-react";
+import { Download, Eraser, Focus, LockKeyhole, MousePointer2, Paintbrush, Pause, Pencil, Play, Redo2, RotateCcw, Scissors, SlidersHorizontal, Square, Trash2, Undo2, ZoomIn, ZoomOut } from "lucide-react";
 import type { ConfirmationState } from "../../app/controllers/useConfirmationController";
 import { useEditorState } from "../../app/controllers/useEditorState";
 import { useEditorCommands } from "../../app/controllers/useEditorCommands";
@@ -17,6 +17,14 @@ import { SelectionInspector } from "../inspector";
 import "./audit-evidence.css";
 
 const auditSoundFont = { kind: "default" as const, name: "SATB Master 默认音色" };
+const auditTools = [
+  ["select", "选择", MousePointer2],
+  ["pencil", "画笔", Pencil],
+  ["eraser", "橡皮", Eraser],
+  ["split", "切分", Scissors],
+  ["auto-brush", "自动笔刷", Paintbrush],
+] satisfies [EditorTool, string, typeof MousePointer2][];
+
 interface Props {
   initialProject: ProjectDocument;
   originalProject: ProjectDocument;
@@ -108,7 +116,7 @@ export function AuditProjectEditor({ initialProject, originalProject, selected, 
       </div>
       <label><span className="audit-evidence-sr">声部</span><select aria-label="工程声部" title="当前声部" value={editor.activeVoice} onChange={(e) => editor.setActiveVoice(e.target.value)}>{getAllPlayableTracks(project).map((track) => <option key={track.id} value={track.id}>{track.name}</option>)}</select></label>
       <div className="audit-evidence-tool-group" role="group" aria-label="编辑工具">
-        {([["select", "选择", MousePointer2], ["pencil", "画笔", Pencil], ["eraser", "橡皮", Eraser], ["split", "切分", Scissors]] as const).map(([tool, label, Icon]) => <button key={tool} aria-label={`工程${label}`} title={label} aria-pressed={editor.tool === tool} className={`audit-evidence-icon ${editor.tool === tool ? "is-active" : ""}`} disabled={readOnly && tool !== "select"} onClick={() => editor.setTool(tool as EditorTool)}><Icon size={15} /></button>)}
+        {auditTools.map(([tool, label, Icon]) => <button key={tool} aria-label={`工程${label}`} title={label} aria-pressed={editor.tool === tool} className={`audit-evidence-icon ${editor.tool === tool ? "is-active" : ""}`} disabled={readOnly && tool !== "select"} onClick={() => editor.setTool(tool)}><Icon size={15} /></button>)}
       </div>
       <div className="audit-evidence-tool-group" role="group" aria-label="编辑历史">
         <button className="audit-evidence-icon" aria-label="工程撤销" title="撤销" disabled={readOnly || !history.canUndo} onClick={() => { stopRef.current(); history.undo(); }}><Undo2 size={15} /></button>
@@ -130,6 +138,7 @@ export function AuditProjectEditor({ initialProject, originalProject, selected, 
         onSetPlayhead={setPlayhead} onSetPixelsPerBeat={editor.setPixelsPerBeat} onSetActiveVoice={editor.setActiveVoice} onSetEditorDomain={editor.setEditorDomain}
         onInteractionActiveChange={editor.setEditorInteractionActive} onSelectNotes={commands.handleSelectNotes} onPreviewNote={commands.handlePreviewNote} onSelectChords={commands.handleSelectChords}
         onAddNote={commands.handleAddNote} onUpdateNote={commands.handleUpdateNote} onMoveNotes={commands.handleMoveNotes} onDeleteNotes={commands.handleDeleteNotes} onSplitNote={commands.handleSplitNote}
+        onAutoBrushNote={readOnly ? undefined : commands.handleAutoBrushNote}
         onAddChord={commands.handleAddChord} onUpdateChord={commands.handleUpdateChord} onMoveChords={commands.handleMoveChords} onDeleteChords={commands.handleDeleteChords} onSplitChord={commands.handleSplitChord}
         onAddTimingEvent={commands.handleAddTimingEvent} onUpdateTimingEvent={commands.handleUpdateTimingEvent} onDeleteTimingEvent={commands.handleDeleteTimingEvent}
         onSetLoopBoundary={playback.setLoopBoundary} />

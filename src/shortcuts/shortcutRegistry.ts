@@ -23,6 +23,7 @@ export type ShortcutCommandId =
   | "pencilTool"
   | "eraserTool"
   | "splitTool"
+  | "autoBrushTool"
   | "nextVoice"
   | "previousVoice"
   | "playPause"
@@ -226,6 +227,12 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     label: "切分工具",
     group: "tools",
     defaultBindings: ["Digit4"],
+  },
+  {
+    id: "autoBrushTool",
+    label: "自动笔刷",
+    group: "tools",
+    defaultBindings: ["Digit5"],
   },
   {
     id: "nextVoice",

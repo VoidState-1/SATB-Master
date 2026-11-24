@@ -9,7 +9,7 @@ import type {
   VoiceId,
 } from "../../domain/project";
 
-export type EditorTool = "select" | "pencil" | "eraser" | "split";
+export type EditorTool = "select" | "pencil" | "auto-brush" | "eraser" | "split";
 export type EditorDomain = "notes" | "chords";
 
 export interface ProgressionPreview {
@@ -69,6 +69,7 @@ export interface PianoRollProps {
     midiNote: number,
     durationTicks?: number,
   ): void;
+  onAutoBrushNote?(tick: number, midiNote: number, durationTicks?: number): void;
   onUpdateNote(
     voiceId: string,
     noteId: string,
