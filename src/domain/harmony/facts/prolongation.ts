@@ -26,6 +26,7 @@ import {
   soundsCompleteWrittenMembers,
 } from "./writtenVoicing";
 import { type MetricPosition, compareMetricStrength } from "../../rhythm/metric";
+import { writtenStepDirection } from "./ornamentalMotion";
 
 type WrittenProlongationFrame = Pick<AnalysisSlice, "tick" | "endTick" | "key" | "notes" | "completeSatb">;
 
@@ -109,8 +110,7 @@ export function returnsByWrittenStep(first: AnalysisNote, middle: AnalysisNote, 
       first.startTick + first.durationTicks !== middle.startTick ||
       middle.startTick + middle.durationTicks !== last.startTick ||
       middle.durationTicks > Math.min(first.durationTicks, last.durationTicks)) return false;
-  const step = writtenInterval(first.pitch, middle.pitch);
-  return isWrittenStep(step) && Math.sign(step.semitones) === step.diatonicSteps;
+  return writtenStepDirection(first, middle, false) !== 0;
 }
 
 function formsThirdOrSixth(lower: SpelledPitch, upper: SpelledPitch) {
