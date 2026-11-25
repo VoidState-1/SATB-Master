@@ -56,6 +56,21 @@ export function soundsDeclaredChord(slice: Pick<AnalysisSlice, "chord" | "comple
     soundsCompleteWrittenChord(slice.chord.identity, Object.values(slice.notes), slice.notes.bass);
 }
 
+/** Exact spelling and register with caller-selected roles that are
+ * consonant in this frame. The underlying note event is never rewritten. */
+export function soundsWrittenMemberSet(
+  slice: Pick<AnalysisSlice, "completeSatb" | "notes">,
+  allowed: readonly SpelledPitchClass[],
+  required: readonly SpelledPitchClass[] = allowed,
+) {
+  const bass = slice.notes.bass;
+  if (!slice.completeSatb || !bass) return false;
+  const notes = Object.values(slice.notes);
+  return notes.every(note => toMidi(note.pitch) >= toMidi(bass.pitch) &&
+    allowed.some(tone => pitchClassEquals(note.pitch, tone))) &&
+    required.every(tone => notes.some(note => pitchClassEquals(note.pitch, tone)));
+}
+
 const writtenQualities = Object.keys(QUALITY_INTERVALS) as ChordQuality[];
 
 export function readCompleteWrittenChord(slice: AnalysisSlice): ChordIdentity | undefined {

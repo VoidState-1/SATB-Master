@@ -44,6 +44,50 @@ export function writtenStepDirection(
   return interval.diatonicSteps === direction && isWrittenStep(interval) ? direction : 0;
 }
 
+export interface WrittenPassingLine {
+  readonly direction: -1 | 1;
+  readonly leftAnchor: AnalysisNote;
+  readonly rightAnchor: AnalysisNote;
+  readonly chainNotes: readonly AnalysisNote[];
+  readonly fromTick: number;
+  readonly toTick: number;
+}
+
+/** Walk actual attacks, not vertical slices. The caller supplies the
+ * harmonic meaning of an endpoint at the edge of its written event. */
+export function readWrittenPassingLine(
+  note: AnalysisNote,
+  previous: (note: AnalysisNote) => AnalysisNote | undefined,
+  next: (note: AnalysisNote) => AnalysisNote | undefined,
+  anchor: (note: AnalysisNote, side: "left" | "right") => boolean,
+  intermediate: (note: AnalysisNote) => boolean,
+  continuous: (left: AnalysisNote, right: AnalysisNote) => boolean,
+): WrittenPassingLine | undefined {
+  const before = previous(note), after = next(note);
+  if (!before || !after || !intermediate(note)) return;
+  const direction = writtenStepDirection(before, note);
+  if (!direction || writtenStepDirection(note, after) !== direction) return;
+  const chainNotes = [note];
+  let left = before, right = after;
+  while (!anchor(left, "left")) {
+    if (chainNotes.length === 4 || !intermediate(left)) return;
+    const earlier = previous(left);
+    if (!earlier || writtenStepDirection(earlier, left) !== direction) return;
+    chainNotes.unshift(left);
+    left = earlier;
+  }
+  while (!anchor(right, "right")) {
+    if (chainNotes.length === 4 || !intermediate(right)) return;
+    const later = next(right);
+    if (!later || writtenStepDirection(right, later) !== direction) return;
+    chainNotes.push(right);
+    right = later;
+  }
+  if (!continuous(left, right)) return;
+  return { direction, leftAnchor: left, rightAnchor: right, chainNotes,
+    fromTick: chainNotes[0].startTick, toTick: right.startTick };
+}
+
 export function belongsToWrittenHarmony(
   identity: ChordIdentity, voice: VoiceId, note: AnalysisNote,
 ) {

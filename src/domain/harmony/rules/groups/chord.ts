@@ -25,6 +25,7 @@ import {
   type ChordSliceFact,
   structuralTriadVoicing,
   realizedBeforeVerifiedOrnaments,
+  writtenDominantFifthExchange,
   triadOrnaments,
   landsOnIncompleteTonic,
 } from "../helpers/chordVoicing";
@@ -35,6 +36,8 @@ import {
   isVerifiedOrnamentalBass,
   pairedOuterNeighbors,
   notesWithAnticipationReplacements,
+  notesWithGroupedAnticipations,
+  readUnmarkedOrnament,
 } from "../helpers/ornaments";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
@@ -58,8 +61,9 @@ export function unclassifiedNonchordToneRule(context: HarmonyRuleContext) {
       const ornaments = triadOrnaments(context, slice);
       const confirmed = heldSuspensionsAt(context, slice);
       const respelt = respeltDoubleDominantMember(context, slice);
-      const outside = unresolved.filter(({ note }) =>
-        note.id !== respelt?.noteId && !confirmed.includes(note.id) && !ornaments?.noteIds.includes(note.id),
+      const outside = unresolved.filter(({ note, voiceId }) =>
+        note.id !== respelt?.noteId && !confirmed.includes(note.id) && !ornaments?.noteIds.includes(note.id) &&
+        !readUnmarkedOrnament(context, slice, voiceId, note),
       );
       if (outside.length === 0) return;
       diagnostics.push(
@@ -162,7 +166,8 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
   chordSliceFacts(context).standard.forEach(
     ({ slice, chord, active, stableComplete, structural }) => {
       if (!stableComplete) return;
-      const surface = notesWithAnticipationReplacements(context, slice, active);
+      const replaced = notesWithAnticipationReplacements(context, slice, active);
+      const surface = replaced === active ? notesWithGroupedAnticipations(context, slice) : replaced;
       const requiredTones = chordVoicingPolicy(chord.identity).requiredDegrees
         .map(degree => chordIdentityToneSpellingForDegree(chord.identity, degree))
         .filter((tone): tone is SpelledPitchClass => Boolean(tone));
@@ -206,7 +211,8 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
         const respelt = respeltDoubleDominantMember(context, slice);
         if (respelt && pitchClassEquals(missing[0], respelt.seventh)) return;
       }
-      if (realizedBeforeVerifiedOrnaments(context, slice, chord, active, requiredTones, missing)) return;
+      if (realizedBeforeVerifiedOrnaments(context, slice, chord, active, requiredTones, missing) ||
+          writtenDominantFifthExchange(context, slice, missing)) return;
       diagnostics.push(
         diagnostic(
           "chord.incomplete-members",

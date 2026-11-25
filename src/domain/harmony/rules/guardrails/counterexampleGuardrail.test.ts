@@ -162,23 +162,21 @@ annotations {
     for (const { ruleId, entryPoints, pairs } of counterexampleGuardrails) {
       expect(pairs.length, ruleId).toBeGreaterThanOrEqual(1);
       const negatives = pairs.flatMap(pair => pair.counterexamples ?? []);
-      const activeNegatives = negatives.filter(item => !item.knownGapReason);
-      expect(activeNegatives.length, ruleId).toBeGreaterThanOrEqual(2);
+      expect(negatives.length, ruleId).toBeGreaterThanOrEqual(2);
       if (!entryPoints.blind) {
         expect(entryPoints.blindSkipReason.trim(), ruleId).not.toBe("");
       } else {
-        const blindActive = activeNegatives.filter(item => !item.blindSkipReason);
+        const blindActive = negatives.filter(item => !item.blindSkipReason);
         expect(blindActive.length, `${ruleId} blind`).toBeGreaterThanOrEqual(2);
       }
 
-      for (const { name, edits, expected, blindSkipReason, knownGapReason } of negatives) {
+      for (const { name, edits, expected, blindSkipReason } of negatives) {
         const noteEdits = edits.filter(([part]) => part !== "H");
         expect(noteEdits.length, name).toBeGreaterThanOrEqual(1);
         expect(noteEdits.length, name).toBeLessThanOrEqual(2);
         expect(new Set(edits.map(([part, index]) => `${part}:${index}`)).size, name).toBe(edits.length);
         expect(expected.length, name).toBeGreaterThan(0);
         if (blindSkipReason !== undefined) expect(blindSkipReason.trim(), name).not.toBe("");
-        if (knownGapReason !== undefined) expect(knownGapReason.trim(), name).not.toBe("");
       }
     }
   });
@@ -191,13 +189,9 @@ annotations {
           for (const { name, control, counterexamples = [] } of pairs) {
             describe(name, () => {
               it("positive", () => runFixture(scoreText(control), ruleId, [], entryPoint));
-              for (const { name: mutation, edits, expected, blindSkipReason, knownGapReason } of counterexamples) {
+              for (const { name: mutation, edits, expected, blindSkipReason } of counterexamples) {
                 if (entryPoint === "blind" && blindSkipReason) continue;
-                const register = knownGapReason ? it.fails : it;
-                const label = knownGapReason
-                  ? `negative (known gap) · ${mutation}`
-                  : `negative · ${mutation}`;
-                register(label, () =>
+                it(`negative · ${mutation}`, () =>
                   runFixture(scoreText(control, edits), ruleId, expected, entryPoint));
               }
             });

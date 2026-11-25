@@ -3,6 +3,7 @@ import { resolvePassingChain, suspensionEntry } from "../helpers/ornaments";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
 import type { NonChordToneRole, VoiceId } from "../../../project/types";
+import { VOICE_ORDER } from "../../../project/voice";
 import { pitchClassEquals, toMidi, writtenInterval } from "../../../pitch";
 import {
   chordEvidence,
@@ -31,6 +32,20 @@ function isChordTone(
   slice: AnalysisSlice | undefined,
 ) {
   return context.harmony.isWrittenChordTone(note, slice?.chord);
+}
+
+function noteEnd(note: AnalysisNote) {
+  return note.startTick + note.durationTicks;
+}
+
+function interruptedResolution(context: HarmonyRuleContext, note: AnalysisNote, next?: AnalysisNote) {
+  if (next) return noteEnd(note) < next.startTick;
+  // The editable project can extend past the music. Only sounding material
+  // proves a trailing rest when this voice has no further attack.
+  return VOICE_ORDER.some(voiceId => {
+    const last = context.notes({ voiceId }).last()?.note;
+    return last !== undefined && noteEnd(last) > noteEnd(note);
+  });
 }
 
 function roleNotes(context: HarmonyRuleContext, role: NonChordToneRole) {
@@ -92,11 +107,10 @@ export function passingToneRule(context: HarmonyRuleContext) {
     const currentSlice = neighborhood.attackSlice;
     if (!currentSlice.chord) continue;
     const related = [previous, next].filter((neighbor): neighbor is AnalysisNote => Boolean(neighbor));
-    const valid = !isChordTone(context, note, currentSlice) && (
+    const valid = Boolean(resolvePassingChain(context, current)) || (!isChordTone(context, note, currentSlice) && (
       Boolean(previous && next && readHeldChromaticPassing(context, voiceId, previous, note, next)) ||
-      Boolean(decoratedPassingVoicing(context, currentSlice)?.noteIds.includes(note.id)) ||
-      Boolean(resolvePassingChain(context, current))
-    );
+      Boolean(decoratedPassingVoicing(context, currentSlice)?.noteIds.includes(note.id))
+    ));
     if (!valid)
       pushRoleDiagnostic(
         diagnostics,
@@ -122,22 +136,21 @@ export function neighborToneRule(context: HarmonyRuleContext) {
     const previousSlice = previous ? context.sliceAt(previous.startTick) : undefined;
     const currentSlice = neighborhood.attackSlice;
     const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
-    if (!previous || !next || !currentSlice.chord) continue;
+    if (!currentSlice.chord) continue;
+    const interrupted = interruptedResolution(context, note, next);
+    if (!interrupted && (!previous || !next)) continue;
     // A sustained note may become a chord member after it was attacked.
     const departure = context.sliceAt(note.startTick - 1);
-    const preparedOnCurrentChord = departure?.chord?.id === currentSlice.chord.id &&
+    const preparedOnCurrentChord = previous && departure?.chord?.id === currentSlice.chord.id &&
       departure.notes[voiceId]?.id === previous.id &&
-      previous.startTick + previous.durationTicks === note.startTick &&
       isChordTone(context, previous, departure);
-    const entering = writtenInterval(previous.pitch, note.pitch);
-    const leaving = writtenInterval(note.pitch, next.pitch);
     const valid =
+      !interrupted && previous && next && noteEnd(previous) === note.startTick &&
       !isChordTone(context, note, currentSlice) &&
       (isChordTone(context, previous, previousSlice) || preparedOnCurrentChord) &&
       isChordTone(context, next, nextSlice) &&
       context.pitch.isStep(previous, note) &&
       context.pitch.isStep(note, next) &&
-      Math.sign(entering.semitones) === -Math.sign(leaving.semitones) &&
       toMidi(previous.pitch) === toMidi(next.pitch) &&
       pitchClassEquals(previous.pitch, next.pitch);
     if (!valid)
@@ -149,7 +162,7 @@ export function neighborToneRule(context: HarmonyRuleContext) {
         note,
         "辅助音角色不成立",
         "辅助音应级进离开结构音，并反向级进回到同一书写音高。",
-        [previous, next],
+        [previous, next].filter((item): item is AnalysisNote => item !== undefined),
         currentSlice,
       );
   }
@@ -195,12 +208,14 @@ function evaluateSuspensionResolution(
     const next = neighborhood.next?.note;
     const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
     const entry = suspensionEntry(context, current);
-    if (!entry || !next || !nextSlice?.chord) continue;
-    const interval = writtenInterval(note.pitch, next.pitch);
+    if (!entry) continue;
+    const interrupted = interruptedResolution(context, note, next);
+    if (!interrupted && (!next || !nextSlice?.chord)) continue;
     const valid =
+      !interrupted && next &&
       entry.prepared &&
       context.pitch.isStep(note, next) &&
-      Math.sign(interval.semitones) === policy.direction &&
+      Math.sign(writtenInterval(note.pitch, next.pitch).semitones) === policy.direction &&
       isChordTone(context, next, nextSlice);
     if (!valid)
       pushRoleDiagnostic(
@@ -211,7 +226,7 @@ function evaluateSuspensionResolution(
         note,
         policy.title,
         policy.message,
-        [next],
+        next ? [next] : [],
         entry.current,
       );
   }
@@ -241,32 +256,34 @@ export function retardationRule(context: HarmonyRuleContext) {
 export function appoggiaturaRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   for (const { current, neighborhood } of roleNotes(context, "appoggiatura")) {
-      const { voiceId, note } = current;
-      const previous = neighborhood.previous?.note;
-      const next = neighborhood.next?.note;
-      const currentSlice = neighborhood.attackSlice;
-      const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
-      if (!previous || !next || !currentSlice.chord || !nextSlice?.chord)
-        continue;
-      const entryInterval = writtenInterval(previous.pitch, note.pitch);
-      const valid =
-        !isChordTone(context, note, currentSlice) &&
-        context.pitch.isStep(note, next) &&
-        isChordTone(context, next, nextSlice) &&
-        (Math.abs(entryInterval.diatonicSteps) > 1 ||
-          Math.abs(entryInterval.semitones) > 2);
-      if (!valid)
-        pushRoleDiagnostic(
-          diagnostics,
-          context,
-          "nonchord.appoggiatura",
-          voiceId,
-          note,
-          "倚音角色不成立",
-          "倚音通常以跳进或无准备方式进入，并级进解决到和弦音。",
-          [previous, next],
-          currentSlice,
-        );
+    const { voiceId, note } = current;
+    const previous = neighborhood.previous?.note;
+    const next = neighborhood.next?.note;
+    const currentSlice = neighborhood.attackSlice;
+    const nextSlice = next ? context.sliceAt(next.startTick) : undefined;
+    if (!currentSlice.chord) continue;
+    const interrupted = interruptedResolution(context, note, next);
+    if (!interrupted && (!previous || !next || !nextSlice?.chord)) continue;
+    const entryInterval = previous && writtenInterval(previous.pitch, note.pitch);
+    const valid =
+      !interrupted && next && entryInterval &&
+      !isChordTone(context, note, currentSlice) &&
+      context.pitch.isStep(note, next) &&
+      isChordTone(context, next, nextSlice) &&
+      (Math.abs(entryInterval.diatonicSteps) > 1 ||
+        Math.abs(entryInterval.semitones) > 2);
+    if (!valid)
+      pushRoleDiagnostic(
+        diagnostics,
+        context,
+        "nonchord.appoggiatura",
+        voiceId,
+        note,
+        "倚音角色不成立",
+        "倚音通常以跳进或无准备方式进入，并级进解决到和弦音。",
+        [previous, next].filter((item): item is AnalysisNote => item !== undefined),
+        currentSlice,
+      );
   }
   return diagnostics;
 }
@@ -274,39 +291,43 @@ export function appoggiaturaRule(context: HarmonyRuleContext) {
 export function anticipationRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   for (const { current, neighborhood } of roleNotes(context, "anticipation")) {
-      const { voiceId, note } = current;
-      const next = neighborhood.next?.note;
-      const currentSlice = neighborhood.attackSlice;
-      if (!currentSlice.chord) continue;
-      const currentSpan = context.spanAt(currentSlice.tick);
-      const targetSlice = currentSpan
-        ? context.spanNeighborhood(currentSpan).next?.firstSlice
-        : undefined;
-      if (!targetSlice?.chord) continue;
-      const repeatedByNext = Boolean(
-        next &&
-        note.startTick + note.durationTicks === next.startTick &&
-        next.startTick === targetSlice.tick &&
-        toMidi(next.pitch) === toMidi(note.pitch),
+    const { voiceId, note } = current;
+    const next = neighborhood.next?.note;
+    const currentSlice = neighborhood.attackSlice;
+    if (!currentSlice.chord) continue;
+    const currentSpan = context.spanAt(currentSlice.tick);
+    const target = currentSpan ? context.spanNeighborhood(currentSpan).next : undefined;
+    const targetSlice = target?.firstSlice;
+    if (!target || !targetSlice?.chord) continue;
+    const anticipationTicks = targetSlice.tick - note.startTick;
+    const onset = context.metric.positionAt(note.startTick);
+    const beatLength = onset && context.analysis.metricTimeline.measures[onset.measureNumber - 1]?.beatLength;
+    const repeatedByNext =
+      next &&
+      noteEnd(note) === next.startTick &&
+      next.startTick === targetSlice.tick &&
+      context.pitch.sameWrittenPitch(note, next);
+    const targetNoteEnd = repeatedByNext ? noteEnd(next) : noteEnd(note);
+    const targetTicks = Math.min(targetNoteEnd, target.span.toTick) - targetSlice.tick;
+    const valid =
+      (onset?.role === "weak-beat" || onset?.role === "subdivision") &&
+      anticipationTicks > 0 && anticipationTicks <= (beatLength ?? context.analysis.project.ppq) &&
+      targetTicks >= anticipationTicks &&
+      context.metric.compare(onset, context.metric.positionAt(targetSlice.tick)) !== "stronger" &&
+      !isChordTone(context, note, currentSlice) &&
+      isChordTone(context, note, targetSlice);
+    if (!valid)
+      pushRoleDiagnostic(
+        diagnostics,
+        context,
+        "nonchord.anticipation",
+        voiceId,
+        note,
+        "先现音角色不成立",
+        "先现音应在弱位短暂提前，并在紧邻的目标和弦中同音保持或重奏，目标音不应短于提前部分。",
+        next ? [next] : [],
+        currentSlice,
       );
-      const heldIntoTarget =
-        note.startTick + note.durationTicks > targetSlice.tick;
-      const valid =
-        !isChordTone(context, note, currentSlice) &&
-        isChordTone(context, note, targetSlice) &&
-        (heldIntoTarget || repeatedByNext);
-      if (!valid)
-        pushRoleDiagnostic(
-          diagnostics,
-          context,
-          "nonchord.anticipation",
-          voiceId,
-          note,
-          "先现音角色不成立",
-          "先现音应先于紧邻后继和弦出现，并在该和弦中成为保持或重复的构成音。",
-          next ? [next] : [],
-          currentSlice,
-        );
   }
   return diagnostics;
 }

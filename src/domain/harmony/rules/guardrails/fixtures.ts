@@ -26,7 +26,6 @@ interface Counterexample {
   readonly edits: readonly Edit[];
   readonly expected: readonly ExpectedFinding[];
   readonly blindSkipReason?: string;
-  readonly knownGapReason?: string;
 }
 
 interface Pair {
@@ -622,7 +621,6 @@ export const counterexampleGuardrails: readonly RuleGuardrail[] = [
           name: "将先现 C5 提前到小节强拍，整整两个拍子后才换和弦",
           edits: [["S", 1, "B4/4", ""], ["S", 2, "C5/4@ant", "C5/2@ant"]],
           expected: [voices(4, "soprano")],
-          knownGapReason: "已知待修：nonchord.anticipation 目前仅校验目标音与延续，尚未校验弱拍进入与提前时值。",
         },
       ],
     }],

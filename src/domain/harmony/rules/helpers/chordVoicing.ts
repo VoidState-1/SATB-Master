@@ -1,5 +1,6 @@
 import {
   chordIdentityToneSpellings,
+  chordIdentityToneSpellingForDegree,
   chordToneSpellings,
   QUALITY_INTERVALS,
   type ChordQuality,
@@ -38,6 +39,8 @@ import {
   triadTailOrnaments,
   beforeMelodicMinorPassingBass,
   isVerifiedChordOrnament,
+  isVerifiedOrnamentalBass,
+  readUnmarkedOrnament,
 } from "./ornaments";
 
 export { respeltDegrees, writtenDoubleDominantResolution } from "../../facts/tendencyResolution";
@@ -191,9 +194,12 @@ export function realizedBeforeVerifiedOrnaments(
   missing: readonly SpelledPitchClass[],
 ) {
   if (slice.tick <= chord.startTick) return false;
-  const verified = active.filter(item => isVerifiedChordOrnament(context, chord, item));
+  const verified = active.filter(item =>
+    isVerifiedChordOrnament(context, chord, item) ||
+    (item.voiceId === "bass" && isVerifiedOrnamentalBass(context, slice, chord, item.note)) ||
+    readUnmarkedOrnament(context, slice, item.voiceId, item.note));
   if (!verified.length) return false;
-  const retained = active.filter(({ note }) => !note.nonChordToneRole);
+  const retained = active.filter(({ note }) => context.harmony.isWrittenChordTone(note, chord));
   const covers = (notes: ReturnType<typeof activeNotes>, tones: readonly SpelledPitchClass[]) =>
     tones.every(tone => notes.some(({ note }) => pitchClassEquals(note.pitch, tone)));
 
@@ -204,10 +210,75 @@ export function realizedBeforeVerifiedOrnaments(
         crossesManualPhraseBoundary(context, anchor.tick, slice.tick) ||
         context.analysis.project.keyEvents.some(event => anchor.tick < event.tick && event.tick <= slice.tick)) return false;
 
-    const unmarked = activeNotes(anchor).filter(({ note }) => !note.nonChordToneRole);
-    if (!covers(unmarked, requiredTones)) return false;
-    const replacements = unmarked.filter(item => verified.some(({ voiceId }) => item.voiceId === voiceId));
-    return covers(replacements, missing) && covers([...retained, ...replacements], requiredTones);
+    const original = activeNotes(anchor).filter(({ note }) => !note.nonChordToneRole ||
+      ((note.nonChordToneRole === "suspension" || note.nonChordToneRole === "retardation") &&
+        context.harmony.isWrittenChordTone(note, chord)));
+    if (!anchor.notes.bass || !pitchClassEquals(anchor.notes.bass.pitch, chord.identity.bass) ||
+        !covers(original, requiredTones)) return false;
+    const replacements = original.filter(item => verified.some(({ voiceId }) => item.voiceId === voiceId));
+    const fifth = chordIdentityToneSpellingForDegree(chord.identity, 5);
+    if (fifth && slice.tick - anchor.tick <= 2 * context.analysis.project.ppq &&
+        !covers(replacements, [fifth]) && missing.some(tone => pitchClassEquals(tone, fifth)) &&
+        missing.some(tone => covers(replacements, [tone]))) {
+      const exchanged = original.find(({ voiceId, note }) => {
+        const sounding = slice.notes[voiceId];
+        return pitchClassEquals(note.pitch, fifth) && sounding && !sounding.nonChordToneRole &&
+          context.harmony.isWrittenChordTone(sounding, chord);
+      });
+      if (exchanged) replacements.push(exchanged);
+    }
+    return replacements.every(({ voiceId }) => context.slices({ overlapping: { fromTick: anchor.tick, toTick: slice.tick } })
+      .all(frame => !!frame.notes[voiceId])) &&
+      covers(replacements, missing) && covers([...retained, ...replacements], requiredTones);
+  });
+}
+
+/** A previously written fifth can leave a triad as the same dominant
+ * gains its seventh. Never borrow a root, third or seventh this way. */
+export function writtenDominantFifthExchange(
+  context: HarmonyRuleContext, slice: AnalysisSlice, missing: readonly SpelledPitchClass[],
+) {
+  const chord = slice.chord, bass = slice.notes.bass;
+  if (!chord || !bass || !pitchClassEquals(bass.pitch, chord.identity.bass) || missing.length !== 1) return false;
+  const { root, structure } = chord.identity;
+  if (structure.kind !== "tertian" || (structure.quality !== "major" && structure.quality !== "dominant7") ||
+      structure.alterations.length || structure.extensions.length) return false;
+  const tones = chordToneSpellings(root, structure.quality);
+  if (!pitchClassEquals(missing[0], tones[2])) return false;
+  const meaning = context.harmony.primaryInterpretation(chord);
+  const applied = meaning.status === "resolved" ? meaning.value.appliedTarget : undefined;
+  if (!(applied || (meaning.status === "resolved" && meaning.value.degree === 5 &&
+      meaning.value.designation?.kind === "primary"))) return false;
+  const matching = (frame: AnalysisSlice) => {
+    const other = frame.chord;
+    if (!other || !pitchClassEquals(other.identity.root, root)) return false;
+    const interpretation = context.harmony.primaryInterpretation(other);
+    if (interpretation.status !== "resolved" || meaning.status !== "resolved" ||
+        !keyEquals(interpretation.value.localKey ?? frame.key, meaning.value.localKey ?? slice.key) ||
+        interpretation.value.degree !== meaning.value.degree) return false;
+    const target = interpretation.value.appliedTarget;
+    return target?.degree === applied?.degree && target?.primaryFunction === applied?.primaryFunction &&
+      target?.secondaryFunction === applied?.secondaryFunction &&
+      !other.semantics?.cadenceRole;
+  };
+  const before = context.slices({ overlapping: {
+    fromTick: Math.max(0, slice.tick - 2 * context.analysis.project.ppq), toTick: slice.tick,
+  } }).toArray();
+  // Require a real triad-to-seventh change when using a close-position
+  // reconfiguration, not a blanket exception for incomplete applied triads.
+  const next = context.sliceAt(slice.endTick)?.chord;
+  const exchanging = structure.quality === "dominant7" ||
+    (next?.identity.structure.kind === "tertian" && next.identity.structure.quality === "dominant7" &&
+      matching(context.sliceAt(slice.endTick)!));
+  if (!exchanging || !Object.values(slice.notes).every(n => tones.some(t => pitchClassEquals(t, n.pitch)))) return false;
+  return before.some((anchor, index) => {
+    if (!anchor.completeSatb || !anchor.notes.bass || !anchor.chord || !matching(anchor) ||
+        anchor.chord.identity.structure.kind !== "tertian" || anchor.chord.identity.structure.quality !== "major" ||
+        !soundsCompleteWrittenChord(anchor.chord.identity, Object.values(anchor.notes), anchor.notes.bass) ||
+        crossesWrittenBoundary(context, anchor.tick, slice.tick) ||
+        !before.slice(index).every(frame => frame.completeSatb && matching(frame))) return false;
+    return VOICE_ORDER.filter(voice => voice !== "bass" &&
+      context.pitch.sameWrittenPitch(anchor.notes[voice]!, slice.notes[voice]!)).length >= 2;
   });
 }
 

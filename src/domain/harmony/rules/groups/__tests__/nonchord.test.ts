@@ -4,6 +4,77 @@ import { compileScoreText } from "../../../../scoreText";
 import { applyHarmonyInference, inferChords } from "../../../inference";
 import { checkHarmony } from "../../../registry";
 
+describe("外音解决必须连续", () => {
+  const cases = [
+    ["neighbor", "neighbor-tone", "E5", "F5", "E5", "I/1"],
+    ["appoggiatura", "appoggiatura", "C5", "F5", "E5", "I/1"],
+    ["suspension", "suspension-resolution", "F5", "F5", "E5", "V7/2 I/2"],
+    ["retardation", "retardation", "B4", "B4", "C5", "V/2 I/2"],
+  ] as const;
+  describe.each(cases)("%s", (role, rule, before, ornament, after, harmony) => {
+    function findings(tail: string, accompaniment = "empty") {
+      const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | ${before}/2 ${ornament}${tail} |
+ A: ${accompaniment}
+ T: empty
+ B: empty
+ H: | ${harmony} |
+}
+annotations {
+ note x role=${role}
+}`);
+      return checkHarmony(project).diagnostics.filter(d => d.ruleId === `nonchord.${rule}`);
+    }
+    it("接受同一声部的连续落点", () => expect(findings(`/8@x ${after}/4.`)).toEqual([]));
+    it("拒绝休止后的同一落点", () => expect(findings(`/8@x r/8 ${after}/4`)).toHaveLength(1));
+    it("无后继起音，但休止期间另一声部仍在发声", () => {
+      expect(findings("/8@x r/4.", "| G4/1 |")).toHaveLength(1);
+    });
+    it("不将尚未写完的末尾视为休止", () => expect(findings("/2@x")).toEqual([]));
+  });
+});
+
+describe("先现的提前时值和目标上的保持时值", () => {
+  function findings(soprano: string, harmony = "V/2. I/4") {
+    const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | ${soprano} |
+ A: empty
+ T: empty
+ B: empty
+ H: | ${harmony} |
+}
+annotations {
+ note ant role=anticipation
+}`);
+    return checkHarmony(project).diagnostics.filter(d => d.ruleId === "nonchord.anticipation");
+  }
+
+  it("接受弱位短先现及目标和弦上的重奏", () => {
+    expect(findings("B4/2 B4/8 C5/8@ant C5/4")).toEqual([]);
+  });
+  it("接受总音值超过一拍、但提前部分仅为半拍的跨界保持", () => {
+    expect(findings("B4/2 B4/8 C5/4.@ant")).toEqual([]);
+  });
+  it("拒绝强拍上的短先现", () => {
+    expect(findings("B4/2 C5/8@ant C5/4.", "V/2 V/8 I/4.")).toHaveLength(1);
+  });
+  it("拒绝弱拍上超过一拍的提前", () => {
+    expect(findings("B4/4 C5/4.@ant C5/4.", "V/2 V/8 I/4.")).toHaveLength(1);
+  });
+  it("不足提前时值的目标重奏不能冒充结构落点", () => {
+    expect(findings("B4/2 B4/8 C5/8@ant C5/16 E5/8.")).toHaveLength(1);
+  });
+  it("不把继续延入第三个和弦的时值计入目标上的保持", () => {
+    expect(findings("B4/2 B4/8 C5/4.@ant", "V/2. I/16 vi/8.")).toHaveLength(1);
+  });
+});
+
 describe("自然与半音经过链", () => {
   function findings(melody: string, harmony: string, roles: readonly string[], key = "C major", cut?: number) {
     const { project } = compileScoreText(`satb 1
