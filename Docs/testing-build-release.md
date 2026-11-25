@@ -226,6 +226,7 @@ Windows/Electron E2E 可能在断言前因 GPU、驱动、安全软件、端口�
 ```powershell
 npm run generate:soundfont
 npm run generate:icon
+npm run generate:installer-assets
 npm run generate:assets
 ```
 
@@ -235,7 +236,7 @@ npm run generate:assets
 - 所需 GM programs。
 - 开发与 production `extraResources` 路径。
 
-应用图标需要检查 `build/icon.ico` 在资源管理器、窗口、快捷方式和卸载项中的显示，而不只是源位图。
+检查 `build/icon.ico` 在资源管理器、窗口和快捷方式中的显示。`generate:installer-assets` 在 `build/` 中生成安装和卸载各自的 24 位 BMP 侧栏（164 × 314）和页眉（150 × 57），以及控制面板使用的 `uninstaller-icon.ico`（256 × 256 PNG-in-ICO）。脚本会校验文件头、BMP 行对齐与 ICO 内嵌 PNG。
 
 ## 8. Windows 打包
 
@@ -259,14 +260,14 @@ npm run pack:win
 npm run dist:win
 ```
 
-生成 x64 NSIS 安装包到 `release-installer`，当前配置：
+该命令在 `release-installer` 中生成 `SATB-Master-Setup-${version}-${arch}.${ext}` 和 `win-unpacked`。构建使用 Unicode NSIS，并以 `warningsAsErrors: true` 编译安装器和内嵌卸载器。构建脚本在临时目录中本地化 electron-builder 模板的回退提示，结束时清理临时副本。`build/installer.nsh` 使用 UTF-8 BOM 编码。
 
-- 非 one-click，可选择安装目录。
-- 创建桌面和开始菜单快捷方式。
-- 卸载时保留 `userData`（含恢复、规则库、窗口状态与日志）。
-- 产物名 `SATB-Master-Setup-${version}-${arch}.${ext}`。
+- 安装和卸载向导均使用简体中文及各自的品牌图形。安装可选择仅当前用户或所有用户，并自定义安装目录。
+- 「安装选项」默认勾选桌面快捷方式、开始菜单快捷方式和 `.satb` 工程文件关联。选项按安装范围保存，静默安装和覆盖升级沿用已记录的偏好。完成页默认按普通用户权限启动应用。
+- 文件关联允许从资源管理器双击打开 `.satb` 工程。取消关联或卸载时，清理 SATB Master 自己注册的关联。冷启动和单实例转发详见 [桌面端与持久化](./desktop-and-persistence.md#42-双击打开-satb-工程)。
+- 卸载默认保留当前用户的设置、外置规则库、自动恢复记录及日志。可选「同时彻底清除」，清理应用数据目录，保存在其他文件夹中的 `.satb` 工程可继续使用。静默卸载仅在显式传入 `--delete-app-data` 时清理，内部升级卸载始终保留。
 
-只生成安装包不等于完成发布。必须在安装后的路径运行，而不是继续测试仓库内 Electron。
+发布前在隔离的 Windows 环境中从实际安装路径启动。检查三项安装选项的开关与覆盖升级、双击工程的冷启动和热转发、卸载时保留和清除数据两条路径。
 
 ## 9. 版本发布矩阵
 

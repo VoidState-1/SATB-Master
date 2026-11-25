@@ -10,7 +10,8 @@
   "scripts": {
     "generate:soundfont": "node scripts/generate-default-soundfont.mjs",
     "generate:icon": "node scripts/generate-app-icon.mjs",
-    "generate:assets": "npm run generate:soundfont && npm run generate:icon",
+    "generate:installer-assets": "node scripts/generate-installer-assets.mjs",
+    "generate:assets": "npm run generate:soundfont && npm run generate:icon && npm run generate:installer-assets",
     "e2e:desktop": "node scripts/e2e-desktop.mjs",
     "e2e:audit": "npm run build && node scripts/e2e-audit.mjs",
     "e2e:desktop:local": "npm run build && node scripts/e2e-desktop.mjs node_modules/electron/dist/electron.exe .",
@@ -19,7 +20,7 @@
     "build": "npm run typecheck && vite build && npm run build:electron",
     "build:electron": "node scripts/clean-electron-output.mjs && tsc -p tsconfig.electron.json && vite build --config vite.preload.config.ts",
     "pack:win": "npm run generate:assets && npm run build && electron-builder --win dir --x64",
-    "dist:win": "npm run generate:assets && npm run build && electron-builder --win nsis --x64 --config.directories.output=release-installer",
+    "dist:win": "npm run generate:assets && npm run build && node scripts/build-windows-installer.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run --exclude \"StandardCase/Pilot/**\"",
     "score": "node scripts/score.mjs",
@@ -93,10 +94,22 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
+      "allowElevation": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": false,
       "shortcutName": "SATB Master",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/uninstaller-icon.ico",
+      "installerHeader": "build/installer-header.bmp",
+      "installerSidebar": "build/installer-sidebar.bmp",
+      "uninstallerSidebar": "build/uninstaller-sidebar.bmp",
+      "include": "build/installer.nsh",
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "language": "2052",
+      "warningsAsErrors": true
     }
   }
 }
