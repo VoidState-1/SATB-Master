@@ -401,6 +401,7 @@ describe("自动笔刷", () => {
     base.updatedAt = "2020-01-01T00:00:00.000Z";
     const added = addAuxiliaryTrack(base).project;
     const project = addAuxiliaryTrack(added).project;
+    project.updatedAt = base.updatedAt;
     project.auxiliaryTracks.forEach((track, index) => {
       track.notes = [45, 54, 63, 72, 81].map((midi) => note(`aux-${index}-${midi}`, midi));
     });

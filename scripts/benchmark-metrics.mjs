@@ -83,6 +83,48 @@ export function scoreChords(chords, reference, predictions, expectedKeys, inputK
   return { segments, totals };
 }
 
+/** Score only non-written-key reference windows. A prediction is early only
+ * if its contiguous run in the destination overlaps the reference onset. */
+export function scoreLocalKeySwitchWindows(chords, reference, regions, expectedKeys, inputKeys) {
+  const ranges = items => items.map(chord => ({
+    from: chord.startTick, to: chord.startTick + chord.durationTicks, chord,
+  })).sort((left, right) => left.from - right.from);
+  const expected = ranges(reference.chords), predicted = ranges(regions);
+  const writtenKeyAt = (events, tick) => events.findLast(event => event.tick <= tick);
+  const readingAt = (item, events, tick) => {
+    const meaning = interpretation(chords, item.chord);
+    return keyLabel(meaning ?? {}, events, tick);
+  };
+  const cuts = [...new Set([...expectedKeys.map(key => key.tick), ...expected.flatMap(item => [item.from, item.to])])]
+    .sort((a, b) => a - b);
+  const windows = [];
+  for (let i = 1; i < cuts.length; i++) {
+    const from = cuts[i - 1], to = cuts[i];
+    const item = expected.findLast(candidate => candidate.from <= from && from < candidate.to);
+    if (!item) continue;
+    const key = readingAt(item, expectedKeys, from);
+    const previous = windows.at(-1);
+    if (previous?.to === from && isDeepStrictEqual(previous.key, key)) previous.to = to;
+    else windows.push({ from, to, key });
+  }
+  const counts = { early: 0, onTime: 0, late: 0, never: 0 };
+  for (const { from, to, key } of windows) {
+    if (from === 0 || isDeepStrictEqual(key, keyLabel({}, inputKeys, from))) continue;
+    const hit = predicted.findIndex(item => item.to > from && item.from < to &&
+      isDeepStrictEqual(readingAt(item, inputKeys, Math.max(item.from, from)), key));
+    if (hit === -1) {
+      counts.never++;
+      continue;
+    }
+    let start = predicted[hit].from;
+    for (let i = hit - 1; i >= 0 && predicted[i].to === start &&
+         writtenKeyAt(inputKeys, predicted[i].from) === writtenKeyAt(inputKeys, start) &&
+         isDeepStrictEqual(readingAt(predicted[i], inputKeys, predicted[i].from), key); i--) start = predicted[i].from;
+    counts[start < from ? "early" : start > from ? "late" : "onTime"]++;
+  }
+  return counts;
+}
+
 export function scoreCadences(reference, candidates) {
   const complete = reference.complete.includes("cadence");
   const predictions = candidates.filter(candidate => candidate.confidence !== "ambiguous");
