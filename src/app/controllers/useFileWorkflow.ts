@@ -22,6 +22,7 @@ import {
 import { normalizeProject, type ProjectDocument } from "../../domain/project";
 import {
   autosaveProject,
+  consumePendingExternalProject,
   discardRecovery,
   exportMidi,
   exportMusicXml,
@@ -29,6 +30,8 @@ import {
   openMidiFile,
   openProject,
   saveProject,
+  subscribeExternalProjectOpen,
+  type ExternalProjectOpenResult,
 } from "../../services/desktop";
 import { logger } from "../../services/logging";
 import type { ConfirmationState } from "./useConfirmationController";
@@ -64,18 +67,62 @@ export function useFileWorkflow({
   const [migrationBackupSourcePath, setMigrationBackupSourcePath] =
     useState<string>();
   const [pendingMidiImport, setPendingMidiImport] = useState<ParsedMidiFile>();
+  const [pendingExternalOpens, setPendingExternalOpens] = useState<ExternalProjectOpenResult[]>([]);
+  const [isBusy, setIsBusy] = useState(false);
   const recoveryCheckedRef = useRef(false);
   const isBusyRef = useRef(false);
+  const setWorkflowBusy = useCallback((busy: boolean) => {
+    isBusyRef.current = busy;
+    setIsBusy(busy);
+  }, []);
+
+  const loadOpenedProject = useCallback((result: NonNullable<Awaited<ReturnType<typeof openProject>>>) => {
+    audioEngine.stop();
+    history.load(result.project);
+    setFilePath(result.filePath);
+    setMigrationBackupSourcePath(
+      result.migratedFromSchemaVersion === 2 ? result.filePath : undefined,
+    );
+    setPendingMidiImport(undefined);
+    onWorkspaceReset(result.project);
+    showNotice("工程已打开", { level: "success" });
+  }, [history, onWorkspaceReset, showNotice]);
+
+  const reportExternalOpenFailure = useCallback((error: unknown, source: "startup" | "second-instance") => {
+    const entry = logger.error("file", "打开外部工程失败", {
+      code: error instanceof AppError ? error.code : "FILE_READ_FAILED",
+      error,
+      context: { source },
+    });
+    showNotice(error instanceof Error ? error.message : "打开外部工程失败", {
+      level: "error", logEntryId: entry.id,
+    });
+  }, [showNotice]);
+
+  useEffect(() => subscribeExternalProjectOpen((result) => {
+    setPendingExternalOpens((pending) => [...pending, result]);
+  }), []);
 
   useEffect(() => {
     if (recoveryCheckedRef.current) return;
     recoveryCheckedRef.current = true;
-    void findRecovery()
-      .catch((error) => {
+    setWorkflowBusy(true);
+    void (async () => {
+      try {
+        const external = await consumePendingExternalProject();
+        if (external) {
+          loadOpenedProject(external);
+          return;
+        }
+      } catch (error) {
+        reportExternalOpenFailure(error, "startup");
+        return;
+      }
+      const recovery = await findRecovery().catch((error) => {
         logger.warn("file", "读取自动恢复文件失败", { code: "RECOVERY_FAILED", error });
-      })
-      .then(async (recovery) => {
-        if (!recovery) return;
+      });
+      if (!recovery) return;
+      try {
         const savedAt = new Date(recovery.savedAt).toLocaleString("zh-CN");
         const source = recovery.sourcePath
           ? `\n原工程：${recovery.sourcePath}`
@@ -101,9 +148,34 @@ export function useFileWorkflow({
           );
           showNotice("已恢复未保存内容");
         }, { hasSource: Boolean(recovery.sourcePath) }, { code: "RECOVERY_FAILED", level: "info" });
-      })
-      .catch((error) => logger.warn("file", "处理自动恢复失败", { code: "RECOVERY_FAILED", error }));
-  }, [history, requestConfirmation, showNotice]);
+      } catch (error) {
+        logger.warn("file", "处理自动恢复失败", { code: "RECOVERY_FAILED", error });
+      }
+    })().finally(() => setWorkflowBusy(false));
+  }, [history, loadOpenedProject, reportExternalOpenFailure, requestConfirmation, setWorkflowBusy, showNotice]);
+
+  useEffect(() => {
+    const result = pendingExternalOpens[0];
+    if (isBusy || isBusyRef.current || !result) return;
+    setWorkflowBusy(true);
+    setPendingExternalOpens((pending) => pending.slice(1));
+    void (async () => {
+      try {
+        if ("error" in result) throw result.error;
+        if (history.isDirty && !(await requestConfirmation({
+          title: "打开工程",
+          message: "当前工程尚未保存，仍要打开该工程吗？",
+          confirmLabel: "继续打开",
+          cancelLabel: "取消",
+        }))) return;
+        loadOpenedProject(result);
+      } catch (error) {
+        reportExternalOpenFailure(error, "second-instance");
+      } finally {
+        setWorkflowBusy(false);
+      }
+    })();
+  }, [history.isDirty, isBusy, loadOpenedProject, pendingExternalOpens, reportExternalOpenFailure, requestConfirmation, setWorkflowBusy]);
 
   useEffect(() => {
     if (!history.isDirty) return;
@@ -116,28 +188,34 @@ export function useFileWorkflow({
   }, [filePath, history.isDirty, migrationBackupSourcePath, project]);
 
   const handleNew = useCallback(async () => {
-    if (
-      history.isDirty &&
-      !(await requestConfirmation({
-        title: "新建工程",
-        message: "当前工程尚未保存，仍要新建吗？",
-        confirmLabel: "继续新建",
-        cancelLabel: "取消",
-      }))
-    )
-      return;
-    audioEngine.stop();
-    const nextProject = createProject();
-    history.load(nextProject);
-    logger.recordBreadcrumb("editor", "新建工程");
-    setFilePath(undefined);
-    setMigrationBackupSourcePath(undefined);
-    onWorkspaceReset(nextProject);
-  }, [createProject, history, onWorkspaceReset, requestConfirmation]);
+    if (isBusyRef.current) return;
+    setWorkflowBusy(true);
+    try {
+      if (
+        history.isDirty &&
+        !(await requestConfirmation({
+          title: "新建工程",
+          message: "当前工程尚未保存，仍要新建吗？",
+          confirmLabel: "继续新建",
+          cancelLabel: "取消",
+        }))
+      )
+        return;
+      audioEngine.stop();
+      const nextProject = createProject();
+      history.load(nextProject);
+      logger.recordBreadcrumb("editor", "新建工程");
+      setFilePath(undefined);
+      setMigrationBackupSourcePath(undefined);
+      onWorkspaceReset(nextProject);
+    } finally {
+      setWorkflowBusy(false);
+    }
+  }, [createProject, history, onWorkspaceReset, requestConfirmation, setWorkflowBusy]);
 
   const handleOpen = useCallback(async () => {
     if (isBusyRef.current) return;
-    isBusyRef.current = true;
+    setWorkflowBusy(true);
     let logEntryId: string | undefined;
     try {
       await logger.span("file", "打开工程", async () => {
@@ -154,14 +232,7 @@ export function useFileWorkflow({
         logger.recordBreadcrumb("file", "打开工程");
         const result = await openProject();
         if (!result) return { canceled: true };
-        audioEngine.stop();
-        history.load(result.project);
-        setFilePath(result.filePath);
-        setMigrationBackupSourcePath(
-          result.migratedFromSchemaVersion === 2 ? result.filePath : undefined,
-        );
-        onWorkspaceReset(result.project);
-        showNotice("工程已打开", { level: "success" });
+        loadOpenedProject(result);
         return { canceled: false, migratedFromSchemaVersion: result.migratedFromSchemaVersion };
       }, undefined, {
         code: "FILE_READ_FAILED", level: "info", summarize: (result) => result,
@@ -170,14 +241,14 @@ export function useFileWorkflow({
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "打开工程失败", { level: "error", logEntryId });
     } finally {
-      isBusyRef.current = false;
+      setWorkflowBusy(false);
     }
-  }, [history, onWorkspaceReset, requestConfirmation, showNotice]);
+  }, [history.isDirty, loadOpenedProject, requestConfirmation, setWorkflowBusy, showNotice]);
 
   const handleSave = useCallback(
     async (forceDialog = false) => {
       if (isBusyRef.current) return;
-      isBusyRef.current = true;
+      setWorkflowBusy(true);
       let logEntryId: string | undefined;
       try {
         logger.recordBreadcrumb("file", "保存工程", { forceDialog });
@@ -208,15 +279,15 @@ export function useFileWorkflow({
       } catch (error) {
         showNotice(error instanceof Error ? error.message : "保存工程失败", { level: "error", logEntryId });
       } finally {
-        isBusyRef.current = false;
+        setWorkflowBusy(false);
       }
     },
-    [filePath, history, migrationBackupSourcePath, project, showNotice],
+    [filePath, history, migrationBackupSourcePath, project, setWorkflowBusy, showNotice],
   );
 
   const handleImportMidi = useCallback(async () => {
     if (isBusyRef.current || pendingMidiImport) return;
-    isBusyRef.current = true;
+    setWorkflowBusy(true);
     let logEntryId: string | undefined;
     try {
       logger.recordBreadcrumb("file", "导入 MIDI");
@@ -235,9 +306,9 @@ export function useFileWorkflow({
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "读取 MIDI 文件失败", { level: "error", logEntryId });
     } finally {
-      isBusyRef.current = false;
+      setWorkflowBusy(false);
     }
-  }, [pendingMidiImport, showNotice]);
+  }, [pendingMidiImport, setWorkflowBusy, showNotice]);
 
   const handleConfirmMidiImport = useCallback((options: MidiImportApplyOptions) => {
     if (!pendingMidiImport) return;
@@ -287,7 +358,7 @@ export function useFileWorkflow({
   const handleExportMidi = useCallback(
     async (options?: MidiExportOptions) => {
       if (isBusyRef.current) return;
-      isBusyRef.current = true;
+      setWorkflowBusy(true);
       try {
         const layout = options?.layout ?? "satb-separate";
         logger.recordBreadcrumb("file", "导出 MIDI", { layout });
@@ -302,16 +373,16 @@ export function useFileWorkflow({
       } catch (error) {
         showNotice(error instanceof Error ? error.message : "MIDI 导出失败");
       } finally {
-        isBusyRef.current = false;
+        setWorkflowBusy(false);
       }
     },
-    [project, showNotice],
+    [project, setWorkflowBusy, showNotice],
   );
 
   const handleExportMusicXml = useCallback(
     async (options?: MusicXmlExportOptions) => {
       if (isBusyRef.current) return;
-      isBusyRef.current = true;
+      setWorkflowBusy(true);
       try {
         const layout = options?.layout ?? "grand-staff";
         logger.recordBreadcrumb("file", "导出 MusicXML", { layout });
@@ -328,10 +399,10 @@ export function useFileWorkflow({
           error instanceof Error ? error.message : "MusicXML 导出失败",
         );
       } finally {
-        isBusyRef.current = false;
+        setWorkflowBusy(false);
       }
     },
-    [project, showNotice],
+    [project, setWorkflowBusy, showNotice],
   );
 
   return {

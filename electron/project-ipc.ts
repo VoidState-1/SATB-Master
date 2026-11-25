@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { constants, createReadStream } from 'node:fs'
-import { copyFile, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
   hashSoundFontResource,
@@ -12,6 +12,7 @@ import {
   showExclusiveSaveDialog,
 } from './dialog-coordinator.js'
 import { DESKTOP_CHANNELS, MAX_MIDI_IMPORT_BYTES } from '../shared/desktop.js'
+import { AppError } from '../shared/logging.js'
 import { logMain } from './logger.js'
 import { handleDesktop } from './typed-ipc.js'
 
@@ -56,6 +57,53 @@ function assertProjectEnvelope(value: unknown) {
       : false
   if (!supported) {
     throw new Error('工程结构或版本无效')
+  }
+}
+
+function assertProjectFileSize(size: number) {
+  if (size < 1) throw new AppError('PROJECT_INVALID', '工程文件为空')
+  if (size > MAX_PROJECT_BYTES) throw new AppError('PROJECT_INVALID', '工程文件超过 20 MB 限制')
+}
+
+export async function readProjectFile(filePath: string): Promise<{ project: unknown } | { invalidMessage: string }> {
+  try {
+    if (!path.isAbsolute(filePath) || path.extname(filePath).toLowerCase() !== '.satb') {
+      throw new AppError('PROJECT_INVALID', '请选择有效的 .satb 工程文件')
+    }
+    const file = await open(filePath, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0))
+    try {
+      const info = await file.stat()
+      if (!info.isFile()) throw new AppError('PROJECT_INVALID', '工程路径必须指向普通文件')
+      assertProjectFileSize(info.size)
+      // end 包含端点，多读一个字节以检测校验后增大的文件。
+      const stream = file.createReadStream({ start: 0, end: MAX_PROJECT_BYTES, autoClose: false })
+      const bytes = Buffer.concat(await stream.toArray())
+      assertProjectFileSize(bytes.length)
+      try {
+        const project = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown
+        assertProjectEnvelope(project)
+        return { project }
+      } catch (cause) {
+        throw new AppError('PROJECT_INVALID', '所选文件不是受支持的 SATB 工程', { cause })
+      }
+    } finally {
+      await file.close()
+    }
+  } catch (error) {
+    let invalidMessage = '无法读取工程文件'
+    if (error instanceof AppError) {
+      invalidMessage = error.message
+    } else {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') invalidMessage = '工程文件不存在'
+      if (code === 'EACCES' || code === 'EPERM') invalidMessage = '没有权限读取工程文件'
+      if (code === 'EISDIR') invalidMessage = '工程路径必须指向普通文件'
+    }
+    logMain('error', 'file', invalidMessage, {
+      code: error instanceof AppError ? error.code : 'FILE_READ_FAILED',
+      error,
+    })
+    return { invalidMessage }
   }
 }
 
@@ -204,17 +252,9 @@ export function registerProjectIpc() {
       await rememberDialogDirectory('project', filePath)
     }
 
-    const info = await stat(filePath)
-    if (info.size > MAX_PROJECT_BYTES) throw new Error('工程文件超过 20 MB 限制')
-    const source = await readFile(filePath, 'utf8')
-    try {
-      const project = JSON.parse(source) as unknown
-      assertProjectEnvelope(project)
-      return { canceled: false, filePath, project }
-    } catch (error) {
-      logMain('error', 'file', '工程内容无效', { code: 'PROJECT_INVALID', error })
-      return { canceled: false, invalidMessage: '所选文件不是受支持的 SATB 工程' }
-    }
+    const result = await readProjectFile(filePath)
+    if ('invalidMessage' in result) return { canceled: false, ...result }
+    return { canceled: false, filePath, ...result }
   })
 
   handleDesktop(DESKTOP_CHANNELS.projectSave, async (event, request) => {

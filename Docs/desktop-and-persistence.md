@@ -7,7 +7,7 @@
 浏览器模式适合快速开发，但 SATB Master 的完整产品能力依赖 Electron：
 
 - 无边框自定义窗口、原生窗口控制与多屏尺寸记忆。
-- `.satb` 打开、原子保存、另存为与紧急备份导出。
+- `.satb` 双击打开、原子保存、另存为与紧急备份导出。
 - 自动恢复与 schema v2 原文件备份。
 - 本地 SoundFont 大文件安全流式读取。
 - 本机外置规则库与规则测试用例目录读写。
@@ -63,7 +63,7 @@ preload API 按能力分为 11 个分组：
 | --- | --- |
 | `windowControls` | `minimize`、`toggleMaximize`、`isMaximized`、`isFocused`、`close`、`onMaximizedChange` |
 | `versions` | 只读版本信息对象：`electron`、`chrome`、`node` |
-| `project` | `open`、`save`、`exportBackup`、`autosave`、`recovery`、`discardRecovery` |
+| `project` | `open`、`consumePendingOpen`、`onOpenExternal`、`save`、`exportBackup`、`autosave`、`recovery`、`discardRecovery` |
 | `midi` | `import()`、`export(bytes, defaultName)` |
 | `musicXml` | `export(xml, defaultName)` |
 | `soundFont` | `open`、`loadPath`、`loadDefault`、`hash`（带进度订阅）、`release` |
@@ -125,6 +125,17 @@ renderer 序列化当前工程
 若名称冲突则使用带时间戳的备份名。备份应发生在原文件仍是 v2 内容时，并只针对覆盖原路径；另存为新文件不需要伪装成原文件备份。
 
 迁移逻辑本身位于领域层，文件副本位于主进程。详见 [data-model.md](./data-model.md)。
+
+### 4.2 双击打开 `.satb` 工程
+
+勾选安装向导的文件关联后，Windows 将 `.satb` 注册为 `SATBMaster.Project`，通过 `"SATB Master.exe" "%1"` 传入工程路径。Windows 的「默认应用」设置可以覆盖安装时登记的默认关联。
+
+- **冷启动。** 主进程解析 `process.argv` 并暂存工程路径。渲染进程订阅 `project:open-external` 后，通过 `project:consume-pending-open` 拉取首个请求。冷启动工程请求优先于自动恢复提示。
+- **热转发。** `app.requestSingleInstanceLock()` 让后续进程退出。已有实例收到 `second-instance` 后恢复、显示并聚焦主窗口，按队列转发工程。当前工程有未保存改动时，用户确认后才会切换。桌面 E2E 可通过隔离目录单独启动实例。
+- **命令行解析。** 首个非选项、扩展名为 `.satb` 的参数生效，匹配不区分大小写，可去掉成对外层引号。相对路径以调用进程的工作目录解析，热转发使用 Electron 传递的 `workingDirectory`。冷启动携带 `--audit-package` 时进入审计包流程。
+- **读取与校验。** 主进程只接受指向普通文件的绝对 `.satb` 路径，限制为 1 字节至 20 MiB，按 UTF-8 严格解码并校验 JSON 与 v2/v3 四声部结构。渲染进程沿用领域层校验和 v2 到 v3 迁移。失败时显示对应的工程打开错误。
+
+解析入口见 [startup-project.ts](../electron/startup-project.ts)，队列和读文件入口见 [main.ts](../electron/main.ts) 与 [project-ipc.ts](../electron/project-ipc.ts)。
 
 ## 5. 自动恢复
 
@@ -304,7 +315,7 @@ service 应返回清楚的能力错误（例如“浏览器预览无法重新读
 - `logs/`（会话 JSONL 滚动日志）
 - `rule-library/`（本机外置规则包）
 
-NSIS 配置当前 `deleteAppDataOnUninstall: false`，卸载不会自动删除这些数据。正式排查和自动化测试应通过 `SATB_MASTER_E2E_DIRECTORY` 使用隔离的 `userData`，避免污染真实用户数据。
+NSIS 卸载默认保留这些数据。主动选择彻底清除，或静默卸载显式传入 `--delete-app-data` 时，卸载程序只处理当前用户的应用数据目录（`%APPDATA%\SATB Master`、`%APPDATA%\satb-master`）。内部升级卸载始终保留数据。保存在其他文件夹中的 `.satb` 工程可继续使用。自动化桌面测试通过 `SATB_MASTER_E2E_DIRECTORY` 使用隔离的 `userData`。
 
 ## 15. 桌面变更检查表
 

@@ -1,4 +1,4 @@
-import { MAX_MIDI_IMPORT_BYTES, type DesktopInvokeMap } from "../../shared/desktop";
+import { MAX_MIDI_IMPORT_BYTES, type DesktopInvokeMap, type ExternalProjectOpenPayload } from "../../shared/desktop";
 import { AppError, MAX_DIAGNOSTIC_BUNDLE_BYTES, type LogEntry } from "../../shared/logging";
 import { migrateProject, type ProjectDocument } from "../domain/project";
 import type { PortableRuleProfile } from "../domain/ruleProfile";
@@ -100,27 +100,59 @@ export interface LoadedSoundFont {
 
 type SoundFontProgressListener = (progress: SoundFontLoadProgress) => void;
 
-export async function openProject(): Promise<
-  | {
-      project: ProjectDocument;
-      filePath?: string;
-      migratedFromSchemaVersion?: 2;
+interface OpenedProject {
+  project: ProjectDocument;
+  filePath?: string;
+  migratedFromSchemaVersion?: 2;
+}
+
+type OpenedDesktopProject = OpenedProject & { filePath: string };
+export type ExternalProjectOpenResult = OpenedDesktopProject | { error: unknown };
+
+function parseDesktopProject(
+  result: ExternalProjectOpenPayload | { invalidMessage: string },
+): OpenedDesktopProject {
+  if ("invalidMessage" in result) throw new AppError("PROJECT_INVALID", result.invalidMessage);
+  const sourceSchemaVersion = (result.project as { schemaVersion?: unknown })?.schemaVersion;
+  const invalidMessage = "所选文件不是受支持的 SATB 工程";
+  let project: ProjectDocument | undefined;
+  try {
+    project = migrateProject(result.project);
+  } catch (cause) {
+    throw new AppError("PROJECT_INVALID", invalidMessage, { cause });
+  }
+  if (!project) throw new AppError("PROJECT_INVALID", invalidMessage);
+  return {
+    project,
+    filePath: result.filePath,
+    migratedFromSchemaVersion: sourceSchemaVersion === 2 ? 2 : undefined,
+  };
+}
+
+export async function consumePendingExternalProject(): Promise<OpenedDesktopProject | undefined> {
+  if (typeof window === "undefined") return undefined;
+  const result = await window.desktop?.project.consumePendingOpen?.();
+  return result ? parseDesktopProject(result) : undefined;
+}
+
+export function subscribeExternalProjectOpen(listener: (result: ExternalProjectOpenResult) => void): () => void {
+  const desktopProject = typeof window === "undefined" ? undefined : window.desktop?.project;
+  return desktopProject?.onOpenExternal?.((payload) => {
+    let result: ExternalProjectOpenResult;
+    try {
+      result = parseDesktopProject(payload);
+    } catch (error) {
+      result = { error };
     }
-  | undefined
-> {
+    listener(result);
+  }) ?? (() => {});
+}
+
+export async function openProject(): Promise<OpenedProject | undefined> {
   if (window.desktop) {
     const result = await window.desktop.project.open();
     if (result.canceled) return undefined;
-    if ("invalidMessage" in result) throw new AppError("PROJECT_INVALID", result.invalidMessage);
-    const sourceSchemaVersion = (result.project as { schemaVersion?: unknown })
-      ?.schemaVersion;
-    const project = migrateProject(result.project);
-    if (!project) throw new AppError("PROJECT_INVALID", "所选文件不是受支持的 SATB 工程");
-    return {
-      project,
-      filePath: result.filePath,
-      migratedFromSchemaVersion: sourceSchemaVersion === 2 ? 2 : undefined,
-    };
+    return parseDesktopProject(result);
   }
 
   const raw = localStorage.getItem(BROWSER_PROJECT_KEY);

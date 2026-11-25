@@ -3,14 +3,15 @@ import { randomUUID } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { registerProjectIpc } from './project-ipc.js'
+import { readProjectFile, registerProjectIpc, rememberDialogDirectory } from './project-ipc.js'
 import { registerRuleLibraryIpc } from './rule-library.js'
 import { registerRuleTestCaseIpc } from './rule-test-cases.js'
 import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
 import { installReactDevToolsIfAvailable } from './dev-extensions.js'
-import { DESKTOP_CHANNELS, LOG_SESSION_ARGUMENT, MAX_AUDIT_FILE_BYTES, type DesktopInvokeChannel } from '../shared/desktop.js'
+import { DESKTOP_CHANNELS, LOG_SESSION_ARGUMENT, MAX_AUDIT_FILE_BYTES, type DesktopInvokeChannel, type ExternalProjectOpenPayload } from '../shared/desktop.js'
 import { type AppErrorCode, type LogScope } from '../shared/logging.js'
 import { createMainLogEntry, initializeMainLogger, logMain, registerLoggingIpc } from './logger.js'
+import { extractProjectFilePathFromArgv } from './startup-project.js'
 import { handleDesktop, setDesktopIpcReporter } from './typed-ipc.js'
 import {
   loadSavedWindowState,
@@ -27,6 +28,11 @@ const shouldOpenDevTools = process.argv.includes('--devtools')
 const auditArgument = process.argv.indexOf('--audit-package')
 const startupAuditPath = auditArgument < 0 ? undefined : process.argv[auditArgument + 1]
 const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
+const startupProjectPath = auditArgument < 0 ? extractProjectFilePathFromArgv(process.argv) : undefined
+const pendingExternalProjectPaths = startupProjectPath ? [startupProjectPath] : []
+let mainWindow: BrowserWindow | undefined
+let rendererAcceptsExternalProjects = false
+let externalProjectQueue = Promise.resolve()
 
 if (e2eDirectory) app.setPath('userData', path.join(e2eDirectory, 'user-data'))
 const logger = initializeMainLogger(path.join(app.getPath('userData'), 'logs'))
@@ -68,6 +74,7 @@ app.on('child-process-gone', (_event, details) => {
 
 const ipcFailures: Partial<Record<DesktopInvokeChannel, [LogScope, AppErrorCode, string]>> = {
   [DESKTOP_CHANNELS.projectOpen]: ['file', 'FILE_READ_FAILED', '打开工程失败'],
+  [DESKTOP_CHANNELS.projectConsumePendingOpen]: ['file', 'FILE_READ_FAILED', '读取待打开的外部工程失败'],
   [DESKTOP_CHANNELS.projectSave]: ['file', 'FILE_WRITE_FAILED', '保存工程失败'],
   [DESKTOP_CHANNELS.projectExportBackup]: ['file', 'RECOVERY_FAILED', '紧急备份导出失败'],
   [DESKTOP_CHANNELS.projectAutosave]: ['file', 'RECOVERY_FAILED', '自动恢复保存失败'],
@@ -105,6 +112,49 @@ logMain('info', 'app', 'SATB Master 启动', {
 })
 registerSoundFontScheme()
 
+async function loadExternalProject(filePath: string): Promise<ExternalProjectOpenPayload> {
+  const result = await readProjectFile(filePath)
+  if ('project' in result) await rememberDialogDirectory('project', filePath)
+  logMain('info', 'file', '已处理外部工程打开请求', {
+    context: { valid: 'project' in result },
+  })
+  return { filePath, ...result }
+}
+
+function queueExternalProjectOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = externalProjectQueue.then(operation)
+  externalProjectQueue = result.then(() => undefined, () => undefined)
+  return result
+}
+
+function sendPendingExternalProjects() {
+  void queueExternalProjectOperation(async () => {
+    while (pendingExternalProjectPaths.length > 0) {
+      const window = mainWindow
+      if (!window || !rendererAcceptsExternalProjects || window.webContents.isLoadingMainFrame()) return
+      const payload = await loadExternalProject(pendingExternalProjectPaths[0])
+      // 读取期间窗口可能关闭或重载，保留路径供下一次拉取。
+      if (mainWindow !== window || !rendererAcceptsExternalProjects || window.webContents.isLoadingMainFrame()) return
+      window.webContents.send(DESKTOP_CHANNELS.projectOpenExternal, payload)
+      pendingExternalProjectPaths.shift()
+    }
+  }).catch((error) => {
+    logMain('error', 'file', '转发外部工程失败', { code: 'FILE_READ_FAILED', error })
+  })
+}
+
+function onSecondInstance(_event: Electron.Event, commandLine: string[], workingDirectory: string) {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  }
+  const filePath = extractProjectFilePathFromArgv(commandLine, workingDirectory)
+  if (!filePath) return
+  pendingExternalProjectPaths.push(filePath)
+  sendPendingExternalProjects()
+}
+
 function createWindow() {
   const windowState = loadSavedWindowState()
   const window = new BrowserWindow({
@@ -129,6 +179,19 @@ function createWindow() {
       ],
     },
   })
+
+  mainWindow = window
+  window.on('closed', () => {
+    mainWindow = undefined
+    rendererAcceptsExternalProjects = false
+  })
+  window.webContents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
+    if (isMainFrame && !isSameDocument) rendererAcceptsExternalProjects = false
+  })
+  window.webContents.on('render-process-gone', () => {
+    rendererAcceptsExternalProjects = false
+  })
+  window.webContents.on('did-finish-load', sendPendingExternalProjects)
 
   trackWindowState(window)
 
@@ -182,7 +245,7 @@ function registerWindowIpc() {
   handleDesktop(DESKTOP_CHANNELS.windowClose, (event) => senderWindow(event)?.close())
 }
 
-app.whenReady().then(async () => {
+async function initializeApplication() {
   if (developmentServerUrl || shouldOpenDevTools) {
     await installReactDevToolsIfAvailable()
   }
@@ -191,6 +254,16 @@ app.whenReady().then(async () => {
   registerRuleTestCaseIpc()
   registerRuleLibraryIpc()
   registerWindowIpc()
+  handleDesktop(DESKTOP_CHANNELS.projectConsumePendingOpen, (event) =>
+    queueExternalProjectOperation(async () => {
+      if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) return null
+      // renderer 先订阅事件，再用此调用声明已准备好接收剩余请求。
+      const filePath = pendingExternalProjectPaths.shift()
+      rendererAcceptsExternalProjects = true
+      sendPendingExternalProjects()
+      return filePath ? loadExternalProject(filePath) : null
+    }),
+  )
   handleDesktop(DESKTOP_CHANNELS.auditReadStartupPackage, async () => {
     if (!startupAuditPath || !path.isAbsolute(startupAuditPath) || !startupAuditPath.toLowerCase().endsWith('.satb-audit.json')) {
       throw new Error('启动审计需要 .satb-audit.json 文件的绝对路径')
@@ -213,7 +286,14 @@ app.whenReady().then(async () => {
       createWindow()
     }
   })
-})
+}
+
+if (e2eDirectory === undefined && !app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  if (e2eDirectory === undefined) app.on('second-instance', onSecondInstance)
+  void app.whenReady().then(initializeApplication)
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

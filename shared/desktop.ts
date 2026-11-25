@@ -19,6 +19,10 @@ export interface ProjectRecoveryRequest {
   migrationBackupSourcePath?: string;
 }
 
+export type ExternalProjectOpenPayload =
+  | { filePath: string; project: unknown }
+  | { filePath: string; invalidMessage: string };
+
 export interface SoundFontResource {
   token: string;
   sourceUrl: string;
@@ -63,6 +67,10 @@ export interface DesktopInvokeMap {
       | { canceled: true }
       | { canceled: false; filePath: string; project: unknown }
       | { canceled: false; invalidMessage: string };
+  };
+  "project:consume-pending-open": {
+    request: void;
+    response: ExternalProjectOpenPayload | null;
   };
   "project:save": {
     request: ProjectSaveRequest;
@@ -195,6 +203,7 @@ export interface DesktopInvokeMap {
 export interface DesktopEventMap {
   "log:error-entry": LogEntry;
   "window:maximized-changed": boolean;
+  "project:open-external": ExternalProjectOpenPayload;
   "soundfont:hash-progress": {
     token: string;
     processedBytes: number;
@@ -219,6 +228,8 @@ export const DESKTOP_CHANNELS = Object.freeze({
   windowClose: "window:close",
   windowMaximizedChanged: "window:maximized-changed",
   projectOpen: "project:open",
+  projectConsumePendingOpen: "project:consume-pending-open",
+  projectOpenExternal: "project:open-external",
   projectSave: "project:save",
   projectExportBackup: "project:export-backup",
   projectAutosave: "project:autosave",
@@ -270,6 +281,8 @@ export interface DesktopApi {
   };
   project: {
     open(): Promise<DesktopInvokeMap["project:open"]["response"]>;
+    consumePendingOpen(): Promise<DesktopInvokeMap["project:consume-pending-open"]["response"]>;
+    onOpenExternal(callback: (payload: ExternalProjectOpenPayload) => void): () => void;
     save(request: ProjectSaveRequest): Promise<DesktopInvokeMap["project:save"]["response"]>;
     exportBackup(request: DesktopInvokeMap["project:export-backup"]["request"]): Promise<DesktopInvokeMap["project:export-backup"]["response"]>;
     autosave(request: ProjectRecoveryRequest): Promise<DesktopInvokeMap["project:autosave"]["response"]>;
