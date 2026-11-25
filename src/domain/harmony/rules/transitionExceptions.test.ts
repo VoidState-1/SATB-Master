@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { compileScoreText } from "../../scoreText";
 import { checkHarmony } from "../registry";
+import { buildHarmonyAnalysis } from "../analysis";
+import { planRuleApplicability } from "./applicability";
+import { diagnostic } from "./helpers/core";
 
 function secondBeatDiagnostics(soprano: string, alto: string, tenor: string, bass: string) {
   const { project } = compileScoreText(`satb 1
@@ -18,6 +21,31 @@ bars 1..1 {
 describe("声部进行豁免的作用范围", () => {
   const overlap = "voice-leading.overlap";
   const unequalFifths = "voice-leading.unequal-fifths-inner-diminished-to-perfect";
+
+  it("显式切片 ID 不扩大到同音重奏的旋律或切片连接", () => {
+    const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | E5/2 G5/4 G5/4 |
+ A: | C4/2 D4/2 |
+ T: | G3/2 B3/2 |
+ B: | C3/2 G3/2 |
+ H: | I/2 V/2 |
+}`);
+    const analysis = buildHarmonyAnalysis(project);
+    const [change, reattack] = analysis.sliceTransitions;
+    const id = "voice-leading.hidden-octave";
+    const definition = {
+      id, dependencyScope: "slice", supportedExceptionContexts: ["same-harmony"],
+      defaultExceptionPolicies: { "same-harmony": "exempt" },
+    } as const;
+    const finding = diagnostic(id, change.current.tick, change.current.endTick, ["soprano", "bass"],
+      [change.current.notes.soprano!, change.current.notes.bass!], "title", "message");
+    expect(planRuleApplicability(definition, finding, analysis).policy).toBe("skip");
+    expect(planRuleApplicability(definition, { ...finding, sliceTransitionId: change.id }, analysis).policy).toBe("strict");
+    expect(planRuleApplicability(definition, { ...finding, sliceTransitionId: reattack.id }, analysis).policy).toBe("skip");
+  });
 
   it.each([
     ["同一拍的另一对声部", "E5/4 C5/2", "C5/4 E5/2"],

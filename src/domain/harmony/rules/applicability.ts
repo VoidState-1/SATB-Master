@@ -40,11 +40,16 @@ function transitionIdsFor(
   diagnostic: RuleDiagnostic,
   analysis: HarmonyAnalysis,
 ) {
+  if (diagnostic.sliceTransitionId !== undefined) {
+    const slice = new Set([diagnostic.sliceTransitionId]);
+    const melody = new Set(diagnostic.melodyTransitionId === undefined ? [] : [diagnostic.melodyTransitionId]);
+    return { slice, melody, harmony: slice };
+  }
   if (diagnostic.melodyTransitionId !== undefined) {
     const attack = analysis.sliceTransitions.find(transition => transition.current.tick === diagnostic.tick);
     const slice = new Set(attack ? [attack.id] : []);
     const melody = new Set([diagnostic.melodyTransitionId]);
-    return { slice, melody, all: new Set([...slice, ...melody]) };
+    return { slice, melody, harmony: melody };
   }
   const noteIds = new Set(diagnostic.noteIds);
   const overlapsTick = (tick: number) =>
@@ -74,7 +79,7 @@ function transitionIdsFor(
   return {
     slice: new Set(sliceTransitionIds),
     melody: new Set(melodyTransitionIds),
-    all: new Set([...sliceTransitionIds, ...melodyTransitionIds]),
+    harmony: new Set([...sliceTransitionIds, ...melodyTransitionIds]),
   };
 }
 
@@ -101,7 +106,7 @@ function contextsFor(
   const spanIds = spanIdsFor(diagnostic, analysis);
   const contexts: RuleExceptionContext[] = [];
   const facts = analysis.contextFacts;
-  if (diagnostic.motionSameHarmony ?? intersects(facts.sameHarmonyTransitionIds, transitions.all))
+  if (diagnostic.motionSameHarmony ?? intersects(facts.sameHarmonyTransitionIds, transitions.harmony))
     contexts.push("same-harmony");
   if (intersects(facts.arpeggiationTransitionIds, transitions.melody))
     contexts.push("arpeggiation");

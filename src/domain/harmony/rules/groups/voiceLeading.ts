@@ -27,6 +27,7 @@ import {
   SUCCESSIVE_CROSS_RELATION_RULE,
 } from "./crossRelations";
 import { sameHarmonyOnTransition } from "../helpers/motionHarmony";
+import { structuralVoicePairComparisons } from "../helpers/structuralVoicePairs";
 
 type VoicePairRuleId =
   | "voice-leading.parallel-fifths"
@@ -43,6 +44,7 @@ interface VoicePairRulePolicy {
   title: string;
   message: string;
   matches(fact: VoicePairTransitionFact, transition: SliceTransition): boolean;
+  structural?: boolean;
   delayedInterval?: (interval: VoicePairTransitionFact["currentInterval"]) => boolean;
   sameHarmony?(transition: SliceTransition): boolean;
   details?(fact: VoicePairTransitionFact, transition: SliceTransition, immediate: boolean): {
@@ -70,65 +72,77 @@ function evaluateVoicePairRule(
   policy: VoicePairRulePolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
+  const reported = new Set<string>();
+  function compare(transition: SliceTransition, fact: VoicePairTransitionFact, boundaryTick?: number) {
+    const asynchronous = boundaryTick !== undefined;
+    const motionKey = `${transition.current.tick}|${fact.voiceIds.join(",")}`;
+    if (asynchronous && reported.has(motionKey)) return;
+    const immediate = policy.matches(fact, transition);
+    const delayed = !asynchronous && !immediate && policy.delayedInterval?.(fact.currentInterval)
+      ? preparedSuspensionParallel(context, transition, fact, policy.delayedInterval)
+      : undefined;
+    if (!immediate && !delayed) return;
+    if (policy.structural) reported.add(motionKey);
+    const details = policy.details?.(fact, transition, immediate);
+    const [upperId, lowerId] = fact.voiceIds;
+    const [previousUpper, previousLower] = delayed
+      ? [delayed.held, delayed.lowerBefore]
+      : fact.previousNotes;
+    const [currentUpper, currentLower] = fact.currentNotes;
+    diagnostics.push(
+      diagnostic(
+        policy.id,
+        transition.current.tick,
+        transition.current.endTick,
+        [upperId, lowerId],
+        [previousUpper, previousLower, currentUpper, currentLower],
+        details?.title ?? policy.title,
+        delayed ? "两声部依次作下行级进，延留解决后重现相同的纯音程。" : details?.message ?? policy.message,
+        {
+          sliceTransitionId: transition.id,
+          motionSameHarmony: asynchronous ? false : policy.sameHarmony?.(transition),
+          severityCap: details?.severityCap,
+          ...(delayed && { params: { suspensionEntryTick: delayed.entryTick } }),
+          ...(asynchronous && { params: { structuralBoundaryTick: boundaryTick } }),
+          ...((immediate || details) && {
+            pairMotion: {
+              voiceExchange: immediate ? fact.voiceExchange : undefined,
+              bassStepUp: immediate ? fact.bassMotion === "step-up" : undefined,
+              cadence: details?.cadence,
+              innerVoices: details?.innerVoices,
+            },
+          }),
+          causeRefs: [
+            `${policy.id}|${transition.id}|voices:${upperId},${lowerId}`,
+          ],
+          evidence: [
+            noteEvidence(
+              previousUpper,
+              `${voiceName(context.analysis, upperId)}前一音`,
+            ),
+            noteEvidence(
+              previousLower,
+              `${voiceName(context.analysis, lowerId)}前一音`,
+            ),
+            noteEvidence(
+              currentUpper,
+              `${voiceName(context.analysis, upperId)}当前音`,
+            ),
+            noteEvidence(
+              currentLower,
+              `${voiceName(context.analysis, lowerId)}当前音`,
+            ),
+          ],
+        },
+      ),
+    );
+  }
   for (const transition of context.sliceTransitions()) {
-    for (const fact of context.voiceLeading.voicePairs(transition)) {
-      const immediate = policy.matches(fact, transition);
-      const delayed = !immediate && policy.delayedInterval?.(fact.currentInterval)
-        ? preparedSuspensionParallel(context, transition, fact, policy.delayedInterval)
-        : undefined;
-      if (!immediate && !delayed) continue;
-      const details = policy.details?.(fact, transition, immediate);
-      const [upperId, lowerId] = fact.voiceIds;
-      const [previousUpper, previousLower] = delayed
-        ? [delayed.held, delayed.lowerBefore]
-        : fact.previousNotes;
-      const [currentUpper, currentLower] = fact.currentNotes;
-      diagnostics.push(
-        diagnostic(
-          policy.id,
-          transition.current.tick,
-          transition.current.endTick,
-          [upperId, lowerId],
-          [previousUpper, previousLower, currentUpper, currentLower],
-          details?.title ?? policy.title,
-          delayed ? "两声部依次作下行级进，延留解决后重现相同的纯音程。" : details?.message ?? policy.message,
-          {
-            motionSameHarmony: policy.sameHarmony?.(transition),
-            severityCap: details?.severityCap,
-            ...(delayed && { params: { suspensionEntryTick: delayed.entryTick } }),
-            ...((immediate || details) && {
-              pairMotion: {
-                voiceExchange: immediate ? fact.voiceExchange : undefined,
-                bassStepUp: immediate ? fact.bassMotion === "step-up" : undefined,
-                cadence: details?.cadence,
-                innerVoices: details?.innerVoices,
-              },
-            }),
-            causeRefs: [
-              `${policy.id}|${transition.id}|voices:${upperId},${lowerId}`,
-            ],
-            evidence: [
-              noteEvidence(
-                previousUpper,
-                `${voiceName(context.analysis, upperId)}前一音`,
-              ),
-              noteEvidence(
-                previousLower,
-                `${voiceName(context.analysis, lowerId)}前一音`,
-              ),
-              noteEvidence(
-                currentUpper,
-                `${voiceName(context.analysis, upperId)}当前音`,
-              ),
-              noteEvidence(
-                currentLower,
-                `${voiceName(context.analysis, lowerId)}当前音`,
-              ),
-            ],
-          },
-        ),
-      );
-    }
+    for (const fact of context.voiceLeading.voicePairs(transition)) compare(transition, fact);
+  }
+  if (policy.structural) {
+    for (const { transition, fact, boundaryTick } of structuralVoicePairComparisons(context))
+      compare(transition, fact, boundaryTick);
   }
   return diagnostics;
 }
@@ -138,6 +152,7 @@ export function parallelFifthsRule(
 ) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.parallel-fifths",
+    structural: true,
     delayedInterval: isPerfectFifth,
     title: "平行或反向纯五度",
     message: "两个声部同向或反向移动，并连续形成纯五度（含复音程）。",
@@ -166,6 +181,7 @@ export function parallelFifthsRule(
 export function parallelOctavesRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.parallel-octaves",
+    structural: true,
     delayedInterval: isPerfectOctave,
     title: "平行或反向八度、同度",
     message: "两个声部同向或反向移动，并连续形成纯八度或同度（含复音程）。",
@@ -180,6 +196,7 @@ export function parallelOctavesRule(context: HarmonyRuleContext) {
 export function hiddenFifthRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.hidden-fifth",
+    structural: true,
     sameHarmony: transition => sameHarmonyOnTransition(transition, context.harmony),
     title: "外声部隐伏五度",
     message: "外声部同向进入纯五度，且高声部发生跳进。",
@@ -198,6 +215,8 @@ export function hiddenFifthRule(context: HarmonyRuleContext) {
 export function hiddenOctaveRule(context: HarmonyRuleContext) {
   return evaluateVoicePairRule(context, {
     id: "voice-leading.hidden-octave",
+    structural: true,
+    sameHarmony: transition => sameHarmonyOnTransition(transition, context.harmony),
     title: "外声部隐伏八度",
     message: "外声部同向进入八度或同度，且高声部发生跳进。",
     matches: (fact) =>
@@ -354,7 +373,7 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.2",
     label: "平行或反向纯五度",
     description:
-      "检查任意两个声部是否同向或反向进行并连续构成纯五度（含纯十二度等复音程），以及有准备的延留下行解决是否掩盖同向纯五度。",
+      "检查表层或可验证的结构声部对是否同向或反向连续构成纯五度（含纯十二度），也检查有准备的延留是否掩盖同向纯五度。",
     rationale:
       "纯五度的声学共鸣高度融合。两个声部同向或反向连续形成纯五度及其复音程，都会削弱声部独立性，因此一并检查。斜向进行及两个声部均重复同音时不按连续五度处理。",
     group: "voiceLeading",
@@ -370,7 +389,7 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.3",
     label: "平行或反向八度、同度",
     description:
-      "检查任意两个声部是否同向或反向进行并连续构成纯八度或同度（含纯十五度等复音程），以及有准备的延留下行解决是否掩盖同向八度。",
+      "检查表层或可验证的结构声部对是否同向或反向连续构成纯八度或同度（含纯十五度），也检查有准备的延留是否掩盖同向八度。",
     rationale:
       "纯八度与同度的连续进行会削弱声部独立性。斯波索宾第十六章第三节允许结束终止中，不完全原位属七到主和弦的特定外声部反行。仅在实奏和声、内声部解决和实际收束均得到支持时适用。",
     group: "voiceLeading",
@@ -384,13 +403,13 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.5",
     label: "外声部隐伏五度",
     description:
-      "检查外声部（高音与低音）同向跳进进入纯五度。",
+      "检查外声部同向进入纯五度且高音跳进，包括可验证的半拍内错峰。",
     rationale:
       "当高音声部与低音声部同方向运动且高音声部为跳进时，人耳会不自觉地在高音跳进的空隙中脑补出经过音，从而产生“隐伏的平行五度”不良听感。若高音声部为级进，则旋律线条的连贯性能够掩盖此现象。",
     group: "voiceLeading",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
-    dependencyScope: "slice",
+    dependencyScope: "phrase",
     supportedExceptionContexts: ["same-harmony"],
     defaultExceptionPolicies: {
       "same-harmony": "exempt",
@@ -402,13 +421,13 @@ export const VOICE_LEADING_RULES = defineRuleGroup(
     catalogNumber: "C.6",
     label: "外声部隐伏八度",
     description:
-      "检查外声部（高音与低音）同向跳进进入纯八度或同度。",
+      "检查外声部同向进入纯八度或同度且高音跳进，包括可验证的半拍内错峰。",
     rationale:
       "外声部同向跳进进入纯八度会形成极其刺眼的“隐伏八度”空洞感，削弱外声部对和声织体的张力支撑。要求高音声部必须以级进进入八度，或两外声部反向进行。",
     group: "voiceLeading",
     defaultSeverity: "warning",
     requires: ["written-pitches"],
-    dependencyScope: "slice",
+    dependencyScope: "phrase",
     supportedExceptionContexts: ["same-harmony"],
     defaultExceptionPolicies: {
       "same-harmony": "exempt",

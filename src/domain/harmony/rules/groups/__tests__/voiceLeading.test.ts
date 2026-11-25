@@ -140,6 +140,110 @@ bars 1..1 {
   });
 });
 
+describe("隐伏八度的和声上下文", () => {
+  const rule = "voice-leading.hidden-octave";
+  it.each([
+    ["内声部重奏", "E5/2 G5/2", "C4/2 D4/4 D4/4", "G3/2 B3/2", "C3/2 G3/2", "I/2 V/2", true],
+    ["外声部重奏", "E5/4 E5/4 G5/2", "C4/2 D4/2", "G3/2 B3/2", "C3/2 G3/4 G3/4", "I/2 V/2", true],
+    ["真正同和声换位", "E5/2 G5/2", "C4/2 E4/2", "G3/2 C4/2", "C3/2 G3/2", "I/2 I64/2", false],
+  ] as const)("%s", (_name, s, a, t, b, h, reports) => {
+    const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | ${s} |
+ A: | ${a} |
+ T: | ${t} |
+ B: | ${b} |
+ H: | ${h} |
+}`);
+    const atChange = (strict: boolean) => checkHarmony(project, undefined, {},
+      strict ? { [rule]: { "same-harmony": "strict" } } : {}).diagnostics
+      .filter(d => d.ruleId === rule && d.tick === 2 * PPQ);
+    expect(atChange(false)).toHaveLength(reports ? 1 : 0);
+    expect(atChange(true)).toHaveLength(1);
+  });
+});
+
+describe("有界异步结构五八度", () => {
+  const fifths = "voice-leading.parallel-fifths";
+  const octaves = "voice-leading.parallel-octaves";
+  const hiddenFifth = "voice-leading.hidden-fifth";
+  const hiddenOctave = "voice-leading.hidden-octave";
+  const model = {
+    s: "G5/2~ G5/8 A5/4.", a: "E4/2 F4/2", t: "C4/2 D4/2",
+    b: "C3/2 D3/2", h: "I/2 ii/2", annotations: "",
+  };
+  function structural(changes: Partial<typeof model> = {}, cut?: number) {
+    const { s, a, t, b, h, annotations } = { ...model, ...changes };
+    const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | ${s} |
+ A: | ${a} |
+ T: | ${t} |
+ B: | ${b} |
+ H: | ${h} |
+}
+${annotations}`);
+    if (cut !== undefined) project.structure.phraseBoundaries.push({
+      tick: cut * PPQ, id: "cut", source: "manual", confidence: "certain",
+    });
+    return checkHarmony(project).diagnostics.filter(d =>
+      [fifths, octaves, hiddenFifth, hiddenOctave].includes(d.ruleId) &&
+      d.voiceIds.includes("soprano") && d.voiceIds.includes("bass"));
+  }
+
+  it.each([
+    ["平行五度，高音晚半拍", fifths, {}, 2.5],
+    ["平行五度，低音晚半拍", fifths, { s: "G5/2 A5/2", b: "C3/2~ C3/8 D3/4." }, 2.5],
+    ["平行五度，高音提前半拍", fifths, { s: "G5/4. A5/2~ A5/8" }, 2],
+    ["平行八度", octaves, { s: "C5/2~ C5/8 D5/4.", a: "G4/2 A4/2", t: "E4/2 F4/2" }, 2.5],
+    ["反向八度", octaves, { s: "C5/2~ C5/8 D5/4.", a: "G4/2 A4/2", t: "E4/2 F4/2", b: "C3/2 D2/2" }, 2.5],
+    ["反向五度", fifths, { b: "C3/2 D2/2" }, 2.5],
+    ["隐伏五度", hiddenFifth, {
+      s: "E5/2~ E5/8 D6/4.", a: "G4/2 B4/2", t: "C4/2 G4/2", b: "C3/2 G3/2", h: "I/2 V/2",
+    }, 2.5],
+    ["隐伏八度", hiddenOctave, {
+      s: "E5/2~ E5/8 G5/4.", a: "G4/2 B4/2", t: "C4/2 D4/2", b: "C3/2 G3/2", h: "I/2 V/2",
+    }, 2.5],
+    ["变和声前短半音经过遮挡五度", fifths, {
+      s: "G5/4. G#5/8@p A5/2", annotations: "annotations {\n note p role=passing\n}",
+    }, 2],
+    ["变和声时短自然经过遮挡五度", fifths, {
+      s: "C5/2 D5/8 E5/4.", a: "A4/2 C4/2", t: "F4/2 A3/2", b: "F3/2 A2/2", h: "IV/2 vi/2",
+    }, 2.5],
+    ["变和声时短倚音遮挡隐伏五度", hiddenFifth, {
+      s: "E5/2 C6/8@p D6/4.", a: "G4/2 B4/2", t: "C4/2 G4/2", b: "C3/2 G3/2", h: "I/2 V/2",
+      annotations: "annotations {\n note p role=appoggiatura\n}",
+    }, 2.5],
+  ] satisfies Array<[string, string, Partial<typeof model>, number]>)("%s", (_name, ruleId, changes, tick) => {
+    const findings = structural(changes).filter(d => d.ruleId === ruleId);
+    expect(findings).toEqual([expect.objectContaining({
+      tick: tick * PPQ, params: expect.objectContaining({ structuralBoundaryTick: 2 * PPQ }),
+      evidence: expect.arrayContaining([expect.objectContaining({ label: "女高音前一音" })]),
+    })]);
+  });
+
+  it.each([
+    ["同和声琶音", { s: "C5/2~ C5/8 E5/4.", a: "G4/2 C5/2", t: "E4/2 G4/2", b: "C3/2 E3/2", h: "I/2 I6/2" }],
+    ["辅助声部各自另起一组", { a: "E4/2~ E4/8 F4/4.", t: "C4/2~ C4/8 D4/4." }],
+    ["跨越休止", { s: "G5/2 r/8 A5/4." }],
+    ["独立的后续拍起音", { s: "G5/2. A5/4" }],
+    ["疑似经过但实际跳进", { s: "G5/4. C6/8@p A5/2", annotations: "annotations {\n note p role=passing\n}" }],
+    ["目标和弦的共同音是独立错峰，不当作出去的延迟音", {
+      s: "G5/2~ G5/8 E5/4.", a: "E4/2 G4/2", t: "C4/2~ C4/2", b: "C3/2 A2/2", h: "I/2 vi7/2",
+    }],
+  ] satisfies Array<[string, Partial<typeof model>]>)("%s 时不补报", (_name, changes) => {
+    expect(structural(changes).filter(d => d.params.structuralBoundaryTick !== undefined)).toEqual([]);
+  });
+
+  it.each([2, 2.25, 2.5])("不跨第 %s 拍位置的句界配对", cut => {
+    expect(structural({}, cut)).toEqual([]);
+  });
+});
+
 describe("声部超越与和弦换位", () => {
   const rule = "voice-leading.overlap";
 

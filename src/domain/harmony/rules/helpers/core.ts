@@ -45,6 +45,7 @@ export function diagnostic(
     pairMotion?: RuleDiagnostic["pairMotion"];
     motionSameHarmony?: boolean;
     melodyTransitionId?: string;
+    sliceTransitionId?: string;
     causeRefs?: string[];
     coverageRefs?: string[];
     subjects?: DiagnosticSubjects;
@@ -68,6 +69,7 @@ export function diagnostic(
     ...(options.severityCap && { severityCap: options.severityCap }),
     ...(options.pairMotion && { pairMotion: options.pairMotion }),
     ...(options.melodyTransitionId !== undefined && { melodyTransitionId: options.melodyTransitionId }),
+    ...(options.sliceTransitionId !== undefined && { sliceTransitionId: options.sliceTransitionId }),
     ...(options.motionSameHarmony !== undefined && { motionSameHarmony: options.motionSameHarmony }),
     causeRefs: options.causeRefs,
     coverageRefs: options.coverageRefs,

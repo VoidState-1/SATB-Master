@@ -33,6 +33,13 @@ export interface VoicePairTransitionFact {
   bassMotion: BassMotion;
 }
 
+export interface StructuralVoicePairComparison {
+  /** The actual harmonic boundary ID with the verified, possibly non-adjacent frames. */
+  readonly transition: SliceTransition;
+  readonly fact: VoicePairTransitionFact;
+  readonly boundaryTick: number;
+}
+
 export interface ChordMemberFact {
   voiceId: VoiceId;
   note: AnalysisNote;

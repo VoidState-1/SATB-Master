@@ -218,6 +218,8 @@ export type RuleDiagnostic = Omit<
   motionSameHarmony?: boolean;
   /** 确知诊断对应的旋律连接时，例外只使用本次起奏的证据。 */
   melodyTransitionId?: string;
+  /** 确知诊断对应的切片连接时，不通过共享音符扩展例外范围。 */
+  sliceTransitionId?: string;
   /** A proved finding can call for strict handling within a contextual default. */
   strictDefaultContext?: RuleExceptionContext;
 };
