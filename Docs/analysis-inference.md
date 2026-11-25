@@ -38,7 +38,7 @@
 乐句边界是工程级数据，保存于 `project.structure.phraseBoundaries`（见 [data-model.md](./data-model.md)）。核心入口位于 [`src/domain/harmony/phrase/analyze.ts`](../src/domain/harmony/phrase/analyze.ts)：
 
 - `analyzePhrases(project, options)`：结合已保存的当前有效边界与可选候选扫描，返回 `PhraseAnalysis`（`boundaries`、`candidates`、`segments`、`template`）。
-- `inferPhrases(project)`：以 `{ generateCandidates: true, includeInferredBoundaries: true, replaceInferredBoundaries: true }` 重建自动边界，保留人工边界，丢弃上一次推导生成的自动边界。
+- `inferPhrases(project)`：以 `{ generateCandidates: true, includeInferredBoundaries: true, replaceInferredBoundaries: true }` 重建自动边界，保留人工和锁定边界，替换未锁定的旧自动边界。
 - `phraseAtTick(segments, tick)`：定位 tick 所在的 `PhraseSegment`。
 
 `PhraseAnalysis` 根据工程是否存在和弦区域，采用两套衔接策略：
@@ -56,8 +56,8 @@
 
 当输入工程已包含和弦区域时，分析器在规则模板候选之上运行事件打分与全局动态规划切分：
 
-1. **事件候选生成（`eventCandidates`）**：收集小节起点、弱起对齐拍位（`alignedPickupTicks`，兼容 [`shortOpeningMeasure`](../src/domain/harmony/phrase/segmentation.ts) 识别的不完整弱起首小节）以及前述规则模板已确立的边界；新候选的 `targetRatio` 为 `"event"`。
-2. **多维事件打分**：按正向权重（整拍以上静音 `pause`、长音释放 `longRelease`、整小节释放 `wholeBarRelease`、正格/阻碍/K46 收束 `cadence` 或属功能 `dominant`、开头动机复现 `reprise`、后句主和弦重启 `tonicRestart`、四小节网格 `fourBarGrid`、弱起对齐 `pickup`）与负向惩罚（跨界持续声部 `sustainedVoice`、同和声或延长四六连续 `continuousHarmony`、未解决不稳定和声 `unstable`、基础分割代价 `divisionCost`）评分；已确立的规则边界保留原有证据并以不低于 `establishedMinimum` 的分数同台竞争。
+1. **事件候选生成（`eventCandidates`）**：收集小节起点、弱起对齐拍位（兼容不完整弱起小节）、规则模板边界，以及实际的多声部释放与休止后重起。休止中的小节线可以是下一句的起点，前句的收束证据仍取自早先的实际释放。
+2. **多维事件打分**：收束后的齐休、协调的释放与重起（`coordinated-breath`）、开头动机复现及节拍位置都能支持候选。小节内不凭普通换和弦切分。同一属功能和延长性四六默认视作连续，除非存在独立的收束与重起证据。已确立的比例候选保留原证据和最低权重，与事件候选共同选优。
 3. **全局 DP 多乐句切分（[`selectEventDivisions`](../src/domain/harmony/phrase/segmentation.ts)）**：
    - 将工程起止点与所有人工/锁定边界视为**固定锚点**（`anchors`），把目标函数分解为相互独立的锚点区间分别求解 `bestDivisions`。
    - DP 结合乐句小节数偏好（`lengthScore`：4 小节加分，`< 3` 或 `> 6` 小节减分）与边界事件得分，且总分须超过不分割基线至少 `minimumGain = 1`。
@@ -80,24 +80,25 @@
 - [`detectCadences(analysis: CadenceAnalysis)`](../src/domain/harmony/cadence/detect.ts)：只消费 `project`、`harmonySpans`、`chordById`、`slices` 与 `phraseSegments` 五项只读字段，跳过 `confidence === "ambiguous"` 的乐句。内部构造 `CadenceDetectionContext`，提供延迟求值的 `measureFor`、`writtenBeatAt`、`metricAt` 与属链间隙证据函数 `gapEvidence`（`dominantNeighborEvidence`）。
 - [`cadence/projectEvidence.ts`](../src/domain/harmony/cadence/projectEvidence.ts)：提供 `cadenceInputs(project)`（构建不克隆、不触发推导、不跑规则的最小分析输入，被 `buildHarmonyAnalysis`、文本谱渲染及 `pedalContinuationMidpoint` 复用）与 `detectProjectCadences(project)` 便捷入口。
 - 人工句界可以落在持续音内部；`spansForPhrase` 借助 `clipHarmonySpan` 将和声区段按乐句半开区间裁剪，而不改变全局规则切片。
+- 候选用 `fromTick` 表示可证的终止准备起点、`landingTick` 表示结构到达、`toTick` 表示实际收束音响的排他性终点。触及人工裁剪时不超出该句。只有无法从常规范围恢复的落点仍使用可持久化的 `observedLandingTick`，不变更工程 schema。
 
 ### 4.2 四类终止式候选
 
 `detectCadences` 将检测结果归类为三大候选桶（`ordinary`、`interior`、`tonicTails`）以及面向无和弦尾音的分离式结束处理：
 
 1. **乐句末端常规终止（`detectStandardPhraseEnding` -> `ordinary`）**：
-   - **正格全终止（`full` / `authentic`）**：匹配 `D -> T`，由 `dominantApproach` 回溯同类原位属链与 `K46` 准备，由 `fullApproach` 在小节首拍补入原位强拍 `IV` 准备；完满性（`perfect` / `imperfect`）由 `completionFor` 核对原位属主、低音 `5 -> 1` 及女高主音。
+   - **正格全终止（`full` / `authentic`）**：匹配 `D -> T`，回溯连续属链与 `K46`，并按节拍与书写低音纳入独立的下属功能准备。终止引擎和 `cadence.bass-formula` 共用正格低音公式，区分原位 `5 -> 1` 和实写支持的合法转位（例如 `V7 -> I6`）。完满正格还要求女高落主音。
    - **变格全终止与补充终止（`full` / `plagal` 与 `supplementary` / `plagal`）**：区分句末独立变格（`dorianPlagalEnding` 多利亚 `IV–i` 或满足外声部起奏与不完满条件的 `isImperfectPlagalClosing`）与正格收束后的变格尾声（`hasAuthenticTailAnchor` 成立时归为 `supplementary`）。若正格落主后紧接句末补充变格，`authenticCadenceBeforePlagalTail` 会同步补充前置的正格全终止候选。
    - **阻碍终止（`deceptive`）**：匹配属功能到非 I 级主功能（如 `D -> VI`，支持连续 `VI` 延展回溯），必要时以 `observedLandingTick` 标出首个 `VI` 落点。
-   - **半终止（`half`）**：支持中间乐句停于本调原位四级下属的变格半终止（`half` / `plagal`），以及乐句停于属功能（五级属或导七和弦）的正格半终止（`half` / `authentic`）。
+   - **半终止（`half`）**：支持变格半终止和属功能半终止。属式半终止可纳入同调下属准备、短主功能起势或实写属持续低音上的辅助四六。根位属已实际到达时，后续同属转位不改写该低音证据。
 2. **乐句内部清晰收束（`articulatedInteriorCadences` -> `interior`）**：
-   - 在乐句内部识别四声部整小节保持并在下一小节以更短齐奏节奏重启的清晰收束（`articulated-interior-ending`，支持正格落主与阻碍落六级；正格内部收束仅在无人工边界约束的乐句上启用）。
+   - 在乐句内部识别可独立验证的收束，包括整小节保持后重起、齐休隔开的属式半终止、强位实奏落主及有终止四六准备的阻碍进行。人工边界裁剪取证范围，但不阻止同一句内部报告独立收束。
    - 对乐句内部的原位 `D -> VI`，若满足 `K46` 准备后强/次强拍持续至少两拍，或乐句中后段原位属与原位六级各持续至少两拍且六级落强拍（`interiorDeceptiveEvidence`），生成 `probable` 级内部阻碍终止候选。
 3. **落主尾部延展（`tonicTails`）**：
    - `detectClosingTonicPedal`：小调属七落主后，外声部持续同一主音，内声经 `V7/iv -> iv64 -> i` 延展至共同释放（`closing-tonic-pedal`）。
    - `detectClosingTonicRevoicing`：属七强拍落主后，外声部保持，内声经短下属四六重配回主至共同释放（`closing-tonic-revoicing`）。
    - `detectClosingTonicDecoration`：属七实奏落主后，主低音与一上声部保持，两声部在弱位级进装饰后回主（`closing-tonic-decoration`）。
-   - 三者均将 `observedLandingTick` 设为实际落主时刻，范围覆盖至最终释放。
+   - 弱位同主转位重配也可延长收束范围。这些路径用 `observedLandingTick` 保留首次实际落主，区间覆盖至最终释放。
 4. **无和弦落点 / 分离式主结束（`detectDetachedTonicEnding`）**：
    - 当末乐句最后和弦为五级属且早于工程结尾时，检测两种无和弦落点：
      - **顿奏全休后的稀疏三声部主收束**：与前段下属、属七保持相同顿奏与全休节奏，强拍由低音、女高主音与内声三音收束（`detached-sparse-tonic`）；若前段存在同素材重奏前的顿奏阻碍，通过 `sparseRepriseCandidate` 同步补充 `detached-deceptive-reprise`。
@@ -153,7 +154,9 @@
 
 1. 构建全曲观测切片 `buildChordInferenceObservations(project)`（即便请求为局部选区，求解阶段也使用完整上下文）。
 2. 以 `chordRegions: []` 只读预跑 `inferPhrases`，得到不依赖现有和弦标注的 `terminalTicks`，用于解锁句末属后主和弦允许的五音省略。
-3. 调用 [`inferLocalKeys`](../src/domain/harmony/inference/localKeys.ts) 检测无记谱调号变化时的局部调性：识别强拍持续或乐句收束的 `V(7)–I` 落点，并向前回溯独立准备证据（如 `K46`、重属、副属、那不勒斯、调外音或和声大调准备）；同时通过 `parallelTonicPivot` 识别同主音异调式主三和弦在 `V7` 解决后作为目标调共同枢纽和弦的情形，将推导出的 `localKey` 注入对应观测切片。
+3. 调用 [`inferLocalKeys`](../src/domain/harmony/inference/localKeys.ts) 在记谱调号与人工句界切出的窗口内枚举候选调心。先保留有独立准备与稳定落点的实写终止证据，再用共享的 `createStructuralVoicingReader` 复核被外音遮住的帧。结构复核要求唯一可行的书写配位、同声部外音路径和完整构成音，不把完整的竞争和弦随意改成外音。
+4. 一次副属落点只支持主音化。持续调心要求独立准备与明确的落主，或在有限距离内出现两次相互独立的属–主到达，并排除已确立的竞争调心。扩展时以最初可验证的属功能或其独立准备为起点；不能仅凭之后的终止倒填共同和弦。短暂经过材料后的回归也需要再次出现实写属–主。共同和弦与减七改释保留各自的书写证据，不单独计作调心确立。
+5. 将通过复核的 `localKey` 注入候选观测，仍保留原始音符和记谱调号事件。盲推保持和弦构成、转位和外音的独立验证。局部四六前的预备延留仅在独立属–主证据和原位外音路径同时成立时回写；副属序列和路径评分不会用后调的同级数充当前调的目标。
 
 ### 5.2 6 阶段候选管线（`buildContextualChordCandidates`）
 
@@ -188,7 +191,7 @@ prepareInferenceContext（全曲观测 + 无和弦乐句预推导 + inferLocalKe
 
 ### 5.3 两轮链式外音恢复与弱拍假和弦竞争（`ornaments.ts`）
 
-管线末端的 [`withContextualOrnaments`](../src/domain/harmony/inference/ornaments.ts) 在不破坏强结构解释的前提下分三步处理复杂外音：
+管线末端的 [`withContextualOrnaments`](../src/domain/harmony/inference/ornaments.ts) 在不破坏强结构解释的前提下分四步处理复杂外音：
 
 1. **首轮空白恢复（`recoverOrnamentGaps(..., seedChains = true)`）**：
    - 仅以 `isStructuralAnchor`（具功能语义、三度结构、拼写一致、低音匹配且无外音）作为锚点，跳过 `withheldStarts` 保留边界。
@@ -200,6 +203,8 @@ prepareInferenceContext（全曲观测 + 无和弦乐句预推导 + inferLocalKe
    - 对原本已命中结构候选但位于弱位（`metric.level < 2`）、时值短于一拍（`< measureBeatTicks ?? ppq`）且不具独立强结构证据（如九和弦、变音、`K46`、副属或带常规解决的七和弦）的切片，以 `competition = true` 生成经过/辅助、延留与先现竞争候选。
    - 每个竞争候选须经 `verifyCompetingOrnament` 严格核验：最多 2 个外音、不含逸音、通过 `hasSafeOrnamentMotion`、低音外音仅允许双侧同转位回归辅助、至少一个上声部保持延续且还原外音后完整覆盖和弦音。
    - 通过核验的候选经 `scoreVerifiedOrnament` 依据还原后的和弦音覆盖率与双侧佐证计算 `contextFit`，与原纵向候选共同进入序列路径 DP 竞争；竞争胜者不会回流为新锚点去继续衍生空白恢复。
+
+4. **共享结构配位回填（`recoverWrittenStructuralGaps`）**：对没有可用解释的非完整实写三度叠置，按声部追踪跨切片的书写外音链。既有纵向解与实写和声可提供出发或到达支持，但只用已有功能锚点或还原后能精确命中的功能模板产生候选。多声部错开解决、保留低音下上声部延留，以及同一和弦重配转位时，候选必须覆盖必要结构音、解释每个表层外音、落实结构低音，并为每条路径记录起止和音符引用。仍服从禁用外音、严格置信度、保留切片和边界限制。明确完整的表层和弦、高置信竞争项、缺少依据的转位与四六解释不由本步骤覆盖。
 
 ### 5.4 序列路径求解、后处理与区段合并
 

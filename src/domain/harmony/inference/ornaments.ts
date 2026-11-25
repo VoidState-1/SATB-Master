@@ -1,5 +1,6 @@
 import {
   chordIdentityEquals,
+  chordIdentityEqualsWithoutBass,
   chordIdentityToneSpellingForDegree,
   primaryHarmonyInterpretation,
   chordIdentityInversion,
@@ -27,6 +28,9 @@ import {
   candidateComparator,
   fitAnticipation,
   fitContextualOrnament,
+  fitStructuralOrnament,
+  structuralOrnamentTemplates,
+  anchorForStructuralOrnament,
   scoreVerifiedOrnament,
   fitPreparedSuspension,
   fitSimultaneousNeighbors,
@@ -41,7 +45,8 @@ import {
   upperPassingMotion,
   writtenLowerNeighborPair,
 } from "../facts/prolongation";
-import { soundsCompleteWrittenChord } from "../facts/writtenVoicing";
+import { createStructuralVoicingReader, readSoundingTertianIdentity, soundsCompleteWrittenChord } from "../facts/writtenVoicing";
+import { writtenStepDirection as ornamentStepDirection } from "../facts/ornamentalMotion";
 
 function movingNote(
   before: ChordInferenceObservation, middle: ChordInferenceObservation, after: ChordInferenceObservation,
@@ -495,15 +500,6 @@ function isWrittenMember(tones: readonly SpelledPitchClass[], note: AnalysisNote
 
 function touches(from: AnalysisNote, to: AnalysisNote) {
   return from.startTick + from.durationTicks === to.startTick;
-}
-
-function ornamentStepDirection(from: AnalysisNote, to: AnalysisNote, chromatic = true): 1 | -1 | 0 {
-  if (!touches(from, to)) return 0;
-  const interval = writtenInterval(from.pitch, to.pitch);
-  const direction = interval.semitones > 0 ? 1 : -1;
-  if (isWrittenStep(interval) && interval.diatonicSteps === direction) return direction;
-  if (chromatic && interval.diatonicSteps === 0 && Math.abs(interval.semitones) === 1) return direction;
-  return 0;
 }
 
 function sameWrittenContinuation(from: AnalysisNote, to: AnalysisNote) {
@@ -1063,8 +1059,125 @@ function ornamentReadingKey(candidate: ChordInferenceCandidate) {
     Object.entries(candidate.fit.nonChordToneAssignments).sort()]);
 }
 
-/** Recover gaps in two snapshots, then let short, proven ornaments compete
- * with the original vertical readings. Competition winners never seed a gap. */
+/** Verify staggered same-voice paths without opening the vertical filters. */
+function recoverWrittenStructuralGaps(
+  observations: readonly Observation[], sets: readonly CandidateSet[], structural: OrnamentAnchors,
+  ppq: number, boundaries: readonly number[], withheldStarts: ReadonlySet<number>,
+): readonly CandidateSet[] {
+  const frames = observations.map((part, index) => {
+    const literal = withheldStarts.has(part.fromTick) ? undefined : readSoundingTertianIdentity(writtenFrame(part));
+    return {
+      ...writtenFrame(part), identities: [
+        ...structural[index].map(candidate => candidate.identity), ...(literal ? [literal] : []),
+      ],
+    };
+  });
+  const byTick = new Map(observations.map(part => [part.fromTick, part]));
+  const read = createStructuralVoicingReader(frames, boundaries, 2 * ppq);
+  const templates = new Map<string, ReturnType<typeof structuralOrnamentTemplates>>();
+  return sets.map((existing, index) => {
+    const part = observations[index];
+    if (!part.completeSatb || hasCompleteWrittenTertianChord(part) || withheldStarts.has(part.fromTick) ||
+        existing.some(candidate => candidate.confidence !== "low")) return existing;
+    // A gap at an enharmonic exit is part of the specialized respelling and
+    // augmented-sixth resolution problem, not free space to extend a chord.
+    if ([sets[index - 1], sets[index + 1]].some(set => set?.some(candidate =>
+      candidate.confidence !== "low" && (candidate.identity.structure.kind === "augmented-sixth" ||
+        candidate.evidence.some(item => item.code === "written-enharmonic-identity"))))) return existing;
+
+    const nearby = new Map<string, ChordInferenceCandidate>();
+    for (const direction of [-1, 1]) {
+      for (let i = index + direction; observations[i]; i += direction) {
+        const frame = observations[i];
+        if (Math.abs(frame.fromTick - part.fromTick) > 2 * ppq || withheldStarts.has(frame.fromTick) ||
+            !keyDeclarationEquals(frame.key, part.key) ||
+            boundaries.some(t => Math.min(frame.fromTick, part.fromTick) < t && t <= Math.max(frame.fromTick, part.fromTick))) break;
+        for (const anchor of structural[i]) {
+          const key = ornamentReadingKey(anchor);
+          if (!nearby.has(key)) nearby.set(key, anchor);
+        }
+      }
+    }
+    const fits: ChordInferenceCandidate[] = [];
+    for (const anchor of nearby.values()) {
+      const voicing = read(index, anchor.identity);
+      if (!voicing) continue;
+      const motions = voicing.voices.flatMap(item => item.ornament ? [item.ornament] : []);
+      // The existing specialized single-attack classifiers keep their
+      // stricter metrical and chord-function tests. This pass fills a
+      // genuinely overlapping or staggered texture.
+      const staggered = motions.some(motion => motion.crossedSliceTicks
+        .some(tick => motion.entryTick < tick && tick < motion.arrival.tick)) ||
+        motions.some(motion => motion.entryTick !== motions[0].entryTick || motion.arrival.tick !== motions[0].arrival.tick);
+      const mixed = motions.some(motion => motion.role !== motions[0].role);
+      const prepared = motions.every(motion => motion.role === "suspension" || motion.role === "retardation") &&
+        motions.every(motion => {
+          const arrival = byTick.get(motion.arrival.tick);
+          return arrival && voicing.voices.filter(item => !item.ornament &&
+            arrival.activeNotes[item.voice]?.id === item.sounding.id).length >= 2;
+        });
+      const chromatic = motions.length > 0 && motions.every(motion => motion.role === "passing" &&
+        [motion.departure.note, ...motion.ornaments].some((from, i) =>
+          from.pitch.step === [...motion.ornaments, motion.arrival.note][i].pitch.step));
+      if ((!staggered && !mixed && !prepared && !chromatic) || anchor.functionalBaseId === "K46" ||
+          [...nearby.values()].some(other => other.functionalBaseId === "K46" &&
+            chordIdentityEquals(anchor.identity, other.identity))) continue;
+      const bassOrnament = voicing.bass?.ornament;
+      if (bassOrnament?.role === "retardation" ||
+          (bassOrnament?.role === "suspension" && voicing.voices.filter(item => !item.ornament &&
+            byTick.get(bassOrnament.arrival.tick)?.activeNotes[item.voice]?.id === item.sounding.id).length < 2)) continue;
+      const candidate = fitStructuralOrnament(anchor, part, voicing);
+      if (candidate) fits.push(candidate);
+    }
+    if (fits.length) return fits.sort(candidateComparator);
+
+    // When arrivals are staggered, no slice need sound the whole target
+    // at once. Offer a catalogue hypothesis only if the sounding bass and
+    // another member define the arrival and at least two parts have proofs.
+    if (!part.bass || part.bass.nonChordToneRole) return existing;
+    const key = `${part.key.tonic.step}:${part.key.tonic.alter}:${part.key.mode}`;
+    let hypotheses = templates.get(key);
+    if (!hypotheses) {
+      hypotheses = structuralOrnamentTemplates(part);
+      templates.set(key, hypotheses);
+    }
+    for (const { template, identity } of hypotheses) {
+      if (!pitchClassEquals(part.bass.pitch, identity.bass)) continue;
+      if ([...nearby.values()].some(other => other.functionalBaseId === "K46" &&
+          chordIdentityEquals(other.identity, identity))) continue;
+      const voicing = read(index, identity);
+      if (!voicing || voicing.unresolved.length) continue;
+      const revoicing = !voicing.bass?.ornament && [...nearby.values()].some(other =>
+        other.functionalBaseId === template.baseId && !chordIdentityEquals(other.identity, identity) &&
+        chordIdentityEqualsWithoutBass(other.identity, identity));
+      const motions = voicing.voices.flatMap(item => item.ornament ? [item.ornament] : []);
+      if (revoicing && motions.length && motions.every(motion =>
+        (motion.role === "suspension" || motion.role === "retardation") &&
+        voicing.voices.some(item => !item.ornament && item.voice !== "bass" &&
+          byTick.get(motion.arrival.tick)?.activeNotes[item.voice]?.id === item.sounding.id))) {
+        const anchor = anchorForStructuralOrnament(part, voicing, template);
+        const candidate = anchor && fitStructuralOrnament(anchor, part, voicing);
+        if (candidate) fits.push(candidate);
+        continue;
+      }
+      if (voicing.missing.length || motions.length !== 2) continue;
+      const held = voicing.voices.filter(item => !item.ornament);
+      if (pitchClassEquals(held[0].sounding.pitch, held[1].sounding.pitch) ||
+          !motions.some(motion => motion.role === "suspension" || motion.role === "retardation") ||
+          motions[0].arrival.tick === motions[1].arrival.tick) continue;
+      // The same retained bass must actually sound when both lines arrive.
+      if (motions.some(motion => motion.arrival.tick >= part.bass!.startTick + part.bass!.durationTicks)) continue;
+      const anchor = anchorForStructuralOrnament(part, voicing, template);
+      const candidate = anchor && fitStructuralOrnament(anchor, part, voicing);
+      if (candidate) fits.push(candidate);
+    }
+    return fits.length && fits.every(fit => chordIdentityEquals(fit.identity, fits[0].identity))
+      ? fits.sort(candidateComparator) : existing;
+  });
+}
+
+/** Two contextual recovery rounds, short-ornament competition, then a
+ * shared written-voicing fallback. Competition winners never seed a gap. */
 export function withContextualOrnaments(
   observations: readonly Observation[],
   sets: readonly CandidateSet[],
@@ -1087,5 +1200,6 @@ export function withContextualOrnaments(
   const second = recoverOrnamentGaps(
     observations, first, anchors, ppq, phraseBoundaryTicks, withheldStarts, false,
   );
-  return addOrnamentCompetition(observations, sets, second, anchors, ppq, phraseBoundaryTicks, withheldStarts);
+  const competed = addOrnamentCompetition(observations, sets, second, anchors, ppq, phraseBoundaryTicks, withheldStarts);
+  return recoverWrittenStructuralGaps(observations, competed, structural, ppq, phraseBoundaryTicks, withheldStarts);
 }

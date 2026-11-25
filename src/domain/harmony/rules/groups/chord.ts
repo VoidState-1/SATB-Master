@@ -31,6 +31,7 @@ import {
 import { continuesCompleteSeventh } from "../helpers/motionHarmony";
 import {
   beforeMelodicMinorPassingBass,
+  crossesOrnamentCut,
   isVerifiedOrnamentalBass,
   pairedOuterNeighbors,
   notesWithAnticipationReplacements,
@@ -98,6 +99,7 @@ function anticipatesStructuralBass(
   const previous = neighbors?.previous?.note;
   const next = neighbors?.next?.note;
   if (!previous || !next || previous.nonChordToneRole || next.nonChordToneRole ||
+      crossesOrnamentCut(context, previous.startTick, next.startTick) ||
       previous.startTick + previous.durationTicks !== bass.startTick ||
       bass.startTick + bass.durationTicks !== next.startTick ||
       bass.durationTicks > previous.durationTicks ||
@@ -116,9 +118,10 @@ function anticipatesStructuralBass(
 
 export function inversionBassRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  chordSliceFacts(context).standard.forEach(({ slice, chord, active }) => {
+  chordSliceFacts(context).standard.forEach(({ slice, chord, active, structural }) => {
     const bass = active.find((item) => item.voiceId === "bass");
     if (!bass || pitchClassEquals(bass.note.pitch, chord.identity.bass)) return;
+    if (structural?.bass?.ornament && (bass.note.nonChordToneRole || !structural.unresolved.length)) return;
     const written = context.analysis.writtenProlongations.get(slice.tick);
     if (anticipatesStructuralBass(context, chord, bass.note) || beforeMelodicMinorPassingBass(context, slice) ||
         pairedOuterNeighbors(context, slice) || isVerifiedOrnamentalBass(context, slice, chord, bass.note)) return;
@@ -157,13 +160,18 @@ export function incompleteChordMembersRule(context: HarmonyRuleContext) {
     if (targetChord) fullCadenceTargets.add(targetChord.id);
   }
   chordSliceFacts(context).standard.forEach(
-    ({ slice, chord, active, stableComplete }) => {
+    ({ slice, chord, active, stableComplete, structural }) => {
       if (!stableComplete) return;
-      const structural = notesWithAnticipationReplacements(context, slice, active);
+      const surface = notesWithAnticipationReplacements(context, slice, active);
       const requiredTones = chordVoicingPolicy(chord.identity).requiredDegrees
         .map(degree => chordIdentityToneSpellingForDegree(chord.identity, degree))
         .filter((tone): tone is SpelledPitchClass => Boolean(tone));
-      const missing = requiredTones.filter(tone => !structural.some(({ note }) => pitchClassEquals(note.pitch, tone)));
+      const restored = structural?.voices.filter(item =>
+        !structural.unresolved.length || item.sounding.nonChordToneRole === item.ornament?.role) ?? [];
+      const missing = requiredTones.filter(tone =>
+        !surface.some(({ note }) => pitchClassEquals(note.pitch, tone)) &&
+        !restored.some(item => item.ornament && pitchClassEquals(item.structural.pitch, tone)),
+      );
       if (missing.length === 0 || structuralTriadVoicing(context, slice) !== slice) return;
       const fifth = chordIdentityToneSpellingForDegree(chord.identity, 5);
       if (missing.length === 1 && fifth && pitchClassEquals(missing[0], fifth) &&

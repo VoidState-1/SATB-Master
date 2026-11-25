@@ -182,7 +182,13 @@ function leadingToneTransition(
   const targetUnchanged = leadingTargetUnchanged(environment);
   const attacked = subjectAttacked(environment);
   const sameLeadingContext = sameLeadingToneContext(environment);
-  const { context, obligation: { payload } } = environment;
+  const { context, obligation: { payload, openedAt } } = environment;
+  const pivot = context.isSpanStart && context.span && context.rules.connections({
+    targetSpanId: context.span.id,
+  }).first();
+  if (pivot && pivot.connection.diminishedPivot &&
+      pivot.source.span.fromTick <= openedAt.tick && openedAt.tick < pivot.source.span.toTick)
+    return decision(environment, "cancel", "confirmed-diminished-pivot");
   const currentNote = context.slice.notes[payload.voiceId];
   const transferVoiceIds = receivingVoiceIds(environment, { step: payload.leadingStep, alter: payload.leadingAlter });
   const spanId = currentSpanId(environment);
@@ -550,6 +556,7 @@ export function secondaryDominantStateStep(
     }).first();
     const connection = incomingConnection?.connection;
     incoming.forEach((state) => {
+      if (connection?.diminishedPivot) return;
       const payload = state.payload as SecondaryDominantState;
       const target: FunctionalTarget = {
         degree: payload.targetDegree,
@@ -584,7 +591,7 @@ export function secondaryDominantStateStep(
       const allowedCadential64 =
         payload.targetPrimaryFunction === "dominant" &&
         isCadential64Span(currentSpan);
-      if (allowedCadential64 && connection?.contiguous && connection.sameKey) {
+      if (allowedCadential64 && connection?.contiguous && connection.sameKey && !connection.tonalBoundary) {
         outgoing.push(state);
       } else if (!resolves) {
         const previous = context.rules

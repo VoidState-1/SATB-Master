@@ -126,6 +126,17 @@ export function buildChordInferenceObservations(
   return Object.freeze(observations);
 }
 
+/** A structural reading keeps the original metric and slicing; it never changes the score. */
+export function observationWithStructuralNotes(
+  observation: ChordInferenceObservation,
+  activeNotes: ChordInferenceObservation["activeNotes"],
+): ChordInferenceObservation {
+  return {
+    ...observation, activeNotes, bass: activeNotes.bass,
+    soundingPitchClasses: uniquePitchClasses(Object.values(activeNotes).filter((note): note is AnalysisNote => !!note)),
+  };
+}
+
 /** Project an inference observation onto the timed four-voice data used by written-motion checks. */
 export function writtenFrame(observation: ChordInferenceObservation) {
   return {

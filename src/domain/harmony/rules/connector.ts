@@ -1,7 +1,5 @@
 import {
   chordStructureQuality,
-  harmonySemanticsConfidence,
-  primaryHarmonyInterpretation,
   type FunctionalFamily,
   type FunctionalTarget,
   type HarmonyInterpretation,
@@ -9,6 +7,7 @@ import {
 } from "../../chordModel";
 import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import type { HarmonyAnalysis, HarmonySpan } from "../analysis";
+import { crossesTonalBoundary, isDiminishedRotation, provesDiminishedPivotArrival, resolvedTonalInterpretation, tonalReading } from "../facts/localTonality";
 import { keyEquals, pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
 
 export type HarmonyConnectionRelation =
@@ -38,6 +37,8 @@ export interface HarmonyConnectionAssessment {
   relation: HarmonyConnectionRelation;
   contiguous: boolean;
   sameKey: boolean;
+  tonalBoundary: boolean;
+  diminishedPivot: boolean;
   targetMatched?: boolean;
   evidence: readonly ConnectionEvidence[];
   confidence: "certain" | "probable" | "ambiguous" | "unknown";
@@ -55,18 +56,7 @@ export interface FunctionalTargetChainFact {
 }
 
 function interpretationOf(span: HarmonySpan) {
-  if (!span.semantics) return undefined;
-  const confidence = harmonySemanticsConfidence(span.semantics);
-  return confidence === "ambiguous" || confidence === "unknown"
-    ? undefined
-    : primaryHarmonyInterpretation(span.semantics);
-}
-
-function localKeyOf(
-  interpretation: HarmonyInterpretation | undefined,
-  fallback: KeyReference,
-) {
-  return interpretation?.localKey ?? fallback;
+  return resolvedTonalInterpretation(span.semantics).interpretation;
 }
 
 function designationOf(
@@ -110,18 +100,7 @@ function targetMatches(
   );
 }
 
-function combinedConfidence(
-  previousSpan: HarmonySpan,
-  currentSpan: HarmonySpan,
-): HarmonyConnectionAssessment["confidence"] {
-  const values = [
-    previousSpan.semantics
-      ? harmonySemanticsConfidence(previousSpan.semantics)
-      : "unknown",
-    currentSpan.semantics
-      ? harmonySemanticsConfidence(currentSpan.semantics)
-      : "unknown",
-  ];
+function combinedConfidence(values: readonly HarmonyConnectionAssessment["confidence"][]): HarmonyConnectionAssessment["confidence"] {
   if (values.includes("unknown")) return "unknown";
   if (values.includes("ambiguous")) return "ambiguous";
   if (values.includes("probable")) return "probable";
@@ -154,6 +133,25 @@ export function isCadential64Span(span: HarmonySpan) {
   );
 }
 
+function spanTonalReading(analysis: Pick<HarmonyAnalysis, "project">, span: HarmonySpan) {
+  return tonalReading(span.semantics, projectKeyAtSpan(analysis, span));
+}
+
+function targetMatchesAtConnection(
+  target: FunctionalTarget | undefined, currentSpan: HarmonySpan,
+  current: ReturnType<typeof spanTonalReading>,
+  chord: ReturnType<typeof representativeChordAtSpan>, source: ReturnType<typeof spanTonalReading>,
+) {
+  if (keyEquals(source.key, current.key))
+    return targetMatches(target, currentSpan, current.interpretation, chord, source.key);
+  // The old applied target may become I in an established destination.
+  return !!target && !!chord && current.local && current.interpretation?.degree === 1 &&
+    current.interpretation.degreeAlteration === 0 && !current.interpretation.appliedTarget &&
+    familyOf(currentSpan, chord) === "tonic" &&
+    pitchClassEquals(chord.identity.root, current.key.tonic) &&
+    pitchClassEquals(current.key.tonic, scaleDegreePitchClass(source.key, target.degree));
+}
+
 export function functionalTargetMatches(
   analysis: Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById">,
   sourceSpanId: string,
@@ -167,49 +165,34 @@ export function functionalTargetMatches(
     (span) => span.id === currentSpanId,
   );
   if (!sourceSpan || !currentSpan) return false;
-  const sourceInterpretation = interpretationOf(sourceSpan);
-  const currentInterpretation = interpretationOf(currentSpan);
-  const sourceKey = localKeyOf(
-    sourceInterpretation,
-    projectKeyAtSpan(analysis, sourceSpan),
-  );
-  const currentKey = localKeyOf(
-    currentInterpretation,
-    projectKeyAtSpan(analysis, currentSpan),
-  );
-  return (
-    keyEquals(sourceKey, currentKey) &&
-    targetMatches(
-      target,
-      currentSpan,
-      currentInterpretation,
-      representativeChordAtSpan(analysis, currentSpan),
-      sourceKey,
-    )
-  );
+  const source = spanTonalReading(analysis, sourceSpan), current = spanTonalReading(analysis, currentSpan);
+  if (!keyEquals(source.key, current.key) && crossesTonalBoundary(analysis.project, sourceSpan.fromTick, currentSpan.fromTick))
+    return false;
+  return targetMatchesAtConnection(target, currentSpan, current, representativeChordAtSpan(analysis, currentSpan), source);
 }
 
 function assessConnection(
-  analysis: Pick<HarmonyAnalysis, "project" | "chordById">,
+  analysis: Pick<HarmonyAnalysis, "project" | "chordById"> & Partial<Pick<HarmonyAnalysis, "slices">>,
   previous: HarmonySpan,
   current: HarmonySpan,
 ): HarmonyConnectionAssessment {
   const previousChord = representativeChordAtSpan(analysis, previous);
   const currentChord = representativeChordAtSpan(analysis, current);
-  const previousInterpretation = interpretationOf(previous);
-  const currentInterpretation = interpretationOf(current);
-  const previousKey = localKeyOf(
-    previousInterpretation,
-    projectKeyAtSpan(analysis, previous),
-  );
-  const currentKey = localKeyOf(
-    currentInterpretation,
-    projectKeyAtSpan(analysis, current),
-  );
-  const keyMatches = keyEquals(previousKey, currentKey);
+  const source = spanTonalReading(analysis, previous), destination = spanTonalReading(analysis, current);
+  const previousInterpretation = source.interpretation, currentInterpretation = destination.interpretation;
+  const keyMatches = keyEquals(source.key, destination.key);
   const contiguous = previous.toTick === current.fromTick;
-  const confidence = combinedConfidence(previous, current);
-
+  const tonalBoundary = crossesTonalBoundary(analysis.project, previous.fromTick, current.fromTick);
+  const pivotSliceIndex = current.sliceIndices.at(-1);
+  const arrival = pivotSliceIndex !== undefined ? analysis.slices?.[pivotSliceIndex + 1] : undefined;
+  const diminishedPivot = contiguous && !tonalBoundary && !!previousChord && !!currentChord && !!arrival &&
+    isDiminishedRotation(previousChord, currentChord, source, destination) &&
+    !crossesTonalBoundary(analysis.project, current.fromTick, arrival.tick) &&
+    provesDiminishedPivotArrival(
+      analysis.slices?.[previous.sliceIndices.at(-1)!], analysis.slices?.[current.sliceIndices[0]], arrival,
+      previousChord, currentChord, destination.key,
+    );
+  const confidence = combinedConfidence([source.confidence, destination.confidence]);
   const previousDesignation = designationOf(previous, previousChord);
   const currentDesignation = designationOf(current, currentChord);
   const previousFamily = familyOf(previous, previousChord);
@@ -219,7 +202,9 @@ function assessConnection(
   let relation: HarmonyConnectionRelation = "unknown";
   let targetMatched: boolean | undefined;
 
-  if (previous.identityKey === current.identityKey) {
+  if (diminishedPivot) {
+    relation = "pivot-reinterpretation";
+  } else if (previous.identityKey === current.identityKey) {
     relation =
       previousInterpretation?.id === currentInterpretation?.id && keyMatches
         ? "same-harmony"
@@ -233,13 +218,7 @@ function assessConnection(
     previousInterpretation?.appliedTarget
   ) {
     const target = previousInterpretation?.appliedTarget;
-    targetMatched = targetMatches(
-      target,
-      current,
-      currentInterpretation,
-      currentChord,
-      previousKey,
-    );
+    targetMatched = !tonalBoundary && targetMatchesAtConnection(target, current, destination, currentChord, source);
     relation = "applied-target";
   } else if (
     previousKind === "double-dominant" ||
@@ -276,8 +255,11 @@ function assessConnection(
     relation,
     contiguous,
     sameKey: keyMatches,
+    tonalBoundary,
+    diminishedPivot,
     targetMatched,
     evidence: Object.freeze([
+      ...(diminishedPivot ? [{ code: "diminished-rotation", value: "confirmed-local-key" }] : []),
       { code: "previous-family", value: previousFamily ?? "unknown" },
       { code: "current-family", value: currentFamily ?? "unknown" },
       { code: "previous-kind", value: previousKind ?? "unknown" },
@@ -288,7 +270,7 @@ function assessConnection(
 }
 
 export function buildHarmonyConnections(
-  analysis: Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById">,
+  analysis: Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById"> & Partial<Pick<HarmonyAnalysis, "slices">>,
 ) {
   const result: HarmonyConnectionAssessment[] = [];
   for (let index = 1; index < analysis.harmonySpans.length; index += 1) {
@@ -342,7 +324,7 @@ export function buildFunctionalTargetChains(
 
       while (true) {
         const connection = connectionBySource.get(currentSpanId);
-        if (!connection || !connection.contiguous || !connection.sameKey) break;
+        if (!connection || !connection.contiguous || connection.tonalBoundary || connection.diminishedPivot) break;
         connectionKeys.push(connection.connectionKey);
         terminalSpanId = connection.currentSpanId;
         pathSpanIds.push(connection.currentSpanId);
@@ -363,6 +345,7 @@ export function buildFunctionalTargetChains(
           status = "matched";
           break;
         }
+        if (!connection.sameKey) break;
         const currentSpan = analysis.harmonySpans.find(
           (span) => span.id === connection.currentSpanId,
         );

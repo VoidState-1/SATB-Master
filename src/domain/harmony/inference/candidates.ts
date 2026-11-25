@@ -1,5 +1,6 @@
 import {
   chordIdentityToneSpellings,
+  chordIdentityToneSpellingForDegree,
   chordIdentityEquals,
   chordToneSpellings,
   primaryHarmonyInterpretation,
@@ -8,7 +9,8 @@ import {
 } from "../../chordModel";
 import { keyEquals, pitchClassEquals, pitchClassValue, scaleDegreePitchClass, writtenInterval } from "../../pitch";
 import { functionalDefinition } from "../../functionalHarmonyCatalog";
-import { dominantNinthTone } from "../facts/dominantMotion";
+import { canOmitDominantFifth, dominantNinthTone } from "../facts/dominantMotion";
+import type { StructuralVoicing } from "../facts/writtenVoicing";
 import {
   buildFunctionalTemplates,
   dominantNinthTemplates,
@@ -21,13 +23,14 @@ import {
   isCanonicalTonicFifthOmission,
   type ChordFitOptions,
 } from "./scoring";
-import { soundingBass, buildChordInferenceObservations, observationNotes } from "./observations";
+import { soundingBass, buildChordInferenceObservations, observationNotes, observationWithStructuralNotes } from "./observations";
 import type {
   ChordInferenceCandidate,
   ChordInferenceEvidence,
   ChordInferenceObservation,
   ChordInferenceOptions,
   ChordInferenceScore,
+  FunctionalChordTemplate,
 } from "./types";
 import type { NonChordToneRole, ProjectDocument } from "../../project";
 import { inferPhrases, isCurrentPhraseBoundary } from "../phrase";
@@ -385,6 +388,74 @@ export function fitContextualOrnament(
   };
 }
 
+function restoredObservation(observation: ChordInferenceObservation, voicing: StructuralVoicing): ChordInferenceObservation {
+  return observationWithStructuralNotes(observation, Object.fromEntries(voicing.voices.map(item => [item.voice, item.structural])));
+}
+
+export function structuralOrnamentTemplates(observation: ChordInferenceObservation) {
+  return buildFunctionalTemplates(observation.key)
+    .filter(template => template.form !== "ninth" && template.baseId !== "K46")
+    .flatMap(template => {
+      const { identity } = identityForFunctionalTemplate(template, observation.key, observation.localKey);
+      return identity.structure.kind === "tertian" ? [{ template, identity }] : [];
+    });
+}
+
+export function anchorForStructuralOrnament(
+  observation: ChordInferenceObservation, voicing: StructuralVoicing, template: FunctionalChordTemplate,
+) {
+  return createFunctionalCandidate(restoredObservation(observation, voicing), template, {
+    allowedOmittedChordDegrees: isRestoredDominantFifthOmission(voicing, template.baseId, voicingIdentity(observation, template))
+      ? [5] : undefined,
+  });
+}
+
+function voicingIdentity(observation: ChordInferenceObservation, template: FunctionalChordTemplate) {
+  return identityForFunctionalTemplate(template, observation.key, observation.localKey).identity;
+}
+
+function isRestoredDominantFifthOmission(
+  voicing: StructuralVoicing, base: ChordInferenceCandidate["functionalBaseId"], identity: ChordIdentity,
+) {
+  return (base === "D" || base === "DD") && identity.structure.kind === "tertian" &&
+    identity.structure.quality === "dominant7" && !identity.structure.extensions.length &&
+    !identity.structure.alterations.length && voicing.missing.length === 1 &&
+    pitchClassEquals(voicing.missing[0], chordIdentityToneSpellingForDegree(identity, 5)!) &&
+    !!voicing.bass && canOmitDominantFifth(identity.root, voicing.bass.structural.pitch,
+      voicing.voices.map(item => item.structural.pitch));
+}
+
+/** A verified projection is not a relaxed vertical filter. Every extra
+ * pitch has a same-voice path, and all target members must be realized. */
+export function fitStructuralOrnament(
+  anchor: ChordInferenceCandidate, observation: ChordInferenceObservation, voicing: StructuralVoicing,
+) {
+  if (!voicing.bass || voicing.unresolved.length) return;
+  const motions = voicing.voices.flatMap(item => item.ornament ? [item.ornament] : []);
+  const restored = restoredObservation(observation, voicing);
+  const tonicOmission = (anchor.functionalBaseId === "T" || anchor.functionalBaseId === "t") &&
+    isCanonicalTonicFifthOmission(restored, anchor.identity);
+  if (!motions.length || (voicing.missing.length && !tonicOmission &&
+      !isRestoredDominantFifthOmission(voicing, anchor.functionalBaseId, anchor.identity))) return;
+  const assignments = Object.fromEntries(voicing.voices.flatMap(item =>
+    item.ornament ? [[item.sounding.id, item.ornament.role]] : []));
+  const candidate = fitContextualOrnament(anchor, observation, assignments, "written-structural-voicing");
+  if (!candidate) return;
+  const result = scoreVerifiedOrnament(candidate, restored, false);
+  return {
+    ...result,
+    evidence: [...result.evidence, ...motions.map(motion => ({
+      kind: "sequence-context" as const, code: `written-${motion.role}-path`,
+      noteIds: [motion.departure.note.id, ...motion.ornaments.map(note => note.id), motion.arrival.note.id],
+      details: {
+        voice: motion.voice, entryTick: motion.entryTick, departureTick: motion.departure.tick,
+        arrivalTick: motion.arrival.tick, crossedSlices: motion.crossedSliceTicks.length,
+        ...(motion.arrival.confirmedAtTick !== undefined && { confirmedAtTick: motion.arrival.confirmedAtTick }),
+      },
+    }))],
+  };
+}
+
 /** Measure the written chord-member coverage after restoring the tones
  * displaced by verified ornaments. Keep the surface fit and ornament cost. */
 export function scoreVerifiedOrnament(
@@ -707,7 +778,7 @@ function prepareInferenceContext(
   const manualPhraseTicks = project.structure.phraseBoundaries
     .filter(boundary => boundary.source === "manual")
     .map(boundary => boundary.tick);
-  const localKeys = inferLocalKeys(fullScore, terminalTicks, manualPhraseTicks);
+  const localKeys = inferLocalKeys(fullScore, terminalTicks, manualPhraseTicks, project.ppq);
   const observations = fullScore.map(item => {
     const localKey = localKeys.get(item.index)?.key;
     return localKey ? { ...item, key: { ...item.key, ...localKey }, localKey } : item;
@@ -723,7 +794,7 @@ function prepareInferenceContext(
 }
 
 function expandCoreCandidates(
-  { observations, options, currentPhraseTicks }: InferencePassContext,
+  { observations, options, currentPhraseTicks, manualPhraseTicks }: InferencePassContext,
   candidates: CandidateSets,
   { diatonicAndPivots, dominantFamily }: ContextualCandidatePasses,
 ) {
@@ -733,13 +804,13 @@ function expandCoreCandidates(
   candidates = withWrittenPivotSevenths(observations, candidates, options);
   candidates = withDiatonicSevenths(observations, candidates, options);
   candidates = withLoweredSupertonics(observations, candidates);
-  candidates = withAppliedSequences(observations, candidates, options);
-  candidates = withAppliedDominants(observations, candidates, options);
+  candidates = withAppliedSequences(observations, candidates, options, manualPhraseTicks);
+  candidates = withAppliedDominants(observations, candidates, options, manualPhraseTicks);
   return withReattackedTonicNinths(observations, candidates, options, currentPhraseTicks);
 }
 
 function classifyEarlyOrnamentsAndSixFours(
-  { observations, options, ppq, phraseBoundaryTicks, currentPhraseTicks, minimumConfidence }: InferencePassContext,
+  { observations, options, ppq, phraseBoundaryTicks, currentPhraseTicks, minimumConfidence, localKeys }: InferencePassContext,
   candidates: CandidateSets,
   { ornaments, sixFours }: ContextualCandidatePasses,
 ) {
@@ -749,10 +820,19 @@ function classifyEarlyOrnamentsAndSixFours(
   candidates = withPreparedSuspensions(observations, candidates, options, ppq, phraseBoundaryTicks);
   candidates = withProlongedHarmony(observations, candidates, options, ppq, phraseBoundaryTicks);
   const doubleNeighbors = simultaneousNeighborCandidates(observations, candidates, options, ppq, phraseBoundaryTicks);
-  return classifySixFours(
+  const classified = classifySixFours(
     observations, candidates, minimumConfidence !== "high", currentPhraseTicks, doubleNeighbors,
     minimumConfidence !== "high" && options.allowNonChordToneCandidates !== false ? ppq : undefined,
   );
+  if (minimumConfidence === "high" || options.allowNonChordToneCandidates === false) return classified;
+  return classified.map((existing, i) => {
+    const leadIn = localKeys.get(i)?.cadentialLeadIn;
+    if (!leadIn || leadIn.onsetIndex !== i) return existing;
+    const anchor = classified[leadIn.settledIndex].find(candidate => candidate.functionalBaseId === "K46");
+    const fitted = anchor && fitContextualOrnament(anchor, observations[i],
+      { [leadIn.noteId]: "suspension" }, "written-local-cadential-preparation");
+    return fitted ? [scoreVerifiedOrnament(fitted, observations[leadIn.settledIndex], true)] : existing;
+  });
 }
 
 function expandDominantFamilyAndPivots(

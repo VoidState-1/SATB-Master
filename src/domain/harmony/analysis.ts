@@ -510,6 +510,7 @@ export function buildHarmonyAnalysis(
     project: snapshot,
     harmonySpans,
     chordById,
+    slices,
   });
   const targetChains = buildFunctionalTargetChains({
     project: snapshot,

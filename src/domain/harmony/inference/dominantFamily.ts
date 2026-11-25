@@ -471,6 +471,7 @@ function withTargetEvidence(candidate: ChordInferenceCandidate, code: string, ta
 /** A chromatic dominant is an applied reading only when its written target follows. */
 export function withAppliedDominants(
   observations: readonly ChordInferenceObservation[], sets: readonly AppliedDominantsCandidateSet[], options: ChordInferenceOptions,
+  hardBoundaries: readonly number[] = [],
 ) {
   const result = sets.slice();
   let continuedTarget: ScaleDegree | undefined;
@@ -478,7 +479,9 @@ export function withAppliedDominants(
     const source = observations[i], arrival = observations[i + 1];
     const nextTarget = continuedTarget;
     continuedTarget = undefined;
-    if (!source.completeSatb || !arrival.completeSatb || !keyEquals(source.key, arrival.key)) continue;
+    if (!source.completeSatb || !arrival.completeSatb || !continuesInKey(source, arrival) ||
+        source.key.id !== arrival.key.id ||
+        hardBoundaries.some(tick => source.fromTick < tick && tick <= arrival.fromTick)) continue;
     const scale = Array.from({ length: 7 }, (_, index) => scaleDegreePitchClass(source.key, index + 1));
     if (source.key.mode === "minor") scale.push(leadingTonePitchClass(source.key));
     if (source.soundingPitchClasses.every(p => scale.some(tone => pitchClassEquals(p, tone)))) continue;
@@ -588,12 +591,13 @@ export function harmonicMajorPreparation(item: ChordInferenceObservation, next: 
 function appliedSequenceIndices(
   observations: readonly ChordInferenceObservation[],
   stacks: readonly ReturnType<typeof readWrittenDominantSeventh>[],
+  connected: (left: ChordInferenceObservation, right: ChordInferenceObservation) => boolean,
 ) {
   const chain = new Set<number>();
   let start = 0, links = 0;
   for (let i = 0; i < stacks.length; i++) {
     const current = stacks[i], next = stacks[i + 1];
-    if (current && next && continuesInKey(observations[i], observations[i + 1])) {
+    if (current && next && connected(observations[i], observations[i + 1])) {
       if (pitchClassEquals(current.root, next.root)) continue;
       if (pitchClassValue(current.target) === pitchClassValue(next.root)) {
         links++;
@@ -614,13 +618,17 @@ export function withAppliedSequences(
   observations: readonly ChordInferenceObservation[],
   sets: readonly (readonly ChordInferenceCandidate[])[],
   options: ChordInferenceOptions,
+  hardBoundaries: readonly number[] = [],
 ) {
+  const connected = (left: ChordInferenceObservation, right: ChordInferenceObservation) =>
+    continuesInKey(left, right) && left.key.id === right.key.id &&
+    !hardBoundaries.some(tick => left.fromTick < tick && tick <= right.fromTick);
   const stacks = observations.map(item => readWrittenDominantSeventh(item.activeNotes));
-  const chain = appliedSequenceIndices(observations, stacks);
+  const chain = appliedSequenceIndices(observations, stacks, connected);
   return observations.map((item, i) => {
     const existing = sets[i];
     const next = observations[i + 1];
-    if (next && continuesInKey(item, next)) {
+    if (next && connected(item, next)) {
       const prep = harmonicMajorPreparation(item, next, item.key);
       if (prep) {
         const chord = createFunctionalCandidate(item, {

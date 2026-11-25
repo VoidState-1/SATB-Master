@@ -19,6 +19,7 @@ import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice, AnalysisChord, MelodyTransition } from "../../analysis";
 import { movesToWrittenTone } from "../../facts/dominantMotion";
+import { writtenStepDirection } from "../../facts/ornamentalMotion";
 import { sameFunctionalReading } from "../../facts/functionalContext";
 import {
   writtenNeighborsOverHeldBass,
@@ -39,13 +40,11 @@ function noteEnd(note: AnalysisNote) {
 
 // Spasobin chs. 38–41: a written second or a chromatic semitone can
 // connect adjacent notes in an uninterrupted passing or neighbor motion.
-export function passingStepDirection(from: AnalysisNote, to: AnalysisNote): -1 | 0 | 1 {
-  if (noteEnd(from) !== to.startTick) return 0;
-  const { diatonicSteps, semitones } = writtenInterval(from.pitch, to.pitch);
-  const distance = Math.abs(semitones);
-  const direction = semitones > 0 ? 1 : -1;
-  if (diatonicSteps === 0 && distance === 1) return direction;
-  return diatonicSteps === direction && distance >= 1 && distance <= 2 ? direction : 0;
+export const passingStepDirection = writtenStepDirection;
+
+export function crossesOrnamentCut(context: HarmonyRuleContext, from: number, to: number) {
+  return crossesManualPhraseBoundary(context, from, to) ||
+    context.analysis.project.keyEvents.some(event => from < event.tick && event.tick <= to);
 }
 
 function isStructuralTone(context: HarmonyRuleContext, note: AnalysisNote, slice?: AnalysisSlice) {
@@ -94,7 +93,7 @@ export function resolvePassingChain(context: HarmonyRuleContext, current: NoteVi
 
   const leftAnchor = left.note;
   const rightAnchor = right.note;
-  if (crossesManualPhraseBoundary(context, leftAnchor.startTick, rightAnchor.startTick) ||
+  if (crossesOrnamentCut(context, leftAnchor.startTick, rightAnchor.startTick) ||
       !isDepartureTone(context, leftAnchor) ||
       !isStructuralTone(context, rightAnchor, context.sliceAt(rightAnchor.startTick))) return;
   return { direction, leftAnchor, rightAnchor, chainNotes };
@@ -134,7 +133,7 @@ function preparedSuspension(context: HarmonyRuleContext, current: NoteView, chor
   return Boolean(entry?.prepared && entry.current.chord?.id === chord.id &&
     preparation?.chord && preparation.chord.id !== chord.id && preparation.endTick === entry.current.tick &&
     preparedNote && context.pitch.sameWrittenPitch(preparedNote, current.note) &&
-    !crossesManualPhraseBoundary(context, preparation.tick, noteEnd(current.note)));
+    !crossesOrnamentCut(context, preparedNote.startTick, noteEnd(current.note)));
 }
 
 function isLeap(from: AnalysisNote, to: AnalysisNote) {
@@ -155,7 +154,7 @@ function resolveOrnamentMotion(context: HarmonyRuleContext, current: NoteView, c
   const prepared = note.nonChordToneRole === "suspension" || note.nonChordToneRole === "retardation";
   const motionStart = prepared ? note.startTick : previous?.startTick ?? note.startTick;
   if (!arrival?.chord || !isStructuralTone(context, next, arrival) ||
-      crossesManualPhraseBoundary(context, motionStart, next.startTick)) return;
+      crossesOrnamentCut(context, motionStart, next.startTick)) return;
 
   const departure = context.sliceAt(note.startTick - 1);
   const exit = passingStepDirection(note, next);
@@ -191,7 +190,7 @@ function anticipatesNextChord(context: HarmonyRuleContext, current: NoteView, ch
   const target = context.sliceAt(arrival);
   const sounding = target?.notes[voiceId];
   if (!target?.chord || target.chord.startTick !== arrival || !sounding ||
-      crossesManualPhraseBoundary(context, note.startTick, arrival) ||
+      crossesOrnamentCut(context, note.startTick, arrival) ||
       !context.harmony.isWrittenChordTone(note, target.chord)) return false;
   // Ch. 42: the next chord takes up the same written pitch, held or reattacked.
   return sounding.id === note.id ||
@@ -381,6 +380,7 @@ export function notesWithAnticipationReplacements(
     const previous = before.notes[voiceId]!;
     const next = after.notes[voiceId]!;
     if (
+      crossesOrnamentCut(context, previous.startTick, arrival) ||
       previous.startTick + previous.durationTicks !== onset ||
       next.startTick !== arrival ||
       duration > previous.durationTicks ||

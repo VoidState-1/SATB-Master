@@ -425,6 +425,9 @@ function confirmLeadingSeventhArrival(
         frame.key.id !== source.key.id || !hasWrittenLowestBass(frame)) ||
       phraseBoundaries.some(tick => source.fromTick < tick && tick <= observations[proof.tonicIndex].fromTick))
     return;
+  // A repeated window may have started earlier, but this pivot still needs
+  // a V-I witness of its own after the written diminished-seventh arrival.
+  if (proof.evidence === "parallel-pivot") return;
   const key = proof.key;
   if (keyEquals(source.key, key) || (arrival.localKey && !keyEquals(arrival.localKey, key)) ||
       !pitchClassEquals(bass.pitch, scaleDegreePitchClass(key, 5))) return;

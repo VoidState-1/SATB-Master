@@ -1,4 +1,4 @@
-import {
+﻿import {
   chordIdentityEquals,
   chordIdentityEqualsWithoutBass,
   chordIdentityInversion,
@@ -297,10 +297,23 @@ export function withContextualWrittenRespellings(
 ) {
   if (options.minConfidence === "high") return sets;
   return sets.map((existing, i) => {
+    // The local-key pass can already supply an exact D reading. Still
+    // retain the independent written bass-revoicing witness on that reading.
+    const source = frames[i];
+    if (source.localKey && source.attackVoiceIds.length === 1 && source.attackVoiceIds[0] === "bass") {
+      const exactDominant = existing.find(c => c.functionalBaseId === "D" && fullFit(c) && c.fit.spellingConsistent);
+      const prior = exactDominant && priorDominantReading(exactDominant, frames, sets, i, boundaries);
+      const following = frames[i + 1];
+      if (prior && following && connected(source, following, boundaries) &&
+          returnsToPriorKey(source, following, prior.localKey)) {
+        return existing.map(c => c !== exactDominant ? c : { ...c, evidence: [...c.evidence, {
+          kind: "sequence-context" as const, code: "written-dominant-bass-revoicing", details: { arrivalTick: following.fromTick },
+        }] });
+      }
+    }
     const mismatches = existing.filter(candidate => candidate.semantics && fullFit(candidate) &&
       !candidate.fit.spellingConsistent);
     if (!mismatches.length) return existing;
-    const source = frames[i];
     const identity = writtenIdentity(source);
     if (identity?.structure.kind !== "tertian") return existing;
     const readings = mismatches.filter(candidate => sameSound(identity, candidate.identity));

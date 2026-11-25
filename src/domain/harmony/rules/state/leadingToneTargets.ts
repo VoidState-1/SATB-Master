@@ -24,6 +24,7 @@ import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisSlice, AnalysisChord, AnalysisNote } from "../../analysis";
 import { readWrittenDominantSeventh, movesToWrittenTone } from "../../facts/dominantMotion";
+import { tonalReading } from "../../facts/localTonality";
 import { sameFunctionalReading } from "../../facts/functionalContext";
 import { returnsByWrittenStep, writtenNeighborsOverHeldBass } from "../../facts/prolongation";
 import {
@@ -185,7 +186,11 @@ function writtenDiminishedSeventhTarget(
 }
 
 export function leadingToneSourceKey(rules: HarmonyRuleContext, slice: AnalysisSlice): KeyLike | undefined {
-  const observed = writtenLocalLeadingToneKey(rules, slice);
+  const reading = tonalReading(slice.chord?.semantics, slice.key);
+  // A confirmed center controls E.1. An observed tonicization is only a
+  // fallback where the source does not already identify its center/target.
+  const observed = reading.local || reading.interpretation?.appliedTarget
+    ? undefined : writtenLocalLeadingToneKey(rules, slice);
   if (observed) return observed;
   const key = leadingToneResolutionKey(slice, rules.harmony);
   const chord = slice.chord;
@@ -199,8 +204,17 @@ export function leadingToneSourceKey(rules: HarmonyRuleContext, slice: AnalysisS
         // The spellings of a complete diminished seventh distinguish its root
         // from an enharmonically equivalent inferred rotation.
         if (hasHarmonicLeadingTone(written, key)) return key;
+        const writtenTarget = writtenDiminishedSeventhTarget(rules, slice, written.root);
+        if (writtenTarget) return writtenTarget;
+        // A merely respelled annotation does not supersede the real written
+        // leading tone, but do not fall back to the written signature once
+        // the same destination is confirmed by the following tonal reading.
+        const next = nextWrittenVoicingChange(rules, slice, frame => hasWrittenVoicing(frame,
+          chordToneSpellings(written.root, "diminished7")));
+        if (reading.local && next && keyEquals(tonalReading(next.landing.chord?.semantics, next.landing.key).key, reading.key))
+          return hasHarmonicLeadingTone(identity, reading.key) ? reading.key : undefined;
         if (hasHarmonicLeadingTone(written, slice.key)) return slice.key;
-        return writtenDiminishedSeventhTarget(rules, slice, written.root);
+        return undefined;
       }
     }
     return hasHarmonicLeadingTone(identity, key) ? key : undefined;

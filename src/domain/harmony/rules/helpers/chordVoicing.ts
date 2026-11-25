@@ -30,7 +30,7 @@ import {
   resolvesRaisedFifthToDoubledThird,
   writtenDoubleDominantResolution,
 } from "../../facts/tendencyResolution";
-import { soundsCompleteWrittenChord } from "../../facts/writtenVoicing";
+import { createSliceStructuralVoicingReader, soundsCompleteWrittenChord, type StructuralVoicing } from "../../facts/writtenVoicing";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { activeNotes, crossesManualPhraseBoundary, crossesWrittenBoundary } from "./core";
 import {
@@ -48,6 +48,7 @@ export interface ChordSliceFact {
   readonly active: ReturnType<typeof activeNotes>;
   readonly tones: ReturnType<typeof chordIdentityToneSpellings>;
   readonly stableComplete: boolean;
+  readonly structural?: StructuralVoicing;
 }
 
 interface ChordSliceFacts {
@@ -62,13 +63,18 @@ export function chordSliceFacts(context: HarmonyRuleContext): ChordSliceFacts {
   const cached = byContext.get(context);
   if (cached) return cached;
 
+  let readStructural: ReturnType<typeof createSliceStructuralVoicingReader> | undefined;
   const all: ChordSliceFact[] = [];
   const standard: ChordSliceFact[] = [];
   for (const slice of context.slices()) {
     const chord = slice.chord;
     if (!chord) continue;
+    readStructural ??= createSliceStructuralVoicingReader(
+      context.analysis.slices, context.analysis.project, tick => context.metric.positionAt(tick),
+    );
     const fact = {
       slice, chord, active: activeNotes(slice), tones: chordIdentityToneSpellings(chord.identity),
+      structural: readStructural(slice.index, chord.identity),
       stableComplete: slice.completeSatb && !context.sliceTransitions({ fromSliceIndex: slice.index }).first()?.sameHarmony,
     };
     all.push(fact);

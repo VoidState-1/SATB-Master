@@ -12,8 +12,9 @@ import {
   type KeyReference,
   primaryHarmonyInterpretation,
 } from "../../chordModel";
-import { pitchClassEquals, pitchClassValue, type SpelledPitchClass } from "../../pitch";
+import { keyEquals, scaleDegreePitchClass, pitchClassEquals, pitchClassValue, type SpelledPitchClass } from "../../pitch";
 import type { NonChordToneRole, KeyEvent } from "../../project";
+import { tonalReading } from "../facts/localTonality";
 import { hasCompleteWrittenTertianVoicing } from "../facts/writtenVoicing";
 import { observationNotes } from "./observations";
 import type {
@@ -394,6 +395,10 @@ function transitionScore(
   previousObservation: ChordInferenceObservation,
   currentObservation: ChordInferenceObservation,
 ) {
+  if (previousObservation.key.id !== currentObservation.key.id) return 0;
+  const previousReading = tonalReading(previous.semantics, previousObservation.key);
+  const currentReading = tonalReading(current.semantics, currentObservation.key);
+  const sameCenter = keyEquals(previousReading.key, currentReading.key);
   let score = 0;
   if (samePitchStructure(previous, current)) score += 8;
   if (
@@ -406,15 +411,13 @@ function transitionScore(
     previous.identity.root.alter === current.identity.root.alter
   )
     score += 3;
-  const target = previous.semantics
-    ? primaryHarmonyInterpretation(previous.semantics).appliedTarget
-    : undefined;
-  const currentDegree = current.semantics
-    ? primaryHarmonyInterpretation(current.semantics).degree
-    : undefined;
-  if (target && currentDegree === target.degree) score += 10;
+  const target = previousReading.interpretation?.appliedTarget;
+  const currentDegree = currentReading.interpretation?.degree;
+  if (target && (sameCenter ? currentDegree === target.degree :
+      currentDegree === 1 && pitchClassEquals(current.identity.root, currentReading.key.tonic) &&
+      pitchClassEquals(currentReading.key.tonic, scaleDegreePitchClass(previousReading.key, target.degree)))) score += 10;
   if (
-    (previous.functionalBaseId === "K46" ||
+    sameCenter && (previous.functionalBaseId === "K46" ||
       previous.functionalBaseId === "N6" ||
       previous.functionalBaseId === "It+6" ||
       previous.functionalBaseId === "Fr+6" ||
