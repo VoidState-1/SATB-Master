@@ -336,6 +336,31 @@ describe("终止四六的准备与属功能连接", () => {
   });
 });
 
+describe("经过四六的非零同向低音级进", () => {
+  it.each([
+    ["C3/4 D3/4 E3/2", "I/4 V64/4 I6/2", false],
+    ["E3/4 D3/4 C3/2", "I6/4 V64/4 I/2", false],
+    ["C3/4 D3/4 D#3/2", "I/4 V64/4 V6/III/2", false],
+    ["C3/4 C3/4 C3/2", "I/4 IV64/4 I/2", true],
+    ["D3/4 D3/4 E3/2", "ii/4 V64/4 I6/2", true],
+    ["C3/4 D3/4 C3/2", "I/4 V64/4 I/2", true],
+  ] as const)("低音 %s / 和声 %s", (bass, harmony, reports) => {
+    const { project } = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: empty
+ A: empty
+ T: empty
+ B: | ${bass} |
+ H: | ${harmony} |
+}`);
+    project.chordTrack.regions[1].semantics!.cadenceRole = "passing64";
+    expect(checkHarmony(project).diagnostics.filter(d => d.ruleId === "connection.second-inversion-context"))
+      .toHaveLength(reports ? 1 : 0);
+  });
+});
+
 describe("终止四六中的双重延留连接", () => {
   type Source = "DD++43" | "Ger+6" | "viio7/V";
   function music(source: Source, overrides: Partial<Record<"soprano" | "alto" | "tenor" | "bass" | "target", string>> = {}) {

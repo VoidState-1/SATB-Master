@@ -390,6 +390,57 @@ export function transfersLeadingToneAcrossPedalPassage(environment: ObligationEn
   }) && resolvesInVoice(departure, tonic, receiver, key.tonic, 1);
 }
 
+/** The former part may leave the dominant third as it becomes the
+ * root of the written leading-tone chord in another upper voice.
+ * Prove the receiving line through its first distinct attack. */
+export function resolvedSameRegisterLeadingHandoff(
+  environment: ObligationEnvironment<LeadingTonePayload>, receivers: readonly VoiceId[],
+) {
+  const { context: { previous, slice, rules, transitionFromPrevious }, obligation } = environment;
+  const { payload, openedAt } = obligation;
+  if (receivers.length !== 1 || !previous || payload.voiceId === "bass" ||
+      !transitionFromPrevious?.contiguous || !transitionFromPrevious.sameKey) return;
+  const receiver = receivers[0];
+  if (receiver === "bass" || !changesNoteAt(previous, slice, payload.voiceId) ||
+      !changesNoteAt(previous, slice, receiver)) return;
+  const from = previous.notes[payload.voiceId]!, taken = slice.notes[receiver]!;
+  if (taken.nonChordToneRole || toMidi(from.pitch) !== payload.leadingMidi ||
+      !spelledPitchEquals(from.pitch, taken.pitch)) return;
+
+  const key = { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode };
+  const root = leadingTonePitchClass(key);
+  const receivingHarmony = (frame: AnalysisSlice) => {
+    const written = writtenEvidenceFrame(rules, frame);
+    const reading = leadingToneSourceKey(rules, frame);
+    return (!reading || keyEquals(reading, key)) &&
+      (["diminished", "halfDiminished7", "diminished7"] as const).some(quality =>
+        matchesWrittenChord(written, root, quality));
+  };
+  if (!fitsWrittenDominant(rules, writtenEvidenceFrame(rules, previous), key) ||
+      !receivingHarmony(slice)) return;
+  const limit = slice.tick + 2 * rules.analysis.project.ppq;
+  let sustained = taken;
+  for (let attacks = 0; attacks < 3; attacks++) {
+    const end = sustained.startTick + sustained.durationTicks;
+    if (end > limit || crossesManualPhraseBoundary(rules, openedAt.tick, end)) return;
+    const departure = rules.sliceAt(end - 1), landing = rules.sliceAt(end);
+    const next = landing?.notes[receiver];
+    if (!departure || !landing || !next || next.startTick !== end || next.nonChordToneRole ||
+        !keyEquals(slice.key, landing.key) ||
+        rules.analysis.project.keyEvents.some(event => slice.tick < event.tick && event.tick <= end) ||
+        !rules.slices({ overlapping: { fromTick: sustained.startTick, toTick: end } })
+          .all(frame => frame.notes[receiver]?.id === sustained.id && receivingHarmony(frame))) return;
+    if (spelledPitchEquals(next.pitch, taken.pitch)) {
+      sustained = next;
+      continue;
+    }
+    if (resolvesInVoice(departure, landing, receiver, key.tonic, 1) &&
+        toMidi(next.pitch) - toMidi(taken.pitch) === 1 && arrivesOnWrittenTonic(rules, landing, key))
+      return { receiver, takeover: taken, resolution: next };
+    return;
+  }
+}
+
 /** Recover the local target of an unlabelled dominant before judging its
  * leading tone. This supplies the same obligation in blind and given input. */
 function localTargetAtWrittenLink(rules: HarmonyRuleContext, slice: AnalysisSlice): KeyLike | undefined {

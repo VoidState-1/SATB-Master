@@ -1,22 +1,31 @@
 import {
+  chordIdentityToneSpellings,
   chordStructureQuality,
   type HarmonyInterpretation,
 } from "../../../chordModel";
 import { effectiveFunctionalDesignation } from "../../../functionalHarmonyCatalog";
 import type { HarmonySpan } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
-import { pitchClassEquals } from "../../../pitch";
+import { isWrittenStep, keyDeclarationEquals, pitchClassEquals, spelledPitchEquals } from "../../../pitch";
 import {
   chordEvidence,
   chordInversion,
   diagnostic,
+  crossesManualPhraseBoundary,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import type { SpanView } from "../context/views";
+import { soundsWrittenMemberSet } from "../../facts/writtenVoicing";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 function interpretationOf(context: HarmonyRuleContext, span: HarmonySpan) {
   const resolution = context.harmony.primaryInterpretation(span);
   return resolution.status === "resolved" ? resolution.value : undefined;
+}
+
+function isPassingBassStep(interval: ReturnType<HarmonyRuleContext["pitch"]["writtenIntervalBetween"]>) {
+  return isWrittenStep(interval) ||
+    (interval.diatonicSteps === 0 && Math.abs(interval.semitones) === 1);
 }
 
 export function ambiguousConnectionRule(context: HarmonyRuleContext) {
@@ -72,6 +81,70 @@ export function ambiguousConnectionRule(context: HarmonyRuleContext) {
   return diagnostics;
 }
 
+/** Major and minor variants of the same auxiliary triad can fill
+ * one return frame on a continuously sounding pedal. */
+function compoundPedalReturn(context: HarmonyRuleContext, current: SpanView) {
+  const center = current.firstSlice.chord?.identity;
+  const pedal = current.firstSlice.notes.bass;
+  if (!center || !pedal) return false;
+  const samePedal = (part: SpanView, id: NonNullable<typeof center>) => part.slices.every(slice =>
+    !!slice.notes.bass && spelledPitchEquals(slice.notes.bass.pitch, pedal.pitch) &&
+    pitchClassEquals(id.bass, pedal.pitch) && keyDeclarationEquals(slice.key, current.firstSlice.key) &&
+    soundsWrittenMemberSet(slice, chordIdentityToneSpellings(id)));
+  const variant = (part: SpanView) => {
+    const id = part.firstSlice.chord?.identity;
+    return id && part.span.semantics?.cadenceRole === "pedal64" &&
+      pitchClassEquals(id.root, center.root) && chordInversion(part.firstSlice.chord!) === 2 &&
+      id.structure.kind === "tertian" && (id.structure.quality === "major" || id.structure.quality === "minor") &&
+      !id.structure.extensions.length && !id.structure.alterations.length && samePedal(part, id)
+      ? id.structure.quality : undefined;
+  };
+  const here = variant(current);
+  if (!here) return false;
+  const qualities = new Set([here]);
+  function outside(side: "previous" | "next") {
+    let edge = current;
+    for (let i = 0; i < 3; i++) {
+      const candidate = context.spanNeighborhood(edge)[side];
+      if (!candidate) return;
+      const [left, right] = side === "previous" ? [candidate, edge] : [edge, candidate];
+      if (left.span.toTick !== right.span.fromTick ||
+          crossesManualPhraseBoundary(context, left.span.fromTick, right.span.fromTick)) return;
+      const quality = variant(candidate);
+      if (quality) {
+        qualities.add(quality);
+        edge = candidate;
+        continue;
+      }
+      return candidate;
+    }
+  }
+  const before = outside("previous"), after = outside("next");
+  const from = before?.lastSlice.chord?.identity, to = after?.firstSlice.chord?.identity;
+  if (!before || !after || !from || !to || qualities.size !== 2 ||
+      from.structure.kind !== "tertian" || to.structure.kind !== "tertian" ||
+      !pitchClassEquals(from.root, to.root) || !pitchClassEquals(from.root, pedal.pitch) ||
+      before.span.semantics?.cadenceRole || after.span.semantics?.cadenceRole ||
+      (to.structure.quality !== "major" && to.structure.quality !== "minor") ||
+      !(from.structure.quality === to.structure.quality ||
+        (from.structure.quality === "dominant7" && to.structure.quality === "major")) ||
+      !keyDeclarationEquals(before.lastSlice.key, current.firstSlice.key) ||
+      !keyDeclarationEquals(after.firstSlice.key, current.firstSlice.key)) return false;
+  // Only the facing slices of the enclosing chords are evidence. Earlier
+  // ornament attacks in those chords do not interrupt a pedal return.
+  const supports = (slice: SpanView["firstSlice"]) =>
+    !!slice.chord && !!slice.notes.bass && spelledPitchEquals(slice.notes.bass.pitch, pedal.pitch) &&
+    pitchClassEquals(slice.chord.identity.bass, pedal.pitch) && slice.completeSatb;
+  if (!supports(after.firstSlice) || !soundsWrittenMemberSet(after.firstSlice, chordIdentityToneSpellings(to))) return false;
+  if (from.structure.quality !== "dominant7")
+    return supports(before.lastSlice) && soundsWrittenMemberSet(before.lastSlice, chordIdentityToneSpellings(from));
+  const tones = chordIdentityToneSpellings(from);
+  // In the preceding V7 the fifth may be omitted, and the leading tone
+  // need not remain in the last upper-voice configuration.
+  return before.slices.every(slice => supports(slice) && soundsWrittenMemberSet(slice, tones, [tones[0], tones[3]])) &&
+    before.slices.some(slice => soundsWrittenMemberSet(slice, tones, [tones[0], tones[1], tones[3]]));
+}
+
 export function secondInversionContextRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   for (const current of context.spans()) {
@@ -116,13 +189,10 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
         : undefined;
     const valid =
       role === "passing64"
-        ? (Math.abs(into.diatonicSteps) === 1 ||
-            Math.abs(into.semitones) <= 2) &&
-          (Math.abs(out.diatonicSteps) === 1 ||
-            Math.abs(out.semitones) <= 2) &&
+        ? isPassingBassStep(into) && isPassingBassStep(out) &&
           Math.sign(into.semitones) === Math.sign(out.semitones)
         : role === "pedal64"
-          ? pitchClassEquals(
+          ? compoundPedalReturn(context, current) || (pitchClassEquals(
               previousSlice.notes.bass.pitch,
               firstSlice.notes.bass.pitch,
             ) &&
@@ -130,7 +200,7 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
               lastSlice.notes.bass.pitch,
               nextSlice.notes.bass.pitch,
             ) &&
-            previousSpan.identityKey === nextSpan.identityKey
+            previousSpan.identityKey === nextSpan.identityKey)
           : pitchClassEquals(
               lastSlice.notes.bass.pitch,
               nextSlice.notes.bass.pitch,

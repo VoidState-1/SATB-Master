@@ -34,6 +34,7 @@ import {
 } from "./support/chordSpellingAndDiatonic";
 import {
   transfersLeadingToneInWrittenDominant,
+  resolvedSameRegisterLeadingHandoff,
   tenorLeapsToTonicThird,
   becomesRespelledChainSeventh,
   descendsThroughSequentialMinorSeventh,
@@ -49,7 +50,7 @@ import {
 } from "../state/leadingToneTargets";
 import { defineRuleGroup, defineStatefulRule } from "../defineRule";
 import { functionalTargetMatches, isCadential64Span } from "../connector";
-import { isProvenLocalDeceptiveTarget, writtenAppliedDominantMotion } from "./support/appliedAndDeceptive";
+import { hasWrittenAppliedLanding, isProvenLocalDeceptiveTarget, writtenAppliedDominantMotion } from "./support/appliedAndDeceptive";
 import { isProvenHeldDoubleDominantContinuation } from "./support/doubleDominant";
 import {
   defineObligationRule,
@@ -80,6 +81,8 @@ type SecondaryDominantState = {
   sourceSpanId: string;
   sourceChordId: string;
   sourceToTick: number;
+  cadentialBridgeSpanId?: string;
+  verifiedContinuation?: true;
   targetDegree: FunctionalTarget["degree"];
   targetPrimaryFunction: FunctionalFamily;
   targetSecondaryFunction?: FunctionalFamily;
@@ -240,6 +243,14 @@ function leadingToneTransition(
         proof.dominantRoot.step === payload.targetStep && proof.dominantRoot.alter === payload.targetAlter) {
       return decision(environment, "resolve", "double-dominant-leading-tone-to-dominant-seventh", debugFacts);
     }
+  }
+
+  if (attacked && targetUnchanged) {
+    const handoff = resolvedSameRegisterLeadingHandoff(environment, transferVoiceIds);
+    if (handoff) return decision(environment, "resolve", "leading-tone-same-register-handoff", {
+      ...debugFacts, receiver: handoff.receiver, takeoverNoteId: handoff.takeover.id,
+      resolutionNoteId: handoff.resolution.id,
+    });
   }
 
   if (attacked && targetUnchanged && descendsThroughSequentialMinorSeventh(environment))
@@ -563,7 +574,10 @@ export function secondaryDominantStateStep(
         primaryFunction: payload.targetPrimaryFunction,
         secondaryFunction: payload.targetSecondaryFunction,
       };
-      const motion = incomingConnection?.source.span.id === payload.sourceSpanId
+      const cut = crossesManualPhraseBoundary(context.rules, state.createdAt.tick, currentSpan.fromTick);
+      const lastSpanId = payload.cadentialBridgeSpanId ?? payload.sourceSpanId;
+      const directlyConnected = incomingConnection?.source.span.id === lastSpanId && connection?.contiguous;
+      const motion = !cut && !payload.cadentialBridgeSpanId && directlyConnected && incomingConnection
         ? writtenAppliedDominantMotion(context.rules, incomingConnection, target)
         : undefined;
       const chord = context.slice.chord;
@@ -577,6 +591,7 @@ export function secondaryDominantStateStep(
             sourceSpanId: currentSpan.id,
             sourceChordId: chord.id,
             sourceToTick: currentSpan.toTick,
+            verifiedContinuation: true,
           },
         });
         return;
@@ -587,13 +602,17 @@ export function secondaryDominantStateStep(
         payload.sourceSpanId,
         currentSpan.id,
         target,
-      );
+      ) && (!(payload.verifiedContinuation || payload.cadentialBridgeSpanId) ||
+        (incomingConnection && directlyConnected && !cut &&
+          (!payload.verifiedContinuation || hasWrittenAppliedLanding(context.rules, incomingConnection))));
       const allowedCadential64 =
         payload.targetPrimaryFunction === "dominant" &&
         isCadential64Span(currentSpan);
-      if (allowedCadential64 && connection?.contiguous && connection.sameKey && !connection.tonalBoundary) {
-        outgoing.push(state);
-      } else if (!resolves) {
+      if (allowedCadential64 && !payload.cadentialBridgeSpanId && !cut && directlyConnected &&
+          connection?.sameKey && !connection.tonalBoundary &&
+          (!payload.verifiedContinuation || (incomingConnection && hasWrittenAppliedLanding(context.rules, incomingConnection)))) {
+        outgoing.push({ ...state, payload: { ...payload, cadentialBridgeSpanId: currentSpan.id } });
+      } else if (!resolves || (payload.cadentialBridgeSpanId && (cut || !directlyConnected))) {
         const previous = context.rules
           .spans({ id: payload.sourceSpanId })
           .selectMany(({ chords }) => chords)
@@ -776,5 +795,23 @@ export const STATEFUL_RULES = defineRuleGroup(
     requires: ["chords", "semantics"],
     dependencyScope: "phrase",
     process: secondaryDominantStateStep,
+  finalize(context, states) {
+    const diagnostics: RuleDiagnostic[] = [];
+    if (!context) return { diagnostics };
+    for (const state of states) {
+      const payload = state.payload as SecondaryDominantState;
+      if (!payload.verifiedContinuation && !payload.cadentialBridgeSpanId) continue;
+      const source = context.rules.spans({ id: payload.sourceSpanId }).selectMany(({ chords }) => chords)
+        .first(chord => chord.id === payload.sourceChordId);
+      if (!source) continue;
+      const end = context.slice.endTick;
+      diagnostics.push(diagnostic(
+        "function.applied-dominant-target", end, end, [], [],
+        "副属和弦未进入目标", `副属链结束时未进入所指向的第 ${payload.targetDegree} 级和弦。`,
+        { chordIds: [source.id], evidence: [chordEvidence(source)] },
+      ));
+    }
+    return { diagnostics };
+  },
   }),
 );

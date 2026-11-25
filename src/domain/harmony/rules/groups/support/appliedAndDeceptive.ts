@@ -1,5 +1,7 @@
 import {
+  chordIdentityToneSpellings,
   chordToneSpellings,
+  type ChordQuality,
   type FunctionalTarget,
   type HarmonyInterpretation,
   type KeyReference,
@@ -9,6 +11,7 @@ import {
   keyDeclarationEquals,
   keyEquals,
   pitchClassEquals,
+  spelledPitchEquals,
   scaleDegreePitchClass,
   toMidi,
   type SpelledPitchClass,
@@ -34,12 +37,13 @@ import {
   resolvesLeadingSeventhToDoubledThird,
   resolvesInVoice,
 } from "../../../facts/tendencyResolution";
-import { soundsDeclaredChord } from "../../../facts/writtenVoicing";
+import { soundsDeclaredChord, soundsWrittenMemberSet } from "../../../facts/writtenVoicing";
 import { isCadential64Span } from "../../connector";
 import type { HarmonyRuleContext } from "../../context/createRuleContext";
 import type { ConnectionView } from "../../context/views";
 import { writtenDoubleDominantResolution, supportsBassTriad } from "../../helpers/chordVoicing";
 import { crossesManualPhraseBoundary } from "../../helpers/core";
+import { isVerifiedChordOrnament, resolvePassingChain } from "../../helpers/ornaments";
 import { leadingToneForFunction } from "../../services/harmony";
 
 type WrittenSeventh = NonNullable<ReturnType<typeof readWrittenDominantSeventh>>;
@@ -66,8 +70,41 @@ function writtenSeventh(slice: AnalysisSlice, root: SpelledPitchClass) {
   }
 }
 
+function structuralAppliedStack(
+  rules: HarmonyRuleContext, slice: AnalysisSlice, root: SpelledPitchClass, quality: ChordQuality,
+) {
+  if (!allowsWrittenTertianIdentity(slice, root, quality) || !slice.completeSatb) return false;
+  const tones = chordToneSpellings(root, quality);
+  const bass = slice.notes.bass!;
+  const required = quality === "major" || quality === "dominant7"
+    ? tones.filter((_, index) => index !== 2) : tones;
+  const voiced = VOICE_ORDER.flatMap(voiceId => {
+    const note = slice.notes[voiceId]!;
+    if (toMidi(note.pitch) < toMidi(bass.pitch)) return [];
+    if (tones.some(tone => pitchClassEquals(note.pitch, tone))) return [note];
+    if (voiceId !== "bass" && note.nonChordToneRole) {
+      const view = rules.notes({ voiceId, startingAt: note.startTick }).first(item => item.note.id === note.id);
+      if (view && note.nonChordToneRole === "passing") {
+        const line = resolvePassingChain(rules, view);
+        if (line && slice.tick >= line.fromTick && slice.tick < line.toTick) return [undefined];
+      }
+      if (view && slice.chord && note.nonChordToneRole === "neighbor" &&
+          isVerifiedChordOrnament(rules, slice.chord, view)) {
+        const departure = rules.noteNeighborhood(view)?.previous?.note;
+        if (departure && tones.some(tone => pitchClassEquals(departure.pitch, tone))) return [departure];
+      }
+    }
+    return [];
+  });
+  return voiced.length === 4 && required.every(tone =>
+    voiced.some(note => note && pitchClassEquals(note.pitch, tone))) &&
+    ((quality !== "major" && quality !== "dominant7") ||
+      voiced.some(note => note && pitchClassEquals(note.pitch, tones[2])) ||
+      voiced.filter(note => note && pitchClassEquals(note.pitch, tones[1])).length === 1);
+}
+
 function writtenAppliedFrame(
-  slice: AnalysisSlice, reading: HarmonyInterpretation, key: KeyReference, target: FunctionalTarget,
+  rules: HarmonyRuleContext, slice: AnalysisSlice, reading: HarmonyInterpretation, key: KeyReference, target: FunctionalTarget,
   provesRisingSeventh?: (root: SpelledPitchClass) => boolean,
 ): WrittenAppliedFrame | undefined {
   const identity = slice.chord?.identity;
@@ -81,7 +118,8 @@ function writtenAppliedFrame(
     if (designation?.kind === "augmented-sixth" && targetsDominant(target) &&
         (!appliedTarget || sameTarget(appliedTarget, target)) &&
         pitchClassEquals(identity.root, scaleDegreePitchClass(targetKey, 2, -1)) &&
-        soundsDeclaredChord(slice)) return { kind: "augmented-sixth" };
+        slice.notes.bass && pitchClassEquals(slice.notes.bass.pitch, identity.bass) &&
+        soundsWrittenMemberSet(slice, chordIdentityToneSpellings(identity))) return { kind: "augmented-sixth" };
     return;
   }
 
@@ -89,15 +127,15 @@ function writtenAppliedFrame(
       designation?.primaryFunction !== "dominant") return;
   if (degree === 5 && (designation.kind === "double-dominant" || designation.kind === "applied-dominant")) {
     const root = scaleDegreePitchClass(targetKey, 5);
-    if (matchesWrittenChord(slice, root, "major")) return { kind: "dominant" };
+    if (structuralAppliedStack(rules, slice, root, "major")) return { kind: "dominant" };
     const seventh = writtenSeventh(slice, root);
-    if (seventh) return { kind: "dominant", seventh };
+    if (seventh || structuralAppliedStack(rules, slice, root, "dominant7")) return { kind: "dominant", seventh };
   }
   if (degree === 7 && (designation.kind === "double-dominant-leading-tone" || designation.kind === "applied-leading-tone")) {
     const root = scaleDegreePitchClass(targetKey, 7);
     const { quality } = identity.structure;
     if (quality === "diminished" || quality === "diminished7" || quality === "halfDiminished7") {
-      if (matchesWrittenChord(slice, root, quality) ||
+      if (structuralAppliedStack(rules, slice, root, quality) ||
           (quality === "diminished7" && provesRisingSeventh?.(root))) return { kind: "leading" };
     }
   }
@@ -132,7 +170,7 @@ export function writtenAppliedDominantMotion(
   rules: HarmonyRuleContext, view: ConnectionView, pendingTarget: FunctionalTarget,
 ): "prolongation" | "target-transfer" | undefined {
   const { connection, sourceBoundary: before, targetBoundary: after } = view;
-  if (!connection.contiguous || !connection.sameKey || before.endTick !== after.tick ||
+  if (!connection.contiguous || !connection.sameKey || connection.tonalBoundary || before.endTick !== after.tick ||
       !keyDeclarationEquals(before.key, after.key) ||
       crossesManualPhraseBoundary(rules, view.source.span.fromTick, after.tick)) return;
   const source = rules.harmony.primaryInterpretation(view.source.span);
@@ -141,28 +179,58 @@ export function writtenAppliedDominantMotion(
 
   const key = source.value.localKey ?? before.key;
   const nextTarget = arrival.value.appliedTarget ?? pendingTarget;
-  const from = writtenAppliedFrame(before, source.value, key, pendingTarget);
-  if (!from) return;
+  const from = writtenAppliedFrame(rules, before, source.value, key, pendingTarget);
   const sameGoal = sameTarget(pendingTarget, nextTarget);
-  const to = writtenAppliedFrame(after, arrival.value, key, nextTarget, root =>
-    sameGoal && from.kind === "dominant" && targetsDominant(pendingTarget) &&
+  // Prefer the actual edge, but an earlier complete statement can identify
+  // a source decorated at its end. It may not bridge a rest or a phrase cut.
+  const established = !from && sameGoal ? [...view.source.slices].reverse().find(frame =>
+    before.tick - frame.tick <= rules.analysis.project.ppq &&
+    !crossesManualPhraseBoundary(rules, frame.tick, after.tick) &&
+    view.source.slices.every(part => part.tick < frame.tick || part.completeSatb) &&
+    writtenAppliedFrame(rules, frame, source.value, key, pendingTarget)) : undefined;
+  const sourceFrame = from ?? (established && writtenAppliedFrame(rules, established, source.value, key, pendingTarget));
+  if (!sourceFrame) return;
+  const to = writtenAppliedFrame(rules, after, arrival.value, key, nextTarget, root =>
+    sameGoal && sourceFrame.kind === "dominant" && targetsDominant(pendingTarget) &&
     hasRisingSeventhIntoCadential64(rules, view, key, root));
   if (!to) return;
 
   if (sameGoal) {
-    if (from.kind === to.kind || to.kind === "augmented-sixth" ||
-        (targetsDominant(pendingTarget) && from.kind === "dominant" && to.kind === "leading")) {
+    if (sourceFrame.kind === to.kind) return "prolongation";
+    const leading = leadingTonePitchClass({ tonic: scaleDegreePitchClass(key, pendingTarget.degree), mode: "major" });
+    const carriesGuide = VOICE_ORDER.some(voice => {
+      const first = before.notes[voice], second = after.notes[voice];
+      return first && second && pitchClassEquals(first.pitch, leading) &&
+        spelledPitchEquals(first.pitch, second.pitch);
+    });
+    if (to.kind === "augmented-sixth" ||
+        (targetsDominant(pendingTarget) && sourceFrame.kind === "dominant" && to.kind === "leading") ||
+        (carriesGuide && !targetsDominant(pendingTarget) && sourceFrame.kind === "leading" && to.kind === "dominant"))
       return "prolongation";
-    }
     return;
   }
 
-  const sourceSeventh = from.kind === "dominant" ? from.seventh : undefined;
+  const sourceSeventh = from?.kind === "dominant" ? from.seventh : undefined;
   const targetSeventh = to.kind === "dominant" ? to.seventh : undefined;
   if (sourceSeventh && targetSeventh && pitchClassEquals(sourceSeventh.target, targetSeventh.root) &&
       VOICE_ORDER.some(voice => readWrittenDominantSeventhHandoff(before, after, voice, sourceSeventh.root))) {
     return "target-transfer";
   }
+}
+
+/** A label is not the landing evidence of a prolonged obligation. */
+export function hasWrittenAppliedLanding(rules: HarmonyRuleContext, view: ConnectionView) {
+  const entry = view.target.firstSlice;
+  return view.target.slices.some(frame => {
+    if (crossesManualPhraseBoundary(rules, entry.tick, frame.tick) ||
+        !view.target.slices.every(part => part.tick > frame.tick || part.completeSatb)) return false;
+    const identity = frame.chord?.identity;
+    const bass = frame.notes.bass;
+    if (!identity || !bass || !frame.completeSatb || !pitchClassEquals(bass.pitch, identity.bass)) return false;
+    const tones = chordIdentityToneSpellings(identity);
+    return !!tones[1] && tones.slice(0, 2).every(tone => Object.values(frame.notes).some(note =>
+      !note.nonChordToneRole && toMidi(note.pitch) >= toMidi(bass.pitch) && pitchClassEquals(note.pitch, tone)));
+  });
 }
 
 function voicing(slice: AnalysisSlice) {
