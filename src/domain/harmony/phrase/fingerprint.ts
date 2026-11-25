@@ -69,7 +69,7 @@ export function isCurrentPhraseBoundary(
   boundary: PhraseBoundary,
 ) {
   return (
-    boundary.source === "manual" ||
+    boundary.source === "manual" || boundary.locked === true ||
     (!boundary.stale &&
       Boolean(boundary.inferenceFingerprint) &&
       boundary.inferenceFingerprint === phraseInferenceFingerprint(project,

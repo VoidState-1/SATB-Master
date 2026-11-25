@@ -602,4 +602,30 @@ describe("基于音乐事件的全局乐句切分", () => {
     expect(result.template.kind).toBe("duple");
     expect(result.segments.map(segment => segment.toTick)).toEqual([16, 32, 48].map(beat => beat * PPQ));
   });
+
+  it.each([
+    ["D/2 r/2", movingBar, true],
+    ["D/2 D/2", "D/1", false],
+    ["S/2 T/2", movingBar, false],
+  ] as const)("实际提前释放才支持跨休重起，末小节 %s、重起小节 %s", (ending, restart, split) => {
+    const project = eventScore([movingBar, movingBar, ending, restart, movingBar, movingBar, movingBar, "T/1"]);
+    const result = inferPhrases(project);
+    expect(result.candidates.some(boundary => boundary.tick === 12 * PPQ &&
+      boundary.evidence.some(item => item.code === "coordinated-breath"))).toBe(split);
+    if (split) {
+      expect(result.segments.map(segment => segment.toTick)).toEqual([12 * PPQ, 32 * PPQ]);
+      expect(result.candidates.some(boundary => boundary.tick === 10 * PPQ)).toBe(true);
+    } else {
+      expect(result.boundaries.some(boundary => boundary.tick === 10 * PPQ || boundary.tick === 12 * PPQ)).toBe(false);
+    }
+  });
+
+  it("重推时保留锁定的旧自动锚点，且不会在休止内生成重复句界", () => {
+    const project = eventScore([movingBar, movingBar, "D/2 r/2", movingBar, movingBar, movingBar, movingBar, "T/1"]);
+    const anchor = { id: "fixed", tick: 11 * PPQ, source: "inferred", confidence: "probable", locked: true } as const;
+    project.structure.phraseBoundaries = [anchor];
+    const result = inferPhrases(project);
+    expect(result.boundaries.find(boundary => boundary.tick === anchor.tick)).toEqual(anchor);
+    expect(result.boundaries.filter(boundary => 10 * PPQ <= boundary.tick && boundary.tick <= 12 * PPQ)).toEqual([anchor]);
+  });
 });

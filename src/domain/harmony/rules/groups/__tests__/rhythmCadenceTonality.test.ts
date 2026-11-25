@@ -6,6 +6,56 @@ import { compileScoreText } from "../../../../scoreText";
 import { buildHarmonyAnalysis } from "../../../analysis";
 import { checkHarmony } from "../../../registry";
 
+describe("正格终止的结构低音", () => {
+  it.each([
+    ["E3", "imperfect", "G2/1", "", false],
+    ["E3", "imperfect", "G2/2. E3/4", "note B@1:4 role=anticipation", false],
+    ["E3", "imperfect", "G2/2. E3/4", "", true],
+    ["G2", "imperfect", "G2/1", "", true],
+    ["E3", "perfect", "G2/1", "", true],
+  ])("V7–I6 的 %s 低音、%s 标注、%s 属低音与 %s", (bass, completion, source, noteLabel, reports) => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..2 {
+ S: | D5/1 | C5/1 |
+ A: | F4/1 | E4/1 |
+ T: | B3/1 | G3/1 |
+ B: | ${source} | ${bass}/1 |
+ H: | V7/1 | I6/1 |
+}
+annotations {
+ ${noteLabel}
+ phrase p range=[1:1,3:1)
+ cadence k phrase=p range=[1:1,3:1) kind=full form=authentic completion=${completion}
+}`).project;
+    const diagnostics = checkHarmony(project).diagnostics;
+    expect(diagnostics.some(d => d.ruleId === "cadence.bass-formula")).toBe(reports);
+    if (!reports) expect(buildHarmonyAnalysis(project).cadenceCandidates)
+      .toContainEqual(expect.objectContaining({ kind: "full", completion: "imperfect" }));
+  });
+
+  it.each([["V", "G2", false], ["V", "A2", true], ["IV", "F3", true]] as const)(
+    "半终止在倒置终端前须已实写根位属 %s / %s", (source, bass, reports) => {
+      const project = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | D5/2 D5/2 |
+ A: | G4/2 G4/2 |
+ T: | B3/2 B3/2 |
+ B: | ${bass}/2 F3/2 |
+ H: | ${source}/2 V2/2 |
+}
+annotations {
+ phrase p range=[1:1,2:1)
+ cadence k phrase=p range=[1:1,2:1) kind=half form=authentic
+}`).project;
+      expect(checkHarmony(project).diagnostics.some(d => d.ruleId === "cadence.bass-formula")).toBe(reports);
+    },
+  );
+});
+
 describe("变格终止的低音公式", () => {
   function plagalCadence(kind: "full" | "supplementary", sourceBass = "F3") {
     return compileScoreText(`satb 1

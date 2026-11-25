@@ -175,7 +175,7 @@ export function createHarmonyRuleIndexes(
       candidate,
       phrase: phraseById.get(candidate.phraseId),
       spans: Object.freeze(spans),
-      ...cadenceEndpoints(spans, candidate.toTick, observedLandingTick),
+      ...cadenceEndpoints(spans, candidate.toTick, candidate.landingTick),
       observedLandingTick,
       chords: Object.freeze(chordViewsInRange(candidate.fromTick, candidate.toTick)),
       evidence: candidate.evidence,
@@ -184,6 +184,15 @@ export function createHarmonyRuleIndexes(
   const annotationViews = analysis.cadenceAnnotations.map((annotation) => {
     const spans = spanViewsInRange(annotation.fromTick, annotation.toTick);
     const candidate = annotation.stale ? undefined : matchingObservedCadence(annotation, analysis.cadenceCandidates);
+    // Only lift a manual landing away from the final span when C has proved an extension.
+    const structural = !annotation.stale && annotation.observedLandingTick === undefined
+      ? analysis.cadenceCandidates.find(item => item.confidence !== "ambiguous" &&
+        item.phraseId === annotation.phraseId && item.toTick === annotation.toTick &&
+        item.kind === annotation.kind && (!annotation.form || item.form === annotation.form) &&
+        (!annotation.completion || item.completion === annotation.completion) &&
+        item.fromTick >= annotation.fromTick && item.observedLandingTick !== undefined &&
+        spans.some(view => view.span.fromTick > item.landingTick))
+      : undefined;
     return Object.freeze({
       id: annotation.id,
       fromTick: annotation.fromTick,
@@ -198,7 +207,8 @@ export function createHarmonyRuleIndexes(
       ...(candidate && { candidate }),
       phrase: phraseById.get(annotation.phraseId),
       spans: Object.freeze(spans),
-      ...(!annotation.stale && cadenceEndpoints(spans, annotation.toTick, annotation.observedLandingTick)),
+      ...(!annotation.stale && cadenceEndpoints(spans, annotation.toTick,
+        annotation.observedLandingTick ?? structural?.landingTick)),
       observedLandingTick: annotation.observedLandingTick,
       chords: Object.freeze(chordViewsInRange(annotation.fromTick, annotation.toTick)),
       evidence: candidate?.evidence ?? Object.freeze([]),

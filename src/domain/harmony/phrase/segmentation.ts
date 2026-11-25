@@ -32,6 +32,10 @@ function measurePosition(timeline: MetricTimeline, tick: number) {
   return measure.number + (tick - measure.startTick) / (measure.numerator * measure.beatLength);
 }
 
+export function hasMinimumEventPhraseLength(timeline: MetricTimeline, fromTick: number, toTick: number) {
+  return measurePosition(timeline, toTick) - measurePosition(timeline, fromTick) >= minimumMeasures - epsilon;
+}
+
 function lengthScore(measures: number) {
   if (measures < 3 - epsilon) return -1;
   if (Math.abs(measures - 4) < epsilon) return 1;

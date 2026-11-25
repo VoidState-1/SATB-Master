@@ -32,6 +32,32 @@ import { writtenNeighborsOverHeldBass } from "../facts/prolongation";
 const upperVoices = ["soprano", "alto", "tenor"] as const;
 const endOf = (note: { startTick: number; durationTicks: number }) => note.startTick + note.durationTicks;
 
+/** A decorated arrival is evidence only once the written resolution lands
+ * inside this harmony span. Horizontal departure projections are not cadential arrivals. */
+export function structuralCadentialArrival(facts: CadenceSpanFacts) {
+  const voicing = facts.structuralArrival;
+  if (!voicing?.bass || voicing.unresolved.length || voicing.missing.length ||
+      !voicing.voices.every(item => !item.ornament ||
+        (item.ornament.arrival.note.id === item.structural.id &&
+          item.ornament.arrival.tick < facts.span.toTick))) return;
+  return voicing;
+}
+
+export function structuralCadentialBass(facts: CadenceSpanFacts) {
+  return structuralCadentialArrival(facts)?.bass?.structural ?? facts.boundarySlice?.notes.bass;
+}
+
+export function structuralCadentialEvidence(facts: CadenceSpanFacts): CadenceEvidence | undefined {
+  const voicing = structuralCadentialArrival(facts);
+  if (!voicing) return;
+  return {
+    code: "written-structural-arrival",
+    value: "终止和声由原声部内的实写解决音确认",
+    refs: [...new Set(voicing.voices.flatMap(({ ornament }) => ornament
+      ? [ornament.departure.note.id, ...ornament.ornaments.map(note => note.id), ornament.arrival.note.id] : []))],
+  };
+}
+
 function isPlainTertian(identity: ChordIdentity, quality: ChordQuality) {
   const structure = identity.structure;
   return structure.kind === "tertian" && structure.quality === quality &&
@@ -476,7 +502,8 @@ function hasStagedTonicBass(before: AnalysisSlice, early: AnalysisSlice, landing
 
   const bassMotion = writtenInterval(before.notes.bass!.pitch, earlyBass.pitch);
   return inversion === 0 ? isRootDominantBassMotion(bassMotion)
-    : bassMotion.diatonicSteps === -1 && bassMotion.semitones === -2;
+    : bassMotion.diatonicSteps === -1 && isWrittenStep(bassMotion) &&
+      (inversion === 3 || bassMotion.semitones === -2);
 }
 
 function stagedUpperVoiceRefs(
@@ -526,10 +553,13 @@ export function stagedTonicArrivalEvidence(
 ): CadenceEvidence | undefined {
   if (!beatTicks) return;
   const identities = dominantAndTonicIdentities(dominant, tonic);
-  if (!identities || chordIdentityInversion(identities.target) !== 0) return;
+  if (!identities) return;
   const { source, target } = identities;
   const inversion = chordIdentityInversion(source);
-  if (inversion !== 0 && inversion !== 2) return;
+  const targetInversion = chordIdentityInversion(target);
+  const supported = inversion === 3 ? targetInversion === 1 :
+    (inversion === 0 || inversion === 2) && targetInversion === 0;
+  if (!supported) return;
 
   const frames = tonicBassGapFrames(dominant, tonic, slices, beatTicks);
   if (!frames) return;

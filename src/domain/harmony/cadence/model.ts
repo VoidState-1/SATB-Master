@@ -6,6 +6,7 @@ import type {
 } from "../../project/types";
 import type { HarmonySpan, AnalysisChord, AnalysisSlice } from "../analysis";
 import type { KeyReference } from "../../chordModel";
+import type { StructuralVoicing } from "../facts/writtenVoicing";
 
 export type CadenceKind = ProjectCadenceKind;
 export type CadenceForm = ProjectCadenceForm;
@@ -16,6 +17,7 @@ export interface CadenceEvidence {
   readonly code:
     | "phrase-boundary"
     | "dominant-to-tonic"
+    | "written-structural-arrival"
     | "predominant-to-dominant"
     | "predominant-to-tonic"
     | "dorian-plagal-ending"
@@ -46,7 +48,11 @@ export interface CadenceEvidence {
 export interface CadenceCandidate {
   readonly id: string;
   readonly phraseId: string;
+  /** Start of the witnessed cadential preparation, which can precede the last connection. */
   readonly fromTick: number;
+  /** Structural arrival, distinct from the following release and any notated phrase break. */
+  readonly landingTick: number;
+  /** Exclusive end of the ending sonority or its independently verified extension. */
   readonly toTick: number;
   /** Actual cadence arrival when no chord span is present at the landing. */
   readonly unharmonizedLandingTick?: number;
@@ -67,9 +73,14 @@ export type CadenceAnnotation = ProjectCadenceAnnotation;
 
 export interface CadenceSpanFacts {
   readonly span: HarmonySpan;
+  /** End of the last sounding slice, excluding silence covered by a chord label. */
+  readonly releaseTick?: number;
   readonly key: KeyReference;
+  readonly writtenKey: KeyReference;
+  readonly hardBoundaryBefore: boolean;
   readonly chord?: AnalysisChord;
   readonly boundarySlice?: AnalysisSlice;
+  readonly structuralArrival?: StructuralVoicing;
   readonly family?: "tonic" | "subdominant" | "dominant";
   readonly degree?: number;
   readonly isTonic?: boolean;

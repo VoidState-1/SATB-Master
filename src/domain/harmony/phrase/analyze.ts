@@ -31,7 +31,7 @@ import {
 } from "../../pitch";
 import { eventAtTick, orderedEvents } from "../../time";
 import type { ChordRegion } from "../../project/types";
-import { phraseTemplate, selectEventDivisions, shortOpeningMeasure } from "./segmentation";
+import { hasMinimumEventPhraseLength, phraseTemplate, selectEventDivisions, shortOpeningMeasure } from "./segmentation";
 import { isCurrentPhraseBoundary, phraseInferenceFingerprint } from "./fingerprint";
 import { reprisedOpeningAfterDominant } from "./reprisedOpening";
 import {
@@ -82,7 +82,7 @@ function normalizeBoundaries(
 ): PhraseBoundary[] {
   const supplied = (project.structure?.phraseBoundaries ?? []).filter(
     (boundary) =>
-      (!options.replaceInferredBoundaries || boundary.source === "manual") &&
+      (!options.replaceInferredBoundaries || boundary.source === "manual" || boundary.locked) &&
       isCurrentPhraseBoundary(project, boundary),
   );
   const byTick = new Map<number, PhraseBoundary>();
@@ -91,7 +91,9 @@ function normalizeBoundaries(
     const tick = Math.max(0, Math.min(project.lengthTicks, boundary.tick));
     if (tick === 0 || tick === project.lengthTicks) continue;
     const previous = byTick.get(tick);
-    if (!previous || confidenceRank[boundary.confidence] > confidenceRank[previous.confidence])
+    const fixed = (item: PhraseBoundary) => Number(item.source === "manual") * 2 + Number(Boolean(item.locked));
+    if (!previous || fixed(boundary) > fixed(previous) ||
+        (fixed(boundary) === fixed(previous) && confidenceRank[boundary.confidence] > confidenceRank[previous.confidence]))
       byTick.set(tick, { ...boundary, tick });
   }
   return [
@@ -378,23 +380,32 @@ function hasMidpointDominantHold(
   return inversion === 3 && start !== terminal && longRelease;
 }
 
+interface BoundaryRhythmFrame {
+  readonly startingVoices: number;
+  readonly endingVoices: number;
+  readonly soundAcross: boolean;
+  readonly nextAttack: number | undefined;
+  readonly longestRelease: number;
+}
+
 function boundaryRhythmFacts(
   project: PhraseAnalysisInput,
   timeline: ReturnType<typeof buildMetricTimeline>,
   tick: number,
   evidence: PhraseEvidence[],
+  indexed?: BoundaryRhythmFrame,
 ) {
   const trackCount = project.satbTracks?.length ?? 0;
-  const endingVoices = voicesEndingAt(project, tick);
-  const startingVoices = voicesStartingAt(project, tick);
+  const endingVoices = indexed?.endingVoices ?? voicesEndingAt(project, tick);
+  const startingVoices = indexed?.startingVoices ?? voicesStartingAt(project, tick);
   const allVoicesEnd = trackCount > 0 && endingVoices === trackCount;
-  const soundAcross = hasSoundAcross(project, tick);
+  const soundAcross = indexed?.soundAcross ?? hasSoundAcross(project, tick);
   const measure = measureAt(timeline, tick);
   const beatLength = measure?.beatLength ?? timeline.ppq;
-  const nextAttack = nextAttackAfter(project, tick);
+  const nextAttack = indexed ? indexed.nextAttack : nextAttackAfter(project, tick);
   const actualSilence = allVoicesEnd && !soundAcross &&
     (nextAttack === undefined || nextAttack - tick >= beatLength);
-  const longRelease = longestEndingDuration(project, tick) >= beatLength * 2;
+  const longRelease = (indexed?.longestRelease ?? longestEndingDuration(project, tick)) >= beatLength * 2;
 
   if (allVoicesEnd)
     evidence.push({ code: "all-voices-end", value: "全部 SATB 声部在此处释放" });
@@ -700,13 +711,23 @@ function alignedPickupTicks(
   }));
 }
 
-function phraseReleases(project: PhraseAnalysisInput) {
+function phraseRhythmEvents(project: PhraseAnalysisInput) {
   const notes = project.satbTracks?.flatMap(track => track.notes) ?? [];
   const averageDuration = notes.length
     ? notes.reduce((total, note) => total + note.durationTicks, 0) / notes.length
     : 0;
-  const releases = [...new Set(notes.map(note => note.startTick + note.durationTicks))].sort((a, b) => b - a);
-  return { averageDuration, releases };
+  const releases = new Map<number, number[]>();
+  const attacks = new Map<number, number[]>();
+  const add = (events: Map<number, number[]>, tick: number, duration: number) => {
+    const durations = events.get(tick) ?? [];
+    durations.push(duration);
+    events.set(tick, durations);
+  };
+  for (const note of notes) {
+    add(releases, note.startTick + note.durationTicks, note.durationTicks);
+    add(attacks, note.startTick, note.durationTicks);
+  }
+  return { averageDuration, releases, attacks };
 }
 
 function harmonyEndingScore(
@@ -724,9 +745,9 @@ function harmonyEndingScore(
   const fromDominant = coherent && previousReading?.degree === 5 && functionalFamily(previous) === "dominant" &&
     previous && chordIdentityInversion(previous.identity) === 0;
   const cadentialSixFour = coherent && previous?.semantics?.cadenceRole === "cadential64";
-  const authenticOrDeceptive = fromDominant && inversion === 0 &&
-    ((reading.degree === 1 && functionalFamily(terminal) === "tonic" && hasRelease) ||
-      (reading.degree === 6 && functionalFamily(terminal) !== undefined));
+  const authenticOrDeceptive = fromDominant && hasRelease &&
+    ((reading.degree === 1 && inversion === 0 && functionalFamily(terminal) === "tonic") ||
+      (reading.degree === 6 && inversion === 0 && functionalFamily(terminal) !== undefined));
   const unstable = Boolean(reading.appliedTarget) || reading.degree === 7 ||
     (inversion === 2 && terminal.semantics.cadenceRole !== "cadential64") ||
     (reading.degree === 5 && inversion > 0 && isSeventhStructure(terminal.identity.structure));
@@ -744,31 +765,62 @@ function eventCandidates(
   established: readonly PhraseBoundaryCandidate[],
 ) {
   const pickup = alignedPickupTicks(project, timeline, range);
-  const { averageDuration, releases } = phraseReleases(project);
+  const { averageDuration, releases, attacks } = phraseRhythmEvents(project);
   const establishedByTick = new Map(established.map(candidate => [candidate.tick, candidate]));
   const ticks = new Set([
     ...timeline.measures.map(measure => measure.startTick),
     ...pickup,
     ...establishedByTick.keys(),
   ]);
+  const barlines = new Set(timeline.measures.map(measure => measure.startTick));
+  const rhythms = new Map<number, BoundaryRhythmFrame>();
+  const previousRelease = new Map<number, number>();
+  const nextAttack = new Map<number, number>();
+  const eventTimes = [...new Set([...ticks, ...attacks.keys(), ...releases.keys()])].sort((a, b) => a - b);
+  let upcoming: number | undefined;
+  for (let index = eventTimes.length - 1; index >= 0; index--) {
+    const tick = eventTimes[index];
+    if (attacks.has(tick)) upcoming = tick;
+    if (upcoming !== undefined) nextAttack.set(tick, upcoming);
+  }
+  let lastRelease: number | undefined;
+  let sounding = 0;
+  for (const tick of eventTimes) {
+    const attacked = attacks.get(tick) ?? [];
+    const released = releases.get(tick) ?? [];
+    sounding -= released.length;
+    rhythms.set(tick, { startingVoices: attacked.length, endingVoices: released.length,
+      soundAcross: sounding > 0, nextAttack: nextAttack.get(tick), longestRelease: Math.max(0, ...released) });
+    sounding += attacked.length;
+    // Also enumerate a breath's restart and a coordinated release off the barline.
+    if (released.length >= 2 || (attacked.length >= 2 && lastRelease !== undefined)) ticks.add(tick);
+    if (lastRelease !== undefined) previousRelease.set(tick, lastRelease);
+    if (released.length) lastRelease = tick;
+  }
   const opening = measureAt(timeline, nextAttackAfter(project, range.startTick) ?? range.startTick);
   const hasFixedBoundary = project.structure?.phraseBoundaries?.some(boundary =>
     boundary.source === "manual" || boundary.locked);
   return [...ticks].sort((left, right) => left - right).flatMap((tick): PhraseBoundaryCandidate[] => {
     if (tick <= range.startTick || tick >= range.endTick) return [];
     const evidence: PhraseEvidence[] = [];
-    const { startingVoices, endingVoices, soundAcross, actualSilence, beatLength } =
-      boundaryRhythmFacts(project, timeline, tick, evidence);
+    const { startingVoices, endingVoices, soundAcross, actualSilence, beatLength, metric } =
+      boundaryRhythmFacts(project, timeline, tick, evidence, rhythms.get(tick));
     const onPickup = pickup.has(tick) && startingVoices > 0 && !soundAcross;
-    // When a pickup follows silence, assess the harmony at the preceding release.
-    const release = onPickup && endingVoices === 0 ? releases.find(end => end < tick) : undefined;
+    const restart = nextAttack.get(tick);
+    const release = !soundAcross && endingVoices === 0 ? previousRelease.get(tick) : undefined;
     const closingTick = release !== undefined && tick - release <= beatLength * 2 ? release : tick;
+    const establishedRelease = establishedByTick.get(closingTick);
+    // In a short period the audible release can be an established short
+    // sentence. Do not replace it with the later start merely to round up.
+    if (closingTick < tick && establishedRelease?.support === "strong" &&
+        !hasMinimumEventPhraseLength(timeline, range.startTick, closingTick)) return [];
     const releaseFacts = closingTick === tick ? undefined :
-      boundaryRhythmFacts(project, timeline, closingTick, evidence);
-    const pause = actualSilence || releaseFacts?.actualSilence;
-    const releasesInVoices = project.satbTracks?.map(track => track.notes.find(note =>
-      note.startTick + note.durationTicks === closingTick,
-    )?.durationTicks ?? 0) ?? [];
+      boundaryRhythmFacts(project, timeline, closingTick, evidence, rhythms.get(closingTick));
+    const releaseNotes = releases.get(closingTick) ?? [];
+    const gap = restart === undefined ? 0 : restart - closingTick;
+    const pause = Boolean(actualSilence || releaseFacts?.actualSilence ||
+      (releaseNotes.length >= 2 && !rhythms.get(closingTick)?.soundAcross && gap >= beatLength));
+    const releasesInVoices = releaseNotes;
     const minimumVoices = Math.max(2, Math.min(3, releaseFacts?.endingVoices ?? endingVoices));
     const sustainedRelease = (duration: number) =>
       releasesInVoices.filter(release => release >= duration).length >= minimumVoices;
@@ -778,8 +830,21 @@ function eventCandidates(
       project, timeline, regions, closingTick, false, evidence,
     );
     const following = followingRegion(regions, tick);
+    const beforePrevious = previousRegion(regions, previous);
+    const followsProlongation = isProlongingSixFour(project, beforePrevious, previous, terminal) ||
+      isProlongingSixFour(project, previousRegion(regions, beforePrevious), beforePrevious, previous);
+    const coordinated = endingVoices >= 2 && startingVoices >= 2 &&
+      releasesInVoices.filter(duration => duration >= beatLength).length >= 2;
+    const slowdown = coordinated && releasesInVoices.filter(duration => duration >= beatLength * 2).length >= 2 &&
+      (attacks.get(tick)?.filter(duration => duration < Math.max(...releasesInVoices)).length ?? 0) >= 2;
+    const shortBreath = gap >= beatLength / 2 && releaseNotes.length >= 2 &&
+      !rhythms.get(closingTick)?.soundAcross && (closingTick === tick || startingVoices >= 2 || barlines.has(tick));
+    const dominantArrival = endsOnDominant && terminal && previous &&
+      functionalFamily(previous) === "dominant" && chordIdentityInversion(previous.identity) === 0 &&
+      pitchClassEquals(terminal.identity.root, previous.identity.root) &&
+      previous.durationTicks + terminal.durationTicks >= 2 * beatLength;
     const { closure, unstable } = harmonyEndingScore(terminal, previous, endsOnDominant,
-      Boolean(pause || longRelease || wholeBarRelease));
+      pause || longRelease || wholeBarRelease || slowdown || shortBreath);
     const tonicRestart = following?.semantics && functionalFamily(following) === "tonic" &&
       primaryHarmonyInterpretation(following.semantics).degree === 1 &&
       chordIdentityInversion(following.identity) <= 1;
@@ -788,13 +853,40 @@ function eventCandidates(
       (endsOnDominant && functionalFamily(following) === "dominant" &&
         pitchClassEquals(terminal.identity.root, following.identity.root))
     );
-    const continuousHarmony = !pause && (insideProlongation || sameHarmony || regions.some(region =>
+    const continuousHarmony = !(pause || shortBreath) && (insideProlongation || followsProlongation ||
+      sameHarmony || regions.some(region =>
       region.startTick < tick && tick < region.startTick + region.durationTicks));
     const reprise = !hasFixedBoundary && reprisedOpeningAfterDominant({
       project, timeline, regions, scoreStart: range.startTick,
     }, tick);
     const barsFromOpening = (measureAt(timeline, tick)?.number ?? 0) - (opening?.number ?? 0);
     const onFourBarGrid = barsFromOpening > 0 && barsFromOpening % 4 === 0;
+    const detachedDeception = shortBreath && endsOnDominant && following?.semantics &&
+      primaryHarmonyInterpretation(following.semantics).degree === 6;
+    const detachedClosure = shortBreath && !detachedDeception &&
+      (gap >= beatLength * 2 || longRelease || wholeBarRelease ||
+        Boolean(endsOnDominant && terminal && chordIdentityInversion(terminal.identity) === 0));
+    const preparedDominant = previous?.semantics?.cadenceRole === "cadential64" ||
+      beforePrevious?.semantics?.cadenceRole === "pedal64" || beforePrevious?.semantics?.cadenceRole === "cadential64";
+    const rhythmicRestart = coordinated && !soundAcross && (slowdown || longRelease || wholeBarRelease);
+    // The harmony itself can slow down even when the voices rearticulate
+    // inside it. Demand a complete bar of root-position V after a quicker
+    // contrasting chord, and an ensemble restart on tonic.
+    const heldDominant = Boolean(endsOnDominant && terminal && previous && tonicRestart &&
+      chordIdentityInversion(terminal.identity) === 0 && functionalFamily(previous) !== "dominant" &&
+      terminal.durationTicks >= measureLengthAt(timeline, tick - 1) &&
+      terminal.durationTicks >= previous.durationTicks * 2 &&
+      barlines.has(tick) && endingVoices === 4 && startingVoices === 4);
+    const renewedAfterCadence = Boolean(continuousHarmony && !insideProlongation && !followsProlongation &&
+      sameHarmony && onFourBarGrid && endsOnDominant && previous?.semantics?.cadenceRole === "cadential64" &&
+      rhythmicRestart && slowdown);
+    const structuralBreath = detachedClosure || (renewedAfterCadence ||
+      (!continuousHarmony && !soundAcross &&
+        (heldDominant || (coordinated && endsOnDominant && tonicRestart && dominantArrival && preparedDominant) ||
+          (rhythmicRestart && (closure >= eventWeights.cadence ||
+            Boolean(terminal && functionalFamily(terminal) === "tonic" && functionalFamily(following) === "subdominant" &&
+              metric && metric.level >= 2 && slowdown))))));
+    if (structuralBreath) evidence.push({ code: "coordinated-breath", value: "收束后有多声部释放与重起的实写证据" });
     if (onPickup) evidence.push({ code: "pickup-alignment", value: "与开头弱起的拍位对齐" });
     if (onFourBarGrid) evidence.push({ code: "phrase-length-grid", value: "距开头为四小节的整数倍" });
     if (tonicRestart) evidence.push({ code: "tonic-restart", value: "后句从主和弦起奏" });
@@ -804,25 +896,33 @@ function eventCandidates(
 
     const releaseScore = pause ? eventWeights.pause : longRelease ? eventWeights.longRelease :
       wholeBarRelease ? eventWeights.wholeBarRelease : 0;
+    const atRestart = pause && tick === restart && closingTick < tick &&
+      (barlines.has(tick) || onPickup || (measureAt(timeline, tick)?.startTick ?? tick) <= closingTick);
+    const pauseBarline = pause && barlines.has(tick) && tick > closingTick && tick !== restart;
     const score = Math.max(reprise ? eventWeights.reprise : 0,
-      releaseScore + closure +
+      releaseScore + closure + (structuralBreath ? 3 : 0) + (heldDominant ? 1 : 0) +
+      (atRestart ? 2 : pauseBarline ? 1 : 0) +
       (tonicRestart ? eventWeights.tonicRestart : 0) +
       (onFourBarGrid ? eventWeights.fourBarGrid : 0) +
       (onPickup ? eventWeights.pickup : 0) +
       (soundAcross ? eventWeights.sustainedVoice : 0) +
       (continuousHarmony ? eventWeights.continuousHarmony : 0) +
-      (unstable ? eventWeights.unstable : 0)) - eventWeights.divisionCost;
+      (unstable && !(dominantArrival && tonicRestart && structuralBreath) ? eventWeights.unstable : 0)) - eventWeights.divisionCost;
     // Established cuts keep their original evidence and compete with the new
     // candidates in the same path. This retains release and prolongation guards.
     const regular = establishedByTick.get(tick);
     if (regular) return [{
       ...regular,
       score: Math.max(score, eventWeights.establishedMinimum),
-      evidence: reprise && !regular.evidence.some(item => item.code === reprise.code)
-        ? [...regular.evidence, reprise]
-        : regular.evidence,
+      evidence: [...regular.evidence, ...evidence.filter(item =>
+        (item.code === "soprano-opening-reprise" || item.code === "coordinated-breath") &&
+        !regular.evidence.some(existing => existing.code === item.code))],
     }];
-    if (score <= 0) return [];
+    // Off-grid chord changes cannot make a cut without audible articulation.
+    if (detachedDeception || (pause && !detachedClosure && !reprise &&
+        (!barlines.has(tick) || tick !== closingTick)) ||
+        (!barlines.has(tick) && !onPickup && !structuralBreath && !reprise) ||
+        (continuousHarmony && !renewedAfterCadence && !reprise) || score <= 0) return [];
     return [{
       tick, targetRatio: "event", distanceToTarget: 0,
       support: pause ? "strong" : "moderate",

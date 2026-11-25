@@ -286,7 +286,7 @@ describe("主低音先于完整主和弦到达的正格终止", () => {
     ["强拍提前落主并持续", delay, 1920, 3600, 5760, "perfect"],
   ])("%s，落点取上方声部完成解决的位置", (_label, text, fromTick, landing, toTick, completion) => {
     const project = compileScoreText(text).project;
-    const expected = { fromTick, toTick, observedLandingTick: landing, completion, confidence: "probable" };
+    const expected = { fromTick, toTick, landingTick: landing, observedLandingTick: landing, completion, confidence: "probable" };
     const chords = structuredClone(project.chordTrack);
     const saved = stagedCadence(project);
     expect(saved).toMatchObject(expected);
@@ -325,6 +325,88 @@ describe("主低音先于完整主和弦到达的正格终止", () => {
       .replace("G4/8. F#4/16 F#4/2", "G4/4. F#4/4.")
       .replace("2:1+3/4", "2:2+1/2");
     expect(stagedCadence(compileScoreText(text).project)).toBeUndefined();
+  });
+});
+
+describe("终止准备、实际到达与释放的独立范围", () => {
+  function halfExample(restart: "IV" | "V", manual: boolean) {
+    const fromDominant = restart === "V";
+    return compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..3 {
+ S: | E5/1 | A4/4 D5/4 r/2 | ${fromDominant ? "D5" : "A4"}/1 |
+ A: | G4/1 | F4/4 G4/4 r/2 | ${fromDominant ? "G4" : "F4"}/1 |
+ T: | C4/1 | C4/4 B3/4 r/2 | ${fromDominant ? "B3" : "C4"}/1 |
+ B: | C3/1 | F3/4 G2/4 r/2 | ${fromDominant ? "G2" : "F3"}/1 |
+ H: | I/1 | IV/4 V/4 r/2 | ${restart}/1 |
+}
+${manual ? "annotations {\n phrase first range=[1:1,3:1)\n phrase next range=[3:1,4:1)\n}" : ""}`).project;
+  }
+
+  it.each([false, true])("下属准备的半终止齐休后%s另起一句，范围仍止于实际释放", manual => {
+    const project = halfExample("IV", manual);
+    const { ppq } = project;
+    expect(buildHarmonyAnalysis(project).cadenceCandidates).toContainEqual(expect.objectContaining({
+      kind: "half", fromTick: 4 * ppq, landingTick: 5 * ppq, toTick: 6 * ppq,
+    }));
+  });
+
+  it("回到同一个属功能时，齐休也不凭空生成句内半终止", () => {
+    const project = halfExample("V", false);
+    expect(buildHarmonyAnalysis(project).cadenceCandidates.some(c => c.kind === "half" && c.toTick === 6 * project.ppq))
+      .toBe(false);
+  });
+
+  it.each([["F3", 0], ["A3", 3]] as const)("全终止只接纳实写低音支持的原位 IV 准备 %s", (prep, start) => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..2 {
+ S: | F5/2. D5/4 | C5/1 |
+ A: | A4/2. G4/4 | G4/1 |
+ T: | C4/2. B3/4 | E4/1 |
+ B: | ${prep}/2. G2/4 | C3/1 |
+ H: | IV/2. V/4 | I/1 |
+}`).project;
+    const { ppq } = project;
+    expect(authenticCadence(project)).toMatchObject({
+      fromTick: start * ppq, landingTick: 4 * ppq, toTick: 8 * ppq, completion: "perfect",
+    });
+  });
+
+  it("主和弦标注覆盖尾休时，正格范围不把静音当作发声", () => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..2 {
+ S: | D5/1 | C5/2 r/2 |
+ A: | G4/1 | G4/2 r/2 |
+ T: | B3/1 | E4/2 r/2 |
+ B: | G2/1 | C3/2 r/2 |
+ H: | V/1 | I/1 |
+}`).project;
+    expect(authenticCadence(project)).toMatchObject({
+      fromTick: 0, landingTick: 4 * project.ppq, toTick: 6 * project.ppq,
+    });
+  });
+
+  it.each([["E3", true], ["C3", false]] as const)("属二的七音低音先落主六时须核实实际音高 %s", (early, valid) => {
+    const project = compileScoreText(`satb 1
+key C major
+meter 4/4
+bars 1..2 {
+ S: | F5/2. D5/8 E5/8 | E5/1 |
+ A: | C5/2. B4/4 | C5/1 |
+ T: | A4/2. G4/4 | G4/1 |
+ B: | F3/2. F3/8 ${early}/8 | E3/1 |
+ H: | IV/2. V2/8 r/8 | I6/1 |
+}`).project;
+    const cadence = stagedCadence(project);
+    if (!valid) expect(cadence).toBeUndefined();
+    else expect(cadence).toMatchObject({
+      fromTick: 3 * project.ppq, landingTick: 4 * project.ppq, toTick: 8 * project.ppq, completion: "imperfect",
+    });
   });
 });
 

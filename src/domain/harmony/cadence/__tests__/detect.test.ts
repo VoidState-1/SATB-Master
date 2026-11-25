@@ -596,16 +596,16 @@ annotations {
   });
 
   it.each([
-    ["四声部休止", tonicAfterDominant
+    ["四声部休止", 6, tonicAfterDominant
       .replace("D5/1 | C5/1", "D5/1 | C5/2 r/2")
       .replace("G4/1 | G4/1", "G4/1 | G4/2 r/2")
       .replace("B3/1 | E4/1", "B3/1 | E4/2 r/2")
       .replace("G2/1 | C3/1", "G2/1 | C3/2 r/2")],
-    ["和声覆盖断裂", tonicAfterDominant.replace("D/1 | T/1 | S/1", "D/1 | T/1 | r/2 S/2")],
-  ])("到达%s时停止追溯补充段", (_reason, score) => {
+    ["和声覆盖断裂", 8, tonicAfterDominant.replace("D/1 | T/1 | S/1", "D/1 | T/1 | r/2 S/2")],
+  ])("到达%s时停止追溯补充段", (_reason, release, score) => {
     const project = compileScoreText(`${score}\n${twoPhrases}`).project;
     expect(buildHarmonyAnalysis(project).cadenceCandidates).toMatchObject([
-      { kind: "full", form: "authentic", toTick: 8 * PPQ },
+      { kind: "full", form: "authentic", toTick: release * PPQ },
       { kind: "full", form: "plagal", completion: "imperfect", fromTick: 16 * PPQ, toTick: 24 * PPQ },
     ]);
   });

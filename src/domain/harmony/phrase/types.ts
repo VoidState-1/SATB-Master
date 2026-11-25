@@ -21,6 +21,7 @@ export interface PhraseEvidence {
     | "all-voices-end"
     | "silence-after-target"
     | "long-note-release"
+    | "coordinated-breath"
     | "stable-harmony"
     | "cadential-connection"
     | "metric-support"

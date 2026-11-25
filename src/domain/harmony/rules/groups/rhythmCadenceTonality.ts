@@ -3,6 +3,7 @@ import type {
   KeyReference,
 } from "../../../chordModel";
 import type { HarmonySpan } from "../../analysis";
+import { authenticBassFormula } from "../../cadence/bassFormula";
 import type { RuleDiagnostic } from "../../runtime";
 import {
   keyEquals,
@@ -18,6 +19,7 @@ import {
   noteEvidence,
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
+import type { CadenceView, SpanView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 function spanInterpretation(context: HarmonyRuleContext, span: HarmonySpan) {
@@ -115,6 +117,41 @@ export function cadential64MetricPositionRule(context: HarmonyRuleContext) {
   return diagnostics;
 }
 
+function cadenceBass(span: SpanView | undefined, side: "first" | "last") {
+  if (!span) return;
+  const edge = side === "first" ? span.firstSlice : span.lastSlice;
+  const note = edge.notes.bass;
+  if (!note?.nonChordToneRole || !edge.chord || pitchClassEquals(note.pitch, edge.chord.identity.bass)) return note;
+  // Move past written decorations only, stopping at the first structural bass.
+  const slices = side === "first" ? span.slices : [...span.slices].reverse();
+  const structural = slices.find(slice => slice.chord?.id !== edge.chord?.id ||
+    (slice.notes.bass && !slice.notes.bass.nonChordToneRole));
+  if (structural?.chord?.id === edge.chord?.id) return structural?.notes.bass;
+  return note;
+}
+
+function hasPriorRootDominant(context: HarmonyRuleContext, cadence: CadenceView, key: KeyReference) {
+  const root = scaleDegreePitchClass(key, 5);
+  if (!cadence.landingSpan) return false;
+  const before = [...cadence.spans].reverse();
+  let edge = cadence.landingSpan.span.toTick;
+  for (const span of before) {
+    if (span.span.fromTick >= edge) continue;
+    if (span.span.toTick !== edge) return false;
+    const reading = spanInterpretation(context, span.span);
+    if (!reading || reading.appliedTarget || reading.degree !== 5) return false;
+    for (let index = span.slices.length - 1; index >= 0; index--) {
+      const { chord, notes, key: printedKey } = span.slices[index];
+      if (!chord || !keyEquals(reading.localKey ?? printedKey, key) ||
+          !pitchClassEquals(chord.identity.root, root)) return false;
+      if (notes.bass && !notes.bass.nonChordToneRole &&
+          pitchClassEquals(chord.identity.bass, root) && pitchClassEquals(notes.bass.pitch, root)) return true;
+    }
+    edge = span.span.fromTick;
+  }
+  return false;
+}
+
 function cadenceRuleContexts(context: HarmonyRuleContext) {
   return context
     .cadences()
@@ -137,8 +174,8 @@ function cadenceRuleContexts(context: HarmonyRuleContext) {
       : undefined;
     const targetInterpretation = spanInterpretation(context, target.span);
     const key = targetInterpretation?.localKey ?? targetSlice.key;
-    const sourceBass = sourceSlice?.notes.bass;
-    const targetBass = targetSlice.notes.bass;
+    const sourceBass = cadenceBass(source, "last");
+    const targetBass = cadenceBass(target, "first");
     if (!targetBass) return [];
     const degreePitch = (degree: 1 | 4 | 5 | 6) =>
       scaleDegreePitchClass(key, degree, 0);
@@ -157,6 +194,7 @@ function cadenceRuleContexts(context: HarmonyRuleContext) {
         sourceFamily,
         targetFamily,
         targetInterpretation,
+        key,
       },
     ];
   })
@@ -170,15 +208,18 @@ const CADENCE_KIND_LABELS = {
   deceptive: "阻碍终止",
 } as const;
 
-function validCadenceBassFormula(fact: ReturnType<typeof cadenceRuleContexts>[number]) {
+function validCadenceBassFormula(context: HarmonyRuleContext, fact: ReturnType<typeof cadenceRuleContexts>[number]) {
   const {
     cadence, sourceChord, targetChord, sourceFamily, targetFamily, sourceBass,
-    targetBass, targetInterpretation, degreePitch,
+    targetBass, targetInterpretation, degreePitch, key,
   } = fact;
   if (cadence.kind === "half") {
     return (
       (cadence.form !== "plagal" && targetFamily === "dominant" &&
-        pitchClassEquals(targetBass.pitch, degreePitch(5))) ||
+        (pitchClassEquals(targetBass.pitch, degreePitch(5)) ||
+          (pitchClassEquals(targetChord.identity.root, degreePitch(5)) &&
+            pitchClassEquals(targetBass.pitch, targetChord.identity.bass) &&
+            hasPriorRootDominant(context, cadence, key)))) ||
       (cadence.form !== "authentic" && targetFamily === "subdominant" &&
         pitchClassEquals(targetChord.identity.root, degreePitch(4)) &&
         chordInversion(targetChord) === 0 &&
@@ -193,11 +234,15 @@ function validCadenceBassFormula(fact: ReturnType<typeof cadenceRuleContexts>[nu
       pitchClassEquals(targetBass.pitch, degreePitch(6));
   }
 
-  const tonic = degreePitch(1);
-  if (targetFamily !== "tonic" || !pitchClassEquals(targetBass.pitch, tonic)) return false;
   const plagal = cadence.kind === "supplementary" || cadence.form === "plagal";
-  if (sourceFamily !== (plagal ? "subdominant" : "dominant")) return false;
-  const sourceRoot = degreePitch(plagal ? 4 : 5);
+  if (!plagal) {
+    if (sourceFamily !== "dominant" || targetFamily !== "tonic") return false;
+    const formula = authenticBassFormula(key, sourceChord?.identity, targetChord.identity, sourceBass.pitch, targetBass.pitch);
+    return formula === "root" || (formula === "inverted" && cadence.completion === "imperfect");
+  }
+  const tonic = degreePitch(1);
+  if (targetFamily !== "tonic" || !pitchClassEquals(targetBass.pitch, tonic) || sourceFamily !== "subdominant") return false;
+  const sourceRoot = degreePitch(4);
   if (pitchClassEquals(sourceBass.pitch, sourceRoot)) return true;
 
   if (!sourceChord || !pitchClassEquals(sourceChord.identity.root, sourceRoot) ||
@@ -209,10 +254,10 @@ function validCadenceBassFormula(fact: ReturnType<typeof cadenceRuleContexts>[nu
     sourceBass.pitch.octave === targetBass.pitch.octave;
 }
 
-export function cadenceBassFormulaRule(context: HarmonyRuleContext) {
+export function cadenceBassFormulaRule(ruleContext: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  cadenceRuleContexts(context).forEach((context) => {
-    if (validCadenceBassFormula(context)) return;
+  cadenceRuleContexts(ruleContext).forEach((context) => {
+    if (validCadenceBassFormula(ruleContext, context)) return;
     diagnostics.push(
       diagnostic(
         "cadence.bass-formula",
