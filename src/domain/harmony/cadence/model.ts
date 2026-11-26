@@ -22,6 +22,7 @@ export interface CadenceEvidence {
     | "predominant-to-tonic"
     | "dorian-plagal-ending"
     | "dominant-to-alternative"
+    | "written-deceptive-clausula"
     | "ends-on-dominant"
     | "cadential64-chain"
     | "dominant-neighbor-prolongation"

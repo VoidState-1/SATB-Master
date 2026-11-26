@@ -187,6 +187,7 @@ annotations {
   it("用后调的低音五到一与旋律主音判断正格终止和完满度", () => {
     expect(cadenceInD()).toMatchObject([{ kind: "full", form: "authentic", completion: "perfect" }]);
     expect(cadenceInD(undefined, undefined, "E4/4 F#4/4")).toMatchObject([{ completion: "imperfect" }]);
+    expect(cadenceInD(undefined, undefined, "E4/4 A4/4")).toMatchObject([{ completion: "imperfect" }]);
   });
 
   it("后调必须有同调的属主解决和实写低音支持", () => {

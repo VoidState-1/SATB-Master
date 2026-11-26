@@ -22,7 +22,7 @@ export function shortOpeningMeasure(timeline: MetricTimeline) {
       first.endTick - first.startTick <= following.numerator * following.beatLength / 2) return first;
 }
 
-function measurePosition(timeline: MetricTimeline, tick: number) {
+export function measurePosition(timeline: MetricTimeline, tick: number) {
   const measure = measureAt(timeline, tick);
   if (!measure) return 0;
   if (measure === shortOpeningMeasure(timeline)) {

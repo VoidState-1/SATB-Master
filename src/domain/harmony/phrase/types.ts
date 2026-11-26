@@ -22,6 +22,8 @@ export interface PhraseEvidence {
     | "silence-after-target"
     | "long-note-release"
     | "coordinated-breath"
+    | "cadential-restart"
+    | "periodic-opening-return"
     | "stable-harmony"
     | "cadential-connection"
     | "metric-support"

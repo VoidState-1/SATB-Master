@@ -5,6 +5,7 @@ import {
   type ChordIdentity,
   type KeyReference,
   chordIdentityToneSpellingForDegree,
+  chordStructureQuality,
 } from "../../chordModel";
 import {
   isWrittenStep,
@@ -22,6 +23,8 @@ import type { PhraseSegment } from "../phrase";
 import { soundsCompleteWrittenChord } from "../facts/writtenVoicing";
 import type { CadenceEvidence, CadenceSpanFacts, CadenceCompletion } from "./model";
 import { returnsByWrittenStep } from "../facts/prolongation";
+import { resolvesInVoice } from "../facts/tendencyResolution";
+import { tonalReading } from "../facts/localTonality";
 import { sameDetachedRhythm, writtenAttack, hasCadentialWrittenVoicing } from "./authenticEndings";
 import type { MetricPosition } from "../../rhythm/metric";
 
@@ -31,6 +34,51 @@ export function bassStepsUpToSubmediant(before: AnalysisSlice, arrival: Analysis
   if (!before.notes.bass || !arrival.notes.bass) return false;
   const bass = writtenInterval(before.notes.bass.pitch, arrival.notes.bass.pitch);
   return bass.diatonicSteps === 1 && isWrittenStep(bass);
+}
+
+/** A V7 whose melody closes 2–1 can interrupt an ongoing phrase. Require
+ * a metric arrival, the doubled third of VI and both tendency resolutions.
+ * An applied V7 also needs its tonic sounding before it in the same phrase. */
+export function writtenDeceptiveClausula(
+  anchor: CadenceSpanFacts | undefined, dominant: CadenceSpanFacts, ending: CadenceSpanFacts,
+  slices: readonly AnalysisSlice[], metric: MetricPosition | undefined, beat: number | undefined,
+): CadenceEvidence | undefined {
+  const source = dominant.chord?.identity, target = ending.chord?.identity;
+  const before = slices[dominant.span.sliceIndices.at(-1)!], arrival = ending.boundarySlice;
+  if (!beat || metric?.role !== "downbeat" || !before?.completeSatb || !arrival?.completeSatb ||
+      !source || !target || ending.interpretationStatus !== "resolved" || ending.hardBoundaryBefore ||
+      dominant.span.toTick !== ending.span.fromTick || before.endTick !== arrival.tick ||
+      ending.span.toTick - arrival.tick < beat || !keyEquals(dominant.writtenKey, ending.writtenKey) ||
+      dominant.span.status !== "complete" || source.structure.kind !== "tertian" ||
+      source.structure.quality !== "dominant7" || source.structure.alterations.length ||
+      source.structure.extensions.length || !isPlainTriad(target) ||
+      chordIdentityInversion(source) !== 0 || chordIdentityInversion(target) !== 0) return;
+  const meaning = tonalReading(dominant.span.semantics, dominant.writtenKey).interpretation;
+  if (!meaning || meaning.degree !== 5 || meaning.degreeAlteration) return;
+  let key = dominant.key;
+  if (meaning.appliedTarget) {
+    const established = anchor?.chord?.identity;
+    const anchorSlice = anchor && slices[anchor.span.sliceIndices.at(-1)!];
+    if (!anchor || anchor.span.toTick !== dominant.span.fromTick || dominant.hardBoundaryBefore ||
+        anchor.interpretationStatus !== "resolved" || !established || !isPlainTriad(established) ||
+        !pitchClassEquals(established.root, scaleDegreePitchClass(key, meaning.appliedTarget.degree)) ||
+        !keyEquals(anchor.key, key) || !keyEquals(ending.key, key) || !anchorSlice?.completeSatb ||
+        !soundsCompleteWrittenChord(established, writtenNotes(anchorSlice), anchorSlice.notes.bass!)) return;
+    key = { tonic: established.root, mode: chordStructureQuality(established) === "minor" ? "minor" : "major" };
+  } else if (!dominant.isDominant || !keyEquals(key, ending.key) || ending.degree !== 6) return;
+  if (!pitchClassEquals(source.root, scaleDegreePitchClass(key, 5)) ||
+      !pitchClassEquals(target.root, scaleDegreePitchClass(key, 6)) ||
+      !soundsCompleteWrittenChord(source, writtenNotes(before), before.notes.bass!) ||
+      !soundsCompleteWrittenChord(target, writtenNotes(arrival), arrival.notes.bass!) ||
+      !bassStepsUpToSubmediant(before, arrival) ||
+      !pitchClassEquals(before.notes.soprano!.pitch, scaleDegreePitchClass(key, 2)) ||
+      !resolvesInVoice(before, arrival, "soprano", key.tonic, -1)) return;
+  const melody = arrival.notes.soprano!;
+  if (melody.durationTicks <= before.notes.soprano!.durationTicks ||
+      !endsAt(melody, ending.span.toTick) ||
+      !hasArticulatedResolution({ ...ending, key, isTonic: false }, before, arrival, writtenNotes(arrival), source, target)) return;
+  return { code: "written-deceptive-clausula", value: "强拍上低音五升六，旋律二归一并延长，导音和七音分别解决",
+    refs: [before.notes.bass!.id, arrival.notes.bass!.id, melody.id] };
 }
 
 function articulatedEndingChords(

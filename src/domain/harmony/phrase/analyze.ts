@@ -31,11 +31,12 @@ import {
 } from "../../pitch";
 import { eventAtTick, orderedEvents } from "../../time";
 import type { ChordRegion } from "../../project/types";
-import { hasMinimumEventPhraseLength, phraseTemplate, selectEventDivisions, shortOpeningMeasure } from "./segmentation";
+import { hasMinimumEventPhraseLength, measurePosition, phraseTemplate, selectEventDivisions, shortOpeningMeasure } from "./segmentation";
+import { cadentialRestart, releasesRevoicedSubmediant } from "./cadentialRestart";
 import { isCurrentPhraseBoundary, phraseInferenceFingerprint } from "./fingerprint";
-import { reprisedOpeningAfterDominant } from "./reprisedOpening";
+import { melodicFigureMatcher, reprisedOpeningAfterDominant } from "./reprisedOpening";
 import {
-  followingRegion, measureAt, previousRegion, sameKey,
+  confirmedFullCadences, followingRegion, measureAt, previousRegion, sameKey,
   terminalRegionAt, voicesEndingAt, voicesStartingAt,
 } from "./timelineEvidence";
 
@@ -511,7 +512,10 @@ function boundaryFacts(
   // A chorale can breathe at a barline with all four parts rearticulating.
   // At the metrical midpoint, a lengthened closing harmony gives that
   // articulation structural weight even if the next phrase starts at once.
-  const articulatedCadence = reattack && atTemplateTarget && metric?.role === "downbeat" &&
+  const prolongsDominant = endsOnDominant && terminal && following?.semantics &&
+    functionalFamily(following) === "dominant" && primaryHarmonyInterpretation(following.semantics).degree === 5 &&
+    pitchClassEquals(terminal.identity.root, following.identity.root);
+  const articulatedCadence = !prolongsDominant && reattack && atTemplateTarget && metric?.role === "downbeat" &&
     longRelease && evidence.some((item) => item.code === "cadential-connection");
   const rootPositionArrival = terminal && chordIdentityInversion(terminal.identity) === 0;
   const midpointDominantHold = atTemplateTarget && hasRoomForTwoPhrases &&
@@ -797,7 +801,12 @@ function eventCandidates(
     if (lastRelease !== undefined) previousRelease.set(tick, lastRelease);
     if (released.length) lastRelease = tick;
   }
-  const opening = measureAt(timeline, nextAttackAfter(project, range.startTick) ?? range.startTick);
+  const openingTick = nextAttackAfter(project, range.startTick) ?? range.startTick;
+  const opening = measureAt(timeline, openingTick);
+  const openingPosition = measurePosition(timeline, openingTick);
+  const sopranoFigure = melodicFigureMatcher(project.satbTracks?.find(track => track.id === "soprano"));
+  const bassFigure = melodicFigureMatcher(project.satbTracks?.find(track => track.id === "bass"));
+  const confirmed = confirmedFullCadences(project);
   const hasFixedBoundary = project.structure?.phraseBoundaries?.some(boundary =>
     boundary.source === "manual" || boundary.locked);
   return [...ticks].sort((left, right) => left - right).flatMap((tick): PhraseBoundaryCandidate[] => {
@@ -880,6 +889,39 @@ function eventCandidates(
     const renewedAfterCadence = Boolean(continuousHarmony && !insideProlongation && !followsProlongation &&
       sameHarmony && onFourBarGrid && endsOnDominant && previous?.semantics?.cadenceRole === "cadential64" &&
       rhythmicRestart && slowdown);
+    const periodicDistance = measurePosition(timeline, tick) - openingPosition;
+    const recurrentPulse = periodicDistance >= 4 && Number.isInteger(periodicDistance / 2) &&
+      (barlines.has(tick) || pickup.has(tick));
+    const barLength = measureLengthAt(timeline, tick - 1);
+    const sequential = sopranoFigure(tick, tick - barLength) && bassFigure(tick, tick - barLength);
+    if (sequential && !pause && !shortBreath && !reprise) return [];
+    const heldAcross = !terminal && recurrentPulse && regions.find(region =>
+      region.startTick < tick && tick < region.startTick + region.durationTicks);
+    const dominantAtReturn = terminal ?? (heldAcross || undefined);
+    const returnsAfterDominant = recurrentPulse && !hasFixedBoundary && !insideProlongation &&
+      startingVoices >= 2 && endingVoices >= 2 && dominantAtReturn?.semantics &&
+      functionalFamily(dominantAtReturn) === "dominant" &&
+      primaryHarmonyInterpretation(dominantAtReturn.semantics).degree === 5 &&
+      (chordIdentityInversion(dominantAtReturn.identity) === 0 ||
+        (previous && functionalFamily(previous) === "dominant" && chordIdentityInversion(previous.identity) === 0 &&
+          pitchClassEquals(previous.identity.root, dominantAtReturn.identity.root))) &&
+      (tonicRestart || (endsOnDominant && onPickup && previous?.semantics?.cadenceRole === "cadential64") ||
+        (heldAcross && chordIdentityInversion(heldAcross.identity) === 0 && wholeBarRelease)) &&
+      !confirmed.some(mark => mark.fromTick < tick && tick < mark.toTick) && sopranoFigure(tick);
+    const reset = !insideProlongation && !followsProlongation && closingTick === tick &&
+      terminal && previous && cadentialRestart({
+        project, terminal, previous, following, tick, beatLength,
+        barLength, periodicDistance,
+        tonicRestart: Boolean(tonicRestart), endsOnDominant,
+        fromDominant: functionalFamily(previous) === "dominant",
+        stableEnding: functionalFamily(terminal) !== undefined,
+        pickup: pickup.has(tick), onBarline: barlines.has(tick),
+      });
+    const submediantRelease = recurrentPulse && endingVoices >= 2 && startingVoices >= 2 &&
+      functionalFamily(beforePrevious) === "dominant" && beforePrevious?.semantics &&
+      primaryHarmonyInterpretation(beforePrevious.semantics).degree === 5 &&
+      functionalFamily(terminal) && functionalFamily(previous) && !insideProlongation &&
+      releasesRevoicedSubmediant(project, beforePrevious, previous, terminal, following, tick, beatLength);
     const structuralBreath = detachedClosure || (renewedAfterCadence ||
       (!continuousHarmony && !soundAcross &&
         (heldDominant || (coordinated && endsOnDominant && tonicRestart && dominantArrival && preparedDominant) ||
@@ -893,13 +935,19 @@ function eventCandidates(
     if (soundAcross) evidence.push({ code: "sustained-voice", value: "有声部跨过候选边界持续" });
     if (unstable) evidence.push({ code: "unstable-ending", value: "前句末和声尚需解决" });
     if (reprise) evidence.push(reprise);
+    if (reset) evidence.push(reset);
+    if (submediantRelease) evidence.push({ code: "cadential-restart", value: "属至六级的落点换位延长，上声部释放后进入新功能" });
+    if (returnsAfterDominant) evidence.push({ code: "periodic-opening-return", value: "属收束后在相同拍位再现开头的节奏与旋律音程" });
 
     const releaseScore = pause ? eventWeights.pause : longRelease ? eventWeights.longRelease :
       wholeBarRelease ? eventWeights.wholeBarRelease : 0;
     const atRestart = pause && tick === restart && closingTick < tick &&
       (barlines.has(tick) || onPickup || (measureAt(timeline, tick)?.startTick ?? tick) <= closingTick);
     const pauseBarline = pause && barlines.has(tick) && tick > closingTick && tick !== restart;
-    const score = Math.max(reprise ? eventWeights.reprise : 0,
+    const score = Math.max(returnsAfterDominant || submediantRelease ? eventWeights.reprise + eventWeights.cadence : 0,
+      reset ? eventWeights.reprise + (pickup.has(tick) || closure === eventWeights.cadence ? 2 : 0) +
+      Number(Number.isInteger(periodicDistance / 4)) : 0,
+      reprise ? eventWeights.reprise : 0,
       releaseScore + closure + (structuralBreath ? 3 : 0) + (heldDominant ? 1 : 0) +
       (atRestart ? 2 : pauseBarline ? 1 : 0) +
       (tonicRestart ? eventWeights.tonicRestart : 0) +
@@ -915,14 +963,15 @@ function eventCandidates(
       ...regular,
       score: Math.max(score, eventWeights.establishedMinimum),
       evidence: [...regular.evidence, ...evidence.filter(item =>
-        (item.code === "soprano-opening-reprise" || item.code === "coordinated-breath") &&
+        (item.code === "soprano-opening-reprise" || item.code === "coordinated-breath" ||
+          item.code === "cadential-restart" || item.code === "periodic-opening-return") &&
         !regular.evidence.some(existing => existing.code === item.code))],
     }];
     // Off-grid chord changes cannot make a cut without audible articulation.
     if (detachedDeception || (pause && !detachedClosure && !reprise &&
         (!barlines.has(tick) || tick !== closingTick)) ||
-        (!barlines.has(tick) && !onPickup && !structuralBreath && !reprise) ||
-        (continuousHarmony && !renewedAfterCadence && !reprise) || score <= 0) return [];
+        (!barlines.has(tick) && !onPickup && !structuralBreath && !reprise && !reset) ||
+        (continuousHarmony && !renewedAfterCadence && !reprise && !reset && !returnsAfterDominant) || score <= 0) return [];
     return [{
       tick, targetRatio: "event", distanceToTarget: 0,
       support: pause ? "strong" : "moderate",
@@ -984,7 +1033,7 @@ export function analyzePhrases(
     ? generated.template.boundaries.filter((candidate) => !knownTicks.has(candidate.tick))
     : [];
   const inferred = selected.map((candidate) => {
-    const usesReprise = candidate.evidence.some(item => item.code === "soprano-opening-reprise");
+    const usesReprise = candidate.evidence.some(item => item.code === "soprano-opening-reprise" || item.code === "periodic-opening-return");
     return inferredBoundaryFromCandidate(candidate, phraseInferenceFingerprint(project, usesReprise));
   });
   const merged = inferred.length

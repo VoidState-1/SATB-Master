@@ -108,6 +108,29 @@ function startingPair(notes: readonly Note[], tick: number) {
       !spelledPitchEquals(first.pitch, next.pitch)) return [first, next] as const;
 }
 
+/** Compare the written rhythm and directed intervals. A transposed consequent
+ * can restore the opening even when its first chord is a dominant pickup. */
+export function melodicFigureMatcher(track: Track | undefined) {
+  const notes = [...(track?.notes ?? [])].sort((a, b) => a.startTick - b.startTick);
+  const byStart = new Map(notes.map((note, index) => [note.startTick, index]));
+  return (tick: number, model = notes[0]?.startTick) => {
+    const first = byStart.get(model);
+    const index = byStart.get(tick);
+    if (first === undefined || index === undefined || index - first < 3) return false;
+    let moves = false;
+    for (let offset = 0; offset < 2; offset++) {
+      const a = notes[first + offset], b = notes[first + offset + 1];
+      const c = notes[index + offset], d = notes[index + offset + 1];
+      if (!a?.pitch || !b?.pitch || !c?.pitch || !d?.pitch ||
+          noteEnd(a) !== b.startTick || noteEnd(c) !== d.startTick || a.durationTicks !== c.durationTicks) return false;
+      const interval = writtenInterval(a.pitch, b.pitch).diatonicSteps;
+      if (writtenInterval(c.pitch, d.pitch).diatonicSteps !== interval) return false;
+      moves ||= interval !== 0;
+    }
+    return moves;
+  };
+}
+
 function pickUpNotes(notes: readonly Note[], from: number, to: number) {
   const sounding = notes.filter(note => note.startTick < to && noteEnd(note) > from);
   if (sounding.every(note => note.startTick >= from && noteEnd(note) <= to)) return sounding;

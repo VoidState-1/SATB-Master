@@ -32,6 +32,72 @@ bars 1..4 {
 }`;
 
 const projectOf = (text: string) => compileScoreText(text).project;
+
+describe("属准备与局部转位正格", () => {
+  it.each([["F#4", 0], ["D4", 2]])("半终止仅在副属导音 %s 同声部解决时纳入准备", (lead, start) => {
+    const project = projectOf(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | ${lead}/2 G4/2 |
+ A: | C4/2 B3/2 |
+ T: | A3/2 D3/2 |
+ B: | D2/2 G2/2 |
+ H: | V7/V/2 V/2 |
+}`);
+    expect(buildHarmonyAnalysis(project).cadenceCandidates).toMatchObject([
+      { kind: "half", fromTick: start * PPQ, landingTick: 2 * PPQ, toTick: 4 * PPQ },
+    ]);
+  });
+
+  it.each([["G#4/4 A4/2", true], ["G#4/4 E4/2", false]])("局部转位属收束由实写导音解决确认 %s", (alto, resolved) => {
+    const project = projectOf(`satb 1
+key C major
+meter 4/4
+bars 1..1 {
+ S: | B4/4 D5/4 C5/2 |
+ A: | G#4/4 ${alto} |
+ T: | E4/4 E4/4 E4/2 |
+ B: | E3/4 B2/4 A2/2 |
+}
+annotations {
+ chord v at=1:1 duration=1/4 symbol=V localKey="A minor"
+ chord inv at=1:2 duration=1/4 symbol=V43 localKey="A minor"
+ chord end at=1:3 duration=1/2 symbol=i localKey="A minor"
+}`);
+    const full = buildHarmonyAnalysis(project).cadenceCandidates.filter(c => c.kind === "full");
+    if (resolved) expect(full).toMatchObject([{ completion: "imperfect", landingTick: 2 * PPQ }]);
+    else expect(full).toEqual([]);
+  });
+});
+
+describe("句内强拍上的阻碍收束", () => {
+  const applied = `satb 1
+key C major
+meter 2/2
+bars 1..3 {
+ S: | C5/2 C5/4. B4/8 | A4/2 G4/2 | C5/1 |
+ A: | A4/2 G#4/2 | A4/2 B4/2 | G4/1 |
+ T: | E4/2 D4/2 | C4/2 D4/2 | E4/1 |
+ B: | A2/2 E2/2 | F2/2 G2/2 | C3/1 |
+ H: | vi/2 V7/VI/2 | IV/2 V/2 | I/1 |
+}`;
+  const inMinor = applied.replace("key C major", "key A minor")
+    .replace("vi/2 V7/VI/2", "i/2 V7/2").replace("IV/2 V/2", "VI/2 VII/2").replace("I/1", "III/1");
+  it.each([["已建立的副属目标", applied], ["小调", inMinor]])("%s的五升六保留起止与句内归属", (_label, text) => {
+    expect(buildHarmonyAnalysis(projectOf(text)).cadenceCandidates).toContainEqual(expect.objectContaining({
+      kind: "deceptive", form: "authentic", fromTick: 2 * PPQ, landingTick: 4 * PPQ, toTick: 6 * PPQ,
+      evidence: expect.arrayContaining([expect.objectContaining({ code: "written-deceptive-clausula" })]),
+    }));
+  });
+  it.each([
+    ["普通等时值进行", inMinor.replace("C5/4. B4/8", "B4/2")],
+    ["导音没有同声部解决", inMinor.replace("G#4/2 | A4/2", "G#4/2 | C5/2")],
+    ["副属缺少目标调主和弦支撑", applied.replace("vi/2 V7/VI/2", "IV/2 V7/VI/2")],
+  ])("%s保留为普通进行", (_label, text) => {
+    expect(buildHarmonyAnalysis(projectOf(text)).cadenceCandidates.some(c => c.kind === "deceptive")).toBe(false);
+  });
+});
 const interior = (project: ReturnType<typeof projectOf>) =>
   buildHarmonyAnalysis(project).cadenceCandidates.find(c =>
     c.evidence.some(item => item.code === "articulated-interior-ending"));

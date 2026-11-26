@@ -496,6 +496,13 @@ const eventVoicings = {
   S: ["F5", "A4", "C4", "F3"],
   D: ["D5", "G4", "B3", "G2"],
   D2: ["D5", "G4", "B3", "F2"],
+  T6: ["E5", "G4", "C4", "E3"],
+  D6: ["D5", "G4", "D4", "B2"],
+  D7: ["F5", "D4", "B3", "G2"],
+  K46: ["E5", "G4", "C4", "G2"],
+  vi: ["C5", "A4", "E4", "A2"],
+  vi6: ["A4", "A4", "E4", "C3"],
+  ii: ["A5", "F4", "D4", "D3"],
   r: ["r", "r", "r", "r"],
 } as const;
 
@@ -527,6 +534,64 @@ function eventPeriod(phraseLengths: readonly number[], closing = "D/1") {
 }
 
 describe("基于音乐事件的全局乐句切分", () => {
+  function sustainAcross(project: ProjectDocument, voice: string, tick: number) {
+    const notes = project.satbTracks.find(track => track.id === voice)!.notes;
+    const index = notes.findIndex(note => note.startTick === tick);
+    expect(notes[index - 1].pitch).toEqual(notes[index].pitch);
+    notes[index - 1].durationTicks += notes[index].durationTicks;
+    notes.splice(index, 1);
+  }
+
+  it.each([["D", true], ["S", false]] as const)("内声跨线时用外声与 %s–T6 收束判断新句", (source, split) => {
+    const project = eventScore([movingBar, movingBar, movingBar, `S/4 ${source}/4 T6/2`, "D/4 S/4 T/2",
+      movingBar, movingBar, "T/1"]);
+    sustainAcross(project, "alto", 16 * PPQ);
+    const result = inferPhrases(project);
+    const mark = result.template.boundaries.find(candidate => candidate.tick === 16 * PPQ);
+    expect(mark?.evidence.some(item => item.code === "cadential-restart") ?? false).toBe(split);
+    if (split) expect(buildHarmonyAnalysis({ ...project, structure: { ...project.structure,
+      phraseBoundaries: [...result.boundaries] } }).cadenceCandidates).toContainEqual(expect.objectContaining({
+      kind: "full", completion: "imperfect", toTick: 16 * PPQ,
+    }));
+  });
+
+  it.each([["D7", true], ["D6", false]] as const)("弱起旋律以 %s 续写时核对小节内进点", (second, reprise) => {
+    const project = eventScore(["D6/8 D7/8", movingBar, movingBar, movingBar, `K46/2 D/4 D6/8 ${second}/8`,
+      movingBar, movingBar, movingBar, "T/2. r/4"], "meter 1/4\nat 2:1 meter 4/4");
+    const result = inferPhrases(project);
+    const mark = result.template.boundaries.find(candidate => candidate.tick === 16 * PPQ);
+    expect(mark?.evidence.some(item => item.code === "periodic-opening-return") ?? false).toBe(reprise);
+  });
+
+  it.each([["D", true], ["T", false]] as const)("用 %s 到换位六级的低音确认阻碍收束后的重起", (source, split) => {
+    const project = eventScore([movingBar, movingBar, movingBar, `S/4 ${source}/4 vi/4 vi6/4`,
+      movingBar, movingBar, movingBar, "T/1"]);
+    for (const voice of ["alto", "tenor"]) sustainAcross(project, voice, 15 * PPQ);
+    const mark = inferPhrases(project).template.boundaries.find(candidate => candidate.tick === 16 * PPQ);
+    expect(mark?.evidence.some(item => item.code === "cadential-restart") ?? false).toBe(split);
+  });
+
+  it("连贯的 V 到 V6 到 V7 在规整小节线内保持属延长", () => {
+    const project = eventScore([movingBar, movingBar, movingBar, "S/2 D/2", "D6/4 D7/2.",
+      movingBar, movingBar, "T/1"]);
+    expect(inferPhrases(project).boundaries.some(boundary => boundary.tick === 16 * PPQ)).toBe(false);
+  });
+
+  it("四小节位置的属到主若处于双外声同节奏移位模进，保留连续乐句", () => {
+    const project = eventScore([movingBar, movingBar, movingBar, "S/4 T6/4 D/2", "T/4 D6/4 ii/2",
+      movingBar, movingBar, "T/1"]);
+    const replaceLine = (voice: string, pitches: string[]) => {
+      const notes = project.satbTracks.find(track => track.id === voice)!.notes.filter(note =>
+        note.startTick >= 12 * PPQ && note.startTick < 20 * PPQ);
+      notes.forEach((note, i) => {
+        note.pitch = { step: pitches[i][0] as NoteEvent["pitch"]["step"], alter: 0, octave: Number(pitches[i][1]) };
+      });
+    };
+    replaceLine("soprano", ["A4", "G4", "D5", "E5", "D5", "A5"]);
+    replaceLine("bass", ["F3", "E3", "G3", "C3", "B2", "D3"]);
+    expect(inferPhrases(project).boundaries.some(boundary => boundary.tick === 16 * PPQ)).toBe(false);
+  });
+
   it.each([
     [[4, 6], "duple", [4]],
     [[4, 4, 4], "triple", [4, 8]],
