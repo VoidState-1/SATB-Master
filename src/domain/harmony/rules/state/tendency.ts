@@ -7,7 +7,7 @@ import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import { readWrittenDominantSeventh, readWrittenDominantSeventhHandoff } from "../../facts/dominantMotion";
-import { resolvesInVoice } from "../../facts/tendencyResolution";
+import { matchesWrittenChord, resolvesInVoice } from "../../facts/tendencyResolution";
 import { crossesManualPhraseBoundary, hasExactPitch, noteEvidence } from "../helpers/core";
 import { readDoubleDominantResolution } from "../helpers/chordVoicing";
 import { resolvesDominantSixthSubstitution } from "../groups/support/doubleDominant";
@@ -74,22 +74,43 @@ export type AlteredTonePayload = VoiceObligationPayload & {
   readonly alteredMidi: number;
 };
 
+// Without a label the four written parts must establish both ends of the
+// progression. A root-position authentic bass and complete tonic distinguish
+// this seventh from a vertical passing dissonance or a tonic six-four.
+function writtenSeventhAtAuthenticDeparture(context: RuleStepContext) {
+  const { slice } = context;
+  const bass = slice.notes.bass;
+  if (!bass || !slice.completeSatb) return;
+  const dominant = readWrittenDominantSeventh(slice.notes);
+  if (!dominant || dominant.inversion !== 0 || !matchesWrittenChord(slice, dominant.root, "dominant7")) return;
+  const arrival = context.rules.sliceAt(slice.endTick);
+  if (!arrival?.notes.bass || !keyEquals(slice.key, arrival.key) ||
+      !pitchClassEquals(arrival.notes.bass.pitch, dominant.target) ||
+      crossesManualPhraseBoundary(context.rules, slice.tick, arrival.tick)) return;
+  if (matchesWrittenChord(arrival, dominant.target, "major") || matchesWrittenChord(arrival, dominant.target, "minor"))
+    return dominant.seventh;
+}
+
 export const chordSeventhSource: ObligationSource<SeventhPayload> = {
   id: "source.chord-seventh-attacks",
-  requires: ["written-pitches", "chords"],
+  requires: ["written-pitches", "chords-or-complete-satb"],
   collect({ context, moment }) {
     const { slice } = context;
     const chord = slice.chord;
-    if (!chord || !supportsTendencyResolutionRules(context, chord)) return [];
-    const tones = chordIdentityToneSpellings(chord.identity);
-    if (tones.length < 4) return [];
+    // Ambiguous functions over the same written V7 still agree on its seventh.
+    // An applied or ornamental hypothesis alone cannot supply the missing parts.
+    const labelled = chord && supportsTendencyResolutionRules(context, chord);
+    if (chord && !labelled && (chord.semantics?.pedalContext || chord.identity.structure.kind !== "tertian" ||
+        chord.identity.structure.quality !== "dominant7")) return [];
+    const seventh = labelled ? chordIdentityToneSpellingForDegree(chord.identity, 7) : writtenSeventhAtAuthenticDeparture(context);
+    if (!seventh) return [];
     const prepared = preparedSeventhEntries(context);
-    const voices = prepared.length ? VOICE_ORDER : moment.attackedVoiceIds;
+    const voices = prepared.length || !chord ? VOICE_ORDER : moment.attackedVoiceIds;
     return voices.flatMap((voiceId) => {
       const note = slice.notes[voiceId];
       if (!note) return [];
       const attacked = moment.attackedVoiceIds.includes(voiceId);
-      if (attacked ? !pitchClassEquals(note.pitch, tones[3]) : !prepared.includes(voiceId)) return [];
+      if (!pitchClassEquals(note.pitch, seventh) || (chord && !attacked && !prepared.includes(voiceId))) return [];
       return [
         {
           partitionKey: `voice:${voiceId}`,
@@ -101,7 +122,7 @@ export const chordSeventhSource: ObligationSource<SeventhPayload> = {
           subjectRefs: {
             voiceIds: [voiceId],
             noteIds: [note.id],
-            chordIds: [chord.id],
+            ...(chord && { chordIds: [chord.id] }),
             ...currentSpanRefs(context),
           },
         },
@@ -327,7 +348,7 @@ export function innerLeadingToneDescendsToFifth(
   const landing = target.notes[payload.voiceId];
   if (
     !source || !leading || !landing ||
-    !context.transitionFromPrevious?.contiguous || !context.transitionFromPrevious.sameKey ||
+    !context.transitionFromPrevious?.contiguous ||
     !supportsTendencyResolutionRules(context, from) || !supportsTendencyResolutionRules(context, to)
   ) return false;
 

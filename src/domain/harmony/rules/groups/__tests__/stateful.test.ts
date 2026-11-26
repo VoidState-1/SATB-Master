@@ -1302,11 +1302,13 @@ bars 1..1 {
       atExit(text.replace("E5/4", "G5/4"), "soprano", 0);
     });
 
-    it("手工句界与未知后继保持原有边界", () => {
+    it("手工句界阻止持音开立，已确认的七音在无标签落点仍须解决", () => {
       const { project } = compileScoreText(root.replace("E5/4", "G5/4"));
       const cut = { id: "new-phrase", tick: project.ppq, source: "manual", confidence: "certain" } as const;
       expect(seventhWarnings({ ...project, structure: { ...project.structure, phraseBoundaries: [cut] } })).toEqual([]);
-      expect(seventhWarnings({ ...project, chordTrack: { ...project.chordTrack, regions: project.chordTrack.regions.slice(0, 2) } })).toEqual([]);
+      const withoutLanding = { ...project, chordTrack: { ...project.chordTrack, regions: project.chordTrack.regions.slice(0, 2) } };
+      expect(seventhWarnings(withoutLanding)).toMatchObject([{ tick: 2 * project.ppq, voiceIds: ["soprano"],
+        chordIds: [project.chordTrack.regions[1].id], params: { resolutionSemitones: 2 } }]);
     });
 
     it("同调重申伴随真实和声变化时仍可开立", () => {

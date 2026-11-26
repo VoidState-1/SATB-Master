@@ -26,6 +26,7 @@ export type HarmonyRuleGroupId =
 export type RuleRequirement =
   | "written-pitches"
   | "chords"
+  | "chords-or-complete-satb"
   | "semantics"
   | "complete-satb"
   | "meter";

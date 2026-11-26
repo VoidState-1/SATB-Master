@@ -12,10 +12,12 @@ import type {
   RuleStepResult,
 } from "../../runtime";
 import type { VoiceId } from "../../../project/types";
-import { sameChordIdentityWithoutBass } from "../../analysis";
-import { pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
+import { readWrittenDominantSeventh } from "../../facts/dominantMotion";
+import { readCompleteWrittenChord } from "../../facts/writtenVoicing";
+import { sameChordIdentityWithoutBass, type AnalysisNote } from "../../analysis";
+import { keyEquals, isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import {
-  currentSpanId, leadingTargetUnchanged, openedSourceNote, openedSpanId, receivingVoiceIds,
+  currentSpanId, tendencyCenterContinues, openedSourceNote, openedSpanId, receivingVoiceIds,
   sameLeadingToneContext, sameSeventhContext, seventhTransferVoiceIds,
 } from "../state/tendencyContext";
 import {
@@ -182,7 +184,7 @@ function decision<Payload extends VoiceObligationPayload>(
 function leadingToneTransition(
   environment: ObligationEnvironment<LeadingTonePayload>,
 ): ObligationDecision | undefined {
-  const targetUnchanged = leadingTargetUnchanged(environment);
+  const targetUnchanged = tendencyCenterContinues(environment);
   const attacked = subjectAttacked(environment);
   const sameLeadingContext = sameLeadingToneContext(environment);
   const { context, obligation: { payload, openedAt } } = environment;
@@ -420,20 +422,85 @@ function upperSeventhTransferViolation(environment: ObligationEnvironment<Sevent
   ] };
 }
 
+function followsWrittenDirection(from: AnalysisNote, to: AnalysisNote, tendency: "seventh" | "up" | "down") {
+  const motion = writtenInterval(from.pitch, to.pitch);
+  return tendency === "seventh" ? motion.diatonicSteps === -1 && motion.semitones < 0 && isWrittenStep(motion) :
+    motion.semitones === (tendency === "up" ? 1 : -1);
+}
+
+function unlabelledTendencyLanding(
+  environment: ObligationEnvironment<SeventhPayload | AlteredTonePayload>,
+  tendency: "seventh" | "up" | "down",
+): ObligationDecision {
+  const { context, obligation, moment } = environment;
+  const { voiceId } = obligation.payload;
+  const source = openedSourceNote(environment);
+  const current = context.slice.notes[voiceId];
+  const previous = context.previous?.notes[voiceId];
+  if (!source || !current || !previous || !context.transitionFromPrevious?.contiguous ||
+      crossesManualPhraseBoundary(context.rules, obligation.openedAt.tick, moment.tick))
+    return decision(environment, "cancel", "written-line-interrupted");
+
+  if (spelledPitchEquals(current.pitch, source.pitch)) {
+    const harmony = tendency === "seventh" && readCompleteWrittenChord(context.slice);
+    if (harmony && chordIdentityToneSpellings(harmony).slice(0, 3).some(tone => pitchClassEquals(tone, current.pitch)))
+      return decision(environment, "resolve", "seventh-retained-as-written-chord-member");
+    return decision(environment, "continue", "tendency-held-in-register");
+  }
+  if (!subjectAttacked(environment) || previous.startTick + previous.durationTicks !== moment.tick ||
+      !spelledPitchEquals(source.pitch, previous.pitch))
+    return decision(environment, "cancel", "written-line-interrupted");
+  const motion = writtenInterval(previous.pitch, current.pitch);
+  if (followsWrittenDirection(previous, current, tendency)) return decision(environment, "resolve", "written-tendency-resolution");
+
+  const receivers = receivingVoiceIds(environment, source.pitch);
+  for (const voice of receivers) {
+    const taken = context.slice.notes[voice]!;
+    if (!spelledPitchEquals(taken.pitch, source.pitch) || taken.nonChordToneRole) continue;
+    const end = taken.startTick + taken.durationTicks;
+    const arrival = context.rules.sliceAt(end);
+    const next = arrival?.notes[voice];
+    if (!next || !arrival || next.startTick !== end || next.nonChordToneRole ||
+        context.rules.slices({ overlapping: { fromTick: moment.tick, toTick: end } }).any(frame => !keyEquals(frame.key, context.slice.key)) ||
+        !keyEquals(arrival.key, context.slice.key) || crossesManualPhraseBoundary(context.rules, moment.tick, end)) continue;
+    if (followsWrittenDirection(taken, next, tendency))
+      return decision(environment, "resolve", "written-same-register-handoff", { receiver: voice, resolutionNoteId: next.id });
+  }
+  if (tendency === "seventh") {
+    // An upward second can be a passing D43.
+    // When the target bass supports a tonic six-four, a redistributed tonic
+    // can also be a suspension. The dedicated six-four proof runs first.
+    const bass = context.slice.notes.bass;
+    const key = context.previous!.key;
+    const origin = context.rules.sliceAt(obligation.openedAt.tick);
+    const passingDominant = bass && origin && readWrittenDominantSeventh(origin.notes)?.inversion === 2 &&
+      pitchClassEquals(bass.pitch, scaleDegreePitchClass(key, 3));
+    if ((motion.diatonicSteps === 1 && isWrittenStep(motion) && passingDominant) ||
+        (bass && pitchClassEquals(bass.pitch, scaleDegreePitchClass(key, 5)) &&
+          pitchClassEquals(source.pitch, key.tonic) && receivers.length))
+      return decision(environment, "cancel", "unconfirmed-seventh-destination");
+  }
+  return decision(environment, "violate", "written-tendency-moved-elsewhere");
+}
+
 function seventhTransition(
   environment: ObligationEnvironment<SeventhPayload>,
 ): ObligationDecision | undefined {
+  if (!tendencyCenterContinues(environment)) return decision(environment, "cancel", "tonal-center-changed");
   if (!environment.context.slice.chord && seventhLeapsToUnlabelledSixFour(
     environment.context, environment.obligation.payload.voiceId,
     environment.obligation.openedBy.noteIds?.[0], environment.obligation.openedAt.tick,
   )) return decision(environment, "violate", "supertonic-seventh-leaps-to-six-four");
+  if (!environment.context.slice.chord) {
+    if (chordSeventhResolves(environment)) return decision(environment, "resolve", "chord-seventh-resolved");
+    return unlabelledTendencyLanding(environment, "seventh");
+  }
   if (
     subjectEnteredRest(environment) ||
     !supportsTendencyResolutionRules(
       environment.context,
       environment.context.slice.chord,
-    ) ||
-    !targetChordAvailable(environment)
+    )
   )
     return decision(environment, "cancel", "chord-seventh-context-ended");
 
@@ -531,13 +598,14 @@ function dominantNinthTransition(
 function alteredToneTransition(
   environment: ObligationEnvironment<AlteredTonePayload>,
 ): ObligationDecision | undefined {
+  if (!tendencyCenterContinues(environment)) return decision(environment, "cancel", "tonal-center-changed");
+  if (!environment.context.slice.chord) return unlabelledTendencyLanding(environment, environment.obligation.payload.tendency);
   if (
     subjectEnteredRest(environment) ||
     !supportsTendencyResolutionRules(
       environment.context,
       environment.context.slice.chord,
-    ) ||
-    !targetChordAvailable(environment)
+    )
   )
     return decision(environment, "cancel", "altered-tone-context-ended");
 
@@ -737,7 +805,7 @@ export const STATEFUL_RULES = defineRuleGroup(
       "和弦七音通常同声部下行级进。经过 T–D43–T6 时，属七音可同声部上行至主和弦五音，与结构低音同向级进并避免重复主和弦三音。",
     group: "resolution",
     defaultSeverity: "warning",
-    requires: ["written-pitches", "chords"],
+    requires: ["written-pitches", "chords-or-complete-satb"],
     dependencyScope: "phrase",
     supportedExceptionContexts: ["same-harmony", "insufficient-context"],
     source: chordSeventhSource,

@@ -444,12 +444,12 @@ annotations {
     }]);
   });
 
-  it.each([
-    ["F major", 1],
-    ["C major", 0],
-  ])("preserves score-key continuity for a wrong-octave arrival after a declaration of %s", (key, count) => {
-    const material = localScore.replace("meter 4/4", `meter 4/4\nat 1:4 key ${key}`)
-      .replace("B3/2 E4/4", "B3/2 E5/4");
-    expect(tenorWarnings(withLocalChords(material))).toHaveLength(count);
+  it.each(["F major", "C major"])("retains the local C-major obligation across a printed declaration of %s", key => {
+    const material = localScore.replace("meter 4/4", `meter 4/4\nat 1:4 key ${key}`);
+    expect(tenorWarnings(withLocalChords(material))).toEqual([]);
+    const wrongOctave = withLocalChords(material.replace("B3/2 E4/4", "B3/2 E5/4"));
+    expect(tenorWarnings(wrongOctave)).toMatchObject([{
+      tick: 3 * wrongOctave.ppq, params: { targetTonic: "C" },
+    }]);
   });
 });

@@ -561,7 +561,7 @@ export function tenorLeapsToTonicThird(environment: ObligationEnvironment<Leadin
   const { context, obligation: { payload, openedAt } } = environment;
   const { previous, slice, rules, transitionFromPrevious } = context;
   if (payload.voiceId !== "tenor" || payload.targetMode !== "major" ||
-      !previous || !transitionFromPrevious?.contiguous || !transitionFromPrevious.sameKey) return false;
+      !previous || !transitionFromPrevious?.contiguous) return false;
 
   const key = { tonic: { step: payload.targetStep, alter: payload.targetAlter }, mode: payload.targetMode };
   const dominant = scaleDegreePitchClass(key, 5);
@@ -588,7 +588,7 @@ export function tenorLeapsToTonicThird(environment: ObligationEnvironment<Leadin
 
   return rules.slices({ overlapping: { fromTick: openedAt.tick, toTick: slice.tick } }).all(frame => {
     const note = frame.notes.tenor;
-    return !!note && spelledPitchEquals(note.pitch, tenor) && keyEquals(frame.key, slice.key) &&
+    return !!note && spelledPitchEquals(note.pitch, tenor) &&
       rootPositionMajorTriad(frame, dominant) && allowsWrittenLocalRole(rules, frame, key, 5);
   });
 }

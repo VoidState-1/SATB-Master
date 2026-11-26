@@ -7,13 +7,17 @@ import {
   diagnostic,
   noteEvidence,
 } from "../helpers/core";
-import { chordIdentityToneSpellings } from "../../../chordModel";
+import { chordIdentityToneSpellings, identityContainsWrittenPitchClass } from "../../../chordModel";
+import type { AnalysisSlice } from "../../analysis";
+import { matchesWrittenChord } from "../../facts/tendencyResolution";
+import { soundsCompleteWrittenChord } from "../../facts/writtenVoicing";
 import type { RuleDiagnostic } from "../../runtime";
 import { VOICE_ORDER } from "../../../project/voice";
 import {
   keyEquals,
   pitchClassEquals,
   scaleDegreePitchClass,
+  spelledPitchEquals,
   toMidi,
   type KeyLike,
 } from "../../../pitch";
@@ -27,7 +31,7 @@ import {
   resolvesPreparedDoubleAugmentedFourThree,
   resolvesAugmentedSixthHighToDominantSeventh,
 } from "./support/augmentedSixth";
-import { isMajorTonicSixFour, resolvesDoubleAugmentedFourThree } from "../../facts/dominantMotion";
+import { isMajorTonicSixFour, readWrittenDominantSeventh, resolvesDoubleAugmentedFourThree } from "../../facts/dominantMotion";
 
 function continuesInFrenchVoicing(
   context: HarmonyRuleContext, link: ConnectionView, key: KeyLike,
@@ -46,8 +50,68 @@ function continuesInFrenchVoicing(
   ));
 }
 
-export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
+function augmentedEndpoints(source: AnalysisSlice) {
+  const chord = source.chord;
+  if (chord?.identity.structure.kind !== "augmented-sixth") return;
+  const tones = chordIdentityToneSpellings(chord.identity);
+  const notes = activeNotes(source);
+  const lows = notes.filter(({ note }) => pitchClassEquals(note.pitch, tones[0]));
+  const highs = notes.filter(({ note }) => pitchClassEquals(note.pitch, tones.at(-1)!));
+  if (lows.length === 1 && highs.length === 1) return { low: lows[0], high: highs[0] };
+}
+
+// Gaps have no HarmonySpan. Inspect just the two voices at the actual edge,
+// leaving held endpoints and the function of the unlabelled sonority open.
+function unlabelledAugmentedSixthResolutions(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
+  for (const { previous: source, current: target, contiguous, sameKey } of context.sliceTransitions()) {
+    const chord = source.chord;
+    if (!contiguous || !sameKey || target.chord || chord?.identity.structure.kind !== "augmented-sixth" ||
+        crossesManualPhraseBoundary(context, source.tick, target.tick)) continue;
+    const ends = augmentedEndpoints(source);
+    if (!ends) continue;
+    const written = Object.values(source.notes);
+    if (source.completeSatb ? !soundsCompleteWrittenChord(chord.identity, written, source.notes.bass!) :
+        written.some(note => note.nonChordToneRole || !identityContainsWrittenPitchClass(chord.identity, note.pitch))) continue;
+    const { low, high } = ends;
+    const lowArrival = target.notes[low.voiceId], highArrival = target.notes[high.voiceId];
+    if (!lowArrival || !highArrival || lowArrival.nonChordToneRole || highArrival.nonChordToneRole) continue;
+    const reading = context.harmony.primaryInterpretation(chord);
+    if (reading.status === "ambiguous") continue;
+    const key = reading.status === "resolved" ? reading.value.localKey ?? source.key : source.key;
+    const dominant = scaleDegreePitchClass(key, 5);
+    const lowDelta = toMidi(lowArrival.pitch) - toMidi(low.note.pitch);
+    const highDelta = toMidi(highArrival.pitch) - toMidi(high.note.pitch);
+    const variant = chord.identity.structure.variant;
+    const auxiliaryBass = ((variant === "french" && key.mode === "minor") ||
+      (variant === "doubleAugmented43" && key.mode === "major")) && low.voiceId === "bass" &&
+      (lowDelta === 4 || (key.mode === "minor" && lowDelta === -8)) && pitchClassEquals(lowArrival.pitch, key.tonic) &&
+      (!target.completeSatb || matchesWrittenChord(target, key.tonic, key.mode));
+    const targetSeventh = highDelta === -1 && readWrittenDominantSeventh(target.notes);
+    const descendingSeventh = highDelta === -1 && pitchClassEquals(highArrival.pitch, scaleDegreePitchClass(key, 4)) &&
+      (!target.completeSatb || (targetSeventh && pitchClassEquals(targetSeventh.root, dominant)));
+    const wrongLow = !spelledPitchEquals(lowArrival.pitch, low.note.pitch) &&
+      !(lowDelta === -1 && pitchClassEquals(lowArrival.pitch, dominant)) && !auxiliaryBass;
+    const wrongHigh = !spelledPitchEquals(highArrival.pitch, high.note.pitch) &&
+      !(highDelta === 1 && pitchClassEquals(highArrival.pitch, dominant)) && !descendingSeventh;
+    if (!wrongLow && !wrongHigh) continue;
+    const failed = [
+      ...(wrongLow ? [{ ...low, arrival: lowArrival, label: "低端" }] : []),
+      ...(wrongHigh ? [{ ...high, arrival: highArrival, label: "高端" }] : []),
+    ];
+    diagnostics.push(diagnostic("resolution.augmented-sixth", target.tick, target.endTick,
+      failed.map(end => end.voiceId), failed.flatMap(end => [end.note, end.arrival]),
+      "增六端点未按倾向解决", failed.map(end => "增六" + end.label + "移至不符合解决方向的实写音高").join("，") + "。",
+      { chordIds: [chord.id], params: { lowDelta, highDelta },
+        evidence: [chordEvidence(chord), ...[low, high].flatMap((end, i) => [
+          noteEvidence(end.note, i ? "增六高端" : "增六低端"), noteEvidence(target.notes[end.voiceId]!, "后继音"),
+        ])], causeRefs: ["resolution.augmented-sixth|" + chord.id + "|" + target.tick] }));
+  }
+  return diagnostics;
+}
+
+export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
+  const diagnostics = unlabelledAugmentedSixthResolutions(context);
   for (const candidate of context.connections()) {
     const { connection, source, target, sourceBoundary: sourceSlice, targetBoundary: targetSlice } =
       candidate;
@@ -66,18 +130,9 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
     )
       continue;
 
-    const tones = chordIdentityToneSpellings(sourceChord.identity);
-    const sourceNotes = activeNotes(sourceSlice);
-    const lowCandidates = sourceNotes.filter(({ note }) =>
-      pitchClassEquals(note.pitch, tones[0]),
-    );
-    const highCandidates = sourceNotes.filter(({ note }) =>
-      pitchClassEquals(note.pitch, tones.at(-1)!),
-    );
-    // 两端音缺失或重复属于 D.13 的静态配置错误；本规则只在端点唯一时检查横向解决。
-    if (lowCandidates.length !== 1 || highCandidates.length !== 1) continue;
-    const low = lowCandidates[0];
-    const high = highCandidates[0];
+    const ends = augmentedEndpoints(sourceSlice);
+    if (!ends) continue;
+    const { low, high } = ends;
     const targetLow = targetSlice.notes[low.voiceId];
     const targetHigh = targetSlice.notes[high.voiceId];
     const targetResolution = context.harmony.primaryInterpretation(targetSpan);
@@ -143,7 +198,7 @@ export function augmentedSixthResolutionRule(context: HarmonyRuleContext) {
       ...(!lowResolves ? ["增六低端未下行半音到属音"] : []),
       ...(!highResolves ? ["增六高端未上行半音到属音"] : []),
     ];
-    const sourceAllNotes = sourceNotes.map(({ note }) => note);
+    const sourceAllNotes = activeNotes(sourceSlice).map(({ note }) => note);
     const targetAllNotes = activeNotes(targetSlice).map(({ note }) => note);
     const specificCause = `resolution.augmented-sixth|${connection.connectionKey}`;
     diagnostics.push(

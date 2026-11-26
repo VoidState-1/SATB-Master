@@ -341,11 +341,13 @@ function requirementSkips(
 ) {
   const skipped: SkippedRule[] = [];
   const chordCount = analysis.project.chordTrack.regions.length;
-  if (definition.requires.includes("chords") && chordCount === 0) {
+  const needsWrittenFallback = definition.requires.includes("chords-or-complete-satb");
+  if (chordCount === 0 && (definition.requires.includes("chords") ||
+      (needsWrittenFallback && !analysis.slices.some(slice => slice.completeSatb)))) {
     skipped.push({
       ruleId: definition.id,
       reason: "no-chords",
-      message: "和弦轨为空，缺少和弦上下文。",
+      message: needsWrittenFallback ? "和弦轨为空，且缺少完整的四声部实写切片。" : "和弦轨为空，缺少和弦上下文。",
       partial: false,
     });
     return skipped;

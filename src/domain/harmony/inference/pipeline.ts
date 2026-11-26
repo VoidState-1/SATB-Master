@@ -20,7 +20,9 @@ import type {
 import { createId } from "../../project/defaults";
 import { cloneProject } from "../../project/selectors";
 import { addChordRegion } from "../../editing";
-import { isWrittenStep, pitchClassEquals, writtenInterval } from "../../pitch";
+import { identityContainsWrittenPitchClass } from "../../chordModel";
+import { chordAtTick } from "../../chords";
+import { isWrittenStep, pitchClassEquals, spelledPitchEquals, writtenInterval } from "../../pitch";
 import { reconcileCadenceAnnotationStaleness } from "../../project/normalize";
 import { VOICE_ORDER } from "../../project/voice";
 import { buildMeasures, measureAtTick, ticksPerBeat } from "../../time";
@@ -247,6 +249,28 @@ function applySelectedChordRegions(
   return { next, appliedRegions };
 }
 
+// Candidate scoring may use a preparation that was subsequently left ambiguous.
+// A role belongs to the whole note, including its held portion before this region.
+function provesAppliedSuspension(
+  project: ProjectDocument, track: ProjectDocument["satbTracks"][number],
+  note: ProjectDocument["satbTracks"][number]["notes"][number],
+) {
+  const end = note.startTick + note.durationTicks;
+  const outside = project.chordTrack.regions.find(chord => chord.startTick < end &&
+    chord.startTick + chord.durationTicks > note.startTick && !identityContainsWrittenPitchClass(chord.identity, note.pitch));
+  if (!outside) return false;
+  const entry = Math.max(note.startTick, outside.startTick);
+  const preparation = chordAtTick(project, entry - 1);
+  const prepared = entry > note.startTick ? note : track.notes.find(n => n.startTick + n.durationTicks === entry);
+  const next = track.notes.find(n => n.startTick === end);
+  const arrival = chordAtTick(project, end);
+  if (!prepared || !preparation || !spelledPitchEquals(prepared.pitch, note.pitch) ||
+      !identityContainsWrittenPitchClass(preparation.identity, prepared.pitch) ||
+      !arrival || !next || !identityContainsWrittenPitchClass(arrival.identity, next.pitch)) return false;
+  const motion = writtenInterval(note.pitch, next.pitch);
+  return motion.diatonicSteps === -1 && motion.semitones < 0 && isWrittenStep(motion);
+}
+
 function writeAppliedNonChordToneRoles(
   next: ProjectDocument,
   appliedRegions: readonly SelectedChordRegion[],
@@ -275,6 +299,10 @@ function writeAppliedNonChordToneRoles(
         continue;
       }
       if (note.nonChordToneRole === role) continue;
+      if (role === "suspension" &&
+          !candidate.evidence.some(item => item.kind === "declared-nonchord-tone" &&
+            item.code === role && item.noteIds?.includes(noteId)) &&
+          !provesAppliedSuspension(next, track, note)) continue;
       note.nonChordToneRole = role;
       writtenNonChordToneRoleCount += 1;
     }

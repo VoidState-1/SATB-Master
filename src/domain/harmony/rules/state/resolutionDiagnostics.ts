@@ -1,4 +1,3 @@
-import { chordIdentityToneSpellings } from "../../../chordModel";
 import { formatPitchClass, toMidi } from "../../../pitch";
 import type { AnalysisNote } from "../../analysis";
 import type { DiagnosticEvidence, RuleDiagnostic } from "../../runtime";
@@ -101,11 +100,10 @@ export function seventhDiagnostic(
   const current = environment.context.slice.notes[payload.voiceId];
   const targetChord = environment.context.slice.chord;
   const writtenSixFour = decision.reason === "supertonic-seventh-leaps-to-six-four";
-  if (!source || !chord || !current || (!targetChord && !writtenSixFour)) return undefined;
-  const tones = chordIdentityToneSpellings(chord.identity);
+  if (!source || !current) return undefined;
   const resolution = toMidi(current.pitch) - payload.seventhMidi;
   let title = "七音未级进下行解决";
-  let message = `书写七音 ${formatPitchClass(tones[3])} 通常应以半音或全音级进下行解决。`;
+  let message = `书写七音 ${formatPitchClass(source.pitch)} 通常应以半音或全音级进下行解决。`;
   if (writtenSixFour) {
     title = "下属七和弦的七音上行三度";
     message = "进入属低音上的主四六音组时，原声部七音上行了三度。终止四六要求保持七音，经过主四六也不能这样跳进。";
@@ -128,16 +126,17 @@ export function seventhDiagnostic(
     current,
     title,
     message,
-    chordIds: targetChord ? [chord.id, targetChord.id] : [chord.id],
+    chordIds: [...(chord ? [chord.id] : []), ...(targetChord ? [targetChord.id] : [])],
     params: {
       resolutionSemitones: resolution,
       ...(targetChord && { targetChord: chordLabel(targetChord) }),
     },
     evidence: [
-      chordEvidence(chord),
+      ...(chord ? [chordEvidence(chord)] : Object.values(environment.context.rules.sliceAt(environment.obligation.openedAt.tick)?.notes ?? {})
+        .map(note => noteEvidence(note, "实写属七音组"))),
       noteEvidence(source, "和弦七音"),
-      ...(targetChord ? [chordEvidence(targetChord)] : Object.values(environment.context.slice.notes)
-        .map(note => noteEvidence(note, "实写四六音组"))),
+      ...(targetChord ? [chordEvidence(targetChord)] : writtenSixFour ? Object.values(environment.context.slice.notes)
+        .map(note => noteEvidence(note, "实写四六音组")) : []),
       noteEvidence(current, "后继音"),
     ],
   });
@@ -185,7 +184,7 @@ export function alteredToneDiagnostic(
   const sourceChord = openedSourceChord(environment);
   const current = environment.context.slice.notes[payload.voiceId];
   const targetChord = environment.context.slice.chord;
-  if (!source || !sourceChord || !current || !targetChord) return undefined;
+  if (!source || !sourceChord || !current) return undefined;
   const actualSemitones = toMidi(current.pitch) - payload.alteredMidi;
   return reportResolution(environment, decision, {
     ruleId: "resolution.altered-tone",
@@ -193,7 +192,7 @@ export function alteredToneDiagnostic(
     current,
     title: "变化倾向音未按标注方向解决",
     message: `${chordLabel(sourceChord)} 的变化构成音已标注为${payload.tendency === "up" ? "上行" : "下行"}倾向，应以半音解决到目标和弦音。`,
-    chordIds: [sourceChord.id, targetChord.id],
+    chordIds: targetChord ? [sourceChord.id, targetChord.id] : [sourceChord.id],
     params: {
       degree: payload.degree,
       tendency: payload.tendency,
@@ -202,7 +201,7 @@ export function alteredToneDiagnostic(
     evidence: [
       chordEvidence(sourceChord),
       noteEvidence(source, "变化倾向音"),
-      chordEvidence(targetChord),
+      ...(targetChord ? [chordEvidence(targetChord)] : []),
       noteEvidence(current, "后继音"),
     ],
   });

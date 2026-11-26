@@ -73,12 +73,19 @@ export function currentSpanId<Payload extends JsonValue>(
   return environment.context.rules.spanAt(environment.moment.tick)?.span.id;
 }
 
-export function leadingTargetUnchanged(
-  environment: ObligationEnvironment<LeadingTonePayload>,
-) {
-  const { sourceKeyStep, sourceKeyAlter, sourceKeyMode } = environment.obligation.payload;
-  const { tonic, mode } = environment.context.slice.key;
-  return tonic.step === sourceKeyStep && tonic.alter === sourceKeyAlter && mode === sourceKeyMode;
+/** A resolved local reading can bridge a printed signature change. A missing
+ * destination label alone says nothing about modulation in an unchanged signature. */
+export function tendencyCenterContinues<Payload extends JsonValue>(environment: ObligationEnvironment<Payload>) {
+  const { context, obligation } = environment;
+  const source = context.rules.sliceAt(obligation.openedAt.tick);
+  if (!source) return false;
+  const target = context.slice;
+  if (keyEquals(source.key, target.key)) return true;
+  const before = source.chord && context.rules.harmony.primaryInterpretation(source.chord);
+  const after = target.chord && context.rules.harmony.primaryInterpretation(target.chord);
+  const oldLocal = before?.status === "resolved" ? before.value.localKey : undefined;
+  const newLocal = after?.status === "resolved" ? after.value.localKey : undefined;
+  return keyEquals(oldLocal ?? source.key, newLocal ?? target.key);
 }
 
 function sameResolutionInterpretation(
@@ -107,7 +114,7 @@ export function sameLeadingToneContext(
   environment: ObligationEnvironment<LeadingTonePayload>,
 ) {
   if (
-    !leadingTargetUnchanged(environment) ||
+    !tendencyCenterContinues(environment) ||
     !environment.context.transitionFromPrevious?.contiguous
   )
     return false;
