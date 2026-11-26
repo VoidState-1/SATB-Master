@@ -22,6 +22,7 @@ import {
   severityLabel,
 } from "./ruleSettingsModel";
 import type { RuleSettingsProps } from "./types";
+import { TEACHING_PRESETS } from "../../domain/ruleProfile";
 
 type RuleSourceFilter = "all" | "builtin" | "external";
 type RuleSeverityFilter = "all" | HarmonyRuleSeverity;
@@ -126,6 +127,20 @@ export function RuleSettingsPane({
   return (
     <div className="rule-settings-content">
       <div className="rule-settings-toolbar">
+        <label htmlFor="teaching-preset">教学档位</label>
+        <select
+          id="teaching-preset"
+          value={props.teachingPreset ?? "custom"}
+          title="切换 K46 拍位、句尾切分、声部音域和导音解决四条规则"
+          onChange={event => {
+            const value = event.target.value;
+            if (value === "strict" || value === "textbook") props.onSetTeachingPreset(value);
+          }}
+        >
+          {!props.teachingPreset && <option value="custom" disabled>自定义</option>}
+          <option value="strict">{TEACHING_PRESETS.strict}</option>
+          <option value="textbook">{TEACHING_PRESETS.textbook}</option>
+        </select>
         <label className="settings-search">
           <Search aria-hidden="true" />
           <input

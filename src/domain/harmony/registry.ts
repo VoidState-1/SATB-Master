@@ -1,4 +1,5 @@
 import type { ProjectDocument } from "../project/types";
+import { resolveBuiltinRuleProfile } from "../ruleProfile";
 import {
   RuleScheduler,
   runRulesSynchronously,
@@ -21,16 +22,18 @@ export function createHarmonyRuleScheduler() {
 
 export function checkHarmony(
   project: ProjectDocument,
-  ruleSeverities: HarmonyRuleSeverities = defaultHarmonyRuleSeverities(),
-  configs: Partial<Record<HarmonyRuleId, RuleConfig>> = {},
-  exceptions: Partial<Record<HarmonyRuleId, RuleExceptionPolicy>> = {},
+  ruleSeverities?: HarmonyRuleSeverities,
+  configs?: Partial<Record<HarmonyRuleId, RuleConfig>>,
+  exceptions?: Partial<Record<HarmonyRuleId, RuleExceptionPolicy>>,
 ): HarmonyCheckResult {
+  // An explicit override is a standalone rule run. Otherwise use the saved project profile.
+  const profile = !ruleSeverities && !configs && !exceptions ? resolveBuiltinRuleProfile(project) : undefined;
   return runRulesSynchronously(
     BUILTIN_HARMONY_RULES,
     project,
-    ruleSeverities,
+    ruleSeverities ?? profile?.severities ?? defaultHarmonyRuleSeverities(),
     0,
-    configs,
-    exceptions,
+    configs ?? profile?.configs,
+    exceptions ?? profile?.exceptions,
   );
 }

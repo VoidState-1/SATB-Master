@@ -21,12 +21,14 @@ import {
   resetAllBuiltinRules,
   resetBuiltinRule,
   resolveBuiltinRuleProfile,
-  saveNewProjectRuleProfile,
+  applyTeachingPreset,
+  type TeachingPreset,
   setBuiltinRuleConfig,
   setBuiltinRuleException,
   setBuiltinRuleSeverity,
   upgradeBuiltinRuleProfileSnapshot,
 } from "../../domain/ruleProfile";
+import { saveNewProjectRuleProfile } from "../../services/newProjectRuleProfile";
 import { useExternalRuleLibrary } from "../../hooks/useExternalRuleLibrary";
 import {
   openRuleProfileFile,
@@ -378,6 +380,10 @@ export function useHarmonyController({
     [history, project],
   );
 
+  const setTeachingPreset = useCallback((preset: TeachingPreset) => {
+    history.commit(replaceProject(project, draft => applyTeachingPreset(draft, preset)));
+  }, [history, project]);
+
   const resetAllRules = useCallback(() => {
     history.commit(
       replaceProject(project, (draft) => {
@@ -523,6 +529,7 @@ export function useHarmonyController({
     setRuleSeverity,
     resetRule,
     resetAllRules,
+    setTeachingPreset,
     setRuleConfig,
     setRuleException,
     handleImportRuleProfile,

@@ -13,6 +13,9 @@ import {
 } from "./harmony/rules/types";
 import {
   createDefaultRuleProfile,
+  defaultVoiceRange,
+  defaultVoiceRanges,
+  VOICE_ORDER,
   type ProjectDocument,
   type RuleProfile,
   type SharedHarmonySettings,
@@ -25,6 +28,9 @@ import {
 } from "./harmony/external/api";
 import {
   MAX_RULE_CONFIG_ENTRIES,
+  CLOSED_PHRASE_SYNCOPATION,
+  EQUAL_K46_ACCENT,
+  INNER_LEADING_DESCENT,
   normalizeExceptionPolicy,
   normalizeRuleConfig,
   parseRuleConfig as parseRuleConfigMap,
@@ -39,7 +45,14 @@ import {
 
 export const PORTABLE_RULE_PROFILE_KIND = "satb-rule-profile";
 export const PORTABLE_RULE_PROFILE_VERSION = 2;
-const NEW_PROJECT_RULE_PROFILE_KEY = "satb-master-new-project-rule-profile-v1";
+export const TEACHING_PRESETS = { strict: "严格作业", textbook: "教材分析" } as const;
+export type TeachingPreset = keyof typeof TEACHING_PRESETS;
+
+const teachingOptions = [
+  ["cadence.cadential64-metric-position", EQUAL_K46_ACCENT],
+  ["rhythm.harmonic-syncopation", CLOSED_PHRASE_SYNCOPATION],
+  ["resolution.leading-tone", INNER_LEADING_DESCENT],
+] as const;
 
 export interface PortableRuleProfile {
   kind: typeof PORTABLE_RULE_PROFILE_KIND;
@@ -217,9 +230,7 @@ export interface ResolvedBuiltinRuleProfile {
 }
 
 function definitionOf(ruleId: HarmonyRuleId) {
-  const definition = HARMONY_RULE_DEFINITIONS.find(
-    (candidate) => candidate.id === ruleId,
-  );
+  const definition = HARMONY_RULE_DEFINITION_BY_ID.get(ruleId);
   if (!definition) throw new Error(`未知内置规则：${ruleId}`);
   return definition;
 }
@@ -367,9 +378,7 @@ export function resetBuiltinRule(
 ) {
   project.ruleProfile.builtin[ruleId] = defaultInstance(ruleId);
   if (ruleId === "voice.range") {
-    project.ruleProfile.shared.voiceRanges = structuredClone(
-      createDefaultRuleProfile().shared.voiceRanges,
-    );
+    project.ruleProfile.shared.voiceRanges = defaultVoiceRanges();
   }
 }
 
@@ -378,6 +387,32 @@ export function resetAllBuiltinRules(project: ProjectDocument) {
   project.ruleProfile.builtin = structuredClone(defaults.builtin);
   project.ruleProfile.shared = defaults.shared;
   project.ruleProfile.catalogRevision = defaults.catalogRevision;
+}
+
+/** Switch just the four teaching rules. The profile title and other instances belong to the project. */
+export function applyTeachingPreset(project: ProjectDocument, preset: TeachingPreset) {
+  const textbook = preset === "textbook";
+  for (const [id, option] of teachingOptions) {
+    resetBuiltinRule(project, id);
+    setBuiltinRuleConfig(project, id, { [option.key]: textbook });
+  }
+  resetBuiltinRule(project, "voice.range");
+  if (textbook) setBuiltinRuleSeverity(project, "voice.range", "suggestion");
+}
+
+export function currentTeachingPreset(profile: ResolvedBuiltinRuleProfile): TeachingPreset | undefined {
+  for (const voice of VOICE_ORDER) {
+    const actual = profile.shared.voiceRanges[voice];
+    const range = defaultVoiceRange(voice);
+    if (actual.minMidi !== range.minMidi || actual.maxMidi !== range.maxMidi) return;
+  }
+  const severity = profile.severities["voice.range"];
+  if (severity !== "warning" && severity !== "suggestion") return;
+  const textbook = severity === "suggestion";
+  if (teachingOptions.every(([id, option]) =>
+    profile.severities[id] === definitionOf(id).defaultSeverity &&
+    Object.keys(profile.exceptions[id]).length === 0 &&
+    profile.configs[id][option.key] === textbook)) return textbook ? "textbook" : "strict";
 }
 
 export function setSharedVoiceRange(
@@ -578,23 +613,4 @@ export function prepareRuleProfileImport(
       repairedSettings,
     },
   };
-}
-
-export function saveNewProjectRuleProfile(profile: RuleProfile) {
-  localStorage.setItem(
-    NEW_PROJECT_RULE_PROFILE_KEY,
-    JSON.stringify(createPortableRuleProfile(profile)),
-  );
-}
-
-export function loadNewProjectRuleProfile(): RuleProfile | undefined {
-  const raw = localStorage.getItem(NEW_PROJECT_RULE_PROFILE_KEY);
-  if (!raw) return undefined;
-  try {
-    const defaults = createDefaultRuleProfile();
-    return prepareRuleProfileImport(JSON.parse(raw), defaults).profile;
-  } catch {
-    // 损坏的应用级模板不能阻止编辑器启动；保留数据，供用户后续覆盖。
-    return undefined;
-  }
 }

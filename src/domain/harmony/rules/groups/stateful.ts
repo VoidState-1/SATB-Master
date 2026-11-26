@@ -14,6 +14,8 @@ import type {
 import type { VoiceId } from "../../../project/types";
 import { readWrittenDominantSeventh } from "../../facts/dominantMotion";
 import { readCompleteWrittenChord } from "../../facts/writtenVoicing";
+import { writtenSeventhChangesVoice } from "../state/writtenSeventh";
+import { INNER_LEADING_DESCENT } from "../configSchema";
 import { sameChordIdentityWithoutBass, type AnalysisNote } from "../../analysis";
 import { keyEquals, isWrittenStep, pitchClassEquals, scaleDegreePitchClass, spelledPitchEquals, toMidi, writtenInterval, type SpelledPitchClass } from "../../../pitch";
 import {
@@ -486,12 +488,16 @@ function unlabelledTendencyLanding(
 function seventhTransition(
   environment: ObligationEnvironment<SeventhPayload>,
 ): ObligationDecision | undefined {
+  if (crossesManualPhraseBoundary(environment.context.rules, environment.obligation.openedAt.tick, environment.moment.tick))
+    return decision(environment, "cancel", "written-line-interrupted");
   if (!tendencyCenterContinues(environment)) return decision(environment, "cancel", "tonal-center-changed");
   if (!environment.context.slice.chord && seventhLeapsToUnlabelledSixFour(
     environment.context, environment.obligation.payload.voiceId,
     environment.obligation.openedBy.noteIds?.[0], environment.obligation.openedAt.tick,
   )) return decision(environment, "violate", "supertonic-seventh-leaps-to-six-four");
   if (!environment.context.slice.chord) {
+    if (writtenSeventhChangesVoice(environment.context, environment.obligation.payload.voiceId))
+      return decision(environment, "cancel", "chord-seventh-transferred");
     if (chordSeventhResolves(environment)) return decision(environment, "resolve", "chord-seventh-resolved");
     return unlabelledTendencyLanding(environment, "seventh");
   }
@@ -774,6 +780,7 @@ export function secondaryDominantStateStep(
 export const STATEFUL_RULES = defineRuleGroup(
   defineObligationRule({
     id: "resolution.leading-tone",
+    options: [INNER_LEADING_DESCENT],
     catalogNumber: "E.1",
     label: "导音未解决",
     description:

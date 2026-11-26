@@ -85,7 +85,8 @@ import {
 } from "../domain/harmony";
 import { createEmptyProject, getAllPlayableTracks, type ProjectDocument } from "../domain/project";
 import { buildMeasures, formatPosition } from "../domain/time";
-import { loadNewProjectRuleProfile } from "../domain/ruleProfile";
+import { currentTeachingPreset } from "../domain/ruleProfile";
+import { loadNewProjectRuleProfile } from "../services/newProjectRuleProfile";
 import {
   DEFAULT_PANEL_SIZES,
   PANEL_RESIZER_SIZE,
@@ -442,6 +443,7 @@ function AppShell() {
     setRuleSeverity,
     resetRule,
     resetAllRules,
+    setTeachingPreset,
     setRuleConfig,
     setRuleException,
     handleImportRuleProfile,
@@ -1293,6 +1295,8 @@ function AppShell() {
           onResetBinding={shortcutSettings.resetBinding}
           onResetAll={shortcutSettings.resetAllBindings}
           profileTitle={project.ruleProfile.title}
+          teachingPreset={currentTeachingPreset(resolvedRuleProfile)}
+          onSetTeachingPreset={setTeachingPreset}
           ruleHitCounts={ruleHitCounts}
           ruleSeverities={resolvedRuleProfile.severities}
           ruleConfigs={resolvedRuleProfile.configs}

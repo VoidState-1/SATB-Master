@@ -17,6 +17,15 @@ import {
 
 export const MAX_RULE_CONFIG_ENTRIES = 64;
 
+/** Optional teaching policies are stored in ordinary rule instances (profile v2). */
+export const EQUAL_K46_ACCENT = teachingOption("allow-equal-accent", "允许 K46 与后继和弦等强", "K46 仍须位于强拍或次强拍。");
+export const CLOSED_PHRASE_SYNCOPATION = teachingOption("check-closed-ending", "检查完整句尾切分", "和声延续至工程末尾或已标明的句界时，也检查它是否跨过更强拍位。");
+export const INNER_LEADING_DESCENT = teachingOption("allow-inner-descent", "允许内声部导音下行至主和弦五音", "属和声进入主三和弦时，允许女低或男高导音下行大三度至五音。");
+
+function teachingOption(key: string, label: string, description: string) {
+  return { kind: "boolean", key, label, description, section: "general", required: false, defaultValue: false } as const;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

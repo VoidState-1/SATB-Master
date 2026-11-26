@@ -199,7 +199,7 @@ export const VOICE_RULES = defineRuleGroup(
     description:
       "检查 SATB 各声部音符是否落在人声合唱的常规建议音域之内。",
     rationale:
-      "四部和声源自人声合唱织体。各声部音域受人声生理发声极限与最佳共鸣区限制（女高 c1-a2、女低 g-d2、男高 c-a1、男低 E-d1）。超出常规音域会导致演唱困难、音色干瘪或发声失衡；低音过低易模糊浑浊，高音过高则破坏织体平衡。",
+      "四部合唱作业按各声部的建议音域检查演唱可行性，上下界均包含在范围内。教材分析沿用相同音域，将越界音标为建议，供读谱时核对。",
     group: "voice",
     defaultSeverity: "warning",
     requires: ["written-pitches"],

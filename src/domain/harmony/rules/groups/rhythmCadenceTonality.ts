@@ -21,24 +21,23 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { CadenceView, SpanView } from "../context/views";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
+import { CLOSED_PHRASE_SYNCOPATION, EQUAL_K46_ACCENT } from "../configSchema";
+import type { RuleConfig } from "../types";
 
 function spanInterpretation(context: HarmonyRuleContext, span: HarmonySpan) {
   const resolution = context.harmony.primaryInterpretation(span);
   return resolution.status === "resolved" ? resolution.value : undefined;
 }
 
-export function harmonicSyncopationRule(context: HarmonyRuleContext) {
+export function harmonicSyncopationRule(context: HarmonyRuleContext, config: RuleConfig) {
   const diagnostics: RuleDiagnostic[] = [];
   for (const current of context.spans()) {
     const { span } = current;
     const neighborhood = context.spanNeighborhood(current);
-    if (
-      !neighborhood.previous ||
-      !neighborhood.next ||
-      neighborhood.previous.span.toTick !== span.fromTick ||
-      span.toTick !== neighborhood.next.span.fromTick
-    )
-      continue;
+    if (neighborhood.previous?.span.toTick !== span.fromTick) continue;
+    const closedEnding = config[CLOSED_PHRASE_SYNCOPATION.key] === true &&
+      (span.toTick === context.analysis.project.lengthTicks || context.boundaryAt(span.toTick)?.source === "manual");
+    if (neighborhood.next?.span.fromTick !== span.toTick && !closedEnding) continue;
     if (!span.semantics || span.semantics.pedalContext || span.semantics.cadenceRole)
       continue;
 
@@ -72,7 +71,7 @@ export function harmonicSyncopationRule(context: HarmonyRuleContext) {
   return diagnostics;
 }
 
-export function cadential64MetricPositionRule(context: HarmonyRuleContext) {
+export function cadential64MetricPositionRule(context: HarmonyRuleContext, config: RuleConfig) {
   const diagnostics: RuleDiagnostic[] = [];
   for (const source of context.spans()) {
     const interpretation = spanInterpretation(context, source.span);
@@ -92,11 +91,9 @@ export function cadential64MetricPositionRule(context: HarmonyRuleContext) {
       targetPosition.confidence === "ambiguous"
     )
       continue;
-    if (
-      sourcePosition.level >= 2 &&
-      context.metric.compare(sourcePosition, targetPosition) === "stronger"
-    )
-      continue;
+    const comparison = context.metric.compare(sourcePosition, targetPosition);
+    const allowEqual = config[EQUAL_K46_ACCENT.key] === true;
+    if (sourcePosition.level >= 2 && (comparison === "stronger" || (allowEqual && comparison === "equal"))) continue;
     diagnostics.push(
       context.diagnostics.forConnection({
         ruleId: "cadence.cadential64-metric-position",
@@ -104,7 +101,9 @@ export function cadential64MetricPositionRule(context: HarmonyRuleContext) {
         failureTick: source.span.fromTick,
         endTick: source.span.toTick,
         title: "K46 拍位不当",
-        message: "终止四六应位于强拍或相对强位置，并比后继属和弦更强。",
+        message: allowEqual
+          ? "终止四六应位于强拍或次强拍，且至少与后继和弦等强。"
+          : "终止四六应位于强拍或次强拍，并比后继和弦更强。",
         params: {
           sourceStrength: sourcePosition.level,
           targetStrength: targetPosition.level,
@@ -564,6 +563,7 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     rationale:
       "和声节奏（Harmonic Rhythm）与节拍重音应当保持协调。如果在新和弦于弱拍进入并跨越保持至强拍，会导致和声变换重音与节拍重音错位，产生“和声切分”。这会削弱小节强拍的节拍重音感，在正规和声练习中应予避免。",
     group: "rhythm",
+    options: [CLOSED_PHRASE_SYNCOPATION],
     defaultSeverity: "warning",
     requires: ["chords", "semantics", "meter"],
     dependencyScope: "phrase",
@@ -574,10 +574,11 @@ export const RHYTHM_CADENCE_TONALITY_RULES = defineRuleGroup(
     catalogNumber: "J.2",
     label: "K46 拍位不当",
     description:
-      "检查终止四六和弦（K46）是否位于比后继属和弦更强的节拍位置。",
+      "检查 K46 的起拍强度以及它与后继和弦的强弱关系。",
     rationale:
-      "终止四六作为属低音上的重拍双重挂留和弦，其本质是不协和的紧张重音。因此在节拍上，K46 必须处于比它所解决的目标属和弦（Ⅴ或Ⅴ7）更强或至少同等的节拍位置（如强拍对弱拍、次强拍对弱拍），绝不能置于比属和弦更弱的位置。",
+      "终止四六在属低音上形成重音。严格作业要求 K46 位于强拍或次强拍，并强于后继和弦。教材分析允许两个和弦分别落在等强的强拍或次强拍。",
     group: "cadence",
+    options: [EQUAL_K46_ACCENT],
     defaultSeverity: "warning",
     requires: ["chords", "semantics", "meter"],
     dependencyScope: "phrase",

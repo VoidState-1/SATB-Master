@@ -7,9 +7,11 @@ import {
   HARMONY_RULE_CATALOG_REVISION,
   HARMONY_RULE_DEFINITIONS,
 } from "./harmony/rules/catalog";
-import { createDefaultRuleProfile } from "./project";
+import { createDefaultRuleProfile, createEmptyProject, migrateProject } from "./project";
 import {
   createPortableRuleProfile,
+  applyTeachingPreset,
+  currentTeachingPreset,
   parsePortableRuleProfile,
   prepareRuleProfileImport,
   resetAllBuiltinRules,
@@ -62,6 +64,38 @@ function installedPackage(): InstalledExternalRulePackage {
 }
 
 describe("规则配置档案", () => {
+  it("旧 v3 工程与 v2 便携档案缺少教学字段时回退到严格作业", () => {
+    const project = createEmptyProject();
+    for (const id of ["rhythm.harmonic-syncopation", "cadence.cadential64-metric-position", "resolution.leading-tone"]) {
+      project.ruleProfile.builtin[id].config = {};
+    }
+    const loaded = migrateProject(JSON.parse(JSON.stringify(project)))!;
+    expect(loaded.schemaVersion).toBe(3);
+    expect(currentTeachingPreset(resolveBuiltinRuleProfile(loaded))).toBe("strict");
+    const portable = createPortableRuleProfile(project.ruleProfile);
+    portable.builtin = structuredClone(project.ruleProfile.builtin);
+    const imported = prepareRuleProfileImport(parsePortableRuleProfile(portable), loaded.ruleProfile);
+    expect(imported.report.repairedSettings).toEqual([]);
+    expect(currentTeachingPreset(resolveBuiltinRuleProfile({ ...loaded, ruleProfile: imported.profile }))).toBe("strict");
+  });
+
+  it("教材档保存、便携导入及切回严格档只改变四条教学规则", () => {
+    const project = createEmptyProject();
+    setBuiltinRuleSeverity(project, "melody.large-leap", "off");
+    project.ruleProfile.builtin["future.rule"] = structuredClone(project.ruleProfile.builtin["voice.range"]);
+    const strict = structuredClone(project.ruleProfile);
+    applyTeachingPreset(project, "textbook");
+    const portable = parsePortableRuleProfile(JSON.parse(JSON.stringify(createPortableRuleProfile(project.ruleProfile))));
+    const imported = prepareRuleProfileImport(portable, createDefaultRuleProfile());
+    expect(imported.report.repairedSettings).toEqual([]);
+    expect(currentTeachingPreset(resolveBuiltinRuleProfile({ ...project, ruleProfile: imported.profile }))).toBe("textbook");
+    const saved = migrateProject(JSON.parse(JSON.stringify(project)))!;
+    expect(currentTeachingPreset(resolveBuiltinRuleProfile(saved))).toBe("textbook");
+    saved.ruleProfile.shared.voiceRanges.soprano.maxMidi--;
+    expect(currentTeachingPreset(resolveBuiltinRuleProfile(saved))).toBeUndefined();
+    applyTeachingPreset(project, "strict");
+    expect(project.ruleProfile).toEqual(strict);
+  });
   it("新工程保存完整目录快照和每条规则的默认严重程度", () => {
     const profile = createDefaultRuleProfile();
     expect(profile.profileVersion).toBe(2);

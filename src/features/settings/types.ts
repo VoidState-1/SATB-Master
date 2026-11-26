@@ -10,6 +10,7 @@ import type {
   RuleExceptionPolicy,
 } from "../../domain/harmony";
 import type { RuleProfile } from "../../domain/project";
+import type { TeachingPreset } from "../../domain/ruleProfile";
 import type {
   ShortcutBindings,
   ShortcutCommandId,
@@ -22,6 +23,8 @@ export interface SettingsDialogProps {
   onResetBinding(commandId: ShortcutCommandId): void;
   onResetAll(): void;
   profileTitle: string;
+  teachingPreset: TeachingPreset | undefined;
+  onSetTeachingPreset(preset: TeachingPreset): void;
   ruleHitCounts: Record<string, number>;
   ruleSeverities: HarmonyRuleSeverities;
   ruleConfigs: Partial<Record<HarmonyRuleId, RuleConfig>>;
@@ -88,6 +91,8 @@ export interface SettingsDialogProps {
 export type RuleSettingsProps = Pick<
   SettingsDialogProps,
   | "profileTitle"
+  | "teachingPreset"
+  | "onSetTeachingPreset"
   | "ruleHitCounts"
   | "ruleSeverities"
   | "ruleConfigs"
