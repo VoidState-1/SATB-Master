@@ -23,6 +23,7 @@ export interface PhraseEvidence {
     | "long-note-release"
     | "coordinated-breath"
     | "cadential-restart"
+    | "articulated-release"
     | "periodic-opening-return"
     | "stable-harmony"
     | "cadential-connection"
@@ -86,7 +87,24 @@ export type PhraseStructureTemplate =
       readonly boundaries: readonly PhraseBoundaryCandidate[];
     };
 
+/** First failing guard during the event scan, before template selection. */
+export interface PhraseEventRejection {
+  readonly tick: number;
+  readonly reason:
+    | "outside-effective-range"
+    | "effective-opening"
+    | "established-short-release"
+    | "uninterrupted-sequence"
+    | "detached-deception"
+    | "pause-without-closure"
+    | "off-grid-without-articulation"
+    | "continuous-harmony"
+    | "nonpositive-score";
+  readonly score?: number;
+}
+
 export interface PhraseAnalysis {
+  readonly eventRejections?: readonly PhraseEventRejection[];
   readonly boundaries: readonly PhraseBoundary[];
   readonly candidates: readonly PhraseBoundaryCandidate[];
   readonly segments: readonly PhraseSegment[];
@@ -94,6 +112,8 @@ export interface PhraseAnalysis {
 }
 
 export interface PhraseAnalysisOptions {
+  /** 记录事件候选首次触发的拒绝原因，已进入模板竞争的候选见 candidates。 */
+  readonly includeEventRejections?: boolean;
   /** 实时分析只读取工程中已保存的边界，推导流程才开启候选扫描。 */
   readonly generateCandidates?: boolean;
   /** 将高置信度的自动边界合并为本次分析使用的结构边界。 */

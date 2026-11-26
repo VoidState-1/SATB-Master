@@ -98,6 +98,23 @@ function blindPhraseAnalysis(score: string) {
   return buildHarmonyAnalysis(applied.project);
 }
 
+describe("乐句事件候选的拒绝记录", () => {
+  it("按 tick 记录首次拒绝原因，保留候选、模板与句界", () => {
+    const project = passingSixFourProject();
+    const options = { includeInferredBoundaries: true };
+    const ordinary = analyzePhrases(project, options);
+    const { eventRejections, ...observed } = analyzePhrases(project, { ...options, includeEventRejections: true });
+    expect(observed).toEqual(ordinary);
+    expect(eventRejections).toContainEqual({ tick: 0, reason: "outside-effective-range" });
+    expect(eventRejections).toContainEqual(expect.objectContaining({
+      reason: "continuous-harmony", score: expect.any(Number),
+    }));
+    const ticks = eventRejections!.map(item => item.tick);
+    expect(ticks).toEqual([...new Set(ticks)].sort((left, right) => left - right));
+    expect(ordinary.candidates.every(item => !ticks.includes(item.tick))).toBe(true);
+  });
+});
+
 describe("盲推规整乐段的属和弦中点", () => {
   const revoicedDominant = ["D5/2. B4/4", "G4/2. D4/4", "B3/2. G3/4", "G2/2. G2/4"] as const;
 

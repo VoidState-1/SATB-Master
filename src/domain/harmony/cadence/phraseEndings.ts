@@ -30,6 +30,22 @@ import type { MetricPosition } from "../../rhythm/metric";
 
 type MeasureFor = (tick: number) => MeasureInfo | undefined;
 
+/** A held VI can outlive the first clause when the melody and another
+ * upper part leave their arrival notes together over the same bass. */
+export function releasesDeceptiveArrival(onset: AnalysisSlice | undefined, restart: AnalysisSlice) {
+  const chord = onset?.chord;
+  if (!chord || !onset.completeSatb || !restart.completeSatb || !onset.notes.bass ||
+      !onset.notes.soprano || !restart.notes.soprano || !restart.notes.bass ||
+      onset.notes.bass.id !== restart.notes.bass.id || chordIdentityInversion(chord.identity) !== 0 ||
+      !pitchClassEquals(onset.notes.bass.pitch, chord.identity.root)) return false;
+  const reading = tonalReading(chord.semantics, onset.key).interpretation;
+  return reading?.degree === 6 && !reading.degreeAlteration && !reading.appliedTarget &&
+    onset.notes.soprano.startTick === onset.tick && onset.notes.soprano.startTick + onset.notes.soprano.durationTicks === restart.tick &&
+    restart.notes.soprano.startTick === restart.tick && !spelledPitchEquals(onset.notes.soprano.pitch, restart.notes.soprano.pitch) &&
+    (["alto", "tenor"] as const).some(voice => onset.notes[voice]?.startTick === onset.tick &&
+      onset.tick + onset.notes[voice]!.durationTicks === restart.tick && restart.notes[voice]?.startTick === restart.tick);
+}
+
 export function bassStepsUpToSubmediant(before: AnalysisSlice, arrival: AnalysisSlice) {
   if (!before.notes.bass || !arrival.notes.bass) return false;
   const bass = writtenInterval(before.notes.bass.pitch, arrival.notes.bass.pitch);

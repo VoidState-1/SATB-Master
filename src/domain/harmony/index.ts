@@ -31,6 +31,7 @@ export type {
   PhraseBoundaryCandidate,
   PhraseConfidence,
   PhraseEvidence,
+  PhraseEventRejection,
   PhraseSegment,
   PhraseStructureTemplate,
   PhraseSupport,

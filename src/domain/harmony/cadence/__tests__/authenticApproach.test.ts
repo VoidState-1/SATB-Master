@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { compileScoreText } from "../../../scoreText";
 import { buildHarmonyAnalysis } from "../../analysis";
 import { addCadenceAnnotation } from "../../../editing";
+import { dominantApproach } from "../approach";
+import { factsFor } from "../context";
+import { cadenceInputs } from "../projectEvidence";
 import { annotationFromCadenceCandidate } from "../model";
 
 const score = `satb 1
@@ -72,6 +75,16 @@ bars 1..2 {
  B: | F#2/2. | B2/2. |
  H: | K46/2 V7/8 r/8 | i/2. |
 }`;
+
+it("属准备回溯可以单独读取 K46，并在禁止纳入的边界前停止", () => {
+  const { project } = compileScoreText(auxiliary);
+  const inputs = cadenceInputs(project);
+  const facts = inputs.harmonySpans.map(span => factsFor(inputs, span));
+  const dominant = facts.findIndex(fact => fact.isDominant && !fact.isCadential64);
+  expect(dominant).toBe(1);
+  expect(dominantApproach(facts, dominant).path).toEqual([facts[0], facts[1]]);
+  expect(dominantApproach(facts, dominant, undefined, fact => !fact.isCadential64).path).toEqual([facts[1]]);
+});
 
 const revoiced = `satb 1
 key C major

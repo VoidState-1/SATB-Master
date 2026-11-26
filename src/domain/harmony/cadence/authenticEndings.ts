@@ -95,8 +95,16 @@ function writtenArrival(before: AnalysisSlice, dominant: ChordIdentity, onset: A
         (voice !== "soprano" && endOf(from) === onset.tick &&
           leadingToneDescendsToTonicFifth(from.pitch, to.pitch, leading, fifth));
     }
-    return !pitchClassEquals(from.pitch, seventh) || resolvesInVoice(before, onset, voice, third, -1);
+    return !seventh || !pitchClassEquals(from.pitch, seventh) || resolvesInVoice(before, onset, voice, third, -1);
   });
+}
+
+export function hasWrittenAuthenticAnchor(dominant: CadenceSpanFacts, tonic: CadenceSpanFacts, slices: readonly AnalysisSlice[]) {
+  const source = ordinaryRootChord(dominant, 5, "dominant7") ?? ordinaryRootChord(dominant, 5, "major");
+  const landing = ordinaryRootChord(tonic, 1, tonic.key.mode);
+  const before = slices[dominant.span.sliceIndices.at(-1)!], onset = tonic.boundarySlice;
+  return !!source && !!landing && !!before && !!onset && before.endTick === onset.tick &&
+    writtenArrival(before, source, onset, landing);
 }
 
 function hasDecorationBass(

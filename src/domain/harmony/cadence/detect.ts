@@ -2,30 +2,25 @@ import {
   chordIdentityInversion,
   chordIdentityToneSpellings,
   chordStructureQuality,
-  type FunctionalFamily,
   type KeyReference,
 } from "../../chordModel";
-import { effectiveFunctionalDesignation } from "../../functionalHarmonyCatalog";
 import {
-  keyEquals,
   leadingTonePitchClass,
   pitchClassEquals,
   pitchClassValue,
   scaleDegreePitchClass,
 } from "../../pitch";
-import { buildMeasures, measureAtTick, ticksPerBeat, type MeasureInfo } from "../../time";
-import { buildMetricTimeline, compareMetricStrength, metricPositionAt } from "../../rhythm/metric";
-import { crossesTonalBoundary, tonalReading } from "../facts/localTonality";
-import { resolvesInVoice } from "../facts/tendencyResolution";
-import { VOICE_ORDER } from "../../project/voice";
+import { ticksPerBeat, type MeasureInfo } from "../../time";
+import { compareMetricStrength, type metricPositionAt } from "../../rhythm/metric";
+import { crossesTonalBoundary } from "../facts/localTonality";
 import { authenticBassFormula } from "./bassFormula";
 import { createSliceStructuralVoicingReader } from "../facts/writtenVoicing";
 import {
   closingTonicDecorationEvidence,
+  hasWrittenAuthenticAnchor,
   structuralCadentialArrival,
   structuralCadentialBass,
   structuralCadentialEvidence,
-  dominantNeighborEvidence,
   detachedAuthenticEvidence,
   detachedSparseTonicEvidence,
   dominantLandingGapEvidence,
@@ -38,24 +33,29 @@ import {
 import {
   continuesThroughParallelTonic,
   isWrittenAuxiliaryReturn,
+  releasesDeceptiveArrival,
   precedingDetachedDeception,
   articulatedEndingEvidence,
   dorianPlagalEnding,
   writtenDeceptiveClausula,
 } from "./phraseEndings";
 import type { AnalysisChord, AnalysisSlice, HarmonyAnalysis, HarmonySpan } from "../analysis";
-import { isCadential64Span } from "../rules/connector";
-import type { PhraseSegment } from "../phrase";
+import { clipHarmonySpan, spanEndpointSlice, writtenKeyAtTick } from "../facts/span";
 import {
-  clipHarmonySpan,
-  sliceWithinSpan,
-  type CadenceCandidate,
-  type CadenceConfidence,
-  type CadenceCompletion,
-  type CadenceEvidence,
-  type CadenceForm,
-  type CadenceKind,
-  type CadenceSpanFacts,
+  connectionIsValid, createDetectionContext, factsFor, isFifthDegreeDominant, isRootPosition,
+  predominant, resolvesLeadingTone, sameKey, writtenBassMatches,
+  type CadenceAnalysis, type CadenceDetectionContext,
+} from "./context";
+import { beginsInsideManualCut, dominantApproach, fullApproach, halfApproach, type DominantApproach } from "./approach";
+import type { PhraseSegment } from "../phrase";
+import type {
+  CadenceCandidate,
+  CadenceConfidence,
+  CadenceCompletion,
+  CadenceEvidence,
+  CadenceForm,
+  CadenceKind,
+  CadenceSpanFacts,
 } from "./model";
 
 const confidenceRank: Record<CadenceConfidence, number> = {
@@ -63,111 +63,6 @@ const confidenceRank: Record<CadenceConfidence, number> = {
   probable: 1,
   certain: 2,
 };
-
-function keyAtTick(analysis: Pick<HarmonyAnalysis, "project">, tick: number) {
-  return (
-    analysis.project.keyEvents
-      .filter((event) => event.tick <= tick)
-      .at(-1) ?? analysis.project.keyEvents[0]
-  );
-}
-
-function sameKey(left: KeyReference | undefined, right: KeyReference | undefined) {
-  return Boolean(left && right && keyEquals(left, right));
-}
-
-function representativeChord(
-  analysis: Pick<HarmonyAnalysis, "chordById">,
-  span: HarmonySpan,
-) {
-  return span.regionIds
-    .map((id) => analysis.chordById.get(id))
-    .find(Boolean);
-}
-
-function boundarySlice(
-  analysis: Pick<HarmonyAnalysis, "slices">,
-  span: HarmonySpan,
-) {
-  const first = analysis.slices[span.sliceIndices[0]];
-  return first && sliceWithinSpan(first, span);
-}
-
-function familyOf(
-  span: HarmonySpan,
-  chord: AnalysisChord | undefined,
-): FunctionalFamily | undefined {
-  if (!span.semantics || !chord) return undefined;
-  return effectiveFunctionalDesignation(
-    span.semantics,
-    chordStructureQuality(chord.identity),
-  )?.primaryFunction;
-}
-
-function factsFor(
-  analysis: Pick<HarmonyAnalysis, "project" | "chordById" | "slices">,
-  span: HarmonySpan,
-  readStructural?: ReturnType<typeof createSliceStructuralVoicingReader>,
-): CadenceSpanFacts {
-  const chord = representativeChord(analysis, span);
-  const slice = boundarySlice(analysis, span);
-  const writtenKey = keyAtTick(analysis, span.fromTick);
-  const { interpretation, confidence: semanticConfidence, key: localKey } = tonalReading(span.semantics, writtenKey);
-  const unavailable = !span.semantics || !chord || !interpretation;
-  const ambiguous =
-    span.status !== "complete" ||
-    semanticConfidence === "ambiguous" ||
-    semanticConfidence === "unknown" ||
-    Boolean(interpretation?.appliedTarget);
-  const family = ambiguous ? undefined : familyOf(span, chord);
-  const degree = ambiguous ? undefined : interpretation?.degree;
-  let releaseTick: number | undefined;
-  for (let index = span.sliceIndices.length - 1; index >= 0; index--) {
-    const slice = analysis.slices[span.sliceIndices[index]];
-    if (Object.keys(slice.notes).length) {
-      releaseTick = Math.min(span.toTick, slice.endTick);
-      break;
-    }
-  }
-  return {
-    span,
-    releaseTick,
-    key: localKey,
-    writtenKey,
-    hardBoundaryBefore: crossesTonalBoundary(analysis.project, span.fromTick - 1, span.fromTick),
-    chord,
-    boundarySlice: slice,
-    structuralArrival: slice?.chord && readStructural?.(slice.index, slice.chord.identity),
-    family,
-    degree,
-    isTonic: family === "tonic" && degree === 1,
-    isDominant: family === "dominant",
-    isSubdominant: family === "subdominant",
-    isCadential64: isCadential64Span(span),
-    isStable:
-      ambiguous || !family
-        ? undefined
-        : family === "tonic" || family === "subdominant" || family === "dominant",
-    interpretationStatus: unavailable
-      ? "unavailable"
-      : ambiguous
-        ? "ambiguous"
-        : "resolved",
-  };
-}
-
-function connectionIsValid(
-  previous: CadenceSpanFacts,
-  current: CadenceSpanFacts,
-) {
-  return (
-    previous.span.toTick === current.span.fromTick &&
-    sameKey(previous.key, current.key) &&
-    sameKey(previous.writtenKey, current.writtenKey) &&
-    previous.interpretationStatus === "resolved" &&
-    current.interpretationStatus === "resolved"
-  );
-}
 
 function scoreFor(kind: CadenceKind, phrase: PhraseSegment, evidence: readonly CadenceEvidence[]) {
   const base =
@@ -216,22 +111,12 @@ function hasBassFormula(
   );
 }
 
-function isFifthDegreeDominant(facts: CadenceSpanFacts) {
-  return facts.isDominant && facts.degree === 5 && facts.chord !== undefined &&
-    pitchClassEquals(facts.chord.identity.root, scaleDegreePitchClass(facts.key, 5));
-}
-
 function isDominantHalfEnding(facts: CadenceSpanFacts) {
   if (isFifthDegreeDominant(facts)) return true;
   if (!facts.isDominant || facts.degree !== 7 || !facts.chord) return false;
   const quality = chordStructureQuality(facts.chord.identity);
   return (quality === "diminished7" || quality === "halfDiminished7") &&
     (pitchClassValue(facts.key.tonic) - pitchClassValue(facts.chord.identity.root) + 12) % 12 === 1;
-}
-
-function writtenBassMatches(facts: CadenceSpanFacts) {
-  const bass = structuralCadentialBass(facts);
-  return bass && facts.chord && pitchClassEquals(bass.pitch, facts.chord.identity.bass);
 }
 
 function completionFor(
@@ -348,48 +233,11 @@ function spansForPhrase(
     if (!part) return [];
     if (part.toTick < span.toTick && phrase.endBoundary?.source !== "manual") {
       const following = analysis.slices[part.sliceIndices.at(-1)! + 1];
-      if (following?.tick !== part.toTick || following.attackVoiceIds.length !== 4) return [];
+      if (following?.tick !== part.toTick || (following.attackVoiceIds.length !== 4 &&
+          !releasesDeceptiveArrival(spanEndpointSlice(analysis.slices, part, "first"), following))) return [];
     }
     return [part];
   });
-}
-
-interface DominantApproach {
-  readonly path: readonly CadenceSpanFacts[];
-  readonly evidence: readonly CadenceEvidence[];
-}
-
-function dominantApproach(
-  facts: readonly CadenceSpanFacts[],
-  dominantIndex: number,
-  evidenceForGap?: (left: CadenceSpanFacts, right: CadenceSpanFacts) => CadenceEvidence | undefined,
-  canInclude?: (item: CadenceSpanFacts) => boolean,
-): DominantApproach {
-  let start = dominantIndex;
-  const evidence: CadenceEvidence[] = [];
-  while (start > 0) {
-    const left = facts[start - 1], right = facts[start];
-    if (canInclude?.(left) === false || (!isRootPosition(left) &&
-        !(writtenBassMatches(left) && writtenBassMatches(right) && !isRootPosition(right))) ||
-        !isFifthDegreeDominant(left) || !isFifthDegreeDominant(right)) break;
-    if (!connectionIsValid(left, right)) {
-      if (left.span.toTick >= right.span.fromTick || !sameKey(left.key, right.key) ||
-          left.interpretationStatus !== "resolved" || right.interpretationStatus !== "resolved") break;
-      const gap = evidenceForGap?.(left, right);
-      if (!gap) break;
-      evidence.unshift(gap);
-    }
-    start--;
-  }
-  const preparation = facts[start - 1];
-  if (preparation?.isCadential64 && canInclude?.(preparation) !== false &&
-      connectionIsValid(preparation, facts[start])) start--;
-  return { path: facts.slice(start, dominantIndex + 1), evidence };
-}
-
-function beginsInsideManualCut(phrase: PhraseSegment, item: CadenceSpanFacts) {
-  return phrase.startBoundary?.source === "manual" && item.span.fromTick === phrase.fromTick &&
-    !item.boundarySlice?.attackVoiceIds.length;
 }
 
 function followsTonicRevoicingRelease(
@@ -410,112 +258,10 @@ function followsTonicRevoicingRelease(
   return true;
 }
 
-function isRootPosition(facts: CadenceSpanFacts) {
-  return facts.chord !== undefined && chordIdentityInversion(facts.chord.identity) === 0;
-}
-
-function predominant(fact: CadenceSpanFacts | undefined): boolean {
-  return Boolean(fact?.isSubdominant && !fact.span.semantics?.cadenceRole &&
-    fact.degree !== undefined && [2, 4, 6].includes(fact.degree) && writtenBassMatches(fact));
-}
-
-function predominantRun(facts: readonly CadenceSpanFacts[], start: number, floor: number) {
-  let index = start;
-  while (index > 0 && predominant(facts[index - 1]) &&
-      facts[index - 1].degree === facts[index].degree &&
-      facts[index - 1].span.fromTick >= floor && connectionIsValid(facts[index - 1], facts[index])) index--;
-  return facts.slice(index, start + 1);
-}
-
-function halfApproach(
-  facts: readonly CadenceSpanFacts[], index: number,
-  { analysis, gapEvidence, writtenBeatAt, measureFor }: CadenceDetectionContext, phrase: PhraseSegment,
-): DominantApproach {
-  const validStart = (item: CadenceSpanFacts) => !beginsInsideManualCut(phrase, item);
-  const approach = dominantApproach(facts, index, gapEvidence, validStart);
-  const first = approach.path[0];
-  const previousIndex = index - approach.path.length;
-  const previous = facts[previousIndex];
-  const terminal = facts[index];
-  const beat = writtenBeatAt(first.span.fromTick);
-  if (!previous || !beat || first.isCadential64 || !isFifthDegreeDominant(first) || !validStart(previous)) return approach;
-  const applied = tonalReading(previous.span.semantics, previous.writtenKey).interpretation;
-  const lastApplied = analysis.slices[previous.span.sliceIndices.at(-1)!];
-  if (applied?.appliedTarget?.degree === 5 && applied.degree === 5 && previous.span.status === "complete" &&
-      sameKey(previous.writtenKey, first.writtenKey) && !first.hardBoundaryBefore &&
-      previous.span.toTick === first.span.fromTick && sameKey(first.key, previous.key) &&
-      previous.chord && first.chord && first.boundarySlice && isRootPosition(first) &&
-      pitchClassEquals(previous.chord.identity.root, scaleDegreePitchClass(first.key, 2)) &&
-      resolvesLeadingTone(lastApplied, first.boundarySlice, first.chord.identity.root)) {
-    const diatonic = facts[previousIndex - 1];
-    const preparation = diatonic && validStart(diatonic) && predominant(diatonic) && diatonic.chord &&
-      diatonic.span.toTick === previous.span.fromTick && sameKey(diatonic.key, previous.key) &&
-      pitchClassEquals(diatonic.chord.identity.root, previous.chord.identity.root) ? [diatonic, previous] : [previous];
-    return { path: [...preparation, ...approach.path], evidence: approach.evidence };
-  }
-  if (!connectionIsValid(previous, first)) return approach;
-  const bar = measureFor(first.span.fromTick);
-  const arrivalLength = terminal.span.toTick - first.span.fromTick;
-  if (previous.span.semantics?.cadenceRole === "pedal64") {
-    const anchor = facts[previousIndex - 1];
-    const heldBass = anchor?.boundarySlice?.notes.bass;
-    const middleBass = previous.boundarySlice?.notes.bass;
-    const returnBass = first.boundarySlice?.notes.bass;
-    if (anchor && validStart(anchor) && isFifthDegreeDominant(anchor) && isRootPosition(anchor) &&
-        connectionIsValid(anchor, previous) && heldBass && middleBass && returnBass &&
-        pitchClassEquals(heldBass.pitch, middleBass.pitch) && pitchClassEquals(middleBass.pitch, returnBass.pitch) &&
-        heldBass.pitch.octave === middleBass.pitch.octave && middleBass.pitch.octave === returnBass.pitch.octave) {
-      return { ...approach, path: [anchor, previous, ...approach.path] };
-    }
-  }
-  if (arrivalLength < beat || !isRootPosition(first) || !writtenBassMatches(first)) return approach;
-  const floor = Math.max(phrase.fromTick, (bar?.startTick ?? first.span.fromTick) -
-    (bar ? bar.endTick - bar.startTick : beat * 2));
-  if (predominant(previous) && previous.span.fromTick >= floor &&
-      (previous.degree !== 2 || isRootPosition(terminal) || arrivalLength <= 2 * beat))
-    return { ...approach, path: [...predominantRun(facts, previousIndex, floor).filter(validStart), ...approach.path] };
-  const startsRevoicedTonic = previous.isTonic && writtenBassMatches(previous) &&
-    (previousIndex > 0 && facts[previousIndex - 1].isTonic ||
-      previous.span.fromTick === measureFor(previous.span.fromTick)?.startTick);
-  if (startsRevoicedTonic && previous.span.toTick - previous.span.fromTick <= beat &&
-      arrivalLength >= 2 * beat && isRootPosition(terminal))
-    return { ...approach, path: [previous, ...approach.path] };
-  return approach;
-}
-
 function halfLandingTick(approach: DominantApproach) {
   const arrival = approach.path.find(fact => isFifthDegreeDominant(fact) &&
     isRootPosition(fact) && writtenBassMatches(fact)) ?? approach.path.at(-1)!;
   return arrival.span.fromTick;
-}
-
-function fullApproach(
-  facts: readonly CadenceSpanFacts[],
-  dominantIndex: number,
-  tonic: CadenceSpanFacts,
-  measure: ReturnType<typeof measureAtTick>,
-  approach: DominantApproach,
-) {
-  if (approach.evidence.length) return approach;
-  const first = approach.path[0];
-  const preparationIndex = dominantIndex - approach.path.length;
-  const subdominant = facts[preparationIndex];
-  if (measure && subdominant && predominant(subdominant) && isFifthDegreeDominant(first) &&
-      connectionIsValid(subdominant, first) && connectionIsValid(facts[dominantIndex], tonic)) {
-    const approachLength = tonic.span.fromTick - first.span.fromTick;
-    const prepLength = subdominant.span.toTick - subdominant.span.fromTick;
-    const withinCadentialBar = subdominant.span.fromTick >= measure.startTick &&
-      tonic.span.fromTick === measure.endTick && prepLength > approachLength;
-    const acrossCadentialBar = first.span.fromTick === measure.startTick &&
-      tonic.span.fromTick <= measure.endTick && prepLength > approachLength &&
-      prepLength <= (measure.endTick - measure.startTick) && isRootPosition(first) &&
-      subdominant.degree === 2;
-    if (withinCadentialBar || acrossCadentialBar) {
-      const floor = withinCadentialBar ? measure.startTick : subdominant.span.fromTick;
-      return { ...approach, path: [...predominantRun(facts, preparationIndex, floor), ...approach.path] };
-    }
-  }
-  return approach;
 }
 
 function authenticCadence(
@@ -597,7 +343,7 @@ function isAuthenticTailDominant(
 ) {
   if (!isFifthDegreeDominant(dominant)) return false;
   if (!localPlagalKey) return true;
-  const frame = slices[dominant.span.sliceIndices.at(-1)!];
+  const frame = spanEndpointSlice(slices, dominant.span, "last")!;
   const leading = leadingTonePitchClass(localPlagalKey);
   return frame && Object.values(frame.notes).some(note =>
     !note.nonChordToneRole && pitchClassEquals(note.pitch, leading));
@@ -606,7 +352,7 @@ function isAuthenticTailDominant(
 function hasAuthenticTailAnchor(
   analysis: Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById" | "slices" | "phraseSegments">,
   subdominant: CadenceSpanFacts,
-  measureFor: (tick: number) => ReturnType<typeof measureAtTick>,
+  measureFor: (tick: number) => MeasureInfo | undefined,
   localPlagalKey?: KeyReference,
 ) {
   const spans = analysis.harmonySpans;
@@ -769,7 +515,7 @@ function articulatedInteriorCadences(
         code: "metric-support" as const, value: "终止四六准备后，四声在强位明确落主并持续",
       } : undefined);
       if (!support || !completion) continue;
-      const path = evidence ? approach : fullApproach(facts, index - 1, ending, measureFor(previous.span.fromTick), approach);
+      const path = evidence ? approach : fullApproach(facts, index - 1, ending, context, phrase, approach);
       const afterRevoicing = facts[index + 2];
       const revoicing = prepared && following.isTonic && !isRootPosition(following) &&
         following.chord && chordIdentityInversion(following.chord.identity) === 1 &&
@@ -802,7 +548,7 @@ function writtenEndingRest(
 ): CadenceEvidence | undefined {
   const release = ending.span.toTick;
   const beat = writtenBeatAt(release - 1);
-  const frame = slices[ending.span.sliceIndices.at(-1)!];
+  const frame = spanEndpointSlice(slices, ending.span, "last")!;
   if (!beat || !frame || restart - release < beat / 2 ||
       release - ending.span.fromTick < beat) return;
   const notes = Object.values(frame.notes);
@@ -837,30 +583,6 @@ function halfEndingContinuesThroughPivot(
   const pivot = factsFor(analysis, next), onward = factsFor(analysis, after);
   return pivot.isTonic && isFifthDegreeDominant(onward) &&
     continuesThroughParallelTonic(previous, terminal, pivot, onward, analysis.slices, writtenBeatAt);
-}
-
-type CadenceAnalysis = Pick<HarmonyAnalysis, "project" | "harmonySpans" | "chordById" | "slices" | "phraseSegments">;
-
-interface CadenceDetectionContext {
-  readonly analysis: CadenceAnalysis;
-  readonly measureFor: (tick: number) => MeasureInfo | undefined;
-  readonly writtenBeatAt: (tick: number) => number | undefined;
-  readonly metricAt: (tick: number) => ReturnType<typeof metricPositionAt>;
-  readonly gapEvidence: (left: CadenceSpanFacts, right: CadenceSpanFacts) => CadenceEvidence | undefined;
-}
-
-function createDetectionContext(analysis: CadenceAnalysis): CadenceDetectionContext {
-  let measures: ReturnType<typeof buildMeasures> | undefined;
-  const measureFor = (tick: number) => measureAtTick(measures ??= buildMeasures(analysis.project), tick);
-  const writtenBeatAt = (tick: number) => {
-    const measure = measureFor(tick);
-    return measure && ticksPerBeat(analysis.project.ppq, measure.denominator);
-  };
-  let metricTimeline: ReturnType<typeof buildMetricTimeline> | undefined;
-  const metricAt = (tick: number) => metricPositionAt(metricTimeline ??= buildMetricTimeline(analysis.project), tick);
-  const gapEvidence = (left: CadenceSpanFacts, right: CadenceSpanFacts) =>
-    dominantNeighborEvidence(left, right, analysis.slices, metricAt);
-  return { analysis, measureFor, writtenBeatAt, metricAt, gapEvidence };
 }
 
 interface PhraseEnding {
@@ -1015,7 +737,7 @@ function detectClosingTonicDecoration(
 ) {
   if (!dominant || !arrival || !isFifthDegreeDominant(dominant) ||
       !connectionIsValid(dominant, arrival) || !(arrival.span.toTick < terminal.span.fromTick) ||
-      beginsInsideManualCut(phrase, dominant) || !sameKey(arrival.key, keyAtTick(analysis, arrival.span.fromTick))) return;
+      beginsInsideManualCut(phrase, dominant) || !sameKey(arrival.key, writtenKeyAtTick(analysis, arrival.span.fromTick))) return;
 
   const bar = measureFor(arrival.span.fromTick);
   if (bar?.startTick !== arrival.span.fromTick || !(terminal.span.toTick <= bar.endTick) ||
@@ -1052,12 +774,6 @@ function tonicLandingGapEvidence(
       writtenBeatAt(previous.span.fromTick), measureFor(terminal.span.fromTick)?.startTick);
 }
 
-function resolvesLeadingTone(before: AnalysisSlice, after: AnalysisSlice, tonic: KeyReference["tonic"]) {
-  const leading = leadingTonePitchClass({ tonic, mode: "major" });
-  return VOICE_ORDER.some(voice => before.notes[voice] && pitchClassEquals(before.notes[voice]!.pitch, leading) &&
-    resolvesInVoice(before, after, voice, tonic, 1));
-}
-
 function allowsPhraseEndingInKey(
   { facts, terminal, previous, previousPrevious }: PhraseEnding,
   connectsToTerminal: boolean | CadenceEvidence | undefined,
@@ -1078,15 +794,16 @@ function allowsPhraseEndingInKey(
     return established.found && Boolean(writtenBassMatches(terminal));
   }
   if (!previous || !terminal.isTonic || terminal.hardBoundaryBefore || !connectsToTerminal) return false;
-  if (previous.isSubdominant && !previous.span.semantics?.cadenceRole && hasBassFormula(previous, terminal, 4, 1)) {
+  if (previous.isSubdominant && previousPrevious?.isTonic) {
     // An S-I tail can close a local phrase after a proven authentic anchor.
     // A borrowed subdominant or a mere applied label does not establish it.
-    return !!previousPrevious?.isTonic && !!facts.at(-4) &&
-      isFifthDegreeDominant(facts[facts.length - 4]) &&
-      localLink(facts[facts.length - 4], previousPrevious) &&
-      localLink(previousPrevious, previous) &&
-      hasBassFormula(facts[facts.length - 4], previousPrevious, 5, 1) &&
-      !!writtenBassMatches(previous) && !!writtenBassMatches(terminal);
+    const dominant = facts.at(-4);
+    if (!dominant || !isFifthDegreeDominant(dominant) || !localLink(dominant, previousPrevious) ||
+        !localLink(previousPrevious, previous) || !hasBassFormula(dominant, previousPrevious, 5, 1) ||
+        !writtenBassMatches(previous) || !writtenBassMatches(terminal)) return false;
+    return (!previous.span.semantics?.cadenceRole && hasBassFormula(previous, terminal, 4, 1)) ||
+      (hasWrittenAuthenticAnchor(dominant, previousPrevious, slices) &&
+        isWrittenAuxiliaryReturn(previousPrevious, previous, terminal, slices));
   }
   if (!isFifthDegreeDominant(previous)) return false;
   // A root-position local V can retain its function through an inversion.
@@ -1094,7 +811,7 @@ function allowsPhraseEndingInKey(
   if (previousPrevious && isFifthDegreeDominant(previousPrevious) && isRootPosition(previousPrevious) &&
       localLink(previousPrevious, previous) && writtenBassMatches(previousPrevious) &&
       completionFor(previous, terminal) === "imperfect" && terminal.boundarySlice &&
-      resolvesLeadingTone(slices[previous.span.sliceIndices.at(-1)!], terminal.boundarySlice, terminal.key.tonic)) return true;
+      resolvesLeadingTone(spanEndpointSlice(slices, previous.span, "last")!, terminal.boundarySlice, terminal.key.tonic)) return true;
   const rootPositionClosure = isRootPosition(previous) && isRootPosition(terminal) && hasBassFormula(previous, terminal, 5, 1);
   const establishedInvertedClosure = previousPrevious && localLink(previousPrevious, previous) &&
     (previousPrevious.isSubdominant || (previousPrevious.isTonic && facts.at(-4)?.isDominant &&
@@ -1129,15 +846,16 @@ function detectTonicRearticulation(
 }
 
 function detectAuthenticPhraseEnd(
-  { analysis, measureFor, gapEvidence }: CadenceDetectionContext,
+  context: CadenceDetectionContext,
   { phrase, facts, terminal, previous, previousPrevious, phraseEvidence }: PhraseEnding,
   landingGap: CadenceEvidence | undefined, connectsToTerminal: boolean | CadenceEvidence | undefined,
   ordinary: CadenceCandidate[],
 ) {
+  const { analysis, measureFor, gapEvidence } = context;
   if (!previous || !connectsToTerminal || !previous.isDominant || !terminal.isTonic) return;
   const dominantIndex = facts.length - 2;
   const approach = fullApproach(
-    facts, dominantIndex, terminal, measureFor(previous.span.fromTick),
+    facts, dominantIndex, terminal, context, phrase,
     dominantApproach(facts, dominantIndex, gapEvidence),
   );
   if (landingGap?.code === "detached-dominant-to-tonic" && previousPrevious && terminal.boundarySlice) {
@@ -1150,10 +868,11 @@ function detectAuthenticPhraseEnd(
 }
 
 function authenticCadenceBeforePlagalTail(
-  { analysis, measureFor, gapEvidence }: CadenceDetectionContext,
+  context: CadenceDetectionContext,
   { phrase, facts, terminal, previousPrevious: firstTonic }: PhraseEnding,
   previous: CadenceSpanFacts, localPlagalKey: KeyReference | undefined,
 ) {
+  const { analysis, measureFor, gapEvidence } = context;
   const dominant = facts.at(-4);
   const plagalSource = localPlagalKey ? { ...previous, key: localPlagalKey } : previous;
   if (!firstTonic?.isTonic || !dominant || !isAuthenticTailDominant(dominant, analysis.slices, localPlagalKey) ||
@@ -1177,7 +896,7 @@ function authenticCadenceBeforePlagalTail(
             pitchClassEquals(slice.notes.soprano.pitch, soprano.pitch)))) return;
 
   const approach = fullApproach(
-    facts, dominantIndex, firstTonic, measureFor(dominant.span.fromTick), dominantPath,
+    facts, dominantIndex, firstTonic, context, phrase, dominantPath,
   );
   return authenticCadence(phrase, approach, firstTonic, {
     code: "metric-support",
@@ -1202,7 +921,7 @@ function detectPlagalPhraseEnd(
   const authentic = authenticCadenceBeforePlagalTail(context, ending, previous, localPlagalKey);
   if (authentic) ordinary.push(authentic);
 
-  const lastSourceSlice = analysis.slices[previous.span.sliceIndices.at(-1)!];
+  const lastSourceSlice = spanEndpointSlice(analysis.slices, previous.span, "last")!;
   const independent = dorianPlagal || isImperfectPlagalClosing(previous, terminal, lastSourceSlice);
   if (independent && !hasAuthenticTailAnchor(analysis, previous, measureFor, localPlagalKey)) {
     const evidence: CadenceEvidence[] = [
