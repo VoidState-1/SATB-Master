@@ -937,7 +937,8 @@ export function buildContextualChordCandidates(
 
   return {
     observations: context.observations,
-    candidates,
+    candidates: passes.sixFours.resolveFiguredPedals(context.observations, candidates, context.currentPhraseTicks,
+      context.minimumConfidence !== "high" && options.allowNonChordToneCandidates !== false, late.withheldStarts),
     currentPhraseTicks: context.currentPhraseTicks,
     withheldStarts: late.withheldStarts,
     ninthAlternatives,

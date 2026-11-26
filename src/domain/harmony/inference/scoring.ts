@@ -579,3 +579,8 @@ export function selectChordInferencePath(
 ) {
   return analyzeChordInferencePaths(observations, candidateSets).selectedPath;
 }
+
+export function exactFit(candidate: ChordInferenceCandidate) {
+  return candidate.fit.spellingConsistent && candidate.fit.bassMatchesInversion &&
+    !candidate.fit.omittedChordDegrees.length && !candidate.fit.nonChordToneNoteIds.length;
+}

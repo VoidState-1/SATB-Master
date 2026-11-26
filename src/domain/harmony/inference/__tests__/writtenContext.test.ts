@@ -43,6 +43,44 @@ describe("written ornamental paths", () => {
     expect(inferChords(p).regions.some(r => r.selected?.evidence.some(e => e.code === "written-passing-line-over-held-harmony"))).toBe(false);
   });
 
+  it("carries an upper passing chain to a new harmony only while the accompaniment holds", () => {
+    const lines = ["G4/2 G#4/8 A4/8 B4/4", "C4/2. D4/4", "E3/2. G3/4", "C3/2. G2/4"];
+    const p = project(lines);
+    const held = at(p, 2.5);
+    expect(held).toMatchObject({ status: "resolved", selected: { functionalBaseId: "T",
+      fit: { nonChordToneAssignments: { [p.satbTracks[0].notes[2].id]: "passing" } } } });
+    const change = [...lines];
+    change[3] = "C3/2 C3/8 A2/8 G2/4";
+    expect(at(project(change), 2.5).selected?.functionalBaseId).toBe("TSVI");
+  });
+
+  it("restores three prepared upper notes over a new bass despite a complete surface seventh", () => {
+    const parts = ["Ab4/2. G4/4", "F4/2. Eb4/4", "D4/2. C4/4", "B2/2 C3/2"];
+    const atEntry = (lines: string[]) => at(project(lines, "C minor"), 2);
+    expect(atEntry(parts)).toMatchObject({ status: "resolved", selected: {
+      functionalBaseId: "t", evidence: expect.arrayContaining([expect.objectContaining({code: "written-structural-voicing"})]),
+    } });
+    const restruck = ["Ab4/2 Ab4/4 G4/4", "F4/2 F4/4 Eb4/4", "D4/2 D4/4 C4/4", parts[3]];
+    expect(atEntry(restruck).selected?.functionalBaseId).not.toBe("t");
+    const wrongArrival = [...parts];
+    wrongArrival[0] = "Ab4/2. B4/4";
+    expect(atEntry(wrongArrival).selected?.functionalBaseId).not.toBe("t");
+  });
+
+  it("follows a chromatic upper line through a cadential pedal up to its written dominant", () => {
+    const lines = ["G4/4 G#4/16 A4/16 Bb4/8 B4/4 C5/4", "E4/2 D4/4 E4/4",
+      "C4/2 B3/4 G3/4", "G2/2 G2/4 C3/4"];
+    const p = project(lines);
+    expect(at(p, 1.5)).toMatchObject({ status: "resolved", selected: { functionalBaseId: "K46" } });
+    const written = applyHarmonyInference(p, inferHarmony(p), { mode: "fill-gaps", writeNonChordToneRoles: true });
+    expect(written.project.satbTracks[0].notes.slice(1, 4).map(n => n.nonChordToneRole)).toEqual(["passing", "passing", "passing"]);
+    const withoutDominant = [...lines];
+    withoutDominant[3] = "G2/2 E2/4 C3/4";
+    expect(at(project(withoutDominant), 1.5).selected?.functionalBaseId).not.toBe("K46");
+    p.structure.phraseBoundaries = [{ id: "cut", tick: 2 * p.ppq, source: "manual", confidence: "certain" }];
+    expect(at(p, 1.5).selected?.functionalBaseId).not.toBe("K46");
+  });
+
   it("uses the structural bass while two neighbours sound, and preserves an independent inversion on the same bass", () => {
     const lower = ["D4/1", "B3/1", "G2/4. F2/8 G2/2"];
     const decorated = project(["F5/4. E5/8 F5/2", ...lower]);
@@ -113,6 +151,17 @@ describe("consolidation of a destination key", () => {
     expect(keyAt(stable, 1)).toEqual({ tonic: { step: "D", alter: 0 }, mode: "minor" });
     expect(keyAt(brief, 1)).toBeUndefined();
     expect(at(brief, 1).selected?.semantics?.interpretations[0].appliedTarget?.degree).toBe(2);
+  });
+
+  it("confirms a tonicized dominant only at its new inversion and independent seventh resolution", () => {
+    const lines = ["C5/4 B4/4 G5/4 F5/4 | E5/4 D5/4 C#5/2", "F#4/4 G4/2. | G4/4 G#4/4 A4/2",
+      "D4/1 | C4/4 D4/4 E4/2", "A2/4 G2/4 B2/2 | C3/4 Bb2/4 A2/2"];
+    const p = project(lines, "D minor");
+    expect(keyAt(p, 2)).toEqual({ tonic: { step: "C", alter: 0 }, mode: "major" });
+    expect(keyAt(p, 1)).toBeUndefined();
+    const noSecondary = [...lines];
+    noSecondary[1] = noSecondary[1].replace("F#4", "F4");
+    expect(keyAt(project(noSecondary, "D minor"), 2)).toBeUndefined();
   });
 
   it("requires a second upper-voice dominant resolution over the destination pedal", () => {

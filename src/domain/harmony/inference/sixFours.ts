@@ -31,6 +31,9 @@ import { soundsCompleteWrittenChord } from "../facts/writtenVoicing";
 import { VOICE_ORDER } from "../../project/voice";
 import { compareMetricStrength } from "../../rhythm/metric";
 
+import { descendingResolutions } from "./figuredPedal";
+export { resolveFiguredPedals } from "./figuredPedal";
+
 type AppliedPassingSixFourCandidateSet = readonly Candidate[];
 
 function exactTriad(candidate: Candidate) {
@@ -296,7 +299,7 @@ function confirmContinuedCadentialSixFours(
       const dominant = arrivals.find(c => exactReading(c) && rootDominant(c));
       const fullClose = dominant && dominantContinuesToTonic(observations, sets, end + 1, phraseEnd);
       const confirmed = dominant && (fullClose || !bridgedNeighbor &&
-        realizesWrittenSixFourResolution(opening.tonic, dominant, last, arrival)) &&
+        descendingResolutions(opening.tonic, dominant, last, arrival) === 2) &&
         resolvesToDominant(first, last, arrival, [dominant], !!fullClose);
       for (let index = start; confirmed && index <= end; index++) {
         const pair = pairs[index]!;
@@ -313,22 +316,6 @@ function confirmContinuedCadentialSixFours(
     }
     start = end;
   }
-}
-
-function realizesWrittenSixFourResolution(
-  tonic: ChordInferenceCandidate, dominant: ChordInferenceCandidate,
-  before: ChordInferenceObservation, after: ChordInferenceObservation,
-) {
-  return ([[1, 3], [3, 5]] as const).every(([fromDegree, toDegree]) => {
-    const from = chordIdentityToneSpellingForDegree(tonic.identity, fromDegree);
-    const to = chordIdentityToneSpellingForDegree(dominant.identity, toDegree);
-    return from && to && observationNotes(before).some(({ voiceId, note }) => {
-      const next = after.activeNotes[voiceId];
-      if (voiceId === "bass" || !next || !pitchClassEquals(note.pitch, from) || !pitchClassEquals(next.pitch, to)) return false;
-      const interval = writtenInterval(note.pitch, next.pitch);
-      return interval.diatonicSteps === -1 && isWrittenStep(interval);
-    });
-  });
 }
 
 // A tripled-root tonic can establish the pedal before a complete IV64–I return.

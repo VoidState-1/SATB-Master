@@ -8,6 +8,8 @@ import { createStructuralVoicingReader, readSoundingTertianIdentity } from "../f
 import { resolvesDominantOverTonicPedal } from "../facts/localTonality";
 import { harmonicMajorPreparation } from "./dominantFamily";
 
+import { tonicizedDominantInversion } from "./tonicizedDominant";
+
 export interface LocalKeyContext {
   readonly key: KeyReference;
   readonly dominantIndex: number;
@@ -792,6 +794,13 @@ function inferKeySection(
   }
   const closures = writtenClosures(reviewed);
   confirmRepeatedCadences(reviewed, closures, literal, ppq);
+  for (const { key, dominant, tonic, end } of closures) {
+    if (literal.has(tonic)) continue;
+    const start = tonicizedDominantInversion(observations, dominant, tonic, key);
+    if (start === undefined || observations.slice(start, end + 1).some(frame => literal.has(frame.index))) continue;
+    const context: LocalKeyContext = { key, dominantIndex: dominant, tonicIndex: tonic, evidence: "prepared-cadence" };
+    for (let j = start; j <= end; j++) literal.set(j, context);
+  }
   confirmReentries(reviewed, closures, literal, ppq);
   confirmPreparedArrivals(reviewed, literal, ppq);
   confirmTonicPedals(reviewed, literal);
