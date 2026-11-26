@@ -345,13 +345,24 @@ export function fitContextualOrnament(
   observation: ChordInferenceObservation,
   assignments: Readonly<Record<string, NonChordToneRole>>,
   evidenceCode: string,
+  structuralBass?: StructuralVoicing["bass"],
 ): ChordInferenceCandidate | undefined {
   const noteIds = Object.keys(assignments);
   if (!noteIds.length) return;
-  const { hardRejected, ...written } = fitChordObservation(observation, anchor.identity, {
+  const { hardRejected, ...surface } = fitChordObservation(observation, anchor.identity, {
     allowIncompleteVoicing: true,
     allowNonChordToneCandidates: true,
   });
+  // A melodic bass can pass through another chord member. Its spelling is
+  // consonant, but only the proven endpoint supplies this inversion's bass.
+  const bass = observation.bass;
+  const displacedMember = bass && structuralBass?.ornament && structuralBass.sounding.id === bass.id &&
+    !surface.bassMatchesInversion && surface.chordToneNoteIds.includes(bass.id) &&
+    pitchClassEquals(structuralBass.structural.pitch, anchor.identity.bass);
+  const written = displacedMember ? { ...surface,
+    chordToneNoteIds: surface.chordToneNoteIds.filter(id => id !== bass.id),
+    nonChordToneNoteIds: [...surface.nonChordToneNoteIds, bass.id],
+  } : surface;
   if (hardRejected && !ORNAMENT_FIT_REJECTIONS.includes(hardRejected)) return;
   if (!written.spellingConsistent ||
       written.nonChordToneNoteIds.length !== noteIds.length ||
@@ -439,7 +450,7 @@ export function fitStructuralOrnament(
       !isRestoredDominantFifthOmission(voicing, anchor.functionalBaseId, anchor.identity))) return;
   const assignments = Object.fromEntries(voicing.voices.flatMap(item =>
     item.ornament ? [[item.sounding.id, item.ornament.role]] : []));
-  const candidate = fitContextualOrnament(anchor, observation, assignments, "written-structural-voicing");
+  const candidate = fitContextualOrnament(anchor, observation, assignments, "written-structural-voicing", voicing.bass);
   if (!candidate) return;
   const result = scoreVerifiedOrnament(candidate, restored, false);
   return {
@@ -802,10 +813,11 @@ function expandCoreCandidates(
   const { withAppliedSequences, withAppliedDominants, withReattackedTonicNinths } = dominantFamily;
   // Establish candidate harmonies before resolving ornamental notes against them.
   candidates = withWrittenPivotSevenths(observations, candidates, options);
-  candidates = withDiatonicSevenths(observations, candidates, options);
+  candidates = withDiatonicSevenths(observations, candidates, options, manualPhraseTicks);
   candidates = withLoweredSupertonics(observations, candidates);
   candidates = withAppliedSequences(observations, candidates, options, manualPhraseTicks);
   candidates = withAppliedDominants(observations, candidates, options, manualPhraseTicks);
+  candidates = diatonicAndPivots.withAppliedLeadingSeventhPreparations(observations, candidates, options, manualPhraseTicks);
   return withReattackedTonicNinths(observations, candidates, options, currentPhraseTicks);
 }
 

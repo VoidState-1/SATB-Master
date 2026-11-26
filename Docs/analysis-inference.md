@@ -64,6 +64,10 @@
    - 常规最短自动乐句长度为 **2 小节**（`minimumMeasures = 2`）；若相邻边界属于非 `"event"` 的规则候选且具备 `silence-after-target`（整拍以上实际静音），放宽至 **1 小节**。
    - 最终由 `phraseTemplate` 映射为 `single`、`duple`、`triple` 或 **`multi`**（超过 2 个内部边界，支持 4 句及以上长练习）。
 
+和声持续时长与女高、低音的节奏分别取证。`cadential-restart` 记录属和声释放后重起，或属至 I、I6、VI 后和声节奏放慢并重新起奏。内声可以跨线延续。根位 VI 经第一转位延长时，实写低音五升六和至少两个保持至释放点的上声部支持将切点放在换位之后。
+
+周期从首个实音按小节位置计量，独立弱起小节折算成完整小节的分数。在属收束后的对应拍位，`periodic-opening-return` 比较女高开头三个音的前两个时值与两个有向音程，允许移调再现。候选取弱起进点。相邻小节的高、低音同时重复节奏与音程型时，连续的模进也可以解释规则周期，因而需要额外的呼吸或复现证据。
+
 ### 3.3 自动边界写回与 `pedalContinuationMidpoint` 保护
 
 完整和声推导在写回和弦后调用 [`applyInferredPhraseBoundaries`](../src/domain/harmony/inference/pipeline.ts) 落盘乐句边界：
@@ -104,6 +108,10 @@
      - **顿奏全休后的稀疏三声部主收束**：与前段下属、属七保持相同顿奏与全休节奏，强拍由低音、女高主音与内声三音收束（`detached-sparse-tonic`）；若前段存在同素材重奏前的顿奏阻碍，通过 `sparseRepriseCandidate` 同步补充 `detached-deceptive-reprise`。
      - **四部八度齐奏主音收束**：原位属三和弦后四声部强拍落至至少三个不同八度位置的主音（`octave-tonic-ending`）。
    - 候选范围延伸至无和弦落点音符释放，记录 `unharmonizedLandingTick` 并同步暴露为 `observedLandingTick`。
+
+句内阻碍另有一条实写路径。强拍上原位 V7 的低音五升六，女高二归一并延长至六级释放，导音上行、七音下行，形成三音重复的 VI。这组证据记为 `written-deceptive-clausula`。在副属语境中还须有同句内紧邻的目标调主和弦作支撑。
+
+半终止向前追溯 V/V 时，检测器验证副属导音在原声部上行至属根，分别记录准备起点、属落点与释放点。局部调的原位属经过换位再落主，可由同一条属链及实写导音解决确认不完满全终止。完满性沿用结构到达声部，属或主转位、女高落三音或五音均支持不完满读法。
 
 ### 4.3 属到主间断过渡与过滤规则
 
@@ -158,6 +166,8 @@
 4. 一次副属落点只支持主音化。持续调心要求独立准备与明确的落主，或在有限距离内出现两次相互独立的属–主到达，并排除已确立的竞争调心。扩展时以最初可验证的属功能或其独立准备为起点；不能仅凭之后的终止倒填共同和弦。短暂经过材料后的回归也需要再次出现实写属–主。共同和弦与减七改释保留各自的书写证据，不单独计作调心确立。
 5. 将通过复核的 `localKey` 注入候选观测，仍保留原始音符和记谱调号事件。盲推保持和弦构成、转位和外音的独立验证。局部四六前的预备延留仅在独立属–主证据和原位外音路径同时成立时回写；副属序列和路径评分不会用后调的同级数充当前调的目标。
 
+重复的 V–I 要由目标调中的前属，或有独立和声活动的持续段连接。同一 V 反复起奏只提供一份证据。回溯准备时，遇到已由导音解决确立、且不属于目标音阶的原位主和弦即停止；直接准备后调属和弦的那不勒斯和弦可以作枢纽。结构帧还可用完整的 ii7 或 iiø7、导音的同声部解决及稳定的原位主和弦确认新调。主持续音上的上三声部若再次完整奏出 V 并解决至 I，也能独立确认调心。切换窗只用于候选解释，工程记谱调号保留原值。
+
 ### 5.2 6 阶段候选管线（`buildContextualChordCandidates`）
 
 ```text
@@ -167,7 +177,7 @@ prepareInferenceContext（全曲观测 + 无和弦乐句预推导 + inferLocalKe
       按调性功能模板逐切片匹配；句末属后解锁主和弦五音省略；可选绝对回退；按 minConfidence 过滤
   │
   ▼ 阶段 2: expandCoreCandidates
-      实写枢纽七 -> 自然七 -> 降二级及其大七 -> 副属模进 -> 副属 -> 重起主九
+      实写枢纽七 -> 自然七与同主音调式借用 -> 降二级及其大七 -> 副属模进 -> 副属及其导七准备 -> 重起主九
   │
   ▼ 阶段 3: classifyEarlyOrnamentsAndSixFours
       先现音 -> 预备延留(4-3/9-8) -> 单音延长 -> 同时双辅助 -> classifySixFours（经过/辅助/终止四六）
@@ -189,13 +199,15 @@ prepareInferenceContext（全曲观测 + 无和弦乐句预推导 + inferLocalKe
 - **原位属七六音替代五音**：核对新起奏的属低音、女高六音及内声三/七音，女高可下行二度回五音或下行三度到主音（导音与七音各自在原声部解决），以 `dominant-sixth-substitution` 证据保留属七实体。
 - **增六和弦完整性**：意大利、法国、德国增六候选必须覆盖各自全部构成音，缺少增六音程任一端或其他必要音时直接硬拒绝，不受 `allowIncompleteVoicing` 放宽影响。
 
+观测按音名字母和升降号保留不同拼写。一个和弦音同时写成 D♯ 和 E♭ 时，普通纵向模板不能用这两个音构成重复。完整 iiø7 和 vii°7 的拼写可确立和声大调的降六级。借用同主音小调的降 III、降 VI 等和弦，还需邻近的另一个借用和弦印证。副属可以等待同一低音上的上声部在一拍内落定；省五音的属三和弦则要求三根一三、实际目标和弦和同声部导音解决。副导七进入副属七时，降六级下行到属根，其余三声部须保持原拼写与音区。在相同强度的重拍之间确认 K46，需后续属主闭合以及实写 4–3、6–5 两条解决。
+
 ### 5.3 两轮链式外音恢复与弱拍假和弦竞争（`ornaments.ts`）
 
-管线末端的 [`withContextualOrnaments`](../src/domain/harmony/inference/ornaments.ts) 在不破坏强结构解释的前提下分四步处理复杂外音：
+管线末端的 [`withContextualOrnaments`](../src/domain/harmony/inference/ornaments.ts) 按以下步骤处理复杂外音：
 
 1. **首轮空白恢复（`recoverOrnamentGaps(..., seedChains = true)`）**：
    - 仅以 `isStructuralAnchor`（具功能语义、三度结构、拼写一致、低音匹配且无外音）作为锚点，跳过 `withheldStarts` 保留边界。
-   - 对单切片空白依次尝试延留/上行延留（`recoverContextualSuspensions`，支持跨相邻未解析切片核对准备或解决）与先现音（`recoverContextualAnticipations`）；对最长 3 切片的连续空白尝试经过音、辅助音、弱位逸音（`recoverContextualPassingAndNeighbors`）及强拍经过音（`recoverAccentedPassing`）。
+   - 对单切片空白依次尝试延留/上行延留（`recoverContextualSuspensions`，支持跨相邻未解析切片核对准备或解决）与先现音（`recoverContextualAnticipations`）；对总时值不超过 4 个四分音符的连续空白尝试经过音、辅助音、弱位逸音（`recoverContextualPassingAndNeighbors`）及强拍经过音（`recoverAccentedPassing`）。
 2. **次轮链式恢复（`recoverOrnamentGaps(..., seedChains = false)`）**：
    - 将首轮恢复出的高可信外音切片（`isVerifiedOrnamentAnchor`：`confidence !== "low"` 且所有外音均带 `inferred-nonchord-tone` 证据）提升为二级锚点，对仍空白的相邻切片再次执行恢复，从而解开连续交错的链式外音。
    - **平行五八度保护（`hasSafeOrnamentMotion`）**：次轮恢复与跨切片链式恢复均须通过 `hasParallelPerfects` 校验，确保外音切入/切出两侧不会制造涉及外音的平行五度或八度；水平外音分析同时经 `hasParallelNeighborFifths` 禁止平行辅助五度。
@@ -205,6 +217,8 @@ prepareInferenceContext（全曲观测 + 无和弦乐句预推导 + inferLocalKe
    - 通过核验的候选经 `scoreVerifiedOrnament` 依据还原后的和弦音覆盖率与双侧佐证计算 `contextFit`，与原纵向候选共同进入序列路径 DP 竞争；竞争胜者不会回流为新锚点去继续衍生空白恢复。
 
 4. **共享结构配位回填（`recoverWrittenStructuralGaps`）**：对没有可用解释的非完整实写三度叠置，按声部追踪跨切片的书写外音链。既有纵向解与实写和声可提供出发或到达支持，但只用已有功能锚点或还原后能精确命中的功能模板产生候选。多声部错开解决、保留低音下上声部延留，以及同一和弦重配转位时，候选必须覆盖必要结构音、解释每个表层外音、落实结构低音，并为每条路径记录起止和音符引用。仍服从禁用外音、严格置信度、保留切片和边界限制。明确完整的表层和弦、高置信竞争项、缺少依据的转位与四六解释不由本步骤覆盖。
+
+5. **持续和声上的书写经过链（`recoverHeldPassingLines`）**。两端为含相同转位的完整和弦，其余三个声部保持原来的音符事件时，按实际起奏追踪同一上声部一拍内的 2 至 4 个经过音。每一步都须连奏、同向且书写成立。中间音偶然拼成完整三和弦时，整条经过链提供水平证据。旋律折返、低音重奏、角色冲突或句界会切断这项证明。结构读谱也能识别同时装饰中的低音双重身份，例如男低音经过属七的另一构成音；两端实际转位、另一装饰声部及持续内声共同支持结构低音。
 
 ### 5.4 序列路径求解、后处理与区段合并
 
@@ -226,11 +240,15 @@ prepareInferenceContext（全曲观测 + 无和弦乐句预推导 + inferLocalKe
   - 对话框实际支持的推导范围（`ChordInferenceRangeMode`）为 **`selection`（当前选择）**、**`current-measure`（当前小节）** 与 **`project`（整个工程）**（不支持按乐句范围）。
   - `ChordInferencePreview` 展示带 `reviewCandidateIds` 的单观测区段候选读法，支持逐区段切换候选与点击“仅应用此段”。在 [`AppShell.tsx`](../src/app/AppShell.tsx) 中，单区段独立应用（携带 `options.selection`）走 **`applyChordInference`**，不改动全曲乐句边界；整体应用走 **`applyHarmonyInference`**，同步刷新乐句结构。
 
+推导出的延留角色在和弦写回结束后核验。准备可以是跨和声持续的原音，也可以是同声部、同拼写、同八度的紧邻重奏。准备位置须有已应用的和弦且该音为其成员，延留位置须出现和弦外音，解决音须紧邻、下行级进并属于落点和弦。前置区段弃权、休止或解决音跳走时，候选仍可供预览，自动应用时保留音符的原角色。人工声明的角色继续交给规则检查。
+
 ## 6. 与规则引擎及外置 API 的边界
 
 候选不是工程标注：`phraseBoundaryCandidates` / `cadenceCandidates` 仅表示本次分析的只读候选，不能替代 `phraseBoundaries` / `cadenceAnnotations`。
 
 `HarmonyAnalysis` 暴露 `metricTimeline`、`phraseBoundaries`、`phraseBoundaryCandidates`、`phraseSegments`、`cadenceCandidates`、`cadenceAnnotations` 与 `cadenceAtTick`。内置规则通过 [`HarmonyRuleContext`](../src/domain/harmony/rules/context/createRuleContext.ts) 的乐句与终止查询读取这些事实，不会反向修改边界或标注。
+
+默认应用只写入已解决区段。歧义区段保留空白，规则可从同一份乐谱重新读取有独立证据的音级义务。例如四部实写原位属七紧邻完整原位主三和弦时，七音声部由实际拼写确定。检查只引用实际音符和已有标签，重新打开工程也能重建证据。空五度无法提供属七的三音与七音，转位检查仍要求实际标注的低音。
 
 外置 API v3 暴露 `phraseSegments`、`phraseBoundaryCandidates` 与 `cadenceCandidates` 供脚本只读消费（见 [external-rules.md](./external-rules.md)），辅助轨明细仍然不公开。
 

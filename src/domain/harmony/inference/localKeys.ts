@@ -5,13 +5,14 @@ import type { ChordInferenceObservation } from "./types";
 import { observationNotes, observationWithStructuralNotes, resolvesTone, soundingBass, writtenFrame } from "./observations";
 import { createWrittenOrnamentReader } from "../facts/ornamentalMotion";
 import { createStructuralVoicingReader, readSoundingTertianIdentity } from "../facts/writtenVoicing";
+import { resolvesDominantOverTonicPedal } from "../facts/localTonality";
 import { harmonicMajorPreparation } from "./dominantFamily";
 
 export interface LocalKeyContext {
   readonly key: KeyReference;
   readonly dominantIndex: number;
   readonly tonicIndex: number;
-  readonly evidence?: "structural-cadence" | "repeated-cadence" | "parallel-pivot";
+  readonly evidence?: "structural-cadence" | "repeated-cadence" | "parallel-pivot" | "prepared-cadence";
   readonly cadentialLeadIn?: { readonly onsetIndex: number; readonly settledIndex: number; readonly noteId: string };
 }
 
@@ -228,6 +229,18 @@ function preparationStart(
     const item = observations[j];
     if (!item.completeSatb || item.key !== tonic.key ||
         (tonic.metric?.measureNumber ?? 0) - (item.metric?.measureNumber ?? 0) > 4) break;
+    // A confirmed cadence in a foreign, non-diatonic triad ends the
+    // retrospective search. An accidental farther back cannot prepare
+    // the destination across an intervening established center.
+    if (j > 0 && !fits(item, targetScale) && !(j === dominantStart - 1 && fits(item, neapolitan)) && soundingBass(item)) {
+      const triad = readSoundingTertianIdentity(writtenFrame(item));
+      if (triad?.structure.kind === "tertian" && (triad.structure.quality === "major" || triad.structure.quality === "minor") &&
+          pitchClassEquals(triad.root, triad.bass)) {
+        const other = { tonic: triad.root, mode: triad.structure.quality };
+        if (!keyEquals(other, key) && dominantSupports(observations[j - 1], other) &&
+            resolvesTone(observations[j - 1], item, leadingTonePitchClass(other), other.tonic, 1)) break;
+      }
+    }
     const previousContext = existing.get(j);
     if (previousContext) {
       if (relativeMajor && relativeBridgeFits && keyEquals(previousContext.key, key)) earlierCadenceEnd = j;
@@ -586,9 +599,13 @@ function supportedContinuation(
     }
   }
   const between = observations[right.dominant].fromTick - observations[left.tonic].fromTick;
+  // Separate secondary dominants in a fifths sequence can point to the same
+  // degree on either side of an intervening home-key dominant.
   return (left.strongDominant || right.strongDominant) &&
     (left.rootArrival || right.rootArrival) &&
-    (preparation || !homeDominant && between >= 2 * ppq || left.strongDominant && right.strongDominant && !homeDominant);
+    (preparation || !homeDominant && between >= 2 * ppq &&
+      observations.slice(left.end + 1, right.dominant).some(item =>
+        !tonicSupports(item, left.key) && !dominantSupports(item, left.key)));
 
 }
 
@@ -695,6 +712,67 @@ function recoverCadentialLeadIns(
   }
 }
 
+/** A spelled ii(ø)7–V(7)/vii°7–I group establishes a center independently
+ * of a long bass pedal. A shared predominant stays in its departure key. */
+function confirmPreparedArrivals(
+  frames: readonly ChordInferenceObservation[], windows: Map<number, LocalKeyContext>, ppq: number,
+) {
+  const identities = frames.map(frame => readSoundingTertianIdentity(writtenFrame(frame), true));
+  for (let i = 2; i < frames.length; i++) {
+    const arrival = frames[i], tonic = identities[i];
+    if (!tonic || tonic.structure.kind !== "tertian" ||
+        (tonic.structure.quality !== "major" && tonic.structure.quality !== "minor") ||
+        pitchClassEquals(tonic.root, arrival.key.tonic) || !contains(scale(arrival.key), tonic.root)) continue;
+    const key = { tonic: tonic.root, mode: tonic.structure.quality };
+    if (!tonicSupports(arrival, key) || !hasBass(arrival, key.tonic)) continue;
+    const dominant = frames[i - 1], lead = leadingTonePitchClass(key);
+    const leadingSeventh = chordToneSpellings(lead, "diminished7");
+    if (!(dominantSupports(dominant, key) || dominant.soundingPitchClasses.length === 4 && fits(dominant, leadingSeventh)) ||
+        !resolvesTone(dominant, arrival, lead, key.tonic, 1)) continue;
+    let start = i - 1;
+    while (start > 1 && dominantSupports(frames[start - 1], key) &&
+        dominant.fromTick - frames[start - 1].fromTick < (dominant.measureDurationTicks ?? 4 * ppq)) start--;
+    const prep = identities[start - 1];
+    if (!prep || prep.structure.kind !== "tertian" ||
+        !pitchClassEquals(prep.root, scaleDegreePitchClass(key, 2)) ||
+        prep.structure.quality !== (key.mode === "minor" ? "halfDiminished7" : "minor7")) continue;
+    let end = i;
+    while (frames[end + 1] && tonicSupports(frames[end + 1], key)) end++;
+    const duration = frames[end].toTick - arrival.fromTick;
+    const expanded = start < i - 1 && dominant.fromTick - frames[start].fromTick >= (arrival.measureBeatTicks ?? ppq) &&
+      contains(dominant.soundingPitchClasses, scaleDegreePitchClass(key, 4));
+    if (!expanded && duration < 2 * (arrival.measureBeatTicks ?? ppq) ||
+        frames.slice(start, end + 1).some(item => {
+          const prior = windows.get(item.index);
+          return prior && prior.dominantIndex <= end;
+        })) continue;
+    const context: LocalKeyContext = { key, dominantIndex: i - 1, tonicIndex: i, evidence: "prepared-cadence" };
+    for (let j = start; j <= end; j++) windows.set(j, context);
+  }
+}
+
+function confirmTonicPedals(frames: readonly ChordInferenceObservation[], windows: Map<number, LocalKeyContext>) {
+  for (let i = 1; i + 2 < frames.length; i++) {
+    const first = frames[i], before = frames[i - 1];
+    const tonic = readSoundingTertianIdentity(writtenFrame(first));
+    if (tonic?.structure.kind !== "tertian" || (tonic.structure.quality !== "major" && tonic.structure.quality !== "minor") ||
+        !hasBass(first, tonic.root) || pitchClassEquals(first.key.tonic, tonic.root) ||
+        !contains(scale(first.key), tonic.root)) continue;
+    const key = { tonic: tonic.root, mode: tonic.structure.quality };
+    const dominant = chordToneSpellings(scaleDegreePitchClass(key, 5), "dominant7");
+    const ninth = scaleDegreePitchClass(key, 6);
+    if (!hasBass(before, dominant[0]) || !fits(before, [...dominant, ninth]) ||
+        !contains(before.soundingPitchClasses, dominant[3]) || !resolvesTone(before, first, dominant[1], key.tonic, 1)) continue;
+    let j = i + 1;
+    while (frames[j] && hasBass(frames[j], key.tonic) && tonicSupports(frames[j], key)) j++;
+    const pedal = frames[j], release = frames[j + 1];
+    if (!release || !tonicSupports(release, key) || !resolvesDominantOverTonicPedal(writtenFrame(pedal), writtenFrame(release), key) ||
+        frames.slice(i - 1, j + 2).some(frame => windows.has(frame.index))) continue;
+    const context: LocalKeyContext = { key, dominantIndex: i - 1, tonicIndex: i, evidence: "prepared-cadence" };
+    for (let k = i - 1; k <= j + 1; k++) windows.set(k, context);
+  }
+}
+
 function inferKeySection(
   observations: readonly ChordInferenceObservation[], phraseEnds: ReadonlySet<number>, ppq: number,
 ) {
@@ -715,6 +793,8 @@ function inferKeySection(
   const closures = writtenClosures(reviewed);
   confirmRepeatedCadences(reviewed, closures, literal, ppq);
   confirmReentries(reviewed, closures, literal, ppq);
+  confirmPreparedArrivals(reviewed, literal, ppq);
+  confirmTonicPedals(reviewed, literal);
   if ([...literal.values()].some(proof => proof.evidence === "structural-cadence"))
     recoverCadentialLeadIns(observations, literal, ppq);
   return literal;

@@ -2,7 +2,7 @@
   chordIdentityToneSpellings, chordToneSpellings, harmonySemanticsConfidence, primaryHarmonyInterpretation,
   type HarmonySemantics, type KeyReference,
 } from "../../chordModel";
-import { keyEquals, leadingTonePitchClass, pitchClassEquals, pitchClassValue, toMidi } from "../../pitch";
+import { keyEquals, leadingTonePitchClass, pitchClassEquals, pitchClassValue, scaleDegreePitchClass, toMidi } from "../../pitch";
 import type { AnalysisChord, AnalysisSlice, ProjectSnapshot } from "../analysis";
 import { VOICE_ORDER } from "../../project/voice";
 import { hasWrittenVoicing, resolvesInVoice } from "./tendencyResolution";
@@ -30,6 +30,24 @@ export function crossesTonalBoundary(
   return project.keyEvents.some(event => from < event.tick && event.tick <= through && (!before || !keyEquals(before, event))) ||
     project.structure.phraseBoundaries.some(boundary =>
       boundary.source === "manual" && from < boundary.tick && boundary.tick <= through);
+}
+
+/** A tonic pedal articulates a second local V?I when all three upper
+ * members of V sound and its leading tone resolves in the same voice. */
+export function resolvesDominantOverTonicPedal(
+  overPedal: Pick<AnalysisSlice, "notes" | "completeSatb">,
+  arrival: Pick<AnalysisSlice, "notes" | "completeSatb">, key: KeyReference,
+) {
+  if (!overPedal.completeSatb || !arrival.completeSatb || !overPedal.notes.bass || !arrival.notes.bass ||
+      ![overPedal, arrival].every(frame => pitchClassEquals(frame.notes.bass!.pitch, key.tonic))) return false;
+  const dominant = chordToneSpellings(scaleDegreePitchClass(key, 5), "major");
+  const upper = VOICE_ORDER.filter(voice => voice !== "bass");
+  return dominant.every(tone => upper.some(voice => pitchClassEquals(overPedal.notes[voice]!.pitch, tone))) &&
+    upper.some(voice => {
+      const before = overPedal.notes[voice]!, after = arrival.notes[voice]!;
+      return pitchClassEquals(before.pitch, dominant[1]) && pitchClassEquals(after.pitch, key.tonic) &&
+        toMidi(after.pitch) - toMidi(before.pitch) === 1;
+    });
 }
 
 export function isDiminishedRotation(

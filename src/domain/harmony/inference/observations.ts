@@ -14,12 +14,9 @@ import type { KeyEvent, ProjectDocument, VoiceId } from "../../project";
 import type { ChordInferenceObservation } from "./types";
 
 function uniquePitchClasses(notes: readonly AnalysisNote[]) {
-  const seen = new Set<number>();
   const values: SpelledPitchClass[] = [];
   for (const note of notes) {
-    const value = pitchClassValue(note.pitch);
-    if (seen.has(value)) continue;
-    seen.add(value);
+    if (values.some(pitch => pitchClassEquals(pitch, note.pitch))) continue;
     values.push({ step: note.pitch.step, alter: note.pitch.alter });
   }
   return Object.freeze(values);

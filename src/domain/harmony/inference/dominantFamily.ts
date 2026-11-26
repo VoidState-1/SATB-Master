@@ -43,7 +43,7 @@ import {
   fitPreparedSuspension,
 } from "./candidates";
 import { isCanonicalTonicFifthOmission, dominantNinthTemplates, buildFunctionalTemplates } from "./scoring";
-import { observationNotes, writtenFrame, soundingBass } from "./observations";
+import { observationNotes, resolvesTone, writtenFrame, soundingBass } from "./observations";
 import type {
   ChordInferenceCandidate,
   ChordInferenceObservation,
@@ -482,16 +482,53 @@ export function withAppliedDominants(
     if (!source.completeSatb || !arrival.completeSatb || !continuesInKey(source, arrival) ||
         source.key.id !== arrival.key.id ||
         hardBoundaries.some(tick => source.fromTick < tick && tick <= arrival.fromTick)) continue;
+    // A tripled root and a single major third can articulate V without
+    // its fifth. The third must lead by written semitone into an actual
+    // tonic of the key or a witnessed diatonic target.
+    if (!sets[i].length && options.minConfidence !== "high" && soundingBass(source) && source.soundingPitchClasses.length === 2) {
+      for (const target of sets[i + 1]) {
+        if (!target.semantics || !exactAppliedDominantReading(target) || target.identity.structure.kind !== "tertian" ||
+            !["major", "minor"].includes(target.identity.structure.quality)) continue;
+        const meaning = primaryHarmonyInterpretation(target.semantics);
+        if (meaning.appliedTarget || meaning.degreeAlteration || !pitchClassEquals(target.identity.root, scaleDegreePitchClass(source.key, meaning.degree))) continue;
+        const key = { tonic: target.identity.root, mode: "major" as const };
+        const root = scaleDegreePitchClass(key, 5);
+        if (!pitchClassEquals(source.bass!.pitch, root) || observationNotes(source).filter(({ note }) => pitchClassEquals(note.pitch, root)).length !== 3 ||
+            !resolvesTone(source, arrival, leadingTonePitchClass(key), key.tonic, 1)) continue;
+        const baseId = meaning.degree === 5 ? "DD" : "D";
+        const candidate = createFunctionalCandidate(source, { baseId, definition: functionalDefinition(baseId), form: "triad",
+          localKeyPolicy: "current-key", expectedInversion: 0, appliedTarget: [1, 5].includes(meaning.degree) ? undefined : meaning.degree },
+        { ...options, allowedOmittedChordDegrees: [5] });
+        if (candidate?.fit.spellingConsistent) result[i] = [withTargetEvidence(candidate, "resolved-dominant-without-fifth", meaning.degree)];
+      }
+    }
     const scale = Array.from({ length: 7 }, (_, index) => scaleDegreePitchClass(source.key, index + 1));
     if (source.key.mode === "minor") scale.push(leadingTonePitchClass(source.key));
-    if (source.soundingPitchClasses.every(p => scale.some(tone => pitchClassEquals(p, tone)))) continue;
+    const diatonic = source.soundingPitchClasses.every(p => scale.some(tone => pitchClassEquals(p, tone)));
+    if (diatonic && (source.soundingPitchClasses.length !== 4 || sets[i].some(exactAppliedDominantReading))) continue;
 
-    const arrivals = tonicizationTargets(arrival, sets[i + 1]);
+    let goal = arrival;
+    let arrivals = tonicizationTargets(goal, sets[i + 1]);
+    // A target bass can arrive before a prepared upper voice settles. Require
+    // the same bass pitch and a complete written target within one pulse.
+    if (!arrivals.size && !sets[i + 1].some(exactAppliedDominantReading) && soundingBass(arrival)) {
+      for (let j = i + 2; j < observations.length; j++) {
+        const next = observations[j];
+        if (!continuesInKey(observations[j - 1], next) || source.key.id !== next.key.id ||
+            next.fromTick - arrival.fromTick > (arrival.measureBeatTicks ?? 0) ||
+            hardBoundaries.some(t => arrival.fromTick < t && t <= next.fromTick) ||
+            !next.bass || !spelledPitchEquals(next.bass.pitch, arrival.bass!.pitch)) break;
+        arrivals = tonicizationTargets(next, sets[j]);
+        if (arrivals.size) { goal = next; break; }
+        if (sets[j].some(exactAppliedDominantReading)) break;
+      }
+    }
     const targets = new Set(arrivals.keys());
     if (nextTarget) targets.add(nextTarget);
     if (!targets.size) continue;
     const templates = buildFunctionalTemplates(source.key);
-    const added = [...arrivals].flatMap(([target, mode]) => leadingToneCandidates(source, arrival, target, mode, templates, options));
+    const added = [...arrivals].flatMap(([target, mode]) => leadingToneCandidates(source, goal, target, mode, templates, options));
+    if (added.length && arrivals.size === 1) continuedTarget = [...arrivals.keys()][0];
     const hasHomeReading = sets[i].some(exactAppliedDominantReading);
     for (const template of templates.filter(t => t.baseId === "D" && t.form !== "ninth")) {
       // A fifth relationship alone cannot displace a well-spelled home triad.
@@ -636,7 +673,7 @@ export function withAppliedSequences(
           form: prep.quality === "diminished" ? "triad" : "seventh",
           expectedInversion: prep.inversion, localKeyPolicy: "current-key",
         }, options);
-        if (chord) return [...existing, { ...chord, id: chord.id + ":harmonic-major", evidence: [...chord.evidence,
+        if (chord) return [...existing.filter(c => c.id !== chord.id), { ...chord, id: chord.id + ":harmonic-major", evidence: [...chord.evidence,
           { kind: "sequence-context" as const, code: "harmonic-major-supertonic" }] }];
       }
     }

@@ -317,7 +317,7 @@ export function createWrittenOrnamentReader(
   return (index: number, voice: VoiceId, target: ChordIdentity) => {
     const frame = frames[index];
     const note = frame?.notes[voice];
-    if (!note || chordIdentityToneSpellings(target).some(tone => pitchClassEquals(tone, note.pitch))) return;
+    if (!note || belongsToWrittenHarmony(target, voice, note)) return;
     return prepared(index, voice, note, target) ?? horizontal(index, voice, note, target);
   };
 }

@@ -1,5 +1,6 @@
 import {
   chordIdentityEquals,
+  chordToneSpellings,
   chordIdentityInversion,
   primaryHarmonyInterpretation,
   chordIdentityToneSpellingForDegree,
@@ -17,7 +18,7 @@ import {
   keyEquals,
   toMidi,
 } from "../../pitch";
-import { soundingBass, observationNotes } from "./observations";
+import { soundingBass, observationNotes, resolvesTone } from "./observations";
 import type {
   ChordInferenceCandidate as Candidate,
   ChordInferenceObservation,
@@ -165,10 +166,20 @@ function resolvesToDominant(
   candidates: SixFoursCandidateSet, fullClose: boolean,
 ) {
   if (!first.metric || !next.metric || first.metric.confidence !== "certain" || next.metric.confidence !== "certain" ||
-      first.metric.level <= next.metric.level || !last.bass || !next.bass ||
+      !last.bass || !next.bass ||
       !keyEquals(first.key, next.key) || !pitchClassEquals(last.bass.pitch, next.bass.pitch)) return false;
   const dominant = candidates.find(rootDominant);
   if (!dominant) return false;
+  if (first.metric.level <= next.metric.level) {
+    // Equal metrical accents can articulate two harmonic events on the
+    // same dominant pedal. Both upper dissonances must actually resolve.
+    if (!fullClose || first.metric.level !== next.metric.level || first.metric.level < 2) return false;
+    const tonic = chordToneSpellings(first.key.tonic, first.key.mode);
+    return ([[tonic[0], 3], [tonic[1], 5]] as const).every(([from, degree]) => {
+      const to = chordIdentityToneSpellingForDegree(dominant.identity, degree);
+      return !!to && resolvesTone(last, next, from, to, -1);
+    });
+  }
   // In a closing cadence the upper parts may redistribute or leap in the
   // resolution, and the dominant bass may move by an octave (Spasobin §9.3).
   if (fullClose) return true;

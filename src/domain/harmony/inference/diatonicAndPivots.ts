@@ -3,6 +3,7 @@ import {
   chordToneSpellings,
   type KeyReference,
   chordIdentityEquals,
+  chordIdentityInversion,
   semanticsFromChordDraft,
   primaryHarmonyInterpretation,
   type ChordIdentity,
@@ -24,7 +25,7 @@ import {
   leadingTonePitchClass,
 } from "../../pitch";
 import { createFunctionalCandidate, createAbsoluteCandidate, createLoweredSupertonic } from "./candidates";
-import { observationNotes, resolvesTone, soundingBass } from "./observations";
+import { observationNotes, resolvesTone, soundingBass, writtenFrame } from "./observations";
 import type {
   ChordInferenceCandidate,
   ChordInferenceObservation,
@@ -36,6 +37,7 @@ import type {
 } from "./types";
 import { compareMetricStrength } from "../../rhythm/metric";
 import type { LocalKeyContext } from "./localKeys";
+import { readSoundingTertianIdentity } from "../facts/writtenVoicing";
 import { continuesInKey } from "./passContext";
 import { fitChordObservation, identityForFunctionalTemplate } from "./scoring";
 
@@ -87,15 +89,75 @@ function revoicesDiatonicStack(
     !pitchClassEquals(source.bass.pitch, otherBass.pitch);
 }
 
+/** The lowered sixth of harmonic major supplies the diminished fifth of iiø7
+ * or the diminished seventh of vii°7. Read all four written members. */
+function harmonicMajorSeventh(observation: ChordInferenceObservation, options: ChordInferenceOptions) {
+  if (observation.key.mode !== "major" || observation.soundingPitchClasses.length !== 4 ||
+      !observation.soundingPitchClasses.some(p => pitchClassEquals(p, scaleDegreePitchClass(observation.key, 6, -1)))) return;
+  const literal = readSoundingTertianIdentity(writtenFrame(observation));
+  if (literal?.structure.kind !== "tertian") return;
+  const quality = literal.structure.quality;
+  const baseId = quality === "halfDiminished7" ? "SII" : quality === "diminished7" ? "DVII" : undefined;
+  if (!baseId || !pitchClassEquals(literal.root, scaleDegreePitchClass(observation.key, baseId === "SII" ? 2 : 7))) return;
+  const inversion = chordIdentityInversion(literal);
+  if (inversion > 3) return;
+  return createFunctionalCandidate(observation, {
+    baseId, definition: { ...functionalDefinition(baseId), quality: () => quality }, form: "seventh",
+    localKeyPolicy: "current-key", expectedInversion: inversion as 0 | 1 | 2 | 3,
+  }, options);
+}
+
+/** Modal mixture keeps the written tonic. A second independently spelled
+ * parallel-minor harmony corroborates a borrowed III, VI, or minor V7. */
+function borrowedMinorHarmony(frames: readonly ChordInferenceObservation[], i: number, options: ChordInferenceOptions,
+  boundaries: readonly number[]) {
+  const source = frames[i];
+  if (source.key.mode !== "major" || !soundingBass(source)) return;
+  const parallel = { tonic: source.key.tonic, mode: "minor" as const };
+  const literal = readSoundingTertianIdentity(writtenFrame(source));
+  if (literal?.structure.kind !== "tertian") return;
+  const quality = literal.structure.quality;
+  const degree = ([3, 6, 5, 2] as const).find(n => pitchClassEquals(literal.root, scaleDegreePitchClass(parallel, n)));
+  if (!degree || !(degree === 2 ? quality === "diminished" && chordIdentityInversion(literal) === 1 :
+      degree === 5 ? quality === "minor7" : quality === "major" || quality === "major7")) return;
+  const scale = degrees.map(n => scaleDegreePitchClass(parallel, n));
+  const home = degrees.map(n => scaleDegreePitchClass(source.key, n));
+  const corroborated = ([-1, 1] as const).some(direction => {
+    for (let j = i + direction; frames[j]; j += direction) {
+      const frame = frames[j];
+      if (!soundingBass(frame) || !keyDeclarationEquals(source.key, frame.key) ||
+          Math.abs(frame.fromTick - source.fromTick) > (source.measureDurationTicks ?? 0) ||
+          boundaries.some(t => Math.min(frame.fromTick, source.fromTick) < t && t <= Math.max(frame.fromTick, source.fromTick))) break;
+      const other = readSoundingTertianIdentity(writtenFrame(frame));
+      if (!other || pitchClassEquals(other.root, literal.root)) continue;
+      return frame.soundingPitchClasses.every(p => scale.some(t => pitchClassEquals(t, p))) &&
+        frame.soundingPitchClasses.some(p => !home.some(t => pitchClassEquals(t, p)));
+    }
+    return false;
+  });
+  if (!corroborated) return;
+  const baseId = degree === 3 ? "dtIII" : degree === 6 ? "TSVI" : degree === 2 ? "SII" : "d";
+  const definition = functionalDefinition(baseId);
+  const inversion = chordIdentityInversion(literal) as 0 | 1 | 2 | 3;
+  return createFunctionalCandidate(source, { baseId,
+    definition: { ...definition, degreeAlteration: degree === 3 || degree === 6 ? -1 : 0, quality: () => quality },
+    form: quality.endsWith("7") ? "seventh" : "triad", expectedInversion: inversion, localKeyPolicy: "current-key",
+  }, options);
+}
+
 /** In diatonic sequences a fully written seventh can play a local dominant-like role. */
 export function withDiatonicSevenths(
   observations: readonly ChordInferenceObservation[],
   candidateSets: readonly (readonly ChordInferenceCandidate[])[],
   options: ChordInferenceOptions,
+  boundaries: readonly number[] = [],
 ) {
   const stacks = observations.map(writtenDiatonicStack);
   return observations.map((observation, i) => {
     const existing = candidateSets[i];
+    const borrowed = !existing.some(c => c.fit.spellingConsistent && !c.fit.nonChordToneNoteIds.length) &&
+      (harmonicMajorSeventh(observation, options) ?? borrowedMinorHarmony(observations, i, options, boundaries));
+    if (borrowed) return [borrowed];
     const stack = stacks[i];
     if (!stack || stack.tones.length !== 4 || !observation.bass || observation.attackVoiceIds.length < 2 ||
       (stack.degree !== 1 && stack.degree !== 3 && stack.degree !== 6)) return existing;
@@ -520,7 +582,7 @@ function writtenPivotLeadingTone(
   tonic: ChordInferenceObservation,
   key: KeyReference,
 ) {
-  const loweredSixth = scaleDegreePitchClass(key, 6, -1);
+  const loweredSixth = scaleDegreePitchClass(key, 6, key.mode === "major" ? -1 : 0);
   const dominantRoot = scaleDegreePitchClass(key, 5);
   const notes = observationNotes(pivot);
   if (!notes.some(({ note }) => pitchClassEquals(note.pitch, loweredSixth)) ||
@@ -530,7 +592,7 @@ function writtenPivotLeadingTone(
         const motion = toMidi(next.pitch) - toMidi(note.pitch);
         return pitchClassEquals(note.pitch, loweredSixth)
           ? motion === -1 && pitchClassEquals(next.pitch, dominantRoot)
-          : motion === 0;
+          : spelledPitchEquals(next.pitch, note.pitch);
       })) return;
 
   const leadingTone = leadingTonePitchClass(key);
@@ -597,6 +659,41 @@ export function withWrittenPivotSevenths(
       id: `${candidate.id}:written-pivot-diminished7`,
       evidence: [...candidate.evidence, { kind: "sequence-context" as const, code: "written-pivot-leading-seventh" }],
     }];
+  });
+}
+
+/** vii°7 and V7 may articulate one applied dominant. The seventh of
+ * vii°7 drops to the root of V7 while the other voices hold, then the
+ * same written leading tone resolves into the witnessed target triad. */
+export function withAppliedLeadingSeventhPreparations(
+  frames: readonly ChordInferenceObservation[], sets: readonly (readonly Candidate[])[], options: ChordInferenceOptions,
+  boundaries: readonly number[],
+) {
+  return sets.map((existing, i) => {
+    const source = frames[i], dominant = frames[i + 1], arrival = frames[i + 2];
+    if (!arrival || source.soundingPitchClasses.length !== 4 || !soundingBass(source) ||
+        !soundingBass(dominant) || !soundingBass(arrival) || !continuesInKey(source, dominant) ||
+        !continuesInKey(dominant, arrival) || boundaries.some(t => source.fromTick < t && t <= arrival.fromTick) ||
+        existing.some(c => hasExactSpelling(c) && c.semantics)) return existing;
+    const applied = sets[i + 1].find(c => c.functionalBaseId === "D" && c.semantics &&
+      c.identity.structure.kind === "tertian" && c.identity.structure.quality === "dominant7" &&
+      hasExactSpelling(c) && !c.fit.omittedChordDegrees.length && primaryHarmonyInterpretation(c.semantics).appliedTarget);
+    const target = applied?.semantics && primaryHarmonyInterpretation(applied.semantics).appliedTarget;
+    const goal = target && readSoundingTertianIdentity(writtenFrame(arrival));
+    if (!target || goal?.structure.kind !== "tertian" || (goal.structure.quality !== "major" && goal.structure.quality !== "minor") ||
+        !pitchClassEquals(goal.root, scaleDegreePitchClass(source.key, target.degree))) return existing;
+    const key = { tonic: goal.root, mode: goal.structure.quality };
+    if (!writtenPivotLeadingTone(source, dominant, arrival, key)) return existing;
+    const tones = chordToneSpellings(leadingTonePitchClass(key), "diminished7");
+    const inversion = pivotSeventhInversions.find(n => pitchClassEquals(source.bass!.pitch, tones[n]));
+    if (inversion === undefined) return existing;
+    const candidate = createFunctionalCandidate(source, {
+      baseId: "DVII", definition: { ...functionalDefinition("DVII"), quality: () => "diminished7" },
+      form: "seventh", localKeyPolicy: "current-key", expectedInversion: inversion, appliedTarget: target.degree,
+    }, options);
+    if (!candidate || !hasExactSpelling(candidate) || candidate.confidence !== "high") return existing;
+    return [{ ...candidate, evidence: [...candidate.evidence, { kind: "sequence-context" as const,
+      code: "applied-leading-seventh-through-dominant", details: { target: target.degree, arrivalTick: arrival.fromTick } }] }];
   });
 }
 

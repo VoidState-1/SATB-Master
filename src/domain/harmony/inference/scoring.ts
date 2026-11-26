@@ -84,14 +84,11 @@ function uniqueExtraPitchClasses(
   notes: ReturnType<typeof observationNotes>,
   tones: readonly ReturnType<typeof chordIdentityToneSpellings>[number][],
 ) {
-  const seen = new Set<number>();
-  const extras = notes.flatMap(({ note }) => {
-    if (matchingToneIndex(tones, note.pitch)) return [];
-    const value = pitchClassValue(note.pitch);
-    if (seen.has(value)) return [];
-    seen.add(value);
-    return [{ step: note.pitch.step, alter: note.pitch.alter }];
-  });
+  const extras: SpelledPitchClass[] = [];
+  for (const { note } of notes) {
+    if (!matchingToneIndex(tones, note.pitch) && !extras.some(p => pitchClassEquals(p, note.pitch)))
+      extras.push({ step: note.pitch.step, alter: note.pitch.alter });
+  }
   return Object.freeze(extras);
 }
 
@@ -133,20 +130,20 @@ export function isCanonicalTonicFifthOmission(
   const fifth = chordIdentityToneSpellingForDegree(identity, 5);
   const notes = observationNotes(observation);
   if (!root || !third || !fifth || notes.length !== 4) return false;
-  if (!observation.bass || !sameSoundingPitch(observation.bass.pitch, root))
+  if (!observation.bass || !pitchClassEquals(observation.bass.pitch, root))
     return false;
 
   const rootCount = notes.filter(({ note }) =>
-    sameSoundingPitch(note.pitch, root),
+    pitchClassEquals(note.pitch, root),
   ).length;
   const thirdCount = notes.filter(({ note }) =>
-    sameSoundingPitch(note.pitch, third),
+    pitchClassEquals(note.pitch, third),
   ).length;
   const fifthCount = notes.filter(({ note }) =>
-    sameSoundingPitch(note.pitch, fifth),
+    pitchClassEquals(note.pitch, fifth),
   ).length;
   const onlyRootAndThird = notes.every(({ note }) =>
-    sameSoundingPitch(note.pitch, root) || sameSoundingPitch(note.pitch, third),
+    pitchClassEquals(note.pitch, root) || pitchClassEquals(note.pitch, third),
   );
 
   return rootCount === 3 && thirdCount === 1 && fifthCount === 0 && onlyRootAndThird;
@@ -235,7 +232,11 @@ export function fitChordObservation(
   const bassMatchesInversion =
     !observation.bass ||
     sameSoundingPitch(observation.bass.pitch, identity.bass);
-  const hardRejected = chordFitRejection(
+  // A simultaneous pair of written names cannot double a single chord member.
+  // Uniform enharmonic alternatives retain their separate contextual reading.
+  const conflictingDoubling = !spellingConsistent && notes.some(({ note }, i) => notes.slice(i + 1).some(other =>
+    sameSoundingPitch(note.pitch, other.note.pitch) && !pitchClassEquals(note.pitch, other.note.pitch)));
+  const hardRejected = conflictingDoubling ? "mixed-written-doubling" : chordFitRejection(
     notes, tones, identity, bassMatchesInversion, nonChordToneNoteIds, omittedChordDegrees, options,
   );
 
