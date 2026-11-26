@@ -133,7 +133,7 @@ export function seventhDiagnostic(
     },
     evidence: [
       ...(chord ? [chordEvidence(chord)] : Object.values(environment.context.rules.sliceAt(environment.obligation.openedAt.tick)?.notes ?? {})
-        .map(note => noteEvidence(note, "实写属七音组"))),
+        .map(note => noteEvidence(note, payload.writtenQuality === "dominant7" ? "实写属七音组" : "实写导七音组"))),
       noteEvidence(source, "和弦七音"),
       ...(targetChord ? [chordEvidence(targetChord)] : writtenSixFour ? Object.values(environment.context.slice.notes)
         .map(note => noteEvidence(note, "实写四六音组")) : []),

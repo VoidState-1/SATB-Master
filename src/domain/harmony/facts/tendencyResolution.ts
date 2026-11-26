@@ -193,18 +193,23 @@ export function writtenCadentialSixFourExit<T extends KeyedResolutionFrame>(
 
 /** §22.3: the leading seventh's root and third rise, while its fifth and seventh
  * descend. The two middle members meet on the third of the receiving tonic. */
+export function leadingSeventhMemberResolves(from: NoteEvent["pitch"], to: NoteEvent["pitch"],
+  sourceTones: readonly SpelledPitchClass[], tonicTones: readonly SpelledPitchClass[]) {
+  const member = sourceTones.findIndex(tone => pitchClassEquals(from, tone));
+  const destinations = [tonicTones[0], tonicTones[1], tonicTones[1], tonicTones[2]];
+  if (member < 0 || !pitchClassEquals(to, destinations[member])) return false;
+  const motion = writtenInterval(from, to);
+  return isWrittenStep(motion) && motion.diatonicSteps === (member < 2 ? 1 : -1);
+}
+
 export function resolvesLeadingSeventhToDoubledThird(
   source: WrittenResolutionFrame, target: WrittenResolutionFrame,
   sourceTones: readonly SpelledPitchClass[], tonicTones: readonly SpelledPitchClass[],
 ) {
-  const destinations = [tonicTones[0], tonicTones[1], tonicTones[1], tonicTones[2]];
   return VOICE_ORDER.every(voice => {
     const from = source.notes[voice], to = target.notes[voice];
     if (!from || !to || from.startTick + from.durationTicks !== source.endTick || to.startTick !== source.endTick) return false;
-    const member = sourceTones.findIndex(tone => pitchClassEquals(from.pitch, tone));
-    if (member < 0 || !pitchClassEquals(to.pitch, destinations[member])) return false;
-    const motion = writtenInterval(from.pitch, to.pitch);
-    return isWrittenStep(motion) && motion.diatonicSteps === (member < 2 ? 1 : -1);
+    return leadingSeventhMemberResolves(from.pitch, to.pitch, sourceTones, tonicTones);
   });
 }
 

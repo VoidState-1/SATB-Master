@@ -27,6 +27,7 @@ import {
   canOmitDominantFifth,
 } from "../../facts/dominantMotion";
 import { decoratedPassingSixFourMotion, upperPassingMotion } from "../../facts/prolongation";
+import { partialTendencyVoicings } from "./repeatedTendency";
 import {
   resolvesRaisedFifthToDoubledThird,
   writtenDoubleDominantResolution,
@@ -48,6 +49,7 @@ export { respeltDegrees, writtenDoubleDominantResolution } from "../../facts/ten
 export interface ChordSliceFact {
   readonly slice: AnalysisSlice;
   readonly chord: AnalysisChord;
+  readonly supportingChord?: AnalysisChord;
   readonly active: ReturnType<typeof activeNotes>;
   readonly tones: ReturnType<typeof chordIdentityToneSpellings>;
   readonly stableComplete: boolean;
@@ -57,10 +59,16 @@ export interface ChordSliceFact {
 interface ChordSliceFacts {
   readonly all: readonly ChordSliceFact[];
   readonly standard: readonly ChordSliceFact[];
+  readonly partialGaps: readonly ChordSliceFact[];
 }
 
 // Each check owns its rule context, including incremental and concurrent checks.
 const byContext = new WeakMap<HarmonyRuleContext, ChordSliceFacts>();
+
+export function standardTertianVoicing({ chord }: ChordSliceFact) {
+  const { structure } = chord.identity;
+  return structure.kind === "tertian" && !structure.extensions.some(degree => degree >= 9);
+}
 
 export function chordSliceFacts(context: HarmonyRuleContext): ChordSliceFacts {
   const cached = byContext.get(context);
@@ -81,10 +89,9 @@ export function chordSliceFacts(context: HarmonyRuleContext): ChordSliceFacts {
       stableComplete: slice.completeSatb && !context.sliceTransitions({ fromSliceIndex: slice.index }).first()?.sameHarmony,
     };
     all.push(fact);
-    const { structure } = chord.identity;
-    if (structure.kind === "tertian" && !structure.extensions.some(degree => degree >= 9)) standard.push(fact);
+    if (standardTertianVoicing(fact)) standard.push(fact);
   }
-  const facts = { all, standard };
+  const facts = { all, standard, partialGaps: partialTendencyVoicings(context) };
   byContext.set(context, facts);
   return facts;
 }

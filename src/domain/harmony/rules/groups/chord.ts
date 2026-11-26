@@ -14,6 +14,7 @@ import {
   type SpelledPitchClass,
 } from "../../../pitch";
 import {
+  activeNotes,
   chordEvidence,
   chordLabel,
   diagnostic,
@@ -22,6 +23,7 @@ import {
 } from "../helpers/core";
 import {
   chordSliceFacts,
+  standardTertianVoicing,
   type ChordSliceFact,
   structuralTriadVoicing,
   realizedBeforeVerifiedOrnaments,
@@ -29,6 +31,7 @@ import {
   triadOrnaments,
   landsOnIncompleteTonic,
 } from "../helpers/chordVoicing";
+import { repeatedStructuralTone } from "../helpers/repeatedTendency";
 import { continuesCompleteSeventh } from "../helpers/motionHarmony";
 import {
   beforeMelodicMinorPassingBass,
@@ -42,7 +45,7 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 import { leadingToneForFunction } from "../services/harmony";
-import { receivesDoubledLocalTonicThird } from "./support/appliedAndDeceptive";
+import { receivesDoubledLocalTonicThird } from "./support/localTonicThird";
 import { diatonicSequenceAtMiddleArrival } from "../state/leadingToneTargets";
 import { resolvesDominantSixthSubstitution, respeltDoubleDominantMember } from "./support/doubleDominant";
 import { heldSuspensionsAt, preparedCadentialPair } from "./support/suspensionsAndVoiceLeading";
@@ -120,6 +123,21 @@ function anticipatesStructuralBass(
     context.pitch.sameWrittenPitch(bass, next);
 }
 
+/** The upper voices must independently support the written third and
+ * fifth. A declared bass ornament has its own preparation/arrival test. */
+function supportedBassCorrection(context: HarmonyRuleContext, chord: ChordSliceFact["chord"], bass: AnalysisNote) {
+  if (bass.nonChordToneRole || context.harmony.isWrittenChordTone(bass, chord)) return;
+  const entry = context.sliceAt(Math.max(chord.startTick, bass.startTick));
+  if (!entry?.completeSatb || entry.notes.bass?.id !== bass.id) return;
+  const upper = activeNotes(entry).filter(item => item.voiceId !== "bass");
+  if (upper.some(({ note }) => note.nonChordToneRole || !context.harmony.isWrittenChordTone(note, chord))) return;
+  const supported = ([3, 5] as const).every(degree => {
+    const tone = chordIdentityToneSpellingForDegree(chord.identity, degree);
+    return tone && upper.some(({ note }) => pitchClassEquals(note.pitch, tone));
+  });
+  if (supported) return formatPitchClass(chord.identity.bass);
+}
+
 export function inversionBassRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   chordSliceFacts(context).standard.forEach(({ slice, chord, active, structural }) => {
@@ -129,6 +147,7 @@ export function inversionBassRule(context: HarmonyRuleContext) {
     const written = context.analysis.writtenProlongations.get(slice.tick);
     if (anticipatesStructuralBass(context, chord, bass.note) || beforeMelodicMinorPassingBass(context, slice) ||
         pairedOuterNeighbors(context, slice) || isVerifiedOrnamentalBass(context, slice, chord, bass.note)) return;
+    const expectedBass = supportedBassCorrection(context, chord, bass.note);
     diagnostics.push(
       diagnostic(
         "chord.inversion-bass",
@@ -140,6 +159,7 @@ export function inversionBassRule(context: HarmonyRuleContext) {
         `${chordLabel(chord)} 要求低音写作 ${formatPitchClass(chord.identity.bass)}，当前为 ${formatPitchClass(bass.note.pitch)}。`,
         {
           chordIds: [chord.id],
+          params: expectedBass ? { expectedBass } : {},
           evidence: [
             chordEvidence(chord), noteEvidence(bass.note, "男低音"),
             ...(written ? [{
@@ -256,12 +276,12 @@ interface RepeatedChordTonePolicy {
 }
 
 function repeatedTendencyCause(
-  { slice, chord }: ChordSliceFact,
+  { chord }: ChordSliceFact,
   tone: SpelledPitchClass,
   repeated: ChordSliceFact["active"],
 ) {
   const subjects = repeated.map(({ voiceId, note }) => `${voiceId}:${note.id}`).sort();
-  return `repeated-tendency-tone|${chord.id}|${slice.tick}-${slice.endTick}|${formatPitchClass(tone)}|${subjects.join(",")}`;
+  return `repeated-tendency-tone|${chord.id}|${formatPitchClass(tone)}|${subjects.join(",")}`;
 }
 
 function evaluateRepeatedChordToneRule(
@@ -269,12 +289,12 @@ function evaluateRepeatedChordToneRule(
   policy: RepeatedChordTonePolicy,
 ) {
   const diagnostics: RuleDiagnostic[] = [];
-  chordSliceFacts(context).standard.forEach((fact) => {
-    if (!fact.stableComplete) return;
+  const { standard, partialGaps } = chordSliceFacts(context);
+  [...standard, ...partialGaps.filter(standardTertianVoicing)].forEach((fact) => {
     const target = policy.target(fact);
     if (!target) return;
     const { tone, applied } = target;
-    const repeated = fact.active.filter(({ note }) => pitchClassEquals(note.pitch, tone));
+    const repeated = repeatedStructuralTone(context, fact, tone);
     if (repeated.length <= 1 || policy.allowsRepetition?.(fact, target)) return;
     diagnostics.push(
       diagnostic(
@@ -286,10 +306,11 @@ function evaluateRepeatedChordToneRule(
         policy.title,
         policy.message(fact.chord, tone),
         {
-          chordIds: [fact.chord.id],
+          chordIds: fact.supportingChord ? [fact.chord.id, fact.supportingChord.id] : [fact.chord.id],
           ...(applied ? { causeRefs: [repeatedTendencyCause(fact, tone, repeated)] } : {}),
           evidence: [
             chordEvidence(fact.chord),
+            ...(fact.supportingChord ? [chordEvidence(fact.supportingChord)] : []),
             ...repeated.map((item) => noteEvidence(item.note)),
           ],
         },
@@ -334,10 +355,11 @@ export function doubledSeventhRule(context: HarmonyRuleContext) {
 
 export function doubledAlteredTendencyToneRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
-  chordSliceFacts(context).all.forEach(
+  const { all, partialGaps } = chordSliceFacts(context);
+  [...all, ...partialGaps].forEach(
     (fact) => {
-      const { slice, chord, active, stableComplete } = fact;
-      if (!stableComplete || chord.identity.structure.kind !== "tertian")
+      const { slice, chord } = fact;
+      if (chord.identity.structure.kind !== "tertian")
         return;
       const directionalTones: Array<{
         tone: SpelledPitchClass;
@@ -369,7 +391,7 @@ export function doubledAlteredTendencyToneRule(context: HarmonyRuleContext) {
       ) directionalTones.push({ tone: targetLeadingTone, tendency: "up", degree: 7 });
       const repeatedTones = directionalTones.map((item) => ({
         ...item,
-        repeated: active.filter(({ note }) => pitchClassEquals(note.pitch, item.tone)),
+        repeated: repeatedStructuralTone(context, fact, item.tone),
       })).filter(({ repeated }) => repeated.length > 1);
       repeatedTones.forEach(({ tone, tendency, degree, repeated }) => {
         const report = diagnostic(
@@ -381,13 +403,15 @@ export function doubledAlteredTendencyToneRule(context: HarmonyRuleContext) {
           "重复变化倾向音",
           `${chordLabel(chord)} 的 ${formatPitchClass(tone)} 具有明确的${tendency === "up" ? "上行" : "下行"}倾向，不应重复。`,
           {
-            chordIds: [chord.id],
+            chordIds: fact.supportingChord ? [chord.id, fact.supportingChord.id] : [chord.id],
+            causeRefs: [repeatedTendencyCause(fact, tone, repeated)],
             ...(targetLeadingTone && pitchClassEquals(tone, targetLeadingTone)
               ? { coverageRefs: [repeatedTendencyCause(fact, tone, repeated)] }
               : {}),
             params: { degree, tendency, count: repeated.length },
             evidence: [
               chordEvidence(chord),
+              ...(fact.supportingChord ? [chordEvidence(fact.supportingChord)] : []),
               ...repeated.map(({ note }) => noteEvidence(note, "重复变化倾向音")),
             ],
           },

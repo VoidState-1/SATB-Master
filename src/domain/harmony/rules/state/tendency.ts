@@ -39,6 +39,8 @@ import {
 } from "./tendencyContext";
 import { hasMajorDeceptiveLeadingToneMotion, leadingNeighborFrame, ornamentsSameLeadingHarmony } from "./leadingToneTargets";
 import { supportsWrittenInnerLeadingToneDescent } from "./leadingToneTransfers";
+import { allowsWrittenTertianIdentity, matchesWrittenChord } from "../../facts/tendencyResolution";
+import { INNER_LEADING_DESCENT } from "../configSchema";
 
 export { supportsTendencyResolutionRules } from "./tendencyContext";
 
@@ -62,6 +64,7 @@ export type LeadingTonePayload = VoiceObligationPayload & {
 export type SeventhPayload = VoiceObligationPayload & {
   readonly seventhMidi: number;
   readonly preparedAtEntry?: true;
+  readonly writtenQuality?: "dominant7" | "diminished7" | "halfDiminished7";
 };
 
 export type DominantNinthPayload = VoiceObligationPayload & {
@@ -80,26 +83,26 @@ export const chordSeventhSource: ObligationSource<SeventhPayload> = {
   collect({ context, moment }) {
     const { slice } = context;
     const chord = slice.chord;
-    // Ambiguous functions over the same written V7 still agree on its seventh.
-    // An applied or ornamental hypothesis alone cannot supply the missing parts.
+    // With absent or ambiguous labels the written source and landing must agree independently.
     const labelled = chord && supportsTendencyResolutionRules(context, chord);
-    if (chord && !labelled && (chord.semantics?.pedalContext || chord.identity.structure.kind !== "tertian" ||
-        chord.identity.structure.quality !== "dominant7")) return [];
-    const seventh = labelled ? chordIdentityToneSpellingForDegree(chord.identity, 7) : writtenSeventhAtAuthenticDeparture(context);
+    if (chord?.semantics?.pedalContext) return [];
+    const written = !labelled ? writtenSeventhAtAuthenticDeparture(context) : undefined;
+    const seventh = labelled ? chordIdentityToneSpellingForDegree(chord.identity, 7) : written?.tone;
     if (!seventh) return [];
     const prepared = preparedSeventhEntries(context);
-    const voices = prepared.length || !chord ? VOICE_ORDER : moment.attackedVoiceIds;
+    const voices = prepared.length || written ? VOICE_ORDER : moment.attackedVoiceIds;
     return voices.flatMap((voiceId) => {
       const note = slice.notes[voiceId];
       if (!note) return [];
       const attacked = moment.attackedVoiceIds.includes(voiceId);
-      if (!pitchClassEquals(note.pitch, seventh) || (chord && !attacked && !prepared.includes(voiceId))) return [];
+      if (!pitchClassEquals(note.pitch, seventh) || (!written && !attacked && !prepared.includes(voiceId))) return [];
       return [
         {
           partitionKey: `voice:${voiceId}`,
           payload: {
             voiceId,
             seventhMidi: toMidi(note.pitch),
+            ...(written && { writtenQuality: written.quality }),
             ...(!attacked && { preparedAtEntry: true as const }),
           },
           subjectRefs: {
@@ -341,6 +344,16 @@ export function innerLeadingToneDescendsToFifth(
   const tonic = { step: payload.targetStep, alter: payload.targetAlter };
   const resolutionKey = { tonic, mode: payload.targetMode };
   const dominant = scaleDegreePitchClass(resolutionKey, 5);
+  // A named dominant can carry a decoration in a different voice. Without a
+  // label, require all written members to establish the departing harmony.
+  if (environment.config[INNER_LEADING_DESCENT.key] === true &&
+      !target.chord?.semantics?.cadenceRole && !leading.nonChordToneRole &&
+      matchesWrittenChord(target, tonic, payload.targetMode) &&
+      (["major", "dominant7"] as const).some(quality => from
+        ? allowsWrittenTertianIdentity(source, dominant, quality)
+        : matchesWrittenChord(source, dominant, quality)) &&
+      obligationFollowsWrittenLeadingTone(environment, source, leading, landing, dominant, resolutionKey)) return true;
+
   if (supportsWrittenInnerLeadingToneDescent(source, target, dominant, tonic) &&
       obligationFollowsWrittenLeadingTone(environment, source, leading, landing, dominant, resolutionKey)) return true;
 

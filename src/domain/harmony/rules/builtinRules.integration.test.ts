@@ -816,7 +816,7 @@ describe("斯波索宾基础规则检查", () => {
     });
   });
 
-  it("同和弦转换中临时缺音与重复导音在最终恢复时通过", () => {
+  it("同和弦恢复完整时只定位中途实唱的重复导音", () => {
     const project = createEmptyProject();
     project.lengthTicks = PPQ * 3;
     project.chordTrack.regions.push(
@@ -832,9 +832,11 @@ describe("斯波索宾基础规则检查", () => {
     addLine(project, "tenor", [67, 59, 67]);
     addLine(project, "bass", [43, 43, 43]);
 
-    const ids = ruleIds(project);
-    expect(ids).not.toContain("chord.incomplete-members");
-    expect(ids).not.toContain("chord.doubled-leading-tone");
+    const { diagnostics } = checkHarmony(project);
+    expect(diagnostics.filter(d => d.ruleId === "chord.incomplete-members")).toEqual([]);
+    expect(diagnostics.filter(d => d.ruleId === "chord.doubled-leading-tone")).toMatchObject([
+      { tick: PPQ, endTick: 2 * PPQ, voiceIds: ["alto", "tenor"] },
+    ]);
   });
 
   it("同和弦转换结束时仍缺音或重复导音继续给出提示", () => {
