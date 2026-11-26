@@ -685,6 +685,71 @@ function oneBar(key: string, soprano: string, alto: string, tenor: string, bass:
   ].join("\n")).project;
 }
 
+describe("推导空档与延续和声的结构锚点", () => {
+  it.each([
+    ["持续和声", "F#4/1", 0],
+    ["空档中伴奏偏离和弦", "F#4/4 G4/8 F#4/8 F#4/2", 2],
+  ] as const)("%s 时核验空档里的两个经过音出发点", (_name, alto, count) => {
+    const { project } = compileScoreText(`satb 1
+key B major
+bars 1..1 {
+ S: | A#4/4 F#4/8 G#4/8@upper A#4/2 |
+ A: | ${alto} |
+ T: | C#4/4 A#3/8 B3/8@inner C#4/2 |
+ B: | F#3/1 |
+ H: | V/4 r/8 V/8 V/2 |
+}
+annotations {
+ note upper role=passing
+ note inner role=passing
+}`);
+    for (const chord of project.chordTrack.regions) {
+      for (const reading of chord.semantics!.interpretations) reading.source = "inferred";
+    }
+    const findings = checkHarmony(project).diagnostics.filter(d =>
+      d.ruleId === "nonchord.passing-tone" && d.tick === 1.5 * PPQ);
+    expect(findings).toHaveLength(count);
+  });
+
+  it.each([
+    ["E3", "T", "neighbor"],
+    ["Eb3", "t", undefined],
+  ] as const)("低音 E–D♯ 后接 %s 时按书写的归向推导", (landing, harmony, role) => {
+    const project = oneBar("C major", "C5/1", "G4/1", "C4/1", `E3/4. D#3/8 ${landing}/2`);
+    const region = displacedUpperPassingAt(inferChords(project), 1.5 * PPQ);
+    expect(region).toMatchObject({ status: "resolved", selected: { functionalBaseId: harmony } });
+    expect(region!.selected!.fit.nonChordToneAssignments[project.satbTracks[3].notes[1].id]).toBe(role);
+  });
+
+  it.each([
+    ["G4/4", "DD", true],
+    ["G4/8 G4/8", "DDVII", false],
+  ] as const)("副属七根音在女低 %s 上进入时核验三个持续事件", (alto, initial, continuous) => {
+    const project = oneBar("Bb minor", "r/8 C5/8 G4/4 F4/2", `${alto} E4/4 F4/2`,
+      "E4/4 C4/4 Db4/2", "Bb2/2 F2/2");
+    const inference = inferChords(project);
+    const first = inference.regions[0];
+    expect(first).toMatchObject({ selected: { functionalBaseId: initial }, status: "resolved" });
+    expect(first.toTick).toBe(continuous ? 2 * PPQ : PPQ / 2);
+    expect(first.selected!.evidence.some(e => e.code === "delayed-dominant-root")).toBe(continuous);
+    if (!continuous) {
+      expect(inference.regions[1]).toMatchObject({ fromTick: PPQ / 2, selected: { functionalBaseId: "DD" } });
+    }
+  });
+
+  it.each([
+    ["F5", "A4", "C4", "F2", []],
+    ["Eb5", "Gb4", "Bb3", "Eb3", [2 * PPQ]],
+  ] as const)("副属七根音补入后，实际落在 %s 时仍核验指定目标", (s, a, t, b, expected) => {
+    const project = oneBar("Bb minor", `r/8 C5/8 G4/4 ${s}/2`, `G4/4 E4/4 ${a}/2`,
+      `E4/4 C4/4 ${t}/2`, `Bb2/2 ${b}/2`);
+    const applied = applyHarmonyInference(project, inferHarmony(project), { mode: "replace-unlocked", writeNonChordToneRoles: true });
+    const findings = checkHarmony(applied.project).diagnostics;
+    expect(findings.filter(d => d.ruleId === "function.applied-dominant-target").map(d => d.tick)).toEqual(expected);
+    expect(findings.filter(d => d.ruleId === "rhythm.harmonic-syncopation" && d.tick === PPQ / 2)).toEqual([]);
+  });
+});
+
 const passingTick = 1440;
 const arrivalTick = 1920;
 

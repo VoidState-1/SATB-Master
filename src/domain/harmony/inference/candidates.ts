@@ -19,6 +19,7 @@ import {
   identityForFunctionalTemplate,
   smallNinthAlteration,
   fitChordObservation,
+  exactFit,
   fitRatio,
   isCanonicalTonicFifthOmission,
   type ChordFitOptions,
@@ -41,6 +42,9 @@ import type * as Respellings from "./respellings";
 import type * as SixFours from "./sixFours";
 import type * as LocalKeys from "./localKeys";
 import type { InferencePassContext } from "./passContext";
+import { continuesInKey } from "./passContext";
+import { crossesWrittenBoundary } from "../facts/ornamentalMotion";
+import { canonicalJson } from "../../canonicalJson";
 
 const FALLBACK_QUALITIES: readonly ChordQuality[] = [
   "major",
@@ -524,20 +528,64 @@ export function fitFifthOmissionRevoicing(
   noteIds: readonly string[],
   family: "triad" | "seventh",
 ): ChordInferenceCandidate | undefined {
-  const fit = fitChordObservation(observation, anchor.identity, { allowedOmittedChordDegrees: [5] });
+  return fitOmittedMember(anchor, observation, 5, `${family}-revoicing`, noteIds);
+}
+
+function fitOmittedMember(
+  anchor: ChordInferenceCandidate, observation: ChordInferenceObservation, degree: 1 | 5,
+  pattern: string, noteIds: readonly string[],
+): ChordInferenceCandidate | undefined {
+  const fit = fitChordObservation(observation, anchor.identity, { allowedOmittedChordDegrees: [degree] });
   if (fit.hardRejected || !fit.spellingConsistent || fit.nonChordToneNoteIds.length ||
-      fit.omittedChordDegrees.length !== 1 || fit.omittedChordDegrees[0] !== 5) return undefined;
+      fit.omittedChordDegrees.length !== 1 || fit.omittedChordDegrees[0] !== degree) return undefined;
   return {
     ...anchor,
-    id: `${observation.index}:${family}-revoicing:${anchor.id}`,
+    id: `${observation.index}:${pattern}:${anchor.id}`,
     observationIndex: observation.index,
     fit,
     score: scoreFor(observation, anchor.identity, fit, anchor.score.functionalTier),
     confidence: "medium",
     evidence: [...evidenceFor(fit, true), {
-      kind: "sequence-context", code: `single-voice-${family}-revoicing`, noteIds,
+      kind: "sequence-context", code: degree === 5 ? `single-voice-${pattern}` : pattern, noteIds,
     }],
   };
+}
+
+/** Three held members of an applied seventh can spell vii° until the
+ * fourth voice enters on the root. No sounding part changed harmony. */
+function withDelayedDominantRoots(
+  { observations, currentPhraseTicks, minimumConfidence }: InferencePassContext,
+  candidates: CandidateSets, withheld: ReadonlySet<number>,
+) {
+  if (minimumConfidence === "high") return candidates;
+  return candidates.map((existing, i) => {
+    const part = observations[i], arrival = observations[i + 1];
+    const leading = existing[0];
+    if (!leading?.semantics || existing.length !== 1 || !exactFit(leading) ||
+        leading.identity.structure.kind !== "tertian" || leading.identity.structure.quality !== "diminished" ||
+        !arrival?.completeSatb || part.completeSatb || !continuesInKey(part, arrival) ||
+        part.key.tick !== arrival.key.tick || withheld.has(part.fromTick) || withheld.has(arrival.fromTick) ||
+        part.toTick - part.fromTick >= (part.measureBeatTicks ?? 0) ||
+        crossesWrittenBoundary(currentPhraseTicks, part.fromTick, arrival.fromTick)) return existing;
+    const held = observationNotes(part);
+    if (held.length !== 3 || held.some(({ voiceId, note }) =>
+      note.nonChordToneRole || arrival.activeNotes[voiceId]?.id !== note.id)) return existing;
+    const entering = observationNotes(arrival).find(({ voiceId }) => !part.activeNotes[voiceId]);
+    const target = primaryHarmonyInterpretation(leading.semantics);
+    if (!entering || entering.voiceId === "bass" || entering.note.nonChordToneRole || !target.appliedTarget) return existing;
+    const readings = candidates[i + 1].filter(c => {
+      if (!exactFit(c) || !c.semantics || c.identity.structure.kind !== "tertian" ||
+          c.identity.structure.quality !== "dominant7" || !pitchClassEquals(c.identity.root, entering.note.pitch)) return false;
+      const next = primaryHarmonyInterpretation(c.semantics);
+      return target.degree === 7 && next.degree === 5 &&
+        canonicalJson(next.appliedTarget) === canonicalJson(target.appliedTarget) &&
+        keyEquals(next.localKey ?? arrival.key, target.localKey ?? part.key);
+    });
+    if (readings.length !== 1) return existing;
+    const fit = fitOmittedMember(readings[0], part, 1, "delayed-dominant-root",
+      [...held.map(({ note }) => note.id), entering.note.id]);
+    return fit ? [fit] : existing;
+  });
 }
 
 export function fitProlongedHarmony(
@@ -935,9 +983,10 @@ export function buildContextualChordCandidates(
     passes,
   );
 
+  const continued = withDelayedDominantRoots(context, candidates, late.withheldStarts);
   return {
     observations: context.observations,
-    candidates: passes.sixFours.resolveFiguredPedals(context.observations, candidates, context.currentPhraseTicks,
+    candidates: passes.sixFours.resolveFiguredPedals(context.observations, continued, context.currentPhraseTicks,
       context.minimumConfidence !== "high" && options.allowNonChordToneCandidates !== false, late.withheldStarts),
     currentPhraseTicks: context.currentPhraseTicks,
     withheldStarts: late.withheldStarts,

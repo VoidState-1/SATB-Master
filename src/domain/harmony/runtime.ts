@@ -199,11 +199,13 @@ export interface HarmonyDiagnostic {
   subjects?: DiagnosticSubjects;
   trace?: DiagnosticTraceEntry[];
   debug?: DiagnosticDebugSnapshot;
+  /** 同一处已证实可随主因修正的原始诊断。 */
+  consequences?: HarmonyDiagnostic[];
 }
 
 export type RuleDiagnostic = Omit<
   HarmonyDiagnostic,
-  "id" | "severity" | "exceptionContexts"
+  "id" | "severity" | "exceptionContexts" | "consequences"
 > & {
   /** 在产生声部对诊断的同一连接上观测到的进行事实。 */
   pairMotion?: {

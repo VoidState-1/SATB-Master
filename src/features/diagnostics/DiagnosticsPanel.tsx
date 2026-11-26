@@ -170,6 +170,19 @@ export function DiagnosticsPanel({
                   onClick={() => onCopy(item)}
                 />
               ) : null}
+              {item.consequences?.length ? (
+                <details className="diagnostic-consequences">
+                  <summary>含 {item.consequences.length} 条连带提示</summary>
+                  <ul>
+                    {item.consequences.map(child => (
+                      <li key={child.id}>
+                        <strong>{child.title}</strong> <code>{child.ruleId}</code>
+                        <div>{child.message}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
             </div>
           );
         })}

@@ -195,3 +195,27 @@
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
+
+.diagnostic-consequences {
+  grid-column: 1 / -1;
+  padding: 0 0 6px 26px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-consequences summary {
+  width: fit-content;
+  color: var(--accent-ink);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnostic-consequences ul {
+  margin: 4px 0 0;
+  padding-inline-start: 18px;
+}
+
+.diagnostic-consequences li + li {
+  margin-top: 4px;
+}

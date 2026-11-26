@@ -73,7 +73,7 @@ export function ChordInferenceDialog({
   const [minConfidence, setMinConfidence] = useState<"high" | "medium" | "low">(
     "medium",
   );
-  const [writeNonChordToneRoles, setWriteNonChordToneRoles] = useState(false);
+  const [writeNonChordToneRoles, setWriteNonChordToneRoles] = useState(true);
   const [review, setReview] = useState<{
     result: HarmonyInferenceResult;
     mode: ChordInferenceApplyOptions["mode"];

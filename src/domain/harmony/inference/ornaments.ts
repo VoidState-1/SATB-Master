@@ -1022,7 +1022,7 @@ function addOrnamentCompetition(
 ) {
   return recovered.map((existing, i) => {
     const middle = observations[i], left = observations[i - 1], right = observations[i + 1];
-    if (!original[i].some(isStructuralAnchor) || !left || !right || withheld.has(middle.fromTick) ||
+    if (!left || !right || withheld.has(middle.fromTick) ||
         hasIndependentStructuralReading(existing)) return existing;
     const window = [left, middle, right] as const;
     if (middle.metric?.confidence !== "certain" || middle.metric.level >= 2 ||
@@ -1031,6 +1031,13 @@ function addOrnamentCompetition(
 
     const departures = anchors[i - 1], arrivals = anchors[i + 1];
     if (!departures.length || !arrivals.length) return existing;
+    // A borrowed triad can match by MIDI only while the written bass
+    // makes a lower or upper neighbor under three sustained voices.
+    const respeltBass = middle.attackVoiceIds.length === 1 && middle.attackVoiceIds[0] === "bass" &&
+      original[i].some(c => !c.fit.spellingConsistent && !pitchClassEquals(c.identity.bass, middle.bass!.pitch)) &&
+      VOICE_ORDER.every(v => v === "bass" || (left.activeNotes[v]!.id === middle.activeNotes[v]!.id &&
+        middle.activeNotes[v]!.id === right.activeNotes[v]!.id));
+    if (!original[i].some(isStructuralAnchor) && !respeltBass) return existing;
     // A written seventh with its regular resolution has affirmative
     // voice-leading evidence of its own, even on a short subdivision.
     if (existing.some(candidate => {
@@ -1063,6 +1070,7 @@ function addOrnamentCompetition(
     const keys = new Set(existing.map(ornamentReadingKey));
     const added: ChordInferenceCandidate[] = [];
     for (const candidate of contextual) {
+      if (respeltBass && candidate.fit.nonChordToneAssignments[middle.bass!.id] !== "neighbor") continue;
       const verified = verifyCompetingOrnament(window, candidate, departures, arrivals, weakerThanAnEdge);
       if (!verified) continue;
       const key = ornamentReadingKey(verified);

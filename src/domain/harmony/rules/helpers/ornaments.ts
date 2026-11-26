@@ -57,6 +57,25 @@ function isDepartureTone(context: HarmonyRuleContext, note: AnalysisNote) {
     isStructuralTone(context, note, context.sliceAt(note.startTick));
 }
 
+/** A skipped inference slice may still sound only written members of the
+ * harmony on both sides. The held bass witnesses its continuity. */
+function departsFromUnlabelledSlice(context: HarmonyRuleContext, voice: VoiceId, note: AnalysisNote) {
+  const gap = context.sliceAt(note.startTick);
+  if (!gap?.completeSatb || gap.chord || gap.tick === 0 || gap.endTick !== noteEnd(note) ||
+      gap.endTick - gap.tick > context.analysis.project.ppq || !soundsWrittenEvent(gap.notes, voice, note)) return false;
+  const left = context.sliceAt(gap.tick - 1), right = context.sliceAt(gap.endTick);
+  const chord = left?.chord;
+  if (!left?.completeSatb || !right?.completeSatb || !chord?.semantics || !right.chord?.semantics ||
+      !simpleLabel(chord) || !sameLabel(chord, right.chord) ||
+      [chord.semantics, right.chord.semantics].some(s => primaryHarmonyInterpretation(s).source !== "inferred") ||
+      crossesOrnamentCut(context, left.tick, right.tick)) return false;
+  const bass = gap.notes.bass!;
+  return left.notes.bass?.id === bass.id && right.notes.bass?.id === bass.id &&
+    pitchClassEquals(bass.pitch, chord.identity.bass) &&
+    VOICE_ORDER.every(v => !gap.notes[v]!.nonChordToneRole && context.harmony.isWrittenChordTone(gap.notes[v]!, chord)) &&
+    VOICE_ORDER.some(v => !pitchClassEquals(gap.notes[v]!.pitch, bass.pitch));
+}
+
 function isOutsideChord(context: HarmonyRuleContext, note: AnalysisNote, chord?: AnalysisChord) {
   return Boolean(chord && !context.harmony.isWrittenChordTone(note, chord));
 }
@@ -103,7 +122,7 @@ export function resolvePassingChain(
   if (mode === "marked") {
     const ordinary = readWrittenPassingLine(note, previous, next, (candidate, side) =>
       !candidate.nonChordToneRole && (side === "left"
-        ? isDepartureTone(context, candidate)
+        ? isDepartureTone(context, candidate) || departsFromUnlabelledSlice(context, voiceId, candidate)
         : isStructuralTone(context, candidate, context.sliceAt(candidate.startTick))),
     candidate => candidate.nonChordToneRole === "passing" && outside(candidate), continuous);
     if (ordinary) return ordinary;

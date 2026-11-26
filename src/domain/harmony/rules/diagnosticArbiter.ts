@@ -7,6 +7,7 @@ import type {
 import type { VoiceId } from "../../project/types";
 import type { DiagnosticSeverity, RuleConfig, RuleExceptionPolicy } from "./types";
 import { createDiagnosticDebugSnapshot } from "../debug/diagnosticDebug";
+import { compareDiagnosticSeverity } from "./policy/severity";
 import {
   normalizeDiagnosticSubjects,
   validateDiagnosticReferences,
@@ -139,6 +140,7 @@ function mergeRanges(source: readonly HarmonyDiagnostic[]) {
       stable(item.noteIds).join(","),
       stable(item.chordIds).join(","),
       stable(item.voiceIds).join(","),
+      item.params.missing,
     ].join("|");
     groups.set(key, [...(groups.get(key) ?? []), item]);
   });
@@ -202,6 +204,28 @@ function overlaps(left: HarmonyDiagnostic, right: HarmonyDiagnostic) {
   return left.tick <= right.endTick && right.tick <= left.endTick;
 }
 
+function attachBassConsequences(items: HarmonyDiagnostic[]) {
+  const bassErrors = items.filter(item => item.source === "builtin" && item.ruleId === "chord.inversion-bass" &&
+    typeof item.params.expectedBass === "string" && item.chordIds.length === 1 && item.noteIds.length === 1);
+  const primary = items.filter(item => {
+    if (item.source !== "builtin" || item.chordIds.length !== 1 ||
+        (item.ruleId !== "chord.incomplete-members" && item.ruleId !== "chord.unclassified-nonchord-tone")) return true;
+    const cause = bassErrors.find(bass =>
+      bass.chordIds[0] === item.chordIds[0] && bass.tick <= item.tick && item.endTick <= bass.endTick &&
+      compareDiagnosticSeverity(bass.severity, item.severity) <= 0 &&
+      (item.ruleId === "chord.incomplete-members"
+        ? item.params.missing === bass.params.expectedBass
+        : item.noteIds.length === 1 && item.noteIds[0] === bass.noteIds[0]));
+    if (!cause) return true;
+    cause.consequences = [...(cause.consequences ?? []), item];
+    return false;
+  });
+  for (const bass of bassErrors) {
+    if (bass.consequences) bass.consequences = [...bass.consequences].sort((a, b) => a.tick - b.tick || a.id.localeCompare(b.id));
+  }
+  return primary;
+}
+
 /** 去重后由子规则覆盖同证据上的通用父规则，且不依赖规则执行顺序。 */
 export function arbitrateDiagnostics(
   source: readonly HarmonyDiagnostic[],
@@ -213,7 +237,7 @@ export function arbitrateDiagnostics(
       .filter((definition) => definition.coveredRuleIds.length > 0)
       .map((definition) => [definition.id, new Set(definition.coveredRuleIds)]),
   );
-  return merged.filter((candidate) => {
+  const primary = merged.filter((candidate) => {
     return !merged.some((specific) => {
       const specificCoversCandidate =
         coveredByRule.get(specific.ruleId)?.has(candidate.ruleId) ?? false;
@@ -225,4 +249,5 @@ export function arbitrateDiagnostics(
       );
     });
   });
+  return attachBassConsequences(primary);
 }
