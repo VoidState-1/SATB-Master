@@ -8,8 +8,6 @@ import {
 } from "../../chordModel";
 import {
   pitchClassEquals,
-  spelledPitchEquals,
-  writtenInterval,
   toMidi,
   type SpelledPitchClass,
   normalizePitchClassNumber,
@@ -20,8 +18,10 @@ import type { VoiceId } from "../../project/types";
 import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisNote, AnalysisSlice, ProjectSnapshot } from "../analysis";
 import {
-  belongsToWrittenHarmony, createWrittenOrnamentReader, type OrnamentalFrame, type WrittenOrnament,
+  belongsToWrittenHarmony, createWrittenOrnamentReader, structuralOrnamentNotes, type OrnamentalFrame, type WrittenOrnament,
 } from "./ornamentalMotion";
+
+import { observeVoicePairMotion, writtenPerfectClass } from "./voicePairMotion";
 
 type WrittenVoicingNote = Pick<AnalysisNote, "pitch" | "nonChordToneRole"> & Partial<Pick<AnalysisNote, "id">>;
 
@@ -141,6 +141,28 @@ export interface StructuralVoicing {
   readonly missing: readonly SpelledPitchClass[];
 }
 
+/** A bass change under tied upper voices may produce a complete incidental chord. */
+export function canMaskHeldVoices(frame: OrnamentalFrame, previous?: OrnamentalFrame) {
+  const bass = frame.notes.bass, prior = previous?.notes.bass;
+  return !!bass && !!prior && previous.completeSatb && frame.completeSatb && bass.startTick === frame.tick &&
+    !pitchClassEquals(prior.pitch, bass.pitch) && previous.endTick === frame.tick &&
+    VOICE_ORDER.filter(v => v !== "bass" && frame.notes[v]?.id === previous.notes[v]?.id).length >= 2;
+}
+
+function provedHeldArrival(frames: readonly OrnamentalFrame[], indices: ReadonlyMap<number, number>,
+  index: number, identity: ChordIdentity, motions: readonly WrittenOrnament[]) {
+  const frame = frames[index], before = frames[index - 1];
+  if (!canMaskHeldVoices(frame, before) || motions.length < 2 ||
+      !before.identities.some(chord => soundsCompleteWrittenChord(chord, Object.values(before.notes), before.notes.bass!)) ||
+      !motions.every(m => m.voice !== "bass" && (m.role === "suspension" || m.role === "retardation") &&
+        m.departure.note.id === frame.notes[m.voice]?.id && m.entryTick === frame.tick)) return false;
+  const end = indices.get(Math.max(...motions.map(m => m.arrival.tick)))!;
+  const landed = frames[end];
+  return frames.slice(index, end + 1).every(part => part.notes.bass?.id === frame.notes.bass?.id) &&
+    motions.every(m => landed.notes[m.voice]?.id === m.arrival.note.id) &&
+    soundsCompleteWrittenChord(identity, Object.values(landed.notes), landed.notes.bass!);
+}
+
 /** Keep the surface untouched. Rank proven, same-voice endpoints by member
  * coverage, rejecting restorations that put another voice below the bass. */
 export function createStructuralVoicingReader(
@@ -153,8 +175,9 @@ export function createStructuralVoicingReader(
     if (!frame?.completeSatb) return;
     const tones = chordIdentityToneSpellings(identity);
     const surface = VOICE_ORDER.map(voice => frame.notes[voice]!);
-    if (surface.every(note => !note.nonChordToneRole) &&
-        hasCompleteWrittenTertianVoicing(surface.map(note => note.pitch))) return;
+    const literal = surface.every(note => !note.nonChordToneRole) &&
+      hasCompleteWrittenTertianVoicing(surface.map(note => note.pitch));
+    if (literal && !canMaskHeldVoices(frame, frames[index - 1])) return;
     const options: StructuralVoice[][] = [];
     const unresolved: VoiceId[] = [];
     let retained = 0;
@@ -168,13 +191,7 @@ export function createStructuralVoicingReader(
         continue;
       }
       const ornament = ornamentAt(index, voice, identity);
-      const approaches = ornament?.role === "passing" || ornament?.role === "neighbor";
-      const endpoints = ornament
-        ? (approaches ? [ornament.departure, ornament.arrival] : [ornament.arrival])
-          .map(point => point.note)
-          .filter((note, i, list) => belongsToWrittenHarmony(identity, voice, note) &&
-            !list.slice(0, i).some(other => spelledPitchEquals(other.pitch, note.pitch)))
-        : [];
+      const endpoints = ornament ? structuralOrnamentNotes(ornament, identity) : [];
       if (endpoints.length) {
         options.push(endpoints.map(structural => ({ voice, sounding, structural, ornament })));
       } else {
@@ -186,6 +203,7 @@ export function createStructuralVoicingReader(
     const motions = options.flatMap(choices => choices[0].ornament ? [choices[0].ornament] : []);
     if ((motions.length === 3 && motions.every(motion => motion.role === "neighbor" || motion.role === "passing")) ||
         motions.some(motion => hasWrittenPerfectParallel(frames, byTick, motion))) return;
+    if (literal && !provedHeldArrival(frames, byTick, index, identity, motions)) return;
     let best: StructuralVoicing | undefined;
     const choose = (i: number, voices: readonly StructuralVoice[]) => {
       if (i < options.length) {
@@ -207,23 +225,20 @@ export function createStructuralVoicingReader(
 function hasWrittenPerfectParallel(
   frames: readonly OrnamentalFrame[], indices: ReadonlyMap<number, number>, motion: WrittenOrnament,
 ) {
-  const perfect = (first: AnalysisNote, second: AnalysisNote) => {
-    const interval = writtenInterval(first.pitch, second.pitch);
-    const semitones = Math.abs(interval.semitones) % 12, steps = Math.abs(interval.diatonicSteps) % 7;
-    return steps === 4 && semitones === 7 ? 5 : steps === 0 && semitones === 0 ? 8 : 0;
-  };
   const events = new Set(motion.ornaments.map(note => note.id));
   return motion.crossedSliceTicks.some(tick => {
     const i = indices.get(tick)!;
     const before = frames[i - 1]?.notes, after = frames[i].notes;
     const from = before?.[motion.voice], to = after[motion.voice];
-    if (!from || !to || (!events.has(from.id) && !events.has(to.id)) || toMidi(from.pitch) === toMidi(to.pitch)) return false;
+    if (!from || !to || (!events.has(from.id) && !events.has(to.id))) return false;
     return VOICE_ORDER.some(voice => {
       if (voice === motion.voice) return false;
       const left = before[voice], right = after[voice];
-      if (!left || !right || toMidi(left.pitch) === toMidi(right.pitch)) return false;
-      const interval = perfect(from, left);
-      return interval !== 0 && interval === perfect(to, right);
+      if (!left || !right) return false;
+      const pair = observeVoicePairMotion(from, left, to, right);
+      if (pair.firstMotion === "stationary" || pair.secondMotion === "stationary") return false;
+      const interval = writtenPerfectClass(pair.previousInterval);
+      return interval !== 0 && interval === writtenPerfectClass(pair.currentInterval);
     });
   });
 }

@@ -18,14 +18,14 @@ import {
   keyEquals,
   leadingTonePitchClass,
 } from "../../pitch";
-import { VOICE_ORDER, type VoiceId } from "../../project";
+import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisSlice } from "../analysis";
 import {
   soundsCompleteWrittenTones,
   hasCompleteWrittenTertianVoicing,
   soundsDeclaredChord,
 } from "./writtenVoicing";
-import type { NoteEvent } from "../../project/types";
+import type { NoteEvent, VoiceId } from "../../project/types";
 import { compareMetricStrength, type MetricPosition } from "../../rhythm/metric";
 
 export function hasWrittenVoicing(slice: Pick<AnalysisSlice, "notes" | "completeSatb">, tones: readonly SpelledPitchClass[]) {

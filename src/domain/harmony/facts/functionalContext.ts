@@ -8,7 +8,8 @@ import {
   writtenInterval,
   type SpelledPitchClass,
 } from "../../pitch";
-import { VOICE_ORDER, type VoiceId } from "../../project";
+import type { VoiceId } from "../../project/types";
+import { VOICE_ORDER } from "../../project/voice";
 import type { AnalysisNote } from "../analysis";
 
 /** Compare the stated function, independently of the annotation's id, source and confidence.

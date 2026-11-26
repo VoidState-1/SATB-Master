@@ -246,6 +246,11 @@ sequenceDiagram
 
 工程快照先转换为时间切片、声部转换、连续和弦跨度、精确和弦连接和共享事实（[`src/domain/harmony/facts/`](../src/domain/harmony/facts)）。内置规则经过工程 profile、适用性计划、结果校验和诊断仲裁；外置 API v3 在 Worker 中读取同一裁剪语义快照。只修改规则 profile 时复用音乐分析并只重跑变化规则；每次请求携带 revision，旧请求即使晚返回也不能覆盖新工程结果。详见 [harmony-engine.md](./harmony-engine.md)。
 
+- 跨度代表和弦按 `regionIds` 顺序取第一个可用值。终止检测按乐句裁剪端点，规则连接读取原始切片，两者共享书写调号和 K46 标识查询。见 [跨度事实](../src/domain/harmony/facts/span.ts)。
+- 声部对提供前后书写音程（含半音差）与两个声部各自的运动方向。结构配器按书写五、八度检查，外音推导分别保留邻音五度与同向半音运动的原有判据。外音事实保留原音 ID、结构端点和延后确认和声的 tick，调用方提供适用的句界与调号。见 [声部对运动](../src/domain/harmony/facts/voicePairMotion.ts) 和 [外音事实](../src/domain/harmony/facts/ornamentalMotion.ts)。
+- 终止检测由 `detect.ts` 识别落点、评分和裁决冲突，`approach.ts` 回溯属准备、K46 和前属链。两者使用相同的跨度事实、节拍与连接判据。见 [落点检测](../src/domain/harmony/cadence/detect.ts)、[准备起点](../src/domain/harmony/cadence/approach.ts) 和 [检测上下文](../src/domain/harmony/cadence/context.ts)。
+- 调试句界时可调用 `analyzePhrases(project, { includeEventRejections: true })`。返回的 `eventRejections` 按 tick 记录事件扫描首次命中的拒绝原因，已评分的拒绝项还带有分数。入围候选见 `candidates`，最终分句选择见 `template.boundaries`。见 [乐句分析](../src/domain/harmony/phrase/analyze.ts)。
+
 ### 5.3 播放与实时输出
 
 播放控制根据工程 tempo/meter 事件把 tick 转换为 AudioContext 时间，提前调度可见轨道的音符和节拍器，并在启用实时 MIDI 输出时同步通过 `midiOutputManager` 发送 noteOn/noteOff/ProgramChange。暂停不仅停止动画，还要取消未来事件、停止合成器发声、发送 MIDI 全音符关闭并关闭输出路径。详见 [audio-midi-and-time.md](./audio-midi-and-time.md)。
@@ -327,5 +332,7 @@ sequenceDiagram
    - `ruleTesting` -> `editor`、`inspector`、`settings`、`tracks`
    - `bottomPanel` -> `diagnostics`、`scorePreview`、`progressionAssistant`
    - `audit` -> `scorePreview`、`editor`、`inspector`
+
+和声依赖门禁从生产模块的静态值导入与再导出构图，排除纯类型引用。涉及 `harmony/` 的循环强连通分量须为零，且从 `cadence/` 出发的依赖路径不能到达 `rules/`。共享事实读取声部顺序时使用 `project/voice`，工程总入口会经默认规则配置加载规则目录。见 [和声依赖测试](../src/domain/harmony/dependencies.test.ts)。
 
 钢琴卷帘的纯坐标契约由 [`features/editor/viewport.test.ts`](../src/features/editor/viewport.test.ts) 覆盖，包括 tick 与横坐标、MIDI 与纵坐标、时值宽度和缩放锚点。样式拆分必须保持 [`src/styles.css`](../src/styles.css) 的 import 顺序；桌面端的无边框窗口、恢复弹窗和资源路径仍需在 Electron 环境中通过 E2E 与手工冒烟验证。

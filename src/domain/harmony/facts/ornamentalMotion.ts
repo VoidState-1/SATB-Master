@@ -34,6 +34,25 @@ export interface WrittenOrnament {
 
 export const endOfWrittenNote = (note: AnalysisNote) => note.startTick + note.durationTicks;
 
+/** A held note keeps its attack ID even when the harmony changes underneath it. */
+export function soundsWrittenEvent(notes: AnalysisSlice["notes"] | undefined, voice: VoiceId, note: AnalysisNote) {
+  return notes?.[voice]?.id === note.id;
+}
+
+export function lastSoundingTick(note: AnalysisNote) {
+  return endOfWrittenNote(note) - 1;
+}
+
+/** Callers supply their own cuts (manual phrases, inferred boundaries or key declarations). */
+export function crossesWrittenBoundary(
+  cuts: readonly (number | { readonly tick: number })[], from: number, to: number,
+) {
+  return cuts.some(cut => {
+    const tick = typeof cut === "number" ? cut : cut.tick;
+    return from < tick && tick <= to;
+  });
+}
+
 export function writtenStepDirection(
   from: AnalysisNote, to: AnalysisNote, chromatic = true,
 ): -1 | 0 | 1 {
@@ -95,6 +114,15 @@ export function belongsToWrittenHarmony(
     chordIdentityToneSpellings(identity).some(tone => pitchClassEquals(tone, note.pitch));
 }
 
+/** Possible structural replacements, in the order used to break equal coverage. */
+export function structuralOrnamentNotes(ornament: WrittenOrnament, identity: ChordIdentity) {
+  const horizontal = ornament.role === "passing" || ornament.role === "neighbor";
+  const anchors = horizontal ? [ornament.departure, ornament.arrival] : [ornament.arrival];
+  return anchors.map(point => point.note).filter((note, index, notes) =>
+    belongsToWrittenHarmony(identity, ornament.voice, note) &&
+    !notes.slice(0, index).some(other => spelledPitchEquals(other.pitch, note.pitch)));
+}
+
 type IndexedPoint = OrnamentalPoint & { readonly index: number };
 type MotionKind = WrittenOrnament["role"];
 const allows = (note: AnalysisNote, role: MotionKind) => !note.nonChordToneRole || note.nonChordToneRole === role;
@@ -115,7 +143,7 @@ export function createWrittenOrnamentReader(
           !keyDeclarationEquals(frames[i - 1].key, frames[i].key) ||
           !keyEquals(frames[i - 1].harmonicKey ?? frames[i - 1].key, frames[i].harmonicKey ?? frames[i].key)) return false;
     }
-    return !cuts.some(tick => frames[left].tick < tick && tick <= frames[right].tick);
+    return !crossesWrittenBoundary(cuts, frames[left].tick, frames[right].tick);
   };
   const at = (index: number | undefined, voice: VoiceId): IndexedPoint | undefined => {
     if (index === undefined) return;
@@ -131,16 +159,22 @@ export function createWrittenOrnamentReader(
   const isSupport = ({ index, note }: IndexedPoint, voice: VoiceId, except?: ChordIdentity) =>
     frames[index].identities.some(identity =>
       (!except || !chordIdentityEquals(identity, except)) && belongsToWrittenHarmony(identity, voice, note));
+  function* heldFramesAfter(point: IndexedPoint, voice: VoiceId, maxDelay?: number) {
+    for (let i = point.index + 1; frames[i]?.tick < endOfWrittenNote(point.note); i++) {
+      const next = at(i, voice);
+      if (!next || next.note.id !== point.note.id ||
+          (maxDelay !== undefined && next.tick - point.tick > maxDelay) || !declaredContinuity(point.index, i)) return;
+      yield next;
+    }
+  }
   const canAnchor = (point: IndexedPoint, voice: VoiceId) => {
     const role = point.note.nonChordToneRole;
     if (!role || role === "suspension" || role === "retardation") return true;
     if (role !== "passing") return false;
     // A role can start at a later harmonic entry of the same written event.
     // Verify the later dissonance before using its initial consonance.
-    for (let i = point.index + 1; frames[i]?.tick < endOfWrittenNote(point.note); i++) {
-      const next = at(i, voice);
-      if (!next || next.note.id !== point.note.id || !declaredContinuity(point.index, i)) return false;
-      if (frames[i].identities.length && !isSupport(next, voice)) return true;
+    for (const next of heldFramesAfter(point, voice)) {
+      if (frames[next.index].identities.length && !isSupport(next, voice)) return true;
     }
     return false;
   };
@@ -150,15 +184,14 @@ export function createWrittenOrnamentReader(
     if (frames[point.index].identities.length) return;
     // Later upper attacks can confirm an already sounding arrival, but
     // never override a conflicting explicit chord at that note's attack.
-    for (let i = point.index + 1; frames[i]?.tick < endOfWrittenNote(point.note); i++) {
-      const later = at(i, voice);
-      if (!later || later.note.id !== point.note.id || later.tick - point.tick > maxMotionTicks ||
-          !declaredContinuity(point.index, i)) return;
-      if (frames[i].identities.length) {
-        return isSupport(later, voice) ? { ...point, confirmedAtTick: later.tick } : undefined;
-      }
-    }
+    const confirmedAtTick = heldSupportTick(point, voice);
+    if (confirmedAtTick !== undefined) return { ...point, confirmedAtTick };
   };
+  function heldSupportTick(point: IndexedPoint, voice: VoiceId) {
+    for (const later of heldFramesAfter(point, voice, maxMotionTicks)) {
+      if (frames[later.index].identities.length) return isSupport(later, voice) ? later.tick : undefined;
+    }
+  }
   const endpoint = (point: IndexedPoint, voice: VoiceId, target: ChordIdentity) =>
     supportedThroughHold(point, voice) ??
     // Upper-voice settling members can also precede a complete vertical
@@ -262,7 +295,7 @@ export function createWrittenOrnamentReader(
             ? pitchClassEquals(id.root, target.root) : chordIdentityEquals(id, target))) ||
         [first, arrival.index].some(i => Object.entries(frames[i].notes).some(([part, next]) => {
           const old = frames[i - 1]?.notes[part as VoiceId];
-          return part !== voice && old && old.id !== next.id && spelledPitchEquals(old.pitch, next.pitch);
+          return part !== voice && old && next && old.id !== next.id && spelledPitchEquals(old.pitch, next.pitch);
         })))) return;
     const firstAnchor = endpoint(departure, voice, target);
     const lastAnchor = endpoint(arrival, voice, target);

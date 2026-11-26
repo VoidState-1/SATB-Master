@@ -242,13 +242,12 @@ export interface UpperPassingFrame {
 // at the intervening weak attack all three other note events must still sound.
 export function upperPassingMotion(
   left: UpperPassingFrame, middle: UpperPassingFrame, right: UpperPassingFrame, ppq: number,
-  { allowHeldDeparture = false, allowCompleteSonority = false } = {},
+  { allowHeldDeparture = false, allowCompleteSonority = false, allowAccentedPassing = false } = {},
 ) {
   if (left.toTick !== middle.fromTick || middle.toTick !== right.fromTick ||
-      middle.metric?.confidence !== "certain" || middle.metric.level >= 2 ||
-      right.metric?.confidence !== "certain" ||
-      compareMetricStrength(left.metric, middle.metric) !== "stronger" ||
-      compareMetricStrength(right.metric, middle.metric) === "weaker") return;
+      middle.metric?.confidence !== "certain" || right.metric?.confidence !== "certain" ||
+      (!allowAccentedPassing && (middle.metric.level >= 2 || compareMetricStrength(left.metric, middle.metric) !== "stronger" ||
+        compareMetricStrength(right.metric, middle.metric) === "weaker"))) return;
   for (const frame of [left, middle, right]) {
     const bass = frame.activeNotes.bass;
     if (!bass || !keyDeclarationEquals(frame.key, middle.key)) return;
