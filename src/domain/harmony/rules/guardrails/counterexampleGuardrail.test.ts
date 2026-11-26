@@ -1,43 +1,54 @@
-
 import { describe, expect, it } from "vitest";
 import { formatPitchClass } from "../../../pitch";
 import { validateProject, type ProjectDocument } from "../../../project";
 import { compileScoreText } from "../../../scoreText";
 import { applyHarmonyInference, inferHarmony } from "../../inference";
 import { checkHarmony } from "../../registry";
-import type { HarmonyRuleId } from "../catalog";
-import { counterexampleGuardrails, scoreText, type ExpectedFinding } from "./fixtures";
+import { defaultHarmonyRuleSeverities, type HarmonyRuleId } from "../catalog";
+import type { HarmonyRuleSeverity } from "../types";
+import { counterexampleGuardrails } from "./fixtures";
+import { scoreText, type ExpectedFinding, type RuleGuardrail } from "./fixtureContract";
 
-const errorRuleIds = [
-  "voice-leading.parallel-fifths",
-  "voice-leading.parallel-octaves",
-  "voice.crossing",
-  "chord.inversion-bass",
-  "chord.doubled-leading-tone",
-  "chord.doubled-seventh",
-  "function.cadential64-target",
-  "melody.leap-over-octave",
-  "chord.augmented-sixth-voicing",
-  "resolution.augmented-sixth",
-] as const satisfies readonly HarmonyRuleId[];
+const expectedSeverities: Partial<Record<HarmonyRuleId, Exclude<HarmonyRuleSeverity, "off">>> = {
+  "cadence.cadential64-metric-position": "warning",
+  "chord.augmented-sixth-voicing": "error",
+  "chord.doubled-altered-tendency-tone": "error",
+  "chord.doubled-leading-tone": "error",
+  "chord.doubled-seventh": "error",
+  "chord.incomplete-members": "warning",
+  "chord.inversion-bass": "error",
+  "chord.second-inversion-voicing": "warning",
+  "chord.unclassified-nonchord-tone": "warning",
+  "connection.second-inversion-context": "warning",
+  "function.applied-dominant-target": "warning",
+  "function.cadential64-target": "error",
+  "function.retrogression": "warning",
+  "melody.augmented-interval": "warning",
+  "melody.consecutive-leaps": "suggestion",
+  "melody.leap-over-octave": "error",
+  "melody.leap-recovery": "warning",
+  "nonchord.anticipation": "warning",
+  "nonchord.neighbor-tone": "warning",
+  "nonchord.passing-tone": "warning",
+  "nonchord.suspension-preparation": "warning",
+  "nonchord.suspension-resolution": "warning",
+  "resolution.augmented-sixth": "error",
+  "resolution.chord-seventh": "warning",
+  "resolution.leading-tone": "warning",
+  "rhythm.harmonic-syncopation": "warning",
+  "voice-leading.all-voices-similar": "suggestion",
+  "voice-leading.hidden-fifth": "warning",
+  "voice-leading.hidden-octave": "warning",
+  "voice-leading.overlap": "warning",
+  "voice-leading.parallel-fifths": "error",
+  "voice-leading.parallel-octaves": "error",
+  "voice.crossing": "error",
+  "voice.range": "warning",
+  "voice.upper-spacing": "warning",
+};
 
-const warningRuleIds = [
-  "resolution.leading-tone",
-  "resolution.chord-seventh",
-  "chord.incomplete-members",
-  "nonchord.passing-tone",
-  "nonchord.suspension-preparation",
-  "nonchord.suspension-resolution",
-  "nonchord.neighbor-tone",
-  "nonchord.anticipation",
-  "voice-leading.hidden-fifth",
-  "voice-leading.hidden-octave",
-  "function.retrogression",
-] as const satisfies readonly HarmonyRuleId[];
-
-const errorRules = new Set<HarmonyRuleId>(errorRuleIds);
-const requiredRuleIds = [...errorRuleIds, ...warningRuleIds];
 const conditionedOnlyRuleIds = [
+  "connection.second-inversion-context",
   "chord.inversion-bass",
   "function.cadential64-target",
   "nonchord.passing-tone",
@@ -62,18 +73,20 @@ function stripToBlindProject(project: ProjectDocument): ProjectDocument {
 
 function assertFindings(
   project: ProjectDocument,
-  ruleId: HarmonyRuleId,
+  guardrail: RuleGuardrail,
   expected: readonly ExpectedFinding[],
-  entryPoint: "conditioned" | "blind",
+  writeNonChordToneRoles?: boolean,
 ) {
   expect(validateProject(project)).toBe(true);
-  const { diagnostics, skippedRules } = checkHarmony(project);
-  expect(skippedRules.filter(item => item.reason === "rule-error")).toEqual([]);
+  const { ruleId, enableAt } = guardrail;
+  const profile = enableAt ? { ...defaultHarmonyRuleSeverities(), [ruleId]: enableAt } : undefined;
+  const { diagnostics, skippedRules } = checkHarmony(project, profile);
+  expect(skippedRules.filter(item => item.reason === "rule-error" || (item.ruleId === ruleId && !item.partial))).toEqual([]);
 
   const findings = diagnostics.filter(item => item.ruleId === ruleId);
-  const severity = errorRules.has(ruleId) ? "error" : "warning";
+  const severity = expectedSeverities[ruleId];
   const positions = findings.map(({ ruleId, severity, tick, voiceIds }) => ({ ruleId, severity, tick, voiceIds }));
-  const harmony = entryPoint === "blind"
+  const harmony = writeNonChordToneRoles !== undefined
     ? project.chordTrack.regions.map(({ startTick, identity, semantics }) => {
         const { root, bass, structure } = identity;
         const kind = structure.kind === "tertian" ? structure.quality : structure.variant;
@@ -81,11 +94,21 @@ function assertFindings(
         return `${startTick}: ${formatPitchClass(root)} ${kind}/${formatPitchClass(bass)}${role ? ` (${role})` : ""}`;
       }).join(", ")
     : undefined;
-  expect(positions, harmony === undefined ? undefined : `盲推和弦：${harmony || "无"}`).toEqual(
+  expect(positions, harmony === undefined ? undefined : `盲推和弦（角色回写 ${writeNonChordToneRoles}）：${harmony || "无"}`).toEqual(
     expected.map(({ tick, voiceIds }) => ({ ruleId, severity, tick, voiceIds })),
   );
 
-  expected.forEach(({ chordTicks, missing }, index) => {
+  expected.forEach(({ tick, chordTicks, missing, noteEvidenceVoices }, index) => {
+    if (noteEvidenceVoices) {
+      const expectedNotes = noteEvidenceVoices.map(voiceId => {
+        const track = project.satbTracks.find(item => item.id === voiceId);
+        const note = track?.notes.find(item => item.startTick <= tick && tick < item.startTick + item.durationTicks);
+        if (!note) throw new Error(`No sounding ${voiceId} note at tick ${tick}`);
+        return note.id;
+      });
+      const evidenceIds = findings[index].evidence.filter(item => item.kind === "note").map(item => item.id);
+      expect(evidenceIds.sort()).toEqual(expectedNotes.sort());
+    }
     if (chordTicks) {
       const chordIds = chordTicks.map(tick => {
         const region = project.chordTrack.regions.find(
@@ -102,24 +125,28 @@ function assertFindings(
 
 function runFixture(
   source: string,
-  ruleId: HarmonyRuleId,
+  guardrail: RuleGuardrail,
   expected: readonly ExpectedFinding[],
   entryPoint: "conditioned" | "blind",
 ) {
   // The compiler throws on invalid .satbt; let that error fail this named fixture.
   const { project } = compileScoreText(source);
   if (entryPoint === "conditioned") {
-    assertFindings(project, ruleId, expected, entryPoint);
+    assertFindings(project, guardrail, expected);
     return;
   }
 
   expect(validateProject(project)).toBe(true);
   const stripped = stripToBlindProject(project);
   expect(validateProject(stripped)).toBe(true);
-  const inferred = applyHarmonyInference(stripped, inferHarmony(stripped), {
-    mode: "replace-unlocked",
-  }).project;
-  assertFindings(inferred, ruleId, expected, entryPoint);
+  const inference = inferHarmony(stripped);
+  for (const writeNonChordToneRoles of [false, true]) {
+    const inferred = applyHarmonyInference(stripped, inference, {
+      mode: "replace-unlocked",
+      writeNonChordToneRoles,
+    }).project;
+    assertFindings(inferred, guardrail, expected, writeNonChordToneRoles);
+  }
 }
 
 describe("核心规则双入口反例护栏", () => {
@@ -154,12 +181,15 @@ annotations {
     expect(validateProject(stripped)).toBe(true);
   });
 
-  it("覆盖所有 21 个 ruleId，每条至少一组对照、两个反例", () => {
-    expect(counterexampleGuardrails.map(({ ruleId }) => ruleId).sort()).toEqual([...requiredRuleIds].sort());
+  it("正式规则清单完整，每条至少一组对照、两个反例，至少 24 条支持双入口", () => {
+    expect(counterexampleGuardrails.length).toBeGreaterThanOrEqual(35);
+    expect(counterexampleGuardrails.filter(rule => rule.entryPoints.blind).length).toBeGreaterThanOrEqual(24);
+    expect(counterexampleGuardrails.map(({ ruleId }) => ruleId).sort()).toEqual(Object.keys(expectedSeverities).sort());
     expect(counterexampleGuardrails.filter(({ entryPoints }) => !entryPoints.blind).map(({ ruleId }) => ruleId).sort())
       .toEqual([...conditionedOnlyRuleIds].sort());
 
-    for (const { ruleId, entryPoints, pairs } of counterexampleGuardrails) {
+    for (const { ruleId, entryPoints, pairs, enableAt } of counterexampleGuardrails) {
+      if (enableAt) expect(defaultHarmonyRuleSeverities()[ruleId], ruleId).toBe("off");
       expect(pairs.length, ruleId).toBeGreaterThanOrEqual(1);
       const negatives = pairs.flatMap(pair => pair.counterexamples ?? []);
       expect(negatives.length, ruleId).toBeGreaterThanOrEqual(2);
@@ -181,18 +211,19 @@ annotations {
     }
   });
 
-  for (const { ruleId, entryPoints, pairs } of counterexampleGuardrails) {
+  for (const guardrail of counterexampleGuardrails) {
+    const { ruleId, entryPoints, pairs } = guardrail;
     describe(ruleId, () => {
       const entryPointNames = entryPoints.blind ? ["conditioned", "blind"] as const : ["conditioned"] as const;
       for (const entryPoint of entryPointNames) {
         describe(entryPoint, () => {
           for (const { name, control, counterexamples = [] } of pairs) {
             describe(name, () => {
-              it("positive", () => runFixture(scoreText(control), ruleId, [], entryPoint));
+              it("positive", () => runFixture(scoreText(control), guardrail, [], entryPoint));
               for (const { name: mutation, edits, expected, blindSkipReason } of counterexamples) {
                 if (entryPoint === "blind" && blindSkipReason) continue;
                 it(`negative · ${mutation}`, () =>
-                  runFixture(scoreText(control, edits), ruleId, expected, entryPoint));
+                  runFixture(scoreText(control, edits), guardrail, expected, entryPoint));
               }
             });
           }

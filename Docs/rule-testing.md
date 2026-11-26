@@ -7,25 +7,34 @@
 SATB Master 的内置规则质量保障由三层互补的测试能力构成：
 
 1. **Vitest 单元测试：** 覆盖各规则组 evaluator、跨规则事实模块、查询上下文、状态机转移、适用性与仲裁算法边界。
-2. **21 条核心规则双入口反例护栏（[`src/domain/harmony/rules/guardrails/`](../src/domain/harmony/rules/guardrails)）：** 通过 `.satbt` 简写构造“合法正例对照 + 最小反例变异”，验证核心 `error`/`warning` 规则在人工条件输入与盲推输入下均无漏报/误报。
+2. **核心规则成对反例护栏**覆盖 70 条内置规则中的 35 条，其中 27 条同时运行条件与盲推入口。每条规则比较合法对照与一至两音变异。[护栏目录](../src/domain/harmony/rules/guardrails/)
 3. **可持久化金样本与工作台（[`RuleCases/`](../RuleCases) + [`ruleCases.test.ts`](../src/domain/harmony/testing/ruleCases.test.ts) + `RuleTestWorkbench`）：** 在应用内提供“单条规则 + 最小工程 + 期望结果”的隔离回归环境，支持可视化编辑、对比、批量运行并接入自动化回归。
 
 用例文件扩展名为 `.satb-rule-case.json`，单文件上限 20 MiB，内容为 UTF-8 JSON。
 
-## 2. 核心规则双入口反例护栏套件
+## 2. 核心规则成对反例护栏
 
-护栏套件位于 [`counterexampleGuardrail.test.ts`](../src/domain/harmony/rules/guardrails/counterexampleGuardrail.test.ts) 与 [`fixtures.ts`](../src/domain/harmony/rules/guardrails/fixtures.ts)，覆盖 **21 条**核心内置规则：
+[教学档位对照测试](../src/domain/harmony/rules/teachingPresets.test.ts) 在同一份谱例上切换严格作业与教材分析，按目标规则比对全部命中的拍点、严重度与责任声部。覆盖 K46 强位等强和弱位等强、完整句尾和空白尾段、恰在强拍结束、音域上界与越界半音、两个内声部导音的自由解决、内声部错落及外声部错跳。[档案测试](../src/domain/ruleProfile.test.ts) 经真实迁移与便携导入入口验证缺字段的旧档案，以及切换、保存与回读。
 
-- **10 条 `error` 规则：** `voice-leading.parallel-fifths`、`voice-leading.parallel-octaves`、`voice.crossing`、`chord.inversion-bass`、`chord.doubled-leading-tone`、`chord.doubled-seventh`、`function.cadential64-target`、`melody.leap-over-octave`、`chord.augmented-sixth-voicing`、`resolution.augmented-sixth`。
-- **11 条 `warning` 规则：** `resolution.leading-tone`、`resolution.chord-seventh`、`chord.incomplete-members`、`nonchord.passing-tone`、`nonchord.suspension-preparation`、`nonchord.suspension-resolution`、`nonchord.neighbor-tone`、`nonchord.anticipation`、`voice-leading.hidden-fifth`、`voice-leading.hidden-octave`、`function.retrogression`。
+Written100 开发验证只使用 dev。冻结后一次遍历全集，同时评估起点、冻结严格档及冻结教材档，只按 dev / val 汇总。条件规则使用全标注，条件终止推断剥离终止标签；盲推从纯音符生成和弦并回写外音。主列表 E/W 与同位置多报均排除建议和折叠后果；同题同 tick 至少两条 E/W 计一个多报位置。延留项分别计盲推准备和解决诊断。句界排除工程首尾，终止主分核对类别与终点，严格分另核对起点和已标注的形式、完满性；和弦实体与严格分均按标注时值加权。
 
-设计约束与执行机制：
+正式矩阵覆盖 **35/70 条规则**。每条规则至少有 1 个合法对照和 2 个反例，每个反例只改变 1–2 个音符。和声或拍位随之改变时，条件入口的 H 行同步反映实奏。运行器逐项比对目标规则的全部诊断，包括严重度、tick 和责任声部。和弦级诊断要求空 `voiceIds` 及精确的和弦引用。重复变化倾向音另核对参与重复的音符证据。
 
-- **正例对照 + 最小反例：** 每条规则至少维护 1 组基于 [SATB 简写工具](./score-text.md)（`.satbt`）的合法正例 `control`（要求在目标规则下 0 诊断），以及至少 2 个针对正例施加 1–2 处音符最小变异的 `counterexamples`（要求精确命中目标规则、严重程度、tick、声部/和弦引用与参数）。
-- **`conditioned` 与 `blind` 双入口：**
-  - `conditioned`：直接对编译后的完整工程（含和弦、外音角色、句界与终止式标注）运行 `checkHarmony`。
-  - `blind`：通过 `stripToBlindProject` 清空和弦区段、外音角色、人工句界与终止式标注后，调用 `inferHarmony` + `applyHarmonyInference` 盲推和声，再运行 `checkHarmony`，确保实际用户未手工标和弦时规则仍能成立。
-- **`blindSkipReason` 约束：** 仅依赖人工和弦/外音标注的 7 条规则（`chord.inversion-bass`、`function.cadential64-target` 以及 5 条 `nonchord.*` 规则）声明 `entryPoints: { blind: false, blindSkipReason }`，其余 14 条规则必须同时在 `conditioned` 和 `blind` 下拥有至少 2 个有效反例；单个反例若需跳过 `blind` 也必须填写非空 `blindSkipReason`。
+| 夹具模块 | 正式规则数 | 内容 |
+| --- | ---: | --- |
+| `fixturesVoice.ts` | 9 | 音域、间距、交叉、超越、四部同向、平行与隐伏五八度 |
+| `fixturesMelody.ts` | 4 | 超八度跳进、增音程、大跳补偿、同向连续跳进 |
+| `fixturesChord.ts` | 8 | 转位低音、三类重复倾向音、构成音、增六与四六配置、未分类外音 |
+| `fixturesResolution.ts` | 3 | 导音、七音、增六解决 |
+| `fixturesNonchord.ts` | 5 | 经过、延留准备与解决、辅助、先现 |
+| `fixturesFunctionRhythm.ts` | 6 | 功能倒退、终止四六与副属目标、四六连接、和声切分与终止四六拍位 |
+
+夹具共用 `fixtureContract.ts` 的谱例和编辑契约，由 [fixtures.ts](../src/domain/harmony/rules/guardrails/fixtures.ts) 聚合。[矩阵运行器](../src/domain/harmony/rules/guardrails/counterexampleGuardrail.test.ts) 核对正式规则清单与入口覆盖。大跳补偿规则 `melody.leap-recovery` 默认关闭，仅在自己的夹具中按 `warning` 开启。
+
+- **条件入口**直接检查带和弦与人工标注的工程。
+- **盲推入口**清空和弦、外音角色、句界和终止式，对纯音符工程调用 `inferHarmony`。同一份推导结果分别关闭和开启 `writeNonChordToneRoles` 后接受检查。27 条双入口规则各有至少 2 个有效盲推反例。
+- **仅条件入口的 8 条规则**包括 `chord.inversion-bass`、`function.cadential64-target`、`connection.second-inversion-context` 及表中的 5 条外音规则。它们核对题给的转位、用途或外音角色。规则或个别反例跳过盲推时须注明 `blindSkipReason`。
+- **纯音符作业对照**从只有 SATB 音符的谱例直接运行检查，再分别检查回写关、开的推导工程。断言覆盖 E–D–E 辅助音的实际角色、直接可见的女低音域错误，以及建立和弦身份后才能定位的等音错拼。[角色回写测试](../src/domain/harmony/rules/guardrails/notesOnlyRoleWriteback.test.ts)
 
 ## 3. 用例格式
 
@@ -110,6 +119,6 @@ error?: { code: "unknown-rule" | "invalid-project" | "rule-error" | "aborted" }
 - 用例 schema、默认值、损坏输入修复与未知规则是否都有测试？
 - 比较器是否稳定排序对象引用，并区分 missing / unexpected / mismatched？
 - 运行器是否隔离单规则、支持取消，并把执行失败归入 error？
-- 核心 `error`/`warning` 规则变动是否同步校验 21 条双入口反例护栏与 `RuleCases/` 金样本？
+- 核心规则变动是否同步校验正式成对反例矩阵与 `RuleCases/` 金样本？
 - 桌面目录扫描、原子写盘、删除与最近目录记忆是否在 E2E 中覆盖？
 - 新增规则金样本时是否同时提交用例文件与对应修复？
