@@ -148,7 +148,11 @@ function upperPassingVoicing(context: HarmonyRuleContext, end: AnalysisSlice) {
   if (!note.nonChordToneRole && (right.chord.id !== end.chord.id || structure.extensions.length ||
       structure.alterations.length || VOICE_ORDER.some(part =>
         part !== voice && end.notes[part]?.id !== right.notes[part]?.id))) return;
-  const motion = upperPassingMotion(frame(context, left), frame(context, end), frame(context, right), context.analysis.project.ppq);
+  const ppq = context.analysis.project.ppq;
+  const accented = !note.nonChordToneRole && right.chord.id === end.chord.id && note.durationTicks <= ppq / 2 &&
+    (left.notes[voice]?.durationTicks ?? 0) > note.durationTicks;
+  const motion = upperPassingMotion(frame(context, left), frame(context, end), frame(context, right), ppq,
+    { allowAccentedPassing: accented, allowHeldDeparture: accented });
   if (!motion) return;
   const tones = chordIdentityToneSpellings(end.chord.identity);
   if (!tones.some(t => pitchClassEquals(t, motion.after.pitch)) ||

@@ -60,6 +60,43 @@ annotations {
     if (from !== "V7/1 | I6/1") expect(findings(project, passing, 3)).toHaveLength(1);
   });
 
+  const heldDeparture = `key C major
+meter 4/4
+bars 1..1 {
+ S: | E5/4 G4/2 E5/4 |
+ A: | G4/4 E4/2 C4/4 |
+ T: | C4/4 C4/2 G3/4 |
+ B: | C3/2 B2/4@via Bb2/4 |
+ H: | I/4 I/2 V2/IV/4 |
+}
+annotations {
+ note via role=passing
+}`;
+  it("人工句界后，同一低音在新和声中仍有独立支持", () => {
+    const p = cut(score(heldDeparture), 1);
+    expect(findings(p, passing, 2)).toEqual([]);
+    expect(findings(p, inversion, 2)).toEqual([]);
+  });
+  it("经过音已开始才断句时，不能借用前句的出发低音", () => {
+    const p = cut(score(heldDeparture), 2);
+    expect(findings(p, passing, 2)).toHaveLength(1);
+  });
+
+  const contrary = `key A major
+meter 3/4
+bars 1..1 {
+ S: | B4/4 C#5/4 D5/4 |
+ A: | F#4/2 F4/4 |
+ T: | B3/4 A3/2 |
+ B: | D3/4 C#3/4 B2/4 |
+ H: | ii6/4 vi64/4 iiø7/4 |
+}`;
+  it("书写低音穿过重复的五音，上方反向级进证明未标记的经过四六", () => {
+    expect(findings(score(contrary), "chord.second-inversion-voicing", 1)).toEqual([]);
+    for (const p of [cut(score(contrary), 2), score(contrary.replace("C#5/4 D5", "C#5/4 D6"))])
+      expect(findings(p, "chord.second-inversion-voicing", 1)).toHaveLength(1);
+  });
+
   const group = `key B minor
 meter 4/4
 bars 1..2 {

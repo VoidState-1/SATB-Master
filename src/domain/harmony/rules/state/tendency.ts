@@ -7,7 +7,7 @@ import type { VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
 import type { AnalysisNote, AnalysisSlice } from "../../analysis";
 import { readWrittenDominantSeventh, readWrittenDominantSeventhHandoff } from "../../facts/dominantMotion";
-import { matchesWrittenChord, resolvesInVoice } from "../../facts/tendencyResolution";
+import { writtenPassingSeventhAscends, writtenSeventhAtAuthenticDeparture } from "./writtenSeventh";
 import { crossesManualPhraseBoundary, hasExactPitch, noteEvidence } from "../helpers/core";
 import { readDoubleDominantResolution } from "../helpers/chordVoicing";
 import { resolvesDominantSixthSubstitution } from "../groups/support/doubleDominant";
@@ -73,23 +73,6 @@ export type AlteredTonePayload = VoiceObligationPayload & {
   readonly tendency: "up" | "down";
   readonly alteredMidi: number;
 };
-
-// Without a label the four written parts must establish both ends of the
-// progression. A root-position authentic bass and complete tonic distinguish
-// this seventh from a vertical passing dissonance or a tonic six-four.
-function writtenSeventhAtAuthenticDeparture(context: RuleStepContext) {
-  const { slice } = context;
-  const bass = slice.notes.bass;
-  if (!bass || !slice.completeSatb) return;
-  const dominant = readWrittenDominantSeventh(slice.notes);
-  if (!dominant || dominant.inversion !== 0 || !matchesWrittenChord(slice, dominant.root, "dominant7")) return;
-  const arrival = context.rules.sliceAt(slice.endTick);
-  if (!arrival?.notes.bass || !keyEquals(slice.key, arrival.key) ||
-      !pitchClassEquals(arrival.notes.bass.pitch, dominant.target) ||
-      crossesManualPhraseBoundary(context.rules, slice.tick, arrival.tick)) return;
-  if (matchesWrittenChord(arrival, dominant.target, "major") || matchesWrittenChord(arrival, dominant.target, "minor"))
-    return dominant.seventh;
-}
 
 export const chordSeventhSource: ObligationSource<SeventhPayload> = {
   id: "source.chord-seventh-attacks",
@@ -517,7 +500,10 @@ export function chordSeventhResolves(
   environment: ObligationEnvironment<SeventhPayload>,
 ) {
   return resolvesDownward(environment, environment.obligation.payload.seventhMidi) ||
-    passingDominantSeventhAscends(environment) || respeltDoubleDominantSeventhAscends(environment);
+    passingDominantSeventhAscends(environment) ||
+    (environment.context.previous?.tick === environment.obligation.openedAt.tick &&
+      writtenPassingSeventhAscends(environment.context, environment.obligation.payload.voiceId)) ||
+    respeltDoubleDominantSeventhAscends(environment);
 }
 
 export function dominantNinthResolves(

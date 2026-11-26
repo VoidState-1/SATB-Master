@@ -10,12 +10,13 @@ import type { VoiceId } from "../../project/types";
 import { VOICE_ORDER } from "../../project/voice";
 import {
   pitchClassEquals,
-  toMidi,
   writtenInterval,
   type WrittenInterval,
 } from "../../pitch";
 
-export type MotionDirection = "up" | "down" | "stationary";
+import { observeVoicePairMotion, type MotionDirection } from "../facts/voicePairMotion";
+
+export type { MotionDirection } from "../facts/voicePairMotion";
 export type BassMotion = "step-up" | "step-down" | "other" | "stationary";
 
 export interface VoicePairTransitionFact {
@@ -57,14 +58,6 @@ export interface HarmonyContextFacts {
   readonly pedalSpanIds: readonly string[];
   readonly cadenceSpanIds: readonly string[];
   readonly modulationConnectionIds: readonly string[];
-}
-
-function motion(
-  previous: AnalysisNote,
-  current: AnalysisNote,
-): MotionDirection {
-  const difference = toMidi(current.pitch) - toMidi(previous.pitch);
-  return difference > 0 ? "up" : difference < 0 ? "down" : "stationary";
 }
 
 export function bassMotionFact(transition: SliceTransition): BassMotion {
@@ -123,22 +116,16 @@ export function voicePairTransitionFacts(
       const currentLower = transition.current.notes[lowerId];
       if (!previousUpper || !previousLower || !currentUpper || !currentLower)
         continue;
-      const upperMotion = motion(previousUpper, currentUpper);
-      const lowerMotion = motion(previousLower, currentLower);
+      const { previousInterval, currentInterval, firstMotion: lowerMotion, secondMotion: upperMotion } =
+        observeVoicePairMotion(previousLower, previousUpper, currentLower, currentUpper);
       const outerVoicesOnly = upperId === "soprano" && lowerId === "bass";
       result.push(
         Object.freeze({
           voiceIds: Object.freeze([upperId, lowerId] as const),
           previousNotes: Object.freeze([previousUpper, previousLower] as const),
           currentNotes: Object.freeze([currentUpper, currentLower] as const),
-          previousInterval: writtenInterval(
-            previousLower.pitch,
-            previousUpper.pitch,
-          ),
-          currentInterval: writtenInterval(
-            currentLower.pitch,
-            currentUpper.pitch,
-          ),
+          previousInterval,
+          currentInterval,
           upperMotion,
           lowerMotion,
           sameDirection:

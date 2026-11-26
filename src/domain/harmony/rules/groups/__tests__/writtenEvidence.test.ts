@@ -42,6 +42,41 @@ describe("缺标签切片的倾向音证据", () => {
     }
   });
 
+  const inverted = (inversion: "65" | "43", top: string) => score(
+    inversion === "65" ? [`F4/4 ${top}/4`, "D4/4 E4/4", "G3/4 G3/4", "B2/4 C3/4"] :
+      [`F4/4 ${top}/4`, "B3/4 C4/4", "G3/4 E3/4", "D3/4 C3/4"], "r/4 I/4");
+  describe.each(["65", "43"] as const)("缺源标签 V%s", inversion => {
+    it.each([["E4", 0], ["C5", 1], ["G4", 1]] as const)("七音到 %s", (top, count) => {
+      const p = inverted(inversion, top);
+      const warnings = findings(p, seventh);
+      expect(warnings).toHaveLength(count);
+      if (count) expect(warnings[0]).toMatchObject({ tick: p.ppq, voiceIds: ["soprano"] });
+    });
+    it.each(["缺三音", "到达空五度", "外音", "跨人工句界", "异名"])("%s 时没有独立证据", kind => {
+      const p = inverted(inversion, "G4");
+      if (kind === "缺三音") {
+        const b = p.satbTracks[inversion === "65" ? 3 : 1].notes[0];
+        b.pitch = { step: "G", alter: 0, octave: b.pitch.octave };
+      } else if (kind === "到达空五度") {
+        p.satbTracks[inversion === "65" ? 1 : 2].notes[1].pitch.step = "G";
+      } else if (kind === "外音") p.satbTracks[0].notes[0].nonChordToneRole = "passing";
+      else if (kind === "异名") p.satbTracks[0].notes[0].pitch = { step: "E", alter: 1, octave: 4 };
+      else p.structure.phraseBoundaries = [{id: "cut", tick: p.ppq, source: "manual", confidence: "certain"}];
+      expect(findings(p, seventh)).toEqual([]);
+    });
+  });
+
+  it.each([["C5", 1], ["E4", 0], ["G4", 0]] as const)("无标签经过 V43 到 I6，七音到 %s", (top, count) => {
+    const p = score([`E4/4 F4/4 ${top}/4`, "C4/4 B3/4 C4/4", "G3/4 G3/4 G3/4", "C3/4 D3/4 E3/4"],
+      "I/4 r/4 I6/4", "C major", "3/4");
+    expect(findings(p, seventh)).toHaveLength(count);
+  });
+
+  it("上声部在原低音上经过，偶成完整 V65 也不另开七音义务", () => {
+    const p = score(["G4/8 F4/8 G4/4", "D4/4 E4/4", "G3/4 G3/4", "B2/4 C3/4"], "r/4 I/4");
+    expect(findings(p, seventh)).toEqual([]);
+  });
+
   function chromatic(destination: string, tendency: "up" | "down") {
     const p = score([(tendency === "up" ? "D#4" : "Db4") + "/4 " + destination + "/4",
       "B3/4 C4/4", "F3/4 E3/4", "G2/4 C3/4"], "V7/4 r/4");

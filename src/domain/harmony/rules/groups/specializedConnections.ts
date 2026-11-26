@@ -6,7 +6,7 @@ import {
 import { effectiveFunctionalDesignation } from "../../../functionalHarmonyCatalog";
 import type { HarmonySpan } from "../../analysis";
 import type { RuleDiagnostic } from "../../runtime";
-import { isWrittenStep, keyDeclarationEquals, pitchClassEquals, spelledPitchEquals } from "../../../pitch";
+import { keyDeclarationEquals, pitchClassEquals, spelledPitchEquals } from "../../../pitch";
 import {
   chordEvidence,
   chordInversion,
@@ -15,17 +15,13 @@ import {
 } from "../helpers/core";
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import type { SpanView } from "../context/views";
+import { continuousPassingBass } from "../../facts/passingSixFour";
 import { soundsWrittenMemberSet } from "../../facts/writtenVoicing";
 import { defineRuleGroup, defineStatelessRule } from "../defineRule";
 
 function interpretationOf(context: HarmonyRuleContext, span: HarmonySpan) {
   const resolution = context.harmony.primaryInterpretation(span);
   return resolution.status === "resolved" ? resolution.value : undefined;
-}
-
-function isPassingBassStep(interval: ReturnType<HarmonyRuleContext["pitch"]["writtenIntervalBetween"]>) {
-  return isWrittenStep(interval) ||
-    (interval.diatonicSteps === 0 && Math.abs(interval.semitones) === 1);
 }
 
 export function ambiguousConnectionRule(context: HarmonyRuleContext) {
@@ -171,14 +167,6 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
       chordInversion(firstSlice.chord) !== 2
     )
       continue;
-    const into = context.pitch.writtenIntervalBetween(
-      previousSlice.notes.bass.pitch,
-      firstSlice.notes.bass.pitch,
-    );
-    const out = context.pitch.writtenIntervalBetween(
-      lastSlice.notes.bass.pitch,
-      nextSlice.notes.bass.pitch,
-    );
     const nextInterpretation = interpretationOf(context, nextSpan);
     const nextDesignation =
       nextInterpretation && nextSpan.semantics && nextSlice.chord
@@ -189,8 +177,8 @@ export function secondInversionContextRule(context: HarmonyRuleContext) {
         : undefined;
     const valid =
       role === "passing64"
-        ? isPassingBassStep(into) && isPassingBassStep(out) &&
-          Math.sign(into.semitones) === Math.sign(out.semitones)
+        ? continuousPassingBass(previousSlice.notes.bass.pitch, firstSlice.notes.bass.pitch,
+          lastSlice.notes.bass.pitch, nextSlice.notes.bass.pitch)
         : role === "pedal64"
           ? compoundPedalReturn(context, current) || (pitchClassEquals(
               previousSlice.notes.bass.pitch,

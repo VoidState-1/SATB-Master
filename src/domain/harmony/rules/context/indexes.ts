@@ -1,7 +1,7 @@
 import { matchingObservedCadence, observedCadenceLandingTick } from "../../cadence/model";
 import type { NonChordToneRole, VoiceId } from "../../../project/types";
 import { VOICE_ORDER } from "../../../project/voice";
-import { clipHarmonySpan, sliceWithinSpan } from "../../cadence/model";
+import { clipHarmonySpan, sliceWithinSpan } from "../../facts/span";
 import type {
   AnalysisSlice,
   HarmonyAnalysis,

@@ -10,6 +10,10 @@ import type { HarmonyAnalysis, HarmonySpan } from "../analysis";
 import { crossesTonalBoundary, isDiminishedRotation, provesDiminishedPivotArrival, resolvedTonalInterpretation, tonalReading } from "../facts/localTonality";
 import { keyEquals, pitchClassEquals, scaleDegreePitchClass } from "../../pitch";
 
+import { isCadential64Span, representativeChordAtSpan, spanEndpointSlice, writtenKeyAtTick } from "../facts/span";
+
+export { isCadential64Span } from "../facts/span";
+
 export type HarmonyConnectionRelation =
   | "same-harmony"
   | "tonic-departure"
@@ -107,34 +111,8 @@ function combinedConfidence(values: readonly HarmonyConnectionAssessment["confid
   return "certain";
 }
 
-function representativeChordAtSpan(
-  analysis: Pick<HarmonyAnalysis, "chordById">,
-  span: HarmonySpan,
-) {
-  return span.regionIds.map((id) => analysis.chordById.get(id)).find(Boolean);
-}
-
-function projectKeyAtSpan(
-  analysis: Pick<HarmonyAnalysis, "project">,
-  span: HarmonySpan,
-) {
-  return (
-    analysis.project.keyEvents
-      .filter((event) => event.tick <= span.fromTick)
-      .at(-1) ?? analysis.project.keyEvents[0]
-  );
-}
-
-export function isCadential64Span(span: HarmonySpan) {
-  const interpretation = interpretationOf(span);
-  return (
-    interpretation?.designation?.kind === "cadential64" ||
-    span.semantics?.cadenceRole === "cadential64"
-  );
-}
-
 function spanTonalReading(analysis: Pick<HarmonyAnalysis, "project">, span: HarmonySpan) {
-  return tonalReading(span.semantics, projectKeyAtSpan(analysis, span));
+  return tonalReading(span.semantics, writtenKeyAtTick(analysis, span.fromTick));
 }
 
 function targetMatchesAtConnection(
@@ -189,7 +167,7 @@ function assessConnection(
     isDiminishedRotation(previousChord, currentChord, source, destination) &&
     !crossesTonalBoundary(analysis.project, current.fromTick, arrival.tick) &&
     provesDiminishedPivotArrival(
-      analysis.slices?.[previous.sliceIndices.at(-1)!], analysis.slices?.[current.sliceIndices[0]], arrival,
+      spanEndpointSlice(analysis.slices, previous, "last"), spanEndpointSlice(analysis.slices, current, "first"), arrival,
       previousChord, currentChord, destination.key,
     );
   const confidence = combinedConfidence([source.confidence, destination.confidence]);

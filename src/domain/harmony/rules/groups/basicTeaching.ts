@@ -24,6 +24,7 @@ import {
 import type { HarmonyRuleContext } from "../context/createRuleContext";
 import { structuralTriadVoicing } from "../helpers/chordVoicing";
 import { notesWithAnticipationReplacements } from "../helpers/ornaments";
+import { contraryPassingSixFour } from "../../facts/passingSixFour";
 import { resolvesLeadingSeventhToPassingTonic } from "../../facts/tendencyResolution";
 import { hasSubdominantSixFourOnTonicPedal } from "./support/suspensionsAndVoiceLeading";
 import { leadingToneForFunction } from "../services/harmony";
@@ -279,6 +280,12 @@ export function secondInversionTriadVoicingRule(context: HarmonyRuleContext) {
   const diagnostics: RuleDiagnostic[] = [];
   triadVoicingFacts(context, 2).forEach((fact) => {
     const role = fact.chord.semantics?.cadenceRole;
+    if (!role && fact.counts[2] === 2) {
+      const { slice } = fact;
+      const before = context.sliceAt(slice.tick - 1), after = context.sliceAt(slice.endTick);
+      if (before && after && slice.endTick - slice.tick <= context.analysis.project.ppq &&
+          !crossesManualPhraseBoundary(context, before.tick, after.tick) && contraryPassingSixFour(before, slice, after)) return;
+    }
     if (fact.counts[1] === 2 && (!role || role === "passing64") &&
         hasPassingTonicAfterLeadingSeventh(context, fact.slice)) return;
     if (
