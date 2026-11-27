@@ -6,6 +6,25 @@ export const MAX_RULE_TEST_CASE_BYTES = 20 * 1024 * 1024;
 export const MAX_AUDIT_FILE_BYTES = 32 * 1024 * 1024;
 export const MAX_MIDI_IMPORT_BYTES = 10 * 1024 * 1024;
 
+export const MAC_APP_SHORTCUTS = new Set([
+  "Ctrl+Comma", "Ctrl+KeyH", "Ctrl+Alt+KeyH", "Ctrl+KeyM", "Ctrl+KeyQ",
+  "Ctrl+KeyW", "Ctrl+Control+KeyF",
+]);
+
+export const DESKTOP_TEXT_EDIT_COMMANDS = {
+  undo: "undo",
+  redo: "redo",
+  cutSelection: "cut",
+  copySelection: "copy",
+  pasteSelection: "paste",
+  pasteAndMatchStyle: "pasteAndMatchStyle",
+  selectAll: "selectAll",
+} as const;
+export type DesktopTextEditCommand = keyof typeof DESKTOP_TEXT_EDIT_COMMANDS;
+export type DesktopMenuCommand = Exclude<DesktopTextEditCommand, "pasteAndMatchStyle"> | "settings"
+  | "newProject" | "openProject" | "saveProject" | "saveProjectAs"
+  | "zoomIn" | "zoomOut";
+
 export interface ProjectSaveRequest {
   project: unknown;
   currentPath?: string;
@@ -59,8 +78,12 @@ export interface DesktopInvokeMap {
   "window:minimize": { request: void; response: void };
   "window:toggle-maximize": { request: void; response: boolean };
   "window:is-maximized": { request: void; response: boolean };
+  "window:is-fullscreen": { request: void; response: boolean };
   "window:is-focused": { request: void; response: boolean };
-  "window:close": { request: void; response: void };
+  "window:close": { request: { quit: boolean }; response: void };
+  "window:set-close-handler": { request: { enabled: boolean }; response: void };
+  "window:set-document": { request: { filePath?: string; isDirty: boolean }; response: void };
+  "menu:edit-text": { request: { command: DesktopTextEditCommand }; response: void };
   "project:open": {
     request: void;
     response:
@@ -203,6 +226,9 @@ export interface DesktopInvokeMap {
 export interface DesktopEventMap {
   "log:error-entry": LogEntry;
   "window:maximized-changed": boolean;
+  "window:fullscreen-changed": boolean;
+  "window:close-requested": boolean;
+  "menu:command": DesktopMenuCommand;
   "project:open-external": ExternalProjectOpenPayload;
   "soundfont:hash-progress": {
     token: string;
@@ -224,9 +250,16 @@ export const DESKTOP_CHANNELS = Object.freeze({
   windowMinimize: "window:minimize",
   windowToggleMaximize: "window:toggle-maximize",
   windowIsMaximized: "window:is-maximized",
+  windowIsFullScreen: "window:is-fullscreen",
+  windowFullScreenChanged: "window:fullscreen-changed",
   windowIsFocused: "window:is-focused",
   windowClose: "window:close",
+  windowSetCloseHandler: "window:set-close-handler",
+  windowSetDocument: "window:set-document",
+  windowCloseRequested: "window:close-requested",
   windowMaximizedChanged: "window:maximized-changed",
+  menuCommand: "menu:command",
+  menuEditText: "menu:edit-text",
   projectOpen: "project:open",
   projectConsumePendingOpen: "project:consume-pending-open",
   projectOpenExternal: "project:open-external",
@@ -258,6 +291,7 @@ export const DESKTOP_CHANNELS = Object.freeze({
 } as const satisfies Record<string, DesktopInvokeChannel | DesktopEventChannel>);
 
 export interface DesktopApi {
+  platform: string;
   log: {
     sessionId?: string;
     onErrorEntry(callback: (entry: LogEntry) => void): () => void;
@@ -275,9 +309,17 @@ export interface DesktopApi {
     minimize(): Promise<void>;
     toggleMaximize(): Promise<boolean>;
     isMaximized(): Promise<boolean>;
+    isFullScreen(): Promise<boolean>;
+    onFullScreenChange(callback: (fullScreen: boolean) => void): () => void;
     isFocused(): Promise<boolean>;
-    close(): Promise<void>;
+    close(quit?: boolean): Promise<void>;
+    setDocument(filePath: string | undefined, isDirty: boolean): Promise<void>;
+    onCloseRequest(callback: (quit: boolean) => void): () => void;
     onMaximizedChange(callback: (isMaximized: boolean) => void): () => void;
+  };
+  menu: {
+    onCommand(callback: (command: DesktopMenuCommand) => void): () => void;
+    editText(command: DesktopTextEditCommand): Promise<void>;
   };
   project: {
     open(): Promise<DesktopInvokeMap["project:open"]["response"]>;

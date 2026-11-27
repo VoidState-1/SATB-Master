@@ -1,6 +1,6 @@
 # 测试、构建与发布
 
-本文说明 SATB Master 的验证层级、构建脚本、桌面 E2E（含日志门禁）、CLI 工具脚本、Windows 打包和发布检查。架构边界见 [architecture.md](./architecture.md)，桌面持久化见 [desktop-and-persistence.md](./desktop-and-persistence.md)，日志与排错体系见 [logging-and-observability.md](./logging-and-observability.md)。命令以 [`package.json`](../package.json) 为准。
+本文说明 SATB Master 的验证层级、构建脚本、桌面 E2E（含日志门禁）、CLI 工具脚本、macOS 和 Windows 打包与发布检查。架构边界见 [architecture.md](./architecture.md)，桌面持久化见 [desktop-and-persistence.md](./desktop-and-persistence.md)，日志与排错体系见 [logging-and-observability.md](./logging-and-observability.md)。命令以 [`package.json`](../package.json) 为准。
 
 ## 1. 验证原则
 
@@ -28,10 +28,10 @@ npm run build
 实际执行：
 
 ```text
-vitest run --exclude "StandardCase/Pilot/**"
+vitest run --execArgv=--no-experimental-webstorage --exclude "StandardCase/Pilot/**"
 ```
 
-排除试点目录 `StandardCase/Pilot/**`，运行其余全量 Vitest 测试。测试文件与源码相邻，覆盖重点包括：
+排除试点目录 `StandardCase/Pilot/**`，运行其余全量 Vitest 测试。在测试进程中使用 jsdom 的 Web Storage，以兼容默认启用原生 Web Storage 的 Node.js 版本。测试文件与源码相邻，覆盖重点包括：
 
 - **工程模型与编辑：** 工程 schema v3、validator/normalizer、v2 -> v3 迁移、编辑命令、锁定区、批量原子性与辅助轨重叠例外。
 - **音乐基础与记谱导出：** 书写音高、音程、和弦解析（含 `doubleAugmented43`）、变速/变拍号时间换算、MIDI Type 1 结构、MusicXML 导出序列化与 VexFlow 记谱转换模型。
@@ -117,7 +117,7 @@ npm run build:
 npm run e2e:desktop:local
 ```
 
-该命令先执行 `npm run build`，再以 `node scripts/e2e-desktop.mjs node_modules/electron/dist/electron.exe .` 启动。直接运行 `npm run e2e:desktop`（无额外参数）时，脚本默认指向打包产物 `release-installer/win-unpacked/SATB Master.exe`（也可手动传入任意打包可执行路径）。
+该命令先执行 `npm run build`，再用所安装的 Electron 启动。直接运行 `npm run e2e:desktop` 时，脚本在 macOS 下查找 `release/mac-universal/SATB Master.app` 中的可执行文件，在 Windows 下查找 `release-installer/win-unpacked/SATB Master.exe`。也可以传入打包后的可执行文件路径。
 
 隔离目录位于 `node_modules/.satb-master-e2e/run-*`（通过 `SATB_MASTER_E2E_DIRECTORY` 注入 Electron），运行结束时自动清理，隔离内容包括：
 
@@ -268,6 +268,14 @@ npm run dist:win
 - 卸载默认保留当前用户的设置、外置规则库、自动恢复记录及日志。可选「同时彻底清除」，清理应用数据目录，保存在其他文件夹中的 `.satb` 工程可继续使用。静默卸载仅在显式传入 `--delete-app-data` 时清理，内部升级卸载始终保留。
 
 发布前在隔离的 Windows 环境中从实际安装路径启动。检查三项安装选项的开关与覆盖升级、双击工程的冷启动和热转发、卸载时保留和清除数据两条路径。
+
+### macOS 打包
+
+`npm run pack:mac` 在 `release/` 输出本机架构的 `.app`。`npm run dist:mac` 合并 arm64 和 x64，输出单个通用 DMG。两个命令都会生成默认 SoundFont 和 Retina 图标。Electron 的 `Info.plist` 声明系统版本下限和 `.satb` 文件类型。
+
+README 中的本机签名参数适用于开发验证。公开发行使用 Developer ID 签名和 Apple 公证。若同步目录给构建产物附加 Finder 元数据，可使用 `--config.directories.output` 指定一个未同步的构建目录。
+
+对 `.app` 运行 `codesign --verify --deep --strict`，用 `lipo -archs` 核对通用架构。挂载 DMG 后验证原生菜单、窗口关闭和退出、Finder 冷启动和运行中打开 `.satb`，并分别在 Apple Silicon 和 Intel 上运行桌面与审计 E2E。
 
 ## 9. 版本发布矩阵
 

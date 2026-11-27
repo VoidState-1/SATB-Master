@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { mkdir, mkdtemp, readFile, writeFile, access } from "node:fs/promises";
 import path from "node:path";
 import { assertCleanSessionLogs, waitForElectronExit } from "./e2e-session-logs.mjs";
@@ -136,7 +137,7 @@ async function launch() {
   const args = ["--remote-debugging-port=0", "--remote-allow-origins=*", "--disable-gpu", `--user-data-dir=${path.join(directory, "user-data")}`];
   if (!packagedExe) args.push(root);
   if (startupPackage) args.push("--audit-package", startupPackage);
-  child = spawn(packagedExe ?? path.resolve("node_modules/electron/dist/electron.exe"), args, {
+  child = spawn(packagedExe ?? createRequire(import.meta.url)("electron"), args, {
     env: { ...process.env, SATB_MASTER_E2E_DIRECTORY: directory }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
   });
   let log = "";
@@ -375,7 +376,7 @@ try {
   await launch();
   if (startupMode) await checkStartupPackage();
   else await runWorkbenchChecks(packageValue);
-  await evaluate(`setTimeout(() => void window.desktop.windowControls.close().catch(() => {}), 50); true`);
+  await evaluate(`setTimeout(() => void window.desktop.windowControls.close(true).catch(() => {}), 50); true`);
   await waitForElectronExit(child);
   const { files, entries } = await assertCleanSessionLogs(path.join(directory, "user-data"));
   console.log(`PASS: JSONL 日志门禁，${files} 个文件、${entries} 条日志`);
@@ -387,7 +388,7 @@ try {
   socket?.close();
   for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error("CDP closed")); }
   if (child?.pid && child.exitCode === null && child.signalCode === null) {
-    child.kill();
+    child.kill('SIGKILL');
     await waitForElectronExit(child, { requireSuccess: false });
   }
 }

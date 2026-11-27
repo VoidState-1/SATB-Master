@@ -6,7 +6,7 @@
 
 浏览器模式适合快速开发，但 SATB Master 的完整产品能力依赖 Electron：
 
-- 无边框自定义窗口、原生窗口控制与多屏尺寸记忆。
+- Windows 自定义无边框窗口、macOS 原生窗口按钮与应用菜单，以及多屏尺寸记忆。
 - `.satb` 双击打开、原子保存、另存为与紧急备份导出。
 - 自动恢复与 schema v2 原文件备份。
 - 本地 SoundFont 大文件安全流式读取。
@@ -27,7 +27,7 @@ nodeIntegration: false
 sandbox: true
 ```
 
-应用使用 frameless 窗口，由 React 标题栏提供最小化、最大化/还原和关闭按钮。renderer 没有 Node 权限，所有桌面能力经 [`electron/preload.cts`](../electron/preload.cts) 的 `contextBridge` 暴露为 `window.desktop`。
+Windows 使用自定义窗口按钮。macOS 隐藏系统标题文字并保留原生窗口按钮和可拖拽标题栏，将文件路径和编辑状态同步到原生窗口。系统关窗或退出由主进程转发给渲染层，等待未保存提示以及审计意见落盘。renderer 没有 Node 权限，所有桌面能力经 [`electron/preload.cts`](../electron/preload.cts) 的 `contextBridge` 暴露为 `window.desktop`。
 
 基本原则：
 
@@ -57,11 +57,12 @@ sandbox: true
 
 ### 3.2 `window.desktop` 分组
 
-preload API 按能力分为 11 个分组：
+preload API 公开只读的 `platform` 属性，并按能力分组。
 
 | 分组 | 方法 / 属性 |
 | --- | --- |
-| `windowControls` | `minimize`、`toggleMaximize`、`isMaximized`、`isFocused`、`close`、`onMaximizedChange` |
+| `windowControls` | `minimize`、`toggleMaximize`、`isMaximized`、`isFocused`、`close`、`onMaximizedChange`、`setDocument`、`onCloseRequest` |
+| `menu` | `onCommand`、`editText` |
 | `versions` | 只读版本信息对象：`electron`、`chrome`、`node` |
 | `project` | `open`、`consumePendingOpen`、`onOpenExternal`、`save`、`exportBackup`、`autosave`、`recovery`、`discardRecovery` |
 | `midi` | `import()`、`export(bytes, defaultName)` |

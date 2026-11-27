@@ -172,6 +172,11 @@ export async function rememberDialogDirectory(kind: DialogDirectoryKind, filePat
   }
 }
 
+export async function rememberProjectFile(filePath: string) {
+  if (process.platform === 'darwin' && !e2eDirectory) app.addRecentDocument(filePath)
+  await rememberDialogDirectory('project', filePath)
+}
+
 export async function rememberedDefaultPath(kind: DialogDirectoryKind, fileName?: string) {
   const directory = await recentDialogDirectory(kind)
   return directory && fileName ? path.join(directory, fileName) : directory ?? fileName
@@ -233,27 +238,25 @@ function assertRuleProfileEnvelope(value: unknown) {
     throw new Error('规则配置档案结构或版本无效')
 }
 
+export async function chooseProjectFile(parentWindow?: BrowserWindow) {
+  // 回归测试仍走真实的工程读写，仅替换选择器的返回值。
+  if (e2eDirectory) return path.join(e2eDirectory, 'project.satb')
+  const selection = await showExclusiveOpenDialog(parentWindow, {
+    title: '打开 SATB 工程',
+    defaultPath: await rememberedDefaultPath('project'),
+    properties: ['openFile'],
+    filters: [{ name: 'SATB Master 工程', extensions: ['satb'] }],
+  })
+  if (!selection.canceled) return selection.filePaths[0]
+}
+
 export function registerProjectIpc() {
   handleDesktop(DESKTOP_CHANNELS.projectOpen, async (event) => {
-    let filePath: string
-    if (e2eDirectory) {
-      // 端到端测试仍走完整 IPC 与磁盘读写，只用固定临时路径替代不可自动化的系统文件对话框。
-      filePath = path.join(e2eDirectory, 'project.satb')
-    } else {
-      const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
-      const selection = await showExclusiveOpenDialog(parentWindow, {
-        title: '打开 SATB 工程',
-        defaultPath: await rememberedDefaultPath('project'),
-        properties: ['openFile'],
-        filters: [{ name: 'SATB Master 工程', extensions: ['satb'] }],
-      })
-      if (selection.canceled || !selection.filePaths[0]) return { canceled: true }
-      filePath = selection.filePaths[0]
-      await rememberDialogDirectory('project', filePath)
-    }
-
+    const filePath = await chooseProjectFile(BrowserWindow.fromWebContents(event.sender) ?? undefined)
+    if (!filePath) return { canceled: true }
     const result = await readProjectFile(filePath)
     if ('invalidMessage' in result) return { canceled: false, ...result }
+    await rememberProjectFile(filePath)
     return { canceled: false, filePath, ...result }
   })
 
@@ -268,7 +271,6 @@ export function registerProjectIpc() {
       })
       if (selection.canceled || !selection.filePath) return { canceled: true }
       filePath = selection.filePath.toLowerCase().endsWith('.satb') ? selection.filePath : `${selection.filePath}.satb`
-      await rememberDialogDirectory('project', filePath)
     }
 
     if (!filePath) throw new Error('没有可用的工程保存路径')
@@ -278,6 +280,7 @@ export function registerProjectIpc() {
       : undefined
     await writeProjectAtomic(filePath, request.project)
     await rm(recoveryPath(), { force: true })
+    await rememberProjectFile(filePath)
     return { canceled: false, filePath, migrationBackupPath }
   })
 

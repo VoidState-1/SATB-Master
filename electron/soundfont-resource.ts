@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { net, protocol } from 'electron'
-import { validateSoundFontCapacity } from './soundfont-policy.js'
+import { availableSoundFontMemoryBytes, validateSoundFontCapacity } from './soundfont-policy.js'
 
 const SOUNDFONT_SCHEME = 'satb-soundfont'
 const RESOURCE_LIFETIME_MS = 15 * 60 * 1000
@@ -75,8 +75,7 @@ export async function prepareSoundFontResource(filePath: string, expectedHash?: 
   const info = await stat(filePath)
   if (!info.isFile()) throw new Error('SoundFont 路径不是文件')
 
-  const memoryInfo = process.getSystemMemoryInfo()
-  const availableMemoryBytes = memoryInfo.free * 1024
+  const availableMemoryBytes = availableSoundFontMemoryBytes(process.getSystemMemoryInfo(), process.platform)
   const requiredMemoryBytes = validateSoundFontCapacity(info.size, availableMemoryBytes, process.arch)
   const token = randomUUID()
   resources.set(token, {

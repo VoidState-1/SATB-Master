@@ -3,7 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const SIZE = 256
+const scale = process.argv.includes('--mac') ? 4 : 1
+const SIZE = 256 * scale
 const pixels = new Uint8Array(SIZE * SIZE * 4)
 const outputDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../build')
 
@@ -31,12 +32,21 @@ function fillCircle(centerX, centerY, radius, color) {
 }
 
 function fillRoundedRect(x, y, width, height, radius, color) {
+  x *= scale
+  y *= scale
+  width *= scale
+  height *= scale
+  radius *= scale
   fillRect(x + radius, y, width - radius * 2, height, color)
   fillRect(x, y + radius, width, height - radius * 2, color)
   fillCircle(x + radius, y + radius, radius, color)
   fillCircle(x + width - radius - 1, y + radius, radius, color)
   fillCircle(x + radius, y + height - radius - 1, radius, color)
   fillCircle(x + width - radius - 1, y + height - radius - 1, radius, color)
+}
+
+function drawCircle(x, y, radius, color) {
+  fillCircle(x * scale, y * scale, radius * scale, color)
 }
 
 function crc32(bytes) {
@@ -71,12 +81,12 @@ const voices = [
 ]
 for (const voice of voices) {
   fillRoundedRect(voice.start, voice.y, 118 - (voice.start - 48), 16, 8, voice.color)
-  fillCircle(174, voice.y + 8, 13, voice.color)
+  drawCircle(174, voice.y + 8, 13, voice.color)
   fillRoundedRect(184, voice.y + 5, 23, 6, 3, charcoal)
 }
 fillRoundedRect(202, 61, 9, 132, 4, charcoal)
-fillCircle(206, 127, 17, charcoal)
-fillCircle(206, 127, 8, [244, 243, 239, 255])
+drawCircle(206, 127, 17, charcoal)
+drawCircle(206, 127, 8, [244, 243, 239, 255])
 
 const scanlines = Buffer.alloc((SIZE * 4 + 1) * SIZE)
 for (let y = 0; y < SIZE; y += 1) {
@@ -97,20 +107,26 @@ const png = Buffer.concat([
   pngChunk('IEND', Buffer.alloc(0)),
 ])
 
-const icoHeader = Buffer.alloc(22)
-icoHeader.writeUInt16LE(0, 0)
-icoHeader.writeUInt16LE(1, 2)
-icoHeader.writeUInt16LE(1, 4)
-icoHeader[6] = 0
-icoHeader[7] = 0
-icoHeader[8] = 0
-icoHeader[9] = 0
-icoHeader.writeUInt16LE(1, 10)
-icoHeader.writeUInt16LE(32, 12)
-icoHeader.writeUInt32LE(png.length, 14)
-icoHeader.writeUInt32LE(22, 18)
-
 await mkdir(outputDirectory, { recursive: true })
-await writeFile(path.join(outputDirectory, 'icon.png'), png)
-await writeFile(path.join(outputDirectory, 'icon.ico'), Buffer.concat([icoHeader, png]))
-console.log(`Generated ${path.join(outputDirectory, 'icon.ico')} (${png.length} PNG bytes)`)
+if (scale > 1) {
+  const iconPath = path.join(outputDirectory, 'icon-macos.png')
+  await writeFile(iconPath, png)
+  console.log(`Generated ${iconPath} (${SIZE}×${SIZE})`)
+} else {
+  const icoHeader = Buffer.alloc(22)
+  icoHeader.writeUInt16LE(0, 0)
+  icoHeader.writeUInt16LE(1, 2)
+  icoHeader.writeUInt16LE(1, 4)
+  icoHeader[6] = 0
+  icoHeader[7] = 0
+  icoHeader[8] = 0
+  icoHeader[9] = 0
+  icoHeader.writeUInt16LE(1, 10)
+  icoHeader.writeUInt16LE(32, 12)
+  icoHeader.writeUInt32LE(png.length, 14)
+  icoHeader.writeUInt32LE(22, 18)
+
+  await writeFile(path.join(outputDirectory, 'icon.png'), png)
+  await writeFile(path.join(outputDirectory, 'icon.ico'), Buffer.concat([icoHeader, png]))
+  console.log(`Generated ${path.join(outputDirectory, 'icon.ico')} (${png.length} PNG bytes)`)
+}

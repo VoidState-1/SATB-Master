@@ -3,11 +3,20 @@ import {
   GIBIBYTE,
   MAX_SOUNDFONT_BYTES,
   MEBIBYTE,
+  availableSoundFontMemoryBytes,
   requiredSoundFontMemory,
   validateSoundFontCapacity,
 } from './soundfont-policy.js'
 
 describe('SoundFont capacity policy', () => {
+  it('uses reclaimable macOS memory without counting overlapping caches twice', () => {
+    const memory = { total: 8 * 1024 * 1024, free: 128 * 1024, fileBacked: 640 * 1024, purgeable: 192 * 1024 }
+    const available = availableSoundFontMemoryBytes(memory, 'darwin')
+    expect(available).toBe(768 * MEBIBYTE)
+    expect(validateSoundFontCapacity(4096, available, 'arm64')).toBe(requiredSoundFontMemory(4096))
+    expect(availableSoundFontMemoryBytes(memory, 'win32')).toBe(128 * MEBIBYTE)
+  })
+
   it('accepts a 2 GB SoundFont on 64-bit systems with sufficient free memory', () => {
     expect(MAX_SOUNDFONT_BYTES).toBe(2 * GIBIBYTE)
     expect(validateSoundFontCapacity(2 * GIBIBYTE, 4 * GIBIBYTE, 'x64'))

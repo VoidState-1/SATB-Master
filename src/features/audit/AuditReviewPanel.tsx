@@ -1,5 +1,7 @@
 import { ChevronLeft, ChevronRight, ClipboardPen } from "lucide-react";
 import type { AuditItem, AuditItemReview, AuditReviewPatch } from "../../domain/audit";
+import { hasPrimaryModifier } from "../../shortcuts/keyboardPlatform";
+import { formatShortcutBinding } from "../../shortcuts/shortcutRegistry";
 import { auditAnswerForm } from "./auditAnswerForm";
 import { AuditQuestions } from "./AuditQuestions";
 import { shortDecisionLabels } from "./auditLabels";
@@ -34,7 +36,7 @@ export function AuditReviewPanel({ item, review, index, total, hasNextPending, o
   }
 
   return <div className="audit-review-shell" onKeyDown={event => {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && canSubmit) {
+    if (!event.nativeEvent.isComposing && hasPrimaryModifier(event) && event.key === "Enter" && canSubmit) {
       event.preventDefault();
       submitAnswer();
     }
@@ -71,7 +73,7 @@ export function AuditReviewPanel({ item, review, index, total, hasNextPending, o
         ? <button type="button" className="audit-defer" aria-label="撤回本条答案" onClick={() => onChange({ decision: "pending" })}>{shortDecisionLabels[review.decision]} · 撤回</button>
         : item.category !== "proposal" && <button type="button" className="audit-defer" onClick={() => onSubmit({ decision: "needs-evidence" })}>请模型补证</button>}
       <button type="button" className="audit-submit" aria-label="提交审计答案"
-        title="Ctrl+Enter 提交" disabled={!canSubmit} onClick={submitAnswer}>
+        title={`${formatShortcutBinding("Ctrl+Enter")} 提交`} disabled={!canSubmit} onClick={submitAnswer}>
         {submitted ? last ? "已提交" : "下一条" : hasNextPending ? "提交并下一条" : "提交答案"}
         {(submitted ? !last : hasNextPending) && <ChevronRight size={14} aria-hidden="true" />}
       </button>

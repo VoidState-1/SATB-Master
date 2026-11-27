@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Cable, RefreshCw, Volume2, VolumeX, X } from "lucide-react";
 import { IconButton } from "../../components/IconButton";
+import { isMacOS } from "../../shortcuts/keyboardPlatform";
 import {
   midiOutputManager,
   type MidiOutputChannelMode,
@@ -149,7 +150,9 @@ export function MidiOutDialog({ isOpen, onClose }: MidiOutDialogProps) {
                   </div>
                 ) : (
                   <div className="midi-out-empty-hint">
-                    未检测到可用端口（如 loopMIDI 虚拟驱动或 USB 硬件）。
+                    {isMacOS
+                      ? "未检测到可用端口。可在「音频 MIDI 设置」中启用 IAC 驱动器，或连接 USB MIDI 设备。"
+                      : "未检测到可用端口（如 loopMIDI 虚拟驱动或 USB 硬件）。"}
                     <button
                       type="button"
                       className="midi-out-refresh-btn"

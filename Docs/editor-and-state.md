@@ -146,7 +146,7 @@ revision 还用于异步规则竞争：分析开始时记录 revision，返回�
 - 单选事件移动时允许音频预听，多选不预听，避免同时触发大量声音。
 - 双击非当前声部音符会先切换到该声部，再进入对应操作。
 
-默认工具是选择工具。选择工具下按住 Ctrl 临时使用画笔，按住 Alt 临时使用擦除，松开恢复；这个临时覆盖不修改用户选定的基础工具。Ctrl 按住期间，Tab/Shift+Tab 仍应切换声部，因此快捷键匹配支持在特定上下文忽略 Ctrl 修饰符。
+默认工具是选择工具。Windows 下按住 Ctrl 临时使用画笔，按住 Alt 临时擦除。macOS 对应使用 ⌘ 和 ⌥，保留 Control+点击与 ⌘Tab 的系统行为。松开修饰键后恢复选定工具。Windows 按住 Ctrl 时，Tab/Shift+Tab 仍可切换声部。
 
 中键不选择工具，用于拖动画布。右键在标尺/和弦等上下文中打开菜单，需阻止浏览器默认菜单但不能破坏输入框的正常行为。
 
@@ -165,7 +165,7 @@ screenX  = logicalX - scrollLeft
 
 标尺、和弦轨、音符、循环范围和播放头必须共享同一 `scrollLeft`、`pixelsPerBeat` 与 `PIANO_WIDTH` 原点。分别计算或对某一轨额外取整会造成播放红线在轨道交界处断层。
 
-Ctrl+滚轮横向缩放调用 `scrollLeftForZoom` 以鼠标所指 tick 为锚点：缩放前后该 tick 应尽量保持在同一屏幕位置。不要叠加浏览器/组件自带缩放和手工滚动补偿，否则会产生跳跃。
+Windows 的 Ctrl+滚轮，以及 Mac 的 ⌘+滚动和触控板捏合，调用 `scrollLeftForZoom` 以指针所在 tick 为锚点。钢琴卷帘拦截这些滚动事件，将缩放限定在时间轴。
 
 ### 7.2 播放头跟随、调内音阶参考与离散定位
 
@@ -292,10 +292,12 @@ Ctrl+滚轮横向缩放调用 `scrollLeftForZoom` 以鼠标所指 tick 为锚点
 | 播放 | Space、Home、End、PageUp、PageDown |
 | 视图 | `[`、`]`、Ctrl+-、Ctrl+=，以及 Ctrl+滚轮 |
 
+macOS 默认用 ⌘ 执行表中 Ctrl 开头的命令，重做使用 `⌘⇧Z`。设置会显示当前平台的按键符号。保存值中的 `Ctrl` 表示主要修饰键，物理 Control 在 macOS 中可单独绑定。窗口和应用系统快捷键由 macOS 菜单处理。
+
 事件匹配使用物理 `KeyboardEvent.code`，使字母快捷键不受输入法字符影响。[`useKeyboardController.ts`](../src/app/controllers/useKeyboardController.ts) 通过两层门控防止快捷键误触发：
 
 - **作用域 `enabled` 门控**：在主工作区中，`AppShell` 传入 `enabled: !ruleTestMode && !auditOpen && !autoHarmonizationOpen`，进入规则测试工作台、教材审计工作台或打开自动和声弹窗时自动禁用主编辑器快捷键（工作台或弹窗各自管理局部快捷键）。
-- **焦点与弹窗过滤**：当确认框/设置弹窗打开、处于输入法组合态（`event.isComposing`），或事件目标位于 `input, textarea, select, [contenteditable="true"]` 及 `[role="dialog"]` 内部时直接放行；全局 `preventDefault()` 前先确认命令实际匹配。
+- **焦点与弹窗过滤**：确认框和设置打开或处于输入法组合态时暂停编辑器命令。文本框和可编辑区域保留文本快捷键。macOS 文件命令可在普通编辑区的输入框触发，先提交输入草稿，再处理新建、打开或保存。
 
 新增快捷键时：
 

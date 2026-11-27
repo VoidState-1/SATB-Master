@@ -12,17 +12,20 @@
     "generate:icon": "node scripts/generate-app-icon.mjs",
     "generate:installer-assets": "node scripts/generate-installer-assets.mjs",
     "generate:assets": "npm run generate:soundfont && npm run generate:icon && npm run generate:installer-assets",
+    "generate:assets:mac": "npm run generate:soundfont && npm run generate:icon -- --mac",
     "e2e:desktop": "node scripts/e2e-desktop.mjs",
     "e2e:audit": "npm run build && node scripts/e2e-audit.mjs",
-    "e2e:desktop:local": "npm run build && node scripts/e2e-desktop.mjs node_modules/electron/dist/electron.exe .",
+    "e2e:desktop:local": "npm run build && node scripts/e2e-desktop.mjs --local",
     "dev": "npm run build:electron && concurrently --kill-others-on-fail \"vite\" \"wait-on tcp:5173 && electron . --dev\"",
     "dev:tools": "npm run build:electron && concurrently --kill-others-on-fail \"vite\" \"wait-on tcp:5173 && electron . --dev --devtools\"",
     "build": "npm run typecheck && vite build && npm run build:electron",
     "build:electron": "node scripts/clean-electron-output.mjs && tsc -p tsconfig.electron.json && vite build --config vite.preload.config.ts",
     "pack:win": "npm run generate:assets && npm run build && electron-builder --win dir --x64",
     "dist:win": "npm run generate:assets && npm run build && node scripts/build-windows-installer.mjs",
+    "pack:mac": "npm run generate:assets:mac && npm run build && electron-builder --mac dir --publish never",
+    "dist:mac": "npm run generate:assets:mac && npm run build && electron-builder --mac dmg --universal --publish never",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
-    "test": "vitest run --exclude \"StandardCase/Pilot/**\"",
+    "test": "vitest run --execArgv=--no-experimental-webstorage --exclude \"StandardCase/Pilot/**\"",
     "score": "node scripts/score.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "audit": "node scripts/audit.mjs",
@@ -58,6 +61,7 @@
     "appId": "com.satbmaster.desktop",
     "productName": "SATB Master",
     "asar": true,
+    "afterPack": "./scripts/prepare-macos-app.mjs",
     "directories": {
       "output": "release"
     },
@@ -78,6 +82,32 @@
         ]
       }
     ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.music",
+      "icon": "build/icon-macos.png",
+      "artifactName": "SATB-Master-${version}-mac-${arch}.${ext}",
+      "extendInfo": {
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "SATB Master 工程",
+            "CFBundleTypeRole": "Editor",
+            "CFBundleTypeIconFile": "icon.icns",
+            "LSHandlerRank": "Owner",
+            "LSItemContentTypes": ["com.satbmaster.desktop.project"]
+          }
+        ],
+        "UTExportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "com.satbmaster.desktop.project",
+            "UTTypeDescription": "SATB Master 工程",
+            "UTTypeConformsTo": ["public.json", "public.content"],
+            "UTTypeIconFile": "icon.icns",
+            "UTTypeTagSpecification": { "public.filename-extension": ["satb"] }
+          }
+        ]
+      }
+    },
     "win": {
       "target": [
         {

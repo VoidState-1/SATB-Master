@@ -29,6 +29,15 @@
   -webkit-app-region: drag;
 }
 
+[data-window-platform="macos"] .app-titlebar {
+  padding-right: 14px;
+  padding-left: 86px;
+}
+
+[data-window-platform="macos"][data-window-fullscreen] .app-titlebar {
+  padding-left: 14px;
+}
+
 .titlebar-controls {
   display: flex;
   position: absolute;

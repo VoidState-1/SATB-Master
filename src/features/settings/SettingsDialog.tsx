@@ -31,6 +31,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
   };
 
   useEffect(() => {
+    const opener = document.activeElement;
+    dialogRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, []);
+
+  useEffect(() => {
     if (activeTab === "shortcuts") shortcutSearchRef.current?.focus();
     if (activeTab === "rules") ruleSearchRef.current?.focus();
   }, [activeTab]);
@@ -71,6 +79,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
         ref={dialogRef}
         className="settings-dialog"
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby="settings-title"
         onKeyDown={handleDialogKeyDown}

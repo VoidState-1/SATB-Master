@@ -48,6 +48,7 @@ interface FileWorkflowOptions {
   project: ProjectDocument;
   history: ProjectHistoryFilePort;
   createProject(): ProjectDocument;
+  beforeExternalOpen?(): Promise<boolean>;
   onWorkspaceReset(project: ProjectDocument): void;
   onImportedAuxiliaryTracks?(trackIds: string[]): void;
   showNotice: ShowNotice;
@@ -58,6 +59,7 @@ export function useFileWorkflow({
   project,
   history,
   createProject,
+  beforeExternalOpen,
   onWorkspaceReset,
   onImportedAuxiliaryTracks,
   showNotice,
@@ -168,14 +170,14 @@ export function useFileWorkflow({
           confirmLabel: "继续打开",
           cancelLabel: "取消",
         }))) return;
-        loadOpenedProject(result);
+        if (!beforeExternalOpen || await beforeExternalOpen()) loadOpenedProject(result);
       } catch (error) {
         reportExternalOpenFailure(error, "second-instance");
       } finally {
         setWorkflowBusy(false);
       }
     })();
-  }, [history.isDirty, isBusy, loadOpenedProject, pendingExternalOpens, reportExternalOpenFailure, requestConfirmation, setWorkflowBusy]);
+  }, [beforeExternalOpen, history.isDirty, isBusy, loadOpenedProject, pendingExternalOpens, reportExternalOpenFailure, requestConfirmation, setWorkflowBusy]);
 
   useEffect(() => {
     if (!history.isDirty) return;

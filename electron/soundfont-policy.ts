@@ -6,6 +6,15 @@ const LARGE_SOUNDFONT_BYTES = 512 * MEBIBYTE
 const PARSER_HEADROOM_RATIO = 1.5
 const SYSTEM_RESERVE_BYTES = 512 * MEBIBYTE
 
+export function availableSoundFontMemoryBytes(
+  memory: { total: number; free: number; fileBacked?: number; purgeable?: number },
+  platform: string,
+) {
+  // macOS uses idle RAM for file caches. These estimates can overlap, so count the larger one.
+  const reclaimable = platform === 'darwin' ? Math.max(memory.fileBacked ?? 0, memory.purgeable ?? 0) : 0
+  return Math.min(memory.total, memory.free + reclaimable) * 1024
+}
+
 export function requiredSoundFontMemory(sizeBytes: number) {
   // SF2 原始采样需要完整进入 AudioWorklet；额外空间留给解析结构、当前工程与系统本身。
   return Math.ceil(sizeBytes * PARSER_HEADROOM_RATIO) + SYSTEM_RESERVE_BYTES

@@ -4,11 +4,15 @@ import { IconButton } from "../../components/IconButton";
 import {
   SHORTCUT_DEFINITIONS,
   SHORTCUT_GROUPS,
+  defaultBindingsFor,
   formatShortcutBinding,
   keyboardEventToBinding,
+  sameShortcutBindings,
   type ShortcutBindings,
   type ShortcutCommandId,
 } from "../../shortcuts/shortcutRegistry";
+import { usesNativeMacWindow } from "../../shortcuts/keyboardPlatform";
+import { MAC_APP_SHORTCUTS } from "../../../shared/desktop";
 
 export interface ShortcutSettingsPaneProps {
   bindings: ShortcutBindings;
@@ -17,13 +21,6 @@ export interface ShortcutSettingsPaneProps {
   onResetBinding(commandId: ShortcutCommandId): void;
   onResetAll(): void;
   searchRef?: RefObject<HTMLInputElement | null>;
-}
-
-function sameBindings(left: string[], right: string[]) {
-  return (
-    left.length === right.length &&
-    left.every((binding, index) => binding === right[index])
-  );
 }
 
 export function ShortcutSettingsPane({
@@ -43,6 +40,7 @@ export function ShortcutSettingsPane({
   useEffect(() => {
     if (!capturing) return;
     const handleCapture = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
       event.preventDefault();
       event.stopPropagation();
       const binding = keyboardEventToBinding(event);
@@ -50,6 +48,10 @@ export function ShortcutSettingsPane({
       if (binding === "Escape") {
         setCapturing(undefined);
         setCaptureError(undefined);
+        return;
+      }
+      if (usesNativeMacWindow && MAC_APP_SHORTCUTS.has(binding)) {
+        setCaptureError(`“${formatShortcutBinding(binding)}”是 macOS 应用菜单快捷键`);
         return;
       }
       const conflict = SHORTCUT_DEFINITIONS.find(
@@ -77,7 +79,7 @@ export function ShortcutSettingsPane({
       SHORTCUT_DEFINITIONS.filter((definition) => {
         if (!normalizedQuery) return true;
         const bindingText = bindings[definition.id]
-          .map(formatShortcutBinding)
+          .map((binding) => formatShortcutBinding(binding))
           .join(" ");
         return `${definition.label} ${bindingText}`
           .toLocaleLowerCase()
@@ -122,9 +124,9 @@ export function ShortcutSettingsPane({
               {groupDefinitions.map((definition) => {
                 const commandBindings = bindings[definition.id];
                 const isCapturing = capturing === definition.id;
-                const isDefault = sameBindings(
+                const isDefault = sameShortcutBindings(
                   commandBindings,
-                  definition.defaultBindings,
+                  defaultBindingsFor(definition),
                 );
                 return (
                   <div className="shortcut-row" key={definition.id}>

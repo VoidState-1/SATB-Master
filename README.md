@@ -42,17 +42,16 @@
 ## 快速开始
 
 ### 环境要求
-- Node.js `>= 20`（推荐 22+）
-- npm `>= 10`
-- Windows 10/11 x64（桌面端打包目标）
+- Node.js `>= 22.13` 和 npm `>= 10`（从源码构建时使用）
+- macOS 12 Monterey 或更新版本（Apple Silicon、Intel），或 Windows 10/11 x64
 
 ### 安装与启动开发模式
 
-```powershell
+```sh
 git clone https://github.com/VoidState-1/SATB-Master.git
 cd SATB-Master
-npm install
-npm run generate:assets
+npm ci
+npm run generate:soundfont
 npm run dev
 ```
 
@@ -83,6 +82,32 @@ npm run dist:win
 ```
 
 > `npm run pack:win` 输出免安装目录至 `release/`；`npm run dist:win` 输出 Windows x64 安装程序至 `release-installer/`。
+
+### macOS 安装与操作
+
+打开通用 `.dmg`，将 **SATB Master** 拖入「应用程序」。首次启动后，可以从 Finder 双击 `.satb`，或把工程拖到 Dock 图标。窗口关闭后可以通过 Dock 重新打开。关闭窗口和退出应用都会检查未保存修改。
+
+| 操作 | macOS 默认按键 |
+| --- | --- |
+| 新建、打开、保存、另存为 | `⌘N`、`⌘O`、`⌘S`、`⌘⇧S` |
+| 撤销、重做 | `⌘Z`、`⌘⇧Z` |
+| 全选、剪切、复制、粘贴、重复 | `⌘A`、`⌘X`、`⌘C`、`⌘V`、`⌘D` |
+| 删除所选音符或和弦 | `⌫`，或 `fn` + `⌫`（向前删除） |
+| 临时铅笔、临时橡皮 | 选择工具下按住 `⌘`、`⌥` |
+| 缩放时间轴 | `⌘-`、`⌘=`、`⌘` + 滚动，或在钢琴卷帘上双指捏合 |
+| 跳至首尾、上一或下一小节 | `fn` + `←` / `→`、`fn` + `↑` / `↓` |
+| 应用设置、关窗、退出 | `⌘,`、`⌘W`、`⌘Q` |
+
+编辑器按键可在「设置 → 快捷键」中自定义。实时 MIDI 可发送到 USB 设备或「音频 MIDI 设置」中的 IAC 驱动器。
+
+在 Mac 上生成本机 `.app` 或通用 DMG。下面的命令使用本地临时签名，产物位于 `release/`。
+
+```sh
+npm run pack:mac -- --config.mac.identity=- --config.mac.hardenedRuntime=false --config.mac.notarize=false
+npm run dist:mac -- --config.mac.identity=- --config.mac.hardenedRuntime=false --config.mac.notarize=false
+```
+
+对外发行时使用 Developer ID 证书和 Apple 公证凭据运行 `npm run dist:mac`。详见 [macOS 打包与验证](./Docs/testing-build-release.md#macos-打包)。
 
 ---
 
