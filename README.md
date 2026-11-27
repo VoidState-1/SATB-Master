@@ -18,7 +18,7 @@
 - **SATB 自动笔刷（快捷键 `5`）**：绘制音符时自动按「音域就近 + 严格保序（`S ≥ A ≥ T ≥ B`）」在垂直区域内重排 SATB 声部，支持拖绘实时声部配色预览、题干锁定与跨拍长音保护及单步撤销。
 - **自由复音额外声部**：支持添加多条不参与和声检查、允许复音重叠（防完全重叠）的额外声部，可自定义名称与颜色、配置与 SATB 一致的静音/独奏/显隐/锁定/音量与 GM 音色，并可按轨自由配置五线谱预览及导出。
 - **实时五线谱预览**：基于 VexFlow 渲染高音/低音大谱表（支持按轨附加额外声部复音谱表）、罗马数字/斯波索宾功能标记与当前光标联动。
-- **离线音频回放与导入/导出**：内置默认 SF2 音色并支持加载本地自定义 SoundFont、硬件/虚拟 MIDI 输出；支持导入 **MIDI (`.mid`)** 直接分配到额外声部（SMF 0/1/2、多通道拆轨、时间线可选同步），以及导出标准 **MIDI (`.mid`)** 与 **MusicXML (`.musicxml`)**（按轨自由配置额外声部）。
+- **离线音频回放与导入/导出**：内置默认 SF2 音色并支持加载本地自定义 SoundFont、硬件/虚拟 MIDI 输出；可导入 **MIDI (`.mid`, `.midi`)** 与 **Synthesizer V 工程 (`.svp`)**，也可导出 **MIDI** 和 **MusicXML**。单音源轨可分配到指定 SATB 声部，额外声部支持复音。
 
 ### 2. 70 条内置斯波索宾和声规则引擎 + 外置沙箱
 - 覆盖声部音域与交叉、平行/反向/隐伏五八度、和弦构成与转位低音、导音与七音跨切片解决、经过/辅助/延留/先现/持续音等非和弦音核实、功能进行、节拍切分、终止式与调性转换。
@@ -42,17 +42,16 @@
 ## 快速开始
 
 ### 环境要求
-- Node.js `>= 20`（推荐 22+）
-- npm `>= 10`
-- Windows 10/11 x64（桌面端打包目标）
+- Node.js `>= 22.13` 和 npm `>= 10`（从源码构建时使用）
+- macOS 12 Monterey 或更新版本（Apple Silicon、Intel），或 Windows 10/11 x64
 
 ### 安装与启动开发模式
 
-```powershell
+```sh
 git clone https://github.com/VoidState-1/SATB-Master.git
 cd SATB-Master
-npm install
-npm run generate:assets
+npm ci
+npm run generate:soundfont
 npm run dev
 ```
 
@@ -83,6 +82,36 @@ npm run dist:win
 ```
 
 > `npm run pack:win` 输出免安装目录至 `release/`；`npm run dist:win` 输出 Windows x64 安装程序至 `release-installer/`。
+
+### macOS 安装与操作
+
+打开通用 `.dmg`，将 **SATB Master** 拖入「应用程序」。首次启动后，可以从 Finder 双击 `.satb`，或把工程拖到 Dock 图标。窗口关闭后可以通过 Dock 重新打开。关闭窗口和退出应用都会检查未保存修改。
+
+| 操作 | macOS 默认按键 |
+| --- | --- |
+| 新建、打开、保存、另存为 | `⌘N`、`⌘O`、`⌘S`、`⌘⇧S` |
+| 撤销、重做 | `⌘Z`、`⌘⇧Z` |
+| 全选、剪切、复制、粘贴、重复 | `⌘A`、`⌘X`、`⌘C`、`⌘V`、`⌘D` |
+| 删除所选音符或和弦 | `⌫`，或 `fn` + `⌫`（向前删除） |
+| 临时铅笔、临时橡皮 | 选择工具下按住 `⌘`、`⌥` |
+| 缩放时间轴 | `⌘-`、`⌘=`、`⌘` + 滚动，或在钢琴卷帘上双指捏合 |
+| 跳至首尾、上一或下一小节 | `fn` + `←` / `→`、`fn` + `↑` / `↓` |
+| 应用设置、关窗、退出 | `⌘,`、`⌘W`、`⌘Q` |
+
+钢琴卷帘支持 4 分至 128 分吸附，以及 8、16、32、64 分三连音。时间轴可在每拍 10–200 像素之间缩放。点击或拖动顶部标尺即可移动播放头。
+
+「文件」菜单可导入 MIDI、导入 SVP，并分别导出 MIDI 和 MusicXML。导入窗口可为每条源轨选择目标和插入位置。向 SATB 导入时若与已有音符或锁定区域冲突，可调整位置或改选额外声部。SVP 导入歌声音符和音符组位置，可选同步速度与拍号。歌词、声库、调音曲线和渲染音频保留于原 SVP。
+
+编辑器按键可在「设置 → 快捷键」中自定义。实时 MIDI 可发送到 USB 设备或「音频 MIDI 设置」中的 IAC 驱动器。
+
+在 Mac 上生成本机 `.app` 或通用 DMG。下面的命令使用本地临时签名，产物位于 `release/`。
+
+```sh
+npm run pack:mac -- --config.mac.identity=- --config.mac.hardenedRuntime=false --config.mac.notarize=false
+npm run dist:mac -- --config.mac.identity=- --config.mac.hardenedRuntime=false --config.mac.notarize=false
+```
+
+对外发行时使用 Developer ID 证书和 Apple 公证凭据运行 `npm run dist:mac`。详见 [macOS 打包与验证](./Docs/testing-build-release.md#macos-打包)。
 
 ---
 

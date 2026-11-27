@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { isMacOS } from "../../shortcuts/keyboardPlatform";
 import {
   chordDraftFromRegion,
   defaultChordDraftAtTick,
@@ -85,6 +86,7 @@ export function PianoRoll({
   cancelRequest,
   scaleGuideEnabled,
   onSetPlayhead,
+  onScrubPlayhead,
   onSetPixelsPerBeat,
   onSetActiveVoice,
   onSetEditorDomain,
@@ -365,16 +367,18 @@ export function PianoRoll({
     onInteractionActiveChange(Boolean(interaction || chordInteraction));
   }, [chordInteraction, interaction, onInteractionActiveChange]);
 
-  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+  const handleWheel = useEffectEvent((event: WheelEvent) => {
+    // Chromium reports trackpad pinch as a Control-modified wheel event.
+    const zoom = event.ctrlKey || (isMacOS && event.metaKey);
     // 上下滚动音高视野不终止水平跟随；仅缩放或横向滚轮时解除跟随。
     const isVerticalOnlyWheel =
-      !event.ctrlKey && !event.shiftKey && event.deltaX === 0;
+      !zoom && !event.shiftKey && event.deltaX === 0;
     if (!isVerticalOnlyWheel) {
       disengageFollow();
     }
     const scroll = scrollRef.current;
     if (!scroll) return;
-    if (event.ctrlKey) {
+    if (zoom) {
       event.preventDefault();
       const delta = event.deltaY !== 0 ? event.deltaY : event.deltaX;
       if (delta === 0) return;
@@ -389,9 +393,23 @@ export function PianoRoll({
       const rect = scroll.getBoundingClientRect();
       pendingZoomViewportXRef.current = event.clientX - rect.left;
       onSetPixelsPerBeat(nextPixelsPerBeat);
-      return;
+    } else if (isMacOS && event.shiftKey && event.deltaX === 0 && event.deltaY !== 0) {
+      // Some macOS mice leave a Shift-modified wheel delta on the vertical axis.
+      event.preventDefault();
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? ROW_HEIGHT
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? scroll.clientWidth : 1;
+      scroll.scrollLeft += event.deltaY * unit;
     }
-  };
+  });
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    // React delegates wheel passively. Use an active listener to keep pinch from zooming the UI.
+    const onWheel = (event: WheelEvent) => handleWheel(event);
+    scroll.addEventListener("wheel", onWheel, { passive: false });
+    return () => scroll.removeEventListener("wheel", onWheel);
+  }, []);
 
   const handleRulerContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -439,7 +457,6 @@ export function PianoRoll({
           disengageFollow();
         }
       }}
-      onWheel={handleWheel}
       onScroll={() => {
         const scroll = scrollRef.current;
         const currentScrollLeft = scroll?.scrollLeft ?? 0;
@@ -477,6 +494,7 @@ export function PianoRoll({
           activeTimingTick={timingMarkerEditor?.tick}
           onFocus={() => focusEditor()}
           onDoubleClick={(x) => onSetPlayhead(snapStartTick(x))}
+          onScrub={onScrubPlayhead && ((x) => onScrubPlayhead(snapStartTick(x)))}
           onClick={seekOnClick ? (x) => onSetPlayhead(snapStartTick(x)) : undefined}
           onContextMenu={handleRulerContextMenu}
           onTimingMarkerClick={onSetPlayhead}

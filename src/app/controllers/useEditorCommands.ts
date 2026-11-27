@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from "react";
+import { isMacOS } from "../../shortcuts/keyboardPlatform";
 import type { ProjectDocument } from "../../domain/project";
 import type { EditorState } from "./useEditorState";
 import { useChordCommands } from "./editorCommands/useChordCommands";
@@ -62,7 +63,7 @@ export function useEditorCommands({
     editor;
   useEffect(() => {
     const updateModifier = (key: string, pressed: boolean) => {
-      if (key === "Control")
+      if (key === (isMacOS ? "Meta" : "Control"))
         setToolModifiers((current) =>
           current.control === pressed
             ? current

@@ -1,0 +1,36 @@
+:root {
+  --select-inset: 11px;
+  --select-chevron-width: 9px;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='m.75.75 4.25 4.25 4.25-4.25' fill='none' stroke='%23565b51' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="dark"] {
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='m.75.75 4.25 4.25 4.25-4.25' fill='none' stroke='%23c9d0c5' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Keep the native picker and use the same inset for text and the chevron. */
+:root select:not([multiple]):is(:not([size]), [size="1"]) {
+  appearance: none;
+  padding-inline: var(--select-inset)
+    calc(var(--select-inset) + var(--select-chevron-width) + 5px);
+  background-image: var(--select-chevron);
+  background-origin: padding-box;
+  background-position: right var(--select-inset) center;
+  background-repeat: no-repeat;
+  background-size: var(--select-chevron-width) auto;
+}
+
+:root select:not([multiple]):is(:not([size]), [size="1"]):dir(rtl) {
+  background-position: left var(--select-inset) center;
+}
+
+:root select:not([multiple]):is(:not([size]), [size="1"]):disabled {
+  color: var(--text-muted);
+}
+
+@media (forced-colors: active) {
+  :root select:not([multiple]):is(:not([size]), [size="1"]) {
+    appearance: auto;
+    background-image: none;
+  }
+}

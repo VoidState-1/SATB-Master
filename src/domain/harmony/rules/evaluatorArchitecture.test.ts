@@ -167,7 +167,7 @@ describe("规则 evaluator 架构", () => {
       filename.endsWith("/app/controllers/useKeyboardController.ts"),
     )?.[1];
     expect(keyboard).toContain("Record<ShortcutCommandId, () => void>");
-    expect(keyboard).toContain("commandHandlers[command.id]()");
+    expect(keyboard).toContain("commandHandlers[id]()");
     expect(keyboard).not.toMatch(/switch\s*\(\s*command\.id\s*\)/);
   });
 });

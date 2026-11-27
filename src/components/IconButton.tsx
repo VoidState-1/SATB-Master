@@ -12,6 +12,7 @@ export function IconButton({
   icon,
   active,
   className = "",
+  title,
   ...props
 }: IconButtonProps) {
   return (
@@ -19,7 +20,7 @@ export function IconButton({
       type="button"
       className={`icon-button ${active ? "is-active" : ""} ${className}`}
       aria-label={label}
-      title={label}
+      data-icon-tooltip={title || label}
       {...props}
     >
       {icon}

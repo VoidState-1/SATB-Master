@@ -13,10 +13,10 @@ describe("编辑器时间策略", () => {
     expect(DEFAULT_GRID_TICKS).toBe(480);
     expect(DEFAULT_PIXELS_PER_BEAT).toBe(72);
     expect(GRID_OPTIONS.map((option) => option.ticks)).toEqual([
-      960, 480, 240, 120,
+      960, 480, 320, 240, 160, 120, 80, 60, 40, 30,
     ]);
-    expect(nextGridResolution(480, 1)).toBe(240);
-    expect(nextGridResolution(120, 1)).toBe(120);
+    expect(nextGridResolution(480, 1)).toBe(320);
+    expect(nextGridResolution(30, 1)).toBe(30);
     expect(nextGridResolution(960, -1)).toBe(960);
   });
 

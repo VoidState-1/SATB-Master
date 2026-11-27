@@ -195,16 +195,15 @@
 }
 
 .grid-control svg {
-  position: absolute;
-  left: 7px;
-  z-index: 1;
+  flex: none;
+  margin-inline-start: 8px;
   color: var(--text-muted);
   pointer-events: none;
 }
 
 .grid-control select {
   height: 100%;
-  padding: 0 6px 0 27px;
+  padding-block: 0;
   border: 0;
   border-radius: inherit;
   outline: 0;
@@ -767,4 +766,20 @@ body.is-resizing-rows,
 body.is-resizing-rows * {
   cursor: row-resize !important;
   user-select: none !important;
+}
+
+.icon-tooltip {
+  position: fixed;
+  z-index: 5000;
+  max-width: min(260px, calc(100vw - 12px));
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tooltip);
+  color: var(--text-on-tooltip);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+  -webkit-app-region: no-drag;
 }

@@ -28,6 +28,7 @@ function subscribeDesktop<Channel extends DesktopEventChannel>(
 }
 
 const desktop: DesktopApi = {
+  platform: process.platform,
   log: {
     sessionId: process.argv.find((arg) => arg.startsWith(LOG_SESSION_ARGUMENT))?.slice(LOG_SESSION_ARGUMENT.length),
     onErrorEntry: (callback) => subscribeDesktop(DESKTOP_CHANNELS.logErrorEntry, callback),
@@ -49,11 +50,26 @@ const desktop: DesktopApi = {
     minimize: () => invokeDesktop(DESKTOP_CHANNELS.windowMinimize),
     toggleMaximize: () => invokeDesktop(DESKTOP_CHANNELS.windowToggleMaximize),
     isMaximized: () => invokeDesktop(DESKTOP_CHANNELS.windowIsMaximized),
+    isFullScreen: () => invokeDesktop(DESKTOP_CHANNELS.windowIsFullScreen),
+    onFullScreenChange: (callback) => subscribeDesktop(DESKTOP_CHANNELS.windowFullScreenChanged, callback),
     isFocused: () => invokeDesktop(DESKTOP_CHANNELS.windowIsFocused),
-    close: () => invokeDesktop(DESKTOP_CHANNELS.windowClose),
+    close: (quit = false) => invokeDesktop(DESKTOP_CHANNELS.windowClose, { quit }),
+    setDocument: (filePath, isDirty) => invokeDesktop(DESKTOP_CHANNELS.windowSetDocument, { filePath, isDirty }),
+    onCloseRequest: (callback) => {
+      const unsubscribe = subscribeDesktop(DESKTOP_CHANNELS.windowCloseRequested, callback)
+      void invokeDesktop(DESKTOP_CHANNELS.windowSetCloseHandler, { enabled: true })
+      return () => {
+        unsubscribe()
+        void invokeDesktop(DESKTOP_CHANNELS.windowSetCloseHandler, { enabled: false })
+      }
+    },
     onMaximizedChange: (callback: (isMaximized: boolean) => void) => {
       return subscribeDesktop(DESKTOP_CHANNELS.windowMaximizedChanged, callback)
     },
+  },
+  menu: {
+    onCommand: (callback) => subscribeDesktop(DESKTOP_CHANNELS.menuCommand, callback),
+    editText: (command) => invokeDesktop(DESKTOP_CHANNELS.menuEditText, { command }),
   },
   project: {
     open: () => invokeDesktop(DESKTOP_CHANNELS.projectOpen),
@@ -72,7 +88,7 @@ const desktop: DesktopApi = {
     delete: (request) => invokeDesktop(DESKTOP_CHANNELS.ruleTestCaseDelete, request),
   },
   midi: {
-    import: () => invokeDesktop(DESKTOP_CHANNELS.midiImport),
+    import: (format = "midi") => invokeDesktop(DESKTOP_CHANNELS.midiImport, { format }),
     export: (bytes: Uint8Array, defaultName: string) =>
       invokeDesktop(DESKTOP_CHANNELS.midiExport, { bytes, defaultName }),
   },

@@ -3,16 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readProjectFile, registerProjectIpc, rememberDialogDirectory } from './project-ipc.js'
+import { chooseProjectFile, readProjectFile, registerProjectIpc, rememberProjectFile } from './project-ipc.js'
 import { registerRuleLibraryIpc } from './rule-library.js'
 import { registerRuleTestCaseIpc } from './rule-test-cases.js'
 import { registerSoundFontProtocol, registerSoundFontScheme } from './soundfont-resource.js'
 import { installReactDevToolsIfAvailable } from './dev-extensions.js'
-import { DESKTOP_CHANNELS, LOG_SESSION_ARGUMENT, MAX_AUDIT_FILE_BYTES, type DesktopInvokeChannel, type ExternalProjectOpenPayload } from '../shared/desktop.js'
+import { DESKTOP_CHANNELS, DESKTOP_TEXT_EDIT_COMMANDS, LOG_SESSION_ARGUMENT, MAX_AUDIT_FILE_BYTES, type DesktopInvokeChannel, type DesktopMenuCommand, type ExternalProjectOpenPayload } from '../shared/desktop.js'
 import { type AppErrorCode, type LogScope } from '../shared/logging.js'
 import { createMainLogEntry, initializeMainLogger, logMain, registerLoggingIpc } from './logger.js'
 import { extractProjectFilePathFromArgv } from './startup-project.js'
 import { handleDesktop, setDesktopIpcReporter } from './typed-ipc.js'
+import { installMacApplicationMenu } from './application-menu.js'
 import {
   loadSavedWindowState,
   MIN_WINDOW_HEIGHT,
@@ -21,6 +22,7 @@ import {
 } from './window-state.js'
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
+const isMac = process.platform === 'darwin'
 const developmentServerUrl = process.argv.includes('--dev')
   ? 'http://localhost:5173'
   : undefined
@@ -31,8 +33,23 @@ const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
 const startupProjectPath = auditArgument < 0 ? extractProjectFilePathFromArgv(process.argv) : undefined
 const pendingExternalProjectPaths = startupProjectPath ? [startupProjectPath] : []
 let mainWindow: BrowserWindow | undefined
+let applicationInitialized = false
 let rendererAcceptsExternalProjects = false
+let windowWithCloseHandler: BrowserWindow | undefined
+let pendingSettings = false
 let externalProjectQueue = Promise.resolve()
+
+if (isMac) {
+  // Finder can deliver this before ready, including when a file is dropped onto the Dock.
+  app.on('open-file', (event, filePath) => {
+    if (!isAbsoluteProjectPath(filePath)) return
+    event.preventDefault()
+    enqueueExternalProject(filePath)
+  })
+  app.on('before-quit', (event) => {
+    if (requestNativeClose(true)) event.preventDefault()
+  })
+}
 
 if (e2eDirectory) app.setPath('userData', path.join(e2eDirectory, 'user-data'))
 const logger = initializeMainLogger(path.join(app.getPath('userData'), 'logs'))
@@ -114,7 +131,7 @@ registerSoundFontScheme()
 
 async function loadExternalProject(filePath: string): Promise<ExternalProjectOpenPayload> {
   const result = await readProjectFile(filePath)
-  if ('project' in result) await rememberDialogDirectory('project', filePath)
+  if ('project' in result) await rememberProjectFile(filePath)
   logMain('info', 'file', '已处理外部工程打开请求', {
     context: { valid: 'project' in result },
   })
@@ -143,16 +160,52 @@ function sendPendingExternalProjects() {
   })
 }
 
-function onSecondInstance(_event: Electron.Event, commandLine: string[], workingDirectory: string) {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
+function isAbsoluteProjectPath(filePath: unknown): filePath is string {
+  return typeof filePath === 'string' && path.isAbsolute(filePath) && path.extname(filePath).toLowerCase() === '.satb'
+}
+
+function showMainWindow() {
+  if (!applicationInitialized) return
+  const window = mainWindow
+  if (!window) {
+    createWindow()
+    return
   }
-  const filePath = extractProjectFilePathFromArgv(commandLine, workingDirectory)
-  if (!filePath) return
+  if (window.isDestroyed()) return
+  if (window.isMinimized()) window.restore()
+  if (window.isVisible()) window.focus()
+}
+
+function enqueueExternalProject(filePath: string) {
   pendingExternalProjectPaths.push(filePath)
+  showMainWindow()
   sendPendingExternalProjects()
+}
+
+function onSecondInstance(_event: Electron.Event, commandLine: string[], workingDirectory: string) {
+  const filePath = extractProjectFilePathFromArgv(commandLine, workingDirectory)
+  if (filePath) enqueueExternalProject(filePath)
+  else showMainWindow()
+}
+
+function requestNativeClose(quit: boolean) {
+  const window = mainWindow
+  if (!window || window !== windowWithCloseHandler || window.isDestroyed()) return false
+  showMainWindow()
+  window.webContents.send(DESKTOP_CHANNELS.windowCloseRequested, quit)
+  return true
+}
+
+async function dispatchMacMenuCommand(command: DesktopMenuCommand) {
+  if (mainWindow && rendererAcceptsExternalProjects) {
+    mainWindow.webContents.send(DESKTOP_CHANNELS.menuCommand, command)
+  } else if (command === 'openProject') {
+    const filePath = await chooseProjectFile(mainWindow)
+    if (filePath) enqueueExternalProject(filePath)
+  } else if (command === 'newProject' || command === 'settings') {
+    if (command === 'settings') pendingSettings = true
+    showMainWindow()
+  }
 }
 
 function createWindow() {
@@ -166,8 +219,9 @@ function createWindow() {
     minHeight: MIN_WINDOW_HEIGHT,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#171a17' : '#ecece8',
     show: false,
-    frame: false,
-    autoHideMenuBar: true,
+    ...(isMac
+      ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 14, y: 13 } }
+      : { frame: false, autoHideMenuBar: true }),
     webPreferences: {
       preload: path.join(currentDirectory, 'preload.cjs'),
       contextIsolation: true,
@@ -181,16 +235,24 @@ function createWindow() {
   })
 
   mainWindow = window
+  if (isMac) {
+    window.on('close', (event) => {
+      if (requestNativeClose(false)) event.preventDefault()
+    })
+  }
   window.on('closed', () => {
     mainWindow = undefined
     rendererAcceptsExternalProjects = false
+    windowWithCloseHandler = undefined
   })
-  window.webContents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
-    if (isMainFrame && !isSameDocument) rendererAcceptsExternalProjects = false
-  })
-  window.webContents.on('render-process-gone', () => {
+  const resetRendererState = () => {
     rendererAcceptsExternalProjects = false
+    windowWithCloseHandler = undefined
+  }
+  window.webContents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
+    if (isMainFrame && !isSameDocument) resetRendererState()
   })
+  window.webContents.on('render-process-gone', resetRendererState)
   window.webContents.on('did-finish-load', sendPendingExternalProjects)
 
   trackWindowState(window)
@@ -202,13 +264,17 @@ function createWindow() {
   window.once('ready-to-show', () => {
     // Windows 必须先完成无边框窗口的原生激活，再把输入焦点交给网页。
     // 若在 show() 的同一调用栈里强制聚焦，Chromium 的原生下拉菜单会吞掉首次点击。
-    window.once('focus', () => {
-      setImmediate(() => {
-        if (!window.isDestroyed() && window.isFocused()) window.webContents.focus()
+    if (!isMac) {
+      window.once('focus', () => {
+        setImmediate(() => {
+          if (!window.isDestroyed() && window.isFocused()) window.webContents.focus()
+        })
       })
-    })
+    }
     window.show()
   })
+  window.on('enter-full-screen', () => window.webContents.send(DESKTOP_CHANNELS.windowFullScreenChanged, true))
+  window.on('leave-full-screen', () => window.webContents.send(DESKTOP_CHANNELS.windowFullScreenChanged, false))
   window.on('maximize', () => window.webContents.send(DESKTOP_CHANNELS.windowMaximizedChanged, true))
   window.on('unmaximize', () => window.webContents.send(DESKTOP_CHANNELS.windowMaximizedChanged, false))
 
@@ -232,6 +298,8 @@ function createWindow() {
 
 function registerWindowIpc() {
   const senderWindow = (event: Electron.IpcMainInvokeEvent) => BrowserWindow.fromWebContents(event.sender)
+  const senderMainWindow = (event: Electron.IpcMainInvokeEvent) =>
+    event.sender === mainWindow?.webContents && event.senderFrame === event.sender.mainFrame ? mainWindow : undefined
   handleDesktop(DESKTOP_CHANNELS.windowMinimize, (event) => senderWindow(event)?.minimize())
   handleDesktop(DESKTOP_CHANNELS.windowToggleMaximize, (event) => {
     const window = senderWindow(event)
@@ -241,8 +309,33 @@ function registerWindowIpc() {
     return window.isMaximized()
   })
   handleDesktop(DESKTOP_CHANNELS.windowIsMaximized, (event) => senderWindow(event)?.isMaximized() ?? false)
+  handleDesktop(DESKTOP_CHANNELS.windowIsFullScreen, (event) => senderWindow(event)?.isFullScreen() ?? false)
   handleDesktop(DESKTOP_CHANNELS.windowIsFocused, (event) => senderWindow(event)?.isFocused() ?? false)
-  handleDesktop(DESKTOP_CHANNELS.windowClose, (event) => senderWindow(event)?.close())
+  handleDesktop(DESKTOP_CHANNELS.windowClose, (event, request) => {
+    const window = senderMainWindow(event)
+    if (!window) return
+    windowWithCloseHandler = undefined
+    if (request?.quit === true) app.quit()
+    else window.close()
+  })
+  handleDesktop(DESKTOP_CHANNELS.windowSetCloseHandler, (event, request) => {
+    const window = senderMainWindow(event)
+    if (isMac && window && typeof request?.enabled === 'boolean') {
+      windowWithCloseHandler = request.enabled ? window : undefined
+    }
+  })
+  handleDesktop(DESKTOP_CHANNELS.windowSetDocument, (event, request) => {
+    const window = senderMainWindow(event)
+    if (!isMac || !window || typeof request?.isDirty !== 'boolean') return
+    window.setRepresentedFilename(isAbsoluteProjectPath(request.filePath) ? request.filePath : '')
+    window.setDocumentEdited(request.isDirty)
+  })
+  handleDesktop(DESKTOP_CHANNELS.menuEditText, (event, request) => {
+    const window = senderMainWindow(event)
+    if (isMac && window && Object.hasOwn(DESKTOP_TEXT_EDIT_COMMANDS, request?.command)) {
+      window.webContents[DESKTOP_TEXT_EDIT_COMMANDS[request.command]]()
+    }
+  })
 }
 
 async function initializeApplication() {
@@ -260,6 +353,10 @@ async function initializeApplication() {
       // renderer 先订阅事件，再用此调用声明已准备好接收剩余请求。
       const filePath = pendingExternalProjectPaths.shift()
       rendererAcceptsExternalProjects = true
+      if (pendingSettings) {
+        pendingSettings = false
+        event.sender.send(DESKTOP_CHANNELS.menuCommand, 'settings')
+      }
       sendPendingExternalProjects()
       return filePath ? loadExternalProject(filePath) : null
     }),
@@ -279,13 +376,14 @@ async function initializeApplication() {
       catch { throw new Error('无法读取审计包，请使用 UTF-8 编码') }
     } finally { await file.close() }
   })
+  applicationInitialized = true
+  if (isMac) {
+    installMacApplicationMenu((command) => void dispatchMacMenuCommand(command).catch((error) => {
+      logMain('error', 'app', '应用菜单命令失败', { error, context: { command } })
+    }))
+  }
   createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
-  })
+  app.on('activate', showMainWindow)
 }
 
 if (e2eDirectory === undefined && !app.requestSingleInstanceLock()) {
@@ -296,7 +394,7 @@ if (e2eDirectory === undefined && !app.requestSingleInstanceLock()) {
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (!isMac) {
     app.quit()
   }
 })

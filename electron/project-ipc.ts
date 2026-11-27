@@ -22,6 +22,7 @@ const e2eDirectory = process.env.SATB_MASTER_E2E_DIRECTORY
 export type DialogDirectoryKind =
   | 'project'
   | 'midi'
+  | 'svp'
   | 'musicxml'
   | 'soundfont'
   | 'rule'
@@ -124,6 +125,7 @@ async function loadDialogDirectories() {
         [
           'project',
           'midi',
+          'svp',
           'musicxml',
           'soundfont',
           'rule',
@@ -170,6 +172,11 @@ export async function rememberDialogDirectory(kind: DialogDirectoryKind, filePat
   } catch (error) {
     logMain('warn', 'file', '保存最近文件夹记录失败', { code: 'FILE_WRITE_FAILED', error, context: { kind } })
   }
+}
+
+export async function rememberProjectFile(filePath: string) {
+  if (process.platform === 'darwin' && !e2eDirectory) app.addRecentDocument(filePath)
+  await rememberDialogDirectory('project', filePath)
 }
 
 export async function rememberedDefaultPath(kind: DialogDirectoryKind, fileName?: string) {
@@ -233,27 +240,25 @@ function assertRuleProfileEnvelope(value: unknown) {
     throw new Error('规则配置档案结构或版本无效')
 }
 
+export async function chooseProjectFile(parentWindow?: BrowserWindow) {
+  // 回归测试仍走真实的工程读写，仅替换选择器的返回值。
+  if (e2eDirectory) return path.join(e2eDirectory, 'project.satb')
+  const selection = await showExclusiveOpenDialog(parentWindow, {
+    title: '打开 SATB 工程',
+    defaultPath: await rememberedDefaultPath('project'),
+    properties: ['openFile'],
+    filters: [{ name: 'SATB Master 工程', extensions: ['satb'] }],
+  })
+  if (!selection.canceled) return selection.filePaths[0]
+}
+
 export function registerProjectIpc() {
   handleDesktop(DESKTOP_CHANNELS.projectOpen, async (event) => {
-    let filePath: string
-    if (e2eDirectory) {
-      // 端到端测试仍走完整 IPC 与磁盘读写，只用固定临时路径替代不可自动化的系统文件对话框。
-      filePath = path.join(e2eDirectory, 'project.satb')
-    } else {
-      const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
-      const selection = await showExclusiveOpenDialog(parentWindow, {
-        title: '打开 SATB 工程',
-        defaultPath: await rememberedDefaultPath('project'),
-        properties: ['openFile'],
-        filters: [{ name: 'SATB Master 工程', extensions: ['satb'] }],
-      })
-      if (selection.canceled || !selection.filePaths[0]) return { canceled: true }
-      filePath = selection.filePaths[0]
-      await rememberDialogDirectory('project', filePath)
-    }
-
+    const filePath = await chooseProjectFile(BrowserWindow.fromWebContents(event.sender) ?? undefined)
+    if (!filePath) return { canceled: true }
     const result = await readProjectFile(filePath)
     if ('invalidMessage' in result) return { canceled: false, ...result }
+    await rememberProjectFile(filePath)
     return { canceled: false, filePath, ...result }
   })
 
@@ -268,7 +273,6 @@ export function registerProjectIpc() {
       })
       if (selection.canceled || !selection.filePath) return { canceled: true }
       filePath = selection.filePath.toLowerCase().endsWith('.satb') ? selection.filePath : `${selection.filePath}.satb`
-      await rememberDialogDirectory('project', filePath)
     }
 
     if (!filePath) throw new Error('没有可用的工程保存路径')
@@ -278,6 +282,7 @@ export function registerProjectIpc() {
       : undefined
     await writeProjectAtomic(filePath, request.project)
     await rm(recoveryPath(), { force: true })
+    await rememberProjectFile(filePath)
     return { canceled: false, filePath, migrationBackupPath }
   })
 
@@ -340,33 +345,37 @@ export function registerProjectIpc() {
     return { discarded: true }
   })
 
-  handleDesktop(DESKTOP_CHANNELS.midiImport, async (event) => {
+  handleDesktop(DESKTOP_CHANNELS.midiImport, async (event, request) => {
+    if (request?.format !== 'midi' && request?.format !== 'svp') throw new Error('不支持的导入格式')
+    const { format } = request
+    const label = format === 'svp' ? 'SVP' : 'MIDI'
+    const extensions = format === 'svp' ? ['svp'] : ['mid', 'midi']
     let filePath: string
     if (e2eDirectory) {
-      filePath = path.join(e2eDirectory, 'import.mid')
+      filePath = path.join(e2eDirectory, `import.${extensions[0]}`)
     } else {
       const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined
       const selection = await showExclusiveOpenDialog(parentWindow, {
-        title: '导入 MIDI',
-        defaultPath: await rememberedDefaultPath('midi'),
+        title: `导入 ${label}`,
+        defaultPath: await rememberedDefaultPath(format),
         properties: ['openFile'],
-        filters: [{ name: 'Standard MIDI File', extensions: ['mid', 'midi'] }],
+        filters: [{ name: label, extensions }],
       })
       if (selection.canceled || !selection.filePaths[0]) return { canceled: true }
       filePath = selection.filePaths[0]
     }
 
     const info = await stat(filePath)
-    if (!info.isFile()) throw new Error('请选择 MIDI 文件')
-    if (info.size < 1) throw new Error('MIDI 文件为空')
-    if (info.size > MAX_MIDI_IMPORT_BYTES) throw new Error('MIDI 文件超过 10 MB 限制')
-    await rememberDialogDirectory('midi', filePath)
+    if (!info.isFile()) throw new Error(`请选择 ${label} 文件`)
+    if (info.size < 1) throw new Error(`${label} 文件为空`)
+    if (info.size > MAX_MIDI_IMPORT_BYTES) throw new Error(`${label} 文件超过 10 MB 限制`)
+    await rememberDialogDirectory(format, filePath)
 
     // end 是包含端点，多读一个字节即可检测文件在校验后增大。
     const stream = createReadStream(filePath, { start: 0, end: MAX_MIDI_IMPORT_BYTES })
     const buffer = Buffer.concat(await stream.toArray())
-    if (buffer.length < 1) throw new Error('MIDI 文件为空')
-    if (buffer.length > MAX_MIDI_IMPORT_BYTES) throw new Error('MIDI 文件超过 10 MB 限制')
+    if (buffer.length < 1) throw new Error(`${label} 文件为空`)
+    if (buffer.length > MAX_MIDI_IMPORT_BYTES) throw new Error(`${label} 文件超过 10 MB 限制`)
     return { canceled: false, filePath, fileName: path.basename(filePath), bytes: new Uint8Array(buffer) }
   })
 

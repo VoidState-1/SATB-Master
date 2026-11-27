@@ -141,6 +141,7 @@ npm run generate:soundfont
 - 文件硬上限 2 GiB（`MAX_SOUNDFONT_BYTES`）。
 - 32 位进程中，超过 512 MiB 明确拒绝。
 - 内存预算按 `文件大小 * 1.5 + 512 MiB 系统保留` 估算。
+- macOS 的可用内存包括空闲内存和可回收缓存估计，文件缓存与可清除页取较大值以避免重复计数。
 
 2 GiB 是接收文件的目标上限，不承诺所有机器都能成功解析 2 GiB 音色。SpessaSynth、WASM 地址空间、系统可用内存和 SF2 内部结构都可能成为更早限制。主进程不把任意本地路径交给 renderer 的 `fetch`；token 只对应已经验证的文件，15 分钟后过期，加载完成或取消后主动释放。
 
@@ -220,7 +221,7 @@ SoundFont 读取和解析是异步的。`soundFontChangeGeneration` 与串行加
 
 ## 12. 实时 Web MIDI 输出
 
-实时外部 MIDI 信号输出由 [`src/audio/midiOutput.ts`](../src/audio/midiOutput.ts)（单例 `midiOutputManager`）与配置弹窗 [`src/features/midiOut/MidiOutDialog.tsx`](../src/features/midiOut/MidiOutDialog.tsx) 实现，用于将 SATB Master 演奏与预听实时路由至硬件合成器或虚拟 MIDI 端口（如 loopMIDI + DAW）。
+实时外部 MIDI 信号输出由 [`src/audio/midiOutput.ts`](../src/audio/midiOutput.ts)（单例 `midiOutputManager`）与配置弹窗 [`src/features/midiOut/MidiOutDialog.tsx`](../src/features/midiOut/MidiOutDialog.tsx) 实现，用于将 SATB Master 演奏与预听路由到硬件合成器或虚拟 MIDI 端口，例如 macOS IAC 驱动器和 Windows loopMIDI。
 
 核心能力与配置（持久化于 `localStorage` 的 `satb_master_midi_output_config`）：
 

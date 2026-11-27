@@ -465,3 +465,33 @@ describe("导入 MIDI 到额外声部", () => {
     expect(checkHarmony(result.project)).toEqual(before);
   });
 });
+
+describe("将单音 MIDI 源轨分配给 SATB", () => {
+  const parsed = parseMidiForImport(midiBytes([
+    [on(72), off(72, PPQ), on(74), off(74, PPQ)],
+    [on(60), on(64), off(64, PPQ), off(60)],
+  ]));
+  const [lead, harmony] = parsed.tracks;
+
+  it("同一次导入可以混合 SATB 和额外声部", () => {
+    const project = createEmptyProject();
+    const result = importMidiToAuxiliaryTracks(project, parsed, { satbDestinations: { [lead.key]: "soprano" } });
+    expect(result.error).toBeUndefined();
+    expect(result.project.satbTracks[0].notes.map(noteValues)).toEqual([[72, 0, PPQ, 90], [74, PPQ, PPQ, 90]]);
+    expect(result.project.auxiliaryTracks[0].notes).toHaveLength(2);
+    expect(result.importedTrackIds[0]).toBe("soprano");
+    expect(project.satbTracks[0].notes).toHaveLength(0);
+  });
+
+  it("遇到复音或目标区间冲突时原子拒绝整次导入", () => {
+    const project = createEmptyProject();
+    expect(importMidiToAuxiliaryTracks(project, parsed, { satbDestinations: { [harmony.key]: "bass" } })).toMatchObject({
+      project, error: expect.stringContaining("单音旋律轨"), importedNoteCount: 0,
+    });
+    project.satbTracks[0].notes.push(projectNote("existing", 76, 0));
+    const result = importMidiToAuxiliaryTracks(project, parsed, { satbDestinations: { [lead.key]: "soprano" } });
+    expect(result.project).toBe(project);
+    expect(result.error).toContain("重叠音符");
+    expect(project.auxiliaryTracks).toHaveLength(0);
+  });
+});

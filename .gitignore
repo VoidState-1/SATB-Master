@@ -3,6 +3,7 @@ dist
 dist-electron
 release
 release-installer
+/build/icon-macos.png
 .vite
 *.local
 *.log

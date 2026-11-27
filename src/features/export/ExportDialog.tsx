@@ -112,6 +112,7 @@ function saveExportPreferences(
 
 export interface ExportDialogProps {
   project: ProjectDocument;
+  initialFormat?: ExportFormat;
   onClose(): void;
   onExportMidi(options: MidiExportOptions): void;
   onExportMusicXml(options: MusicXmlExportOptions): void;
@@ -119,11 +120,12 @@ export interface ExportDialogProps {
 
 export function ExportDialog({
   project,
+  initialFormat,
   onClose,
   onExportMidi,
   onExportMusicXml,
 }: ExportDialogProps) {
-  const [format, setFormat] = useState<ExportFormat>(loadSavedFormat);
+  const [format, setFormat] = useState<ExportFormat>(() => initialFormat ?? loadSavedFormat());
   const [midiOptions, setMidiOptions] = useState<MidiExportPreferences>(
     loadSavedMidiOptions,
   );

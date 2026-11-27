@@ -316,7 +316,7 @@ describe("controller logging", () => {
     } });
     const initial = createEmptyProject();
     const showNotice = vi.fn();
-    const onImportedAuxiliaryTracks = vi.fn();
+    const onImportedTracks = vi.fn();
     const controller = await mount(() => {
       const history = useProjectHistory(initial);
       const workflow = useFileWorkflow({
@@ -324,7 +324,7 @@ describe("controller logging", () => {
         history,
         createProject: createEmptyProject,
         onWorkspaceReset: vi.fn(),
-        onImportedAuxiliaryTracks,
+        onImportedTracks,
         showNotice,
         requestConfirmation: vi.fn(),
       });
@@ -359,7 +359,7 @@ describe("controller logging", () => {
     expect(imported.lengthTicks).toBeGreaterThan(initial.lengthTicks);
     expect(controller().workflow.pendingMidiImport).toBeUndefined();
     expect(stop).toHaveBeenCalledOnce();
-    expect(onImportedAuxiliaryTracks).toHaveBeenCalledExactlyOnceWith([imported.auxiliaryTracks[0].id]);
+    expect(onImportedTracks).toHaveBeenCalledExactlyOnceWith([imported.auxiliaryTracks[0].id]);
     expect(showNotice).toHaveBeenLastCalledWith(
       "已导入 1 条额外声部、1 个音符，已合并 1 个完全重叠的音符，已自动延长工程", { level: "success" },
     );

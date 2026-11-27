@@ -67,6 +67,37 @@ describe("shortcut registry", () => {
     ).toBe("previousVoice");
   });
 
+  it("uses Command for macOS defaults and keeps physical Control bindable", () => {
+    const bindings = defaultShortcutBindings(true);
+    const mac = { mac: true };
+    expect(commandForKeyboardEvent(event("KeyS", { metaKey: true }), bindings, mac)?.id).toBe("saveProject");
+    expect(commandForKeyboardEvent(event("KeyS", { ctrlKey: true }), bindings, mac)).toBeUndefined();
+    bindings.saveProject = ["Control+KeyS"];
+    expect(commandForKeyboardEvent(event("KeyS", { ctrlKey: true }), bindings, mac)?.id).toBe("saveProject");
+    expect(keyboardEventToBinding(event("KeyZ", { ctrlKey: true, metaKey: true, altKey: true, shiftKey: true }), true)).toBe("Ctrl+Control+Alt+Shift+KeyZ");
+    expect(commandForKeyboardEvent(event("KeyZ", { metaKey: true, shiftKey: true }), bindings, mac)?.id).toBe("redo");
+    expect(commandForKeyboardEvent(event("KeyY", { metaKey: true }), bindings, mac)).toBeUndefined();
+    expect(formatShortcutBinding("Ctrl+Shift+KeyS", true)).toBe("⌘⇧S");
+    expect(formatShortcutBinding("Control+Alt+Enter", true)).toBe("⌃⌥↩");
+  });
+
+  it("recognizes laptop Fn navigation and both Mac Delete keys", () => {
+    const bindings = defaultShortcutBindings(true);
+    const commands = [
+      ["ArrowLeft", "Home", "goToStart"],
+      ["ArrowRight", "End", "goToEnd"],
+      ["ArrowUp", "PageUp", "previousMeasure"],
+      ["ArrowDown", "PageDown", "nextMeasure"],
+      ["Backspace", "Delete", "deleteSelection"],
+      ["Backspace", "Backspace", "deleteSelection"],
+    ];
+    for (const [code, key, command] of commands) {
+      expect(commandForKeyboardEvent(event(code, { key }), bindings, { mac: true })?.id).toBe(command);
+    }
+    expect(formatShortcutBinding("Backspace", true)).toBe("⌫");
+    expect(formatShortcutBinding("Delete", true)).toBe("⌦");
+  });
+
   it("keeps tools 1–4 and assigns auto brush to 5", () => {
     const bindings = defaultShortcutBindings();
     expect(bindings.autoBrushTool).toEqual(["Digit5"]);

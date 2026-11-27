@@ -90,6 +90,8 @@ npm run benchmark -- --help # 盲推/条件和弦、终止式与规则断言基�
 npm run audit -- --help    # 审计包 (.satb-audit.json) 打包、校验与意见汇总 CLI
 npm run pack:win           # 生成 Windows 免安装目录（release/）
 npm run dist:win           # 生成 Windows NSIS 安装包（release-installer/）
+npm run pack:mac           # 生成当前架构的 macOS .app（release/）
+npm run dist:mac           # 生成 Apple Silicon / Intel 通用 DMG（release/）
 ```
 
 `npm run dev` 会先执行 `build:electron`，再同时启动 Vite 与 Electron。只打开 Vite 页面时可以使用浏览器降级实现，但它不能完整验证本地路径、原子保存、资源协议、滚动日志落盘、窗口焦点和安装后行为。

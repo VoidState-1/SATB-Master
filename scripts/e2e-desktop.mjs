@@ -1,12 +1,22 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseMidi } from 'midi-file'
 import { assertCleanSessionLogs, waitForElectronExit } from './e2e-session-logs.mjs'
 
-const executable = path.resolve(process.argv[2] ?? 'release-installer/win-unpacked/SATB Master.exe')
-const appDirectory = process.argv[3] ? path.resolve(process.argv[3]) : undefined
+const isMac = process.platform === 'darwin'
+const primary = isMac ? { metaKey: true } : { ctrlKey: true }
+const primaryKey = Object.keys(primary)[0]
+const primaryLabel = isMac ? 'Cmd' : 'Ctrl'
+const modifierKey = isMac ? 'Meta' : 'Control'
+const local = process.argv[2] === '--local'
+const defaultApp = isMac
+  ? 'release/mac-universal/SATB Master.app/Contents/MacOS/SATB Master'
+  : 'release-installer/win-unpacked/SATB Master.exe'
+const executable = local ? createRequire(import.meta.url)('electron') : path.resolve(process.argv[2] ?? defaultApp)
+const appDirectory = local ? process.cwd() : process.argv[3] ? path.resolve(process.argv[3]) : undefined
 const e2eRoot = path.resolve('node_modules/.satb-master-e2e')
 await mkdir(e2eRoot, { recursive: true })
 const e2eDirectory = await mkdtemp(path.join(e2eRoot, 'run-'))
@@ -143,6 +153,7 @@ class CdpClient {
       const pending = this.pending.get(payload.id)
       if (!pending) return
       this.pending.delete(payload.id)
+      clearTimeout(pending.timeout)
       if (payload.error) pending.reject(new Error(payload.error.message))
       else pending.resolve(payload.result)
     })
@@ -150,8 +161,15 @@ class CdpClient {
 
   send(method, params = {}) {
     const id = ++this.sequence
-    this.socket.send(JSON.stringify({ id, method, params }))
-    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }))
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(id)
+        const detail = params.expression ? `\n${params.expression.slice(0, 200)}` : ''
+        reject(new Error(`CDP 调用超时：${method}${detail}`))
+      }, 12_000)
+      this.pending.set(id, { resolve, reject, timeout })
+      this.socket.send(JSON.stringify({ id, method, params }))
+    })
   }
 
   close() {
@@ -490,21 +508,27 @@ async function verifyInitialGridSelection() {
     throw new Error(`时值对齐控件首次命中异常：${JSON.stringify(target)}`)
   }
 
-  await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y })
-  await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', buttons: 1, clickCount: 1 })
-  await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', buttons: 0, clickCount: 1 })
-  await waitFor(
-    `document.querySelector('select[aria-label="时值对齐"]')?.matches(':open') === true`,
-    '时值对齐原生菜单首次展开',
-  )
-  const focused = await evaluate(`document.activeElement === document.querySelector('select[aria-label="时值对齐"]')`)
-  if (!focused) throw new Error('时值对齐控件在应用首次点击时未获得焦点')
-
-  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 })
-  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 })
-  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
-  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
-  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '240'`, '首次选择 1/16 网格')
+  if (isMac) {
+    // CDP cannot drive the native Cocoa picker. Exercise the accessible control and its change handler.
+    await evaluate(`(() => {
+      const select = document.querySelector('select[aria-label="时值对齐"]');
+      select.focus();
+      select.value = '320';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`)
+  } else {
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: target.x, y: target.y })
+    await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: target.x, y: target.y, button: 'left', buttons: 1, clickCount: 1 })
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target.x, y: target.y, button: 'left', buttons: 0, clickCount: 1 })
+    await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.matches(':open') === true`, '时值对齐原生菜单首次展开')
+    const focused = await evaluate(`document.activeElement === document.querySelector('select[aria-label="时值对齐"]')`)
+    if (!focused) throw new Error('时值对齐控件在应用首次点击时未获得焦点')
+    await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 })
+    await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 })
+    await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+    await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  }
+  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '320'`, '首次选择 1/8 三连音网格')
 
   await evaluate(`(() => {
     const select = document.querySelector('select[aria-label="时值对齐"]');
@@ -814,7 +838,7 @@ async function verifyChordTrackEditing(projectPath) {
     lane.dispatchEvent(new PointerEvent('pointerup', options));
   })()`)
   await waitFor(`document.body.innerText.includes('已选择 2 个和弦区域')`, '和弦追加多选')
-  await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', ctrlKey: true, bubbles: true }))`)
+  await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', ${primaryKey}: true, bubbles: true }))`)
   await evaluate(`(() => {
     const ruler = document.querySelector('.ruler-lane');
     const rect = ruler.getBoundingClientRect();
@@ -822,7 +846,7 @@ async function verifyChordTrackEditing(projectPath) {
       bubbles: true, clientX: rect.left + 58 + (4800 / 960) * 72, clientY: rect.top + 12, button: 0,
     }));
   })()`)
-  await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true }))`)
+  await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', ${primaryKey}: true, bubbles: true }))`)
   await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 4`, '批量粘贴和弦区域')
   await clickButton('撤销')
   await waitFor(`document.querySelectorAll('.chord-block:not(.chord-preview)').length === 2`, '撤销批量粘贴')
@@ -983,6 +1007,7 @@ async function dispatchShortcut(code, options = {}) {
       code: ${JSON.stringify(code)},
       key: ${JSON.stringify(key)},
       ctrlKey: ${Boolean(options.ctrlKey)},
+      metaKey: ${Boolean(options.metaKey)},
       altKey: ${Boolean(options.altKey)},
       shiftKey: ${Boolean(options.shiftKey)},
     }));
@@ -1057,10 +1082,28 @@ async function verifyShortcutSettings() {
   await waitFor(`document.querySelector('button[aria-label^="选择工具（1）"]') !== null`, '工具快捷键恢复默认')
 }
 
+async function verifySelectInsets(selector) {
+  const styles = await evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].map(select => {
+    const style = getComputedStyle(select);
+    return {
+      name: select.getAttribute("aria-label"),
+      inset: style.paddingInlineStart,
+      chevronPosition: style.backgroundPositionX,
+      hasChevron: style.backgroundImage !== "none",
+      appearance: style.appearance,
+    };
+  })`)
+  if (!styles.length || styles.some(({ inset, chevronPosition, hasChevron, appearance }) =>
+    !hasChevron || appearance !== 'none' || chevronPosition !== `calc(100% - ${inset})`)) {
+    throw new Error(`下拉框文字和箭头内边距不一致：${JSON.stringify(styles)}`)
+  }
+}
+
 async function configureHarmonyRuleSeverity() {
   await clickButton('设置')
   await clickButton('检查规则')
   await waitFor(`document.querySelectorAll('.rule-row').length === 70`, '列出全部检查规则')
+  await verifySelectInsets('.rule-settings-toolbar select')
   await selectRuleByKey('builtin:voice-leading.parallel-fifths')
   const layout = await evaluate(`(() => {
     const content = document.querySelector('.rule-settings-content');
@@ -1234,22 +1277,22 @@ async function verifyHarmonyRuleSeverityApplication() {
 async function verifyEditorShortcutGestures() {
   await clickButton('选择工具（1）')
   await evaluate(`document.querySelector('.piano-roll')?.focus()`)
-  await dispatchShortcut('ControlLeft', { key: 'Control', ctrlKey: true })
+  await dispatchShortcut(`${modifierKey}Left`, { key: modifierKey, ...primary })
   const controlTool = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-pencil') === true`)
-  if (!controlTool) throw new Error('按住 Ctrl 未临时切换到铅笔工具')
-  await releaseModifier('ControlLeft', 'Control')
+  if (!controlTool) throw new Error(`按住 ${primaryLabel} 未临时切换到铅笔工具`)
+  await releaseModifier(`${modifierKey}Left`, modifierKey)
   const restoredSelect = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-select') === true`)
-  if (!restoredSelect) throw new Error('松开 Ctrl 后未恢复选择工具')
+  if (!restoredSelect) throw new Error(`松开 ${primaryLabel} 后未恢复选择工具`)
 
   await dispatchShortcut('AltLeft', { key: 'Alt', altKey: true })
   const altTool = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-eraser') === true`)
   if (!altTool) throw new Error('按住 Alt 未临时切换到擦除工具')
   await releaseModifier('AltLeft', 'Alt')
 
-  await dispatchShortcut('ControlLeft', { key: 'Control', ctrlKey: true })
-  await dispatchShortcut('AltLeft', { key: 'Alt', ctrlKey: true, altKey: true })
+  await dispatchShortcut(`${modifierKey}Left`, { key: modifierKey, ...primary })
+  await dispatchShortcut('AltLeft', { key: 'Alt', ...primary, altKey: true })
   const modifierPriority = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-eraser') === true`)
-  if (!modifierPriority) throw new Error('Ctrl+Alt 未按 Alt 优先使用擦除工具')
+  if (!modifierPriority) throw new Error(`${primaryLabel}+Alt 未按 Alt 优先使用擦除工具`)
   await evaluate(`window.dispatchEvent(new Event('blur'))`)
   await delay(80)
   const blurRestored = await evaluate(`document.querySelector('.roll-canvas')?.classList.contains('tool-select') === true`)
@@ -1286,7 +1329,7 @@ async function verifyEditorShortcutGestures() {
     y: zoom.y,
     deltaX: 0,
     deltaY: -100,
-    modifiers: 2,
+    modifiers: isMac ? 4 : 2,
   })
   await delay(120)
   const zoomed = await evaluate(`(() => {
@@ -1299,18 +1342,26 @@ async function verifyEditorShortcutGestures() {
       innerWidth: window.innerWidth,
     };
   })()`)
+  const oneDevicePixelTicks = 960 / (zoomed.pixels * zoomed.devicePixelRatio)
   if (zoomed.pixels !== 82
-    || Math.abs(zoomed.afterTick - zoom.beforeTick) > 2
+    || Math.abs(zoomed.afterTick - zoom.beforeTick) > oneDevicePixelTicks
     || zoomed.devicePixelRatio !== zoom.devicePixelRatio
     || zoomed.innerWidth !== zoom.innerWidth) {
-    throw new Error(`Ctrl+滚轮锚点缩放错误：${JSON.stringify({ zoom, zoomed })}`)
+    throw new Error(`${primaryLabel}+滚轮锚点缩放错误：${JSON.stringify({ zoom, zoomed })}`)
   }
-  await dispatchShortcut('Minus', { ctrlKey: true })
+  await dispatchShortcut('Minus', primary)
   await waitFor(`document.querySelector('.zoom-value')?.textContent?.trim() === '72'`, '键盘缩小时间轴')
-  await dispatchShortcut('Equal', { ctrlKey: true })
+  await dispatchShortcut('Equal', primary)
   await waitFor(`document.querySelector('.zoom-value')?.textContent?.trim() === '82'`, '键盘放大时间轴')
-  await dispatchShortcut('Minus', { ctrlKey: true })
+  await dispatchShortcut('Minus', primary)
   await waitFor(`document.querySelector('.zoom-value')?.textContent?.trim() === '72'`, '键盘恢复时间轴缩放')
+
+  if (isMac) {
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: zoom.x, y: zoom.y, deltaX: 0, deltaY: -100, modifiers: 2 })
+    await waitFor(`document.querySelector('.zoom-value')?.textContent?.trim() === '82' && window.devicePixelRatio === ${zoom.devicePixelRatio}`, '触控板捏合缩放时间轴')
+    await dispatchShortcut('Minus', primary)
+    await waitFor(`document.querySelector('.zoom-value')?.textContent?.trim() === '72'`, '捏合后恢复时间轴缩放')
+  }
 
   const horizontalWheelTarget = await evaluate(`(() => {
     const roll = document.querySelector('.piano-roll');
@@ -1351,7 +1402,7 @@ async function verifyEditorShortcutGestures() {
 
   await evaluate(`document.querySelector('.piano-roll')?.focus()`)
   await dispatchShortcut('BracketRight')
-  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '240'`, '快捷键细化吸附网格')
+  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '320'`, '快捷键细化吸附网格')
   await dispatchShortcut('BracketLeft')
   await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '480'`, '快捷键加粗吸附网格')
 
@@ -1394,42 +1445,42 @@ async function verifyEditorShortcutGestures() {
 
 async function verifySelectionShortcuts(projectPath) {
   await evaluate(`document.querySelector('.piano-roll')?.focus()`)
-  await dispatchShortcut('KeyA', { ctrlKey: true })
-  await dispatchShortcut('KeyA', { ctrlKey: true, shiftKey: true })
-  await dispatchShortcut('KeyX', { ctrlKey: true })
+  await dispatchShortcut('KeyA', primary)
+  await dispatchShortcut('KeyA', { ...primary, shiftKey: true })
+  await dispatchShortcut('KeyX', primary)
   await clickButton('保存')
   const cleared = JSON.parse(await readFile(projectPath, 'utf8'))
   const clearedCount = cleared.satbTracks.reduce((count, track) => count + track.notes.length, 0)
-  if (clearedCount !== 8) throw new Error(`Ctrl+Shift+A 未清除选择：${clearedCount}`)
+  if (clearedCount !== 8) throw new Error(`${primaryLabel}+Shift+A 未清除选择：${clearedCount}`)
 
-  await dispatchShortcut('KeyA', { ctrlKey: true })
+  await dispatchShortcut('KeyA', primary)
   await dispatchShortcut('Escape')
-  await dispatchShortcut('KeyX', { ctrlKey: true })
+  await dispatchShortcut('KeyX', primary)
   await clickButton('保存')
   const escaped = JSON.parse(await readFile(projectPath, 'utf8'))
   const escapedCount = escaped.satbTracks.reduce((count, track) => count + track.notes.length, 0)
   if (escapedCount !== 8) throw new Error(`Esc 未清除选择：${escapedCount}`)
 
-  await dispatchShortcut('KeyA', { ctrlKey: true })
-  await dispatchShortcut('KeyD', { ctrlKey: true })
+  await dispatchShortcut('KeyA', primary)
+  await dispatchShortcut('KeyD', primary)
   await clickButton('保存')
   const duplicated = JSON.parse(await readFile(projectPath, 'utf8'))
   const duplicateCount = duplicated.satbTracks.reduce((count, track) => count + track.notes.length, 0)
-  if (duplicateCount !== 16) throw new Error(`Ctrl+A / Ctrl+D 批量重复错误：${duplicateCount}`)
+  if (duplicateCount !== 16) throw new Error(`${primaryLabel}+A / ${primaryLabel}+D 批量重复错误：${duplicateCount}`)
   await clickButton('撤销')
 
-  await dispatchShortcut('KeyA', { ctrlKey: true })
-  await dispatchShortcut('KeyX', { ctrlKey: true })
+  await dispatchShortcut('KeyA', primary)
+  await dispatchShortcut('KeyX', primary)
   await clickButton('保存')
   const cut = JSON.parse(await readFile(projectPath, 'utf8'))
   const cutCount = cut.satbTracks.reduce((count, track) => count + track.notes.length, 0)
-  if (cutCount !== 0) throw new Error(`Ctrl+X 未剪切全部音符：${cutCount}`)
+  if (cutCount !== 0) throw new Error(`${primaryLabel}+X 未剪切全部音符：${cutCount}`)
   await dispatchShortcut('Home')
-  await dispatchShortcut('KeyV', { ctrlKey: true })
+  await dispatchShortcut('KeyV', primary)
   await clickButton('保存')
   const pasted = JSON.parse(await readFile(projectPath, 'utf8'))
   const pastedCount = pasted.satbTracks.reduce((count, track) => count + track.notes.length, 0)
-  if (pastedCount !== 8) throw new Error(`剪切后 Ctrl+V 恢复音符错误：${pastedCount}`)
+  if (pastedCount !== 8) throw new Error(`剪切后 ${primaryLabel}+V 恢复音符错误：${pastedCount}`)
 }
 
 async function verifyDoubleClickVoiceActivation() {
@@ -1476,6 +1527,8 @@ async function verifyProgressionAssistant() {
   await click(`${candidate} .progression-variants button:nth-child(2)`)
   if (await ghostPitches() === originalPitches) throw new Error('排列切换未刷新幽灵音高')
 
+  await client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })
+  await waitFor(`document.documentElement.dataset.theme === 'light'`, '和声连接浅色主题')
   const light = await evaluate(`getComputedStyle(document.querySelector('.progression-toolbar')).backgroundColor`)
   await client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] })
   await waitFor(`getComputedStyle(document.querySelector('.progression-toolbar')).backgroundColor !== ${JSON.stringify(light)}`, '和声连接暗色主题')
@@ -1492,7 +1545,7 @@ async function verifyProgressionAssistant() {
   await click('.progression-card .progression-apply')
   await waitForTargetBeat(2)
   if (await evaluate(`document.querySelector('${playhead}').textContent`) !== '1:2:000') throw new Error('采纳后播放头未推进')
-  await dispatchShortcut('KeyZ', { ctrlKey: true })
+  await dispatchShortcut('KeyZ', primary)
   await waitForTargetBeat(1)
   if (await evaluate(`document.querySelector('${playhead}').textContent`) !== '1:1:000') throw new Error('撤销后播放头未恢复')
   await clickButton('重做')
@@ -1560,16 +1613,21 @@ try {
   await verifyPanelLayoutAfterRuleTestRoundTrip()
   await verifyRuleTestWorkbenchControls()
   await verifyInitialGridSelection()
+  await verifySelectInsets('.app-shell select')
   await verifyShortcutSettings()
   await configureHarmonyRuleSeverity()
   await verifyVoiceRangeSettings()
   await verifyExternalRuleSandbox()
   await verifyEditorShortcutGestures()
-  await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
-  await clickButton('最大化')
-  await waitFor(`window.desktop.windowControls.isMaximized()`, '窗口最大化')
-  await clickButton('还原')
-  await waitFor(`window.desktop.windowControls.isMaximized().then((value) => !value)`, '窗口还原')
+  if (isMac) {
+    await waitFor(`document.documentElement.dataset.windowPlatform === 'macos' && !document.querySelector('.titlebar-controls')`, 'macOS 原生窗口布局')
+  } else {
+    await waitFor(`Boolean(window.desktop?.windowControls) && Boolean(document.querySelector('button[aria-label="最大化"]'))`, '自定义窗口控件')
+    await clickButton('最大化')
+    await waitFor(`window.desktop.windowControls.isMaximized()`, '窗口最大化')
+    await clickButton('还原')
+    await waitFor(`window.desktop.windowControls.isMaximized().then((value) => !value)`, '窗口还原')
+  }
 
   await evaluate(`(() => {
     window.__satbE2eCanvasTexts = [];
@@ -1649,7 +1707,7 @@ try {
 
   const userSoundFontPath = appDirectory
     ? path.join(appDirectory, 'public', 'soundfonts', 'default.sf2')
-    : path.join(path.dirname(executable), 'resources', 'soundfonts', 'default.sf2')
+    : path.join(path.dirname(executable), isMac ? '../Resources' : 'resources', 'soundfonts', 'default.sf2')
   const userSoundFont = await evaluate(`(async () => {
     const result = await window.desktop.soundFont.loadPath(${JSON.stringify(userSoundFontPath)});
     try {
@@ -1686,7 +1744,7 @@ try {
   await waitForFile(path.join(e2eDirectory, 'export.mid'), 'MIDI 导出完成')
   await waitFor(`!document.querySelector('.midi-export-dialog')`, '关闭 MIDI 导出选项')
   await evaluate(`document.querySelector('.piano-roll')?.focus()`)
-  await dispatchShortcut('KeyN', { ctrlKey: true })
+  await dispatchShortcut('KeyN', primary)
   await waitFor(`document.body.innerText.includes('0 个错误')`, '新建空工程')
   await clickButton('打开工程')
   await waitFor(`document.body.innerText.includes('平行或反向纯五度')`, '重新打开工程')
@@ -1715,7 +1773,7 @@ try {
   await clickButton('保存')
   await waitFor(`window.desktop.project.recovery().then((result) => result.available === false)`, '显式保存后清理恢复文件')
 
-  await evaluate(`setTimeout(() => void window.desktop.windowControls.close().catch(() => {}), 50); true`)
+  await evaluate(`setTimeout(() => void window.desktop.windowControls.close(true).catch(() => {}), 50); true`)
   await waitForElectronExit(child)
   const logCheck = await assertCleanSessionLogs(path.join(e2eDirectory, 'user-data'))
 
@@ -1735,7 +1793,7 @@ try {
     initialGridSelection: 'ready',
     initialWindowFocus: 'native-and-web-ready',
     middlePan: 'ready',
-    customWindowFrame: 'ready',
+    windowFrame: isMac ? 'native-macos-ready' : 'custom-controls-ready',
     chordPalette: 'draw-edit-double-click-ready',
     timelineGuides: 'measure-lines-and-full-playhead-ready',
     pianoRollRange: 'midi-0-127-ready',
@@ -1760,7 +1818,7 @@ try {
 } finally {
   client?.close()
   if (child.pid && child.exitCode === null && child.signalCode === null) {
-    child.kill()
+    child.kill('SIGKILL')
     await waitForElectronExit(child, { requireSuccess: false })
   }
   await rm(e2eDirectory, { recursive: true, force: true })

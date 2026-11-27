@@ -1,7 +1,9 @@
 import { useCallback, useState } from "react";
 import {
   SHORTCUT_DEFINITIONS,
+  defaultBindingsFor,
   defaultShortcutBindings,
+  sameShortcutBindings,
   type ShortcutBindings,
   type ShortcutCommandId,
 } from "../shortcuts/shortcutRegistry";
@@ -21,7 +23,10 @@ function readStoredBindings() {
         Array.isArray(bindings) &&
         bindings.every((binding) => typeof binding === "string")
       ) {
-        defaults[definition.id] = [...new Set(bindings)];
+        // Preferences store all bindings, including defaults from older versions.
+        if (!sameShortcutBindings(bindings, definition.defaultBindings)) {
+          defaults[definition.id] = [...new Set(bindings)];
+        }
       }
     });
   } catch {
@@ -79,7 +84,7 @@ export function useShortcutBindings() {
       if (!definition) return;
       update((current) => ({
         ...current,
-        [commandId]: [...definition.defaultBindings],
+        [commandId]: [...defaultBindingsFor(definition)],
       }));
     },
     [update],

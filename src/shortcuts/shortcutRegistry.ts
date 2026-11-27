@@ -1,3 +1,5 @@
+import { isMacOS } from "./keyboardPlatform";
+
 export type ShortcutCommandId =
   | "newProject"
   | "openProject"
@@ -46,6 +48,7 @@ export interface ShortcutDefinition {
   label: string;
   group: ShortcutGroupId;
   defaultBindings: string[];
+  macDefaultBindings?: string[];
   allowRepeat?: boolean;
 }
 
@@ -103,6 +106,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
     label: "重做",
     group: "project",
     defaultBindings: ["Ctrl+Shift+KeyZ", "Ctrl+KeyY"],
+    macDefaultBindings: ["Ctrl+Shift+KeyZ"],
     allowRepeat: true,
   },
 
@@ -341,6 +345,20 @@ const CODE_LABELS: Record<string, string> = {
   Tab: "Tab",
 };
 
+const MAC_NAVIGATION_KEYS = new Set(["Delete", "Home", "End", "PageUp", "PageDown"]);
+const MAC_KEY_LABELS: Record<string, string> = {
+  Backspace: "⌫",
+  Delete: "⌦",
+  Enter: "↩",
+  Tab: "⇥",
+};
+const MAC_MODIFIER_LABELS: Record<string, string> = {
+  Ctrl: "⌘",
+  Control: "⌃",
+  Alt: "⌥",
+  Shift: "⇧",
+};
+
 interface KeyboardBindingSource {
   code: string;
   key: string;
@@ -357,22 +375,38 @@ function fallbackCodeFromKey(key: string) {
   return named[key] ?? key;
 }
 
-export function keyboardEventToBinding(event: KeyboardBindingSource) {
-  const code = event.code || fallbackCodeFromKey(event.key);
+export function keyboardEventToBinding(event: KeyboardBindingSource, mac = isMacOS) {
+  const code = mac && MAC_NAVIGATION_KEYS.has(event.key)
+    ? event.key // Fn on a Mac keyboard may change key without changing the physical code.
+    : event.code && event.code !== "Unidentified"
+      ? event.code
+      : fallbackCodeFromKey(event.key);
   if (!code || MODIFIER_CODES.has(code)) return undefined;
   const parts: string[] = [];
-  if (event.ctrlKey || event.metaKey) parts.push("Ctrl");
+  // The v1 storage token Ctrl represents the platform's primary modifier.
+  if (event.metaKey || (!mac && event.ctrlKey)) parts.push("Ctrl");
+  if (mac && event.ctrlKey) parts.push("Control");
   if (event.altKey) parts.push("Alt");
   if (event.shiftKey) parts.push("Shift");
   parts.push(code);
   return parts.join("+");
 }
 
-export function defaultShortcutBindings(): ShortcutBindings {
+export function defaultBindingsFor(definition: ShortcutDefinition, mac = isMacOS) {
+  return mac && definition.macDefaultBindings
+    ? definition.macDefaultBindings
+    : definition.defaultBindings;
+}
+
+export function sameShortcutBindings(left: string[], right: string[]) {
+  return left.length === right.length && left.every((binding, index) => binding === right[index]);
+}
+
+export function defaultShortcutBindings(mac = isMacOS): ShortcutBindings {
   return Object.fromEntries(
     SHORTCUT_DEFINITIONS.map((definition) => [
       definition.id,
-      [...definition.defaultBindings],
+      [...defaultBindingsFor(definition, mac)],
     ]),
   ) as ShortcutBindings;
 }
@@ -380,7 +414,7 @@ export function defaultShortcutBindings(): ShortcutBindings {
 export function commandForKeyboardEvent(
   event: KeyboardBindingSource,
   bindings: ShortcutBindings,
-  options: { ignoreControl?: boolean } = {},
+  options: { ignoreControl?: boolean; mac?: boolean } = {},
 ) {
   const binding = keyboardEventToBinding(
     options.ignoreControl
@@ -393,6 +427,7 @@ export function commandForKeyboardEvent(
           metaKey: event.metaKey,
         }
       : event,
+    options.mac,
   );
   if (!binding) return undefined;
   return SHORTCUT_DEFINITIONS.find((definition) =>
@@ -400,16 +435,18 @@ export function commandForKeyboardEvent(
   );
 }
 
-export function formatShortcutBinding(binding: string) {
+export function formatShortcutBinding(binding: string, mac = isMacOS) {
   const parts = binding.split("+");
   const code = parts.pop() ?? "";
   const codeLabel =
+    (mac ? MAC_KEY_LABELS[code] : undefined) ??
     CODE_LABELS[code] ??
     (/^Key[A-Z]$/.test(code)
       ? code.slice(3)
       : /^Digit[0-9]$/.test(code)
         ? code.slice(5)
         : code.replace(/^Numpad/, "Num "));
+  if (mac) return parts.map((part) => MAC_MODIFIER_LABELS[part] ?? part).join("") + codeLabel;
   return [...parts, codeLabel].join("+");
 }
 

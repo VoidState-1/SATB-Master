@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import { formatPitchClass } from "../../../domain/pitch";
 import type { ProjectDocument } from "../../../domain/project";
 import type { MeasureInfo } from "../../../domain/time";
@@ -24,6 +24,7 @@ interface TimelineRulerProps {
   activeTimingTick?: number;
   onFocus(): void;
   onClick?(x: number): void;
+  onScrub?(x: number): void;
   onDoubleClick(x: number): void;
   onContextMenu(event: MouseEvent<HTMLDivElement>): void;
   onTimingMarkerClick(tick: number): void;
@@ -48,16 +49,29 @@ export function TimelineRuler({
   activeTimingTick,
   onFocus,
   onClick,
+  onScrub,
   onDoubleClick,
   onContextMenu,
   onTimingMarkerClick,
   onTimingMarkerDoubleClick,
 }: TimelineRulerProps) {
+  const seek = (event: PointerEvent<HTMLDivElement>) =>
+    onScrub?.(event.clientX - event.currentTarget.getBoundingClientRect().left);
+
   return (
     <div
       className="ruler-lane"
       style={{ width: totalWidth }}
-      onPointerDown={onFocus}
+      onPointerDown={(event) => {
+        onFocus();
+        if (!onScrub || event.button !== 0 ||
+            (event.target instanceof Element && event.target.closest("button, .lane-sticky-label"))) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        seek(event);
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) seek(event);
+      }}
       onClick={onClick && ((event) => onClick(event.clientX - event.currentTarget.getBoundingClientRect().left))}
       onDoubleClick={(event) =>
         onDoubleClick(

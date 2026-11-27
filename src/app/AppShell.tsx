@@ -9,6 +9,7 @@ import {
   Eraser,
   FlaskConical,
   FilePlus2,
+  FileMusic,
   FolderOpen,
   LocateFixed,
   List,
@@ -113,6 +114,8 @@ import { useProjectController } from "./controllers/useProjectController";
 import { useWindowController } from "./controllers/useWindowController";
 import { useRuleTestWorkspace } from "./controllers/useRuleTestWorkspace";
 import { formatShortcutBinding } from "../shortcuts/shortcutRegistry";
+import { usesNativeMacWindow } from "../shortcuts/keyboardPlatform";
+import { useMacApplicationMenu } from "./controllers/useMacApplicationMenu";
 import { copyText } from "../services/clipboard";
 import { logger, registerEmergencyProjectProvider } from "../services/logging";
 
@@ -195,7 +198,7 @@ function AppShell() {
   );
   const [logsRequested, setLogsRequested] = useState(false);
   const [logFocus, setLogFocus] = useState<LogFocus>();
-  const [exportOpen, setExportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState<false | true | "midi" | "musicxml">(false);
   const [midiOutOpen, setMidiOutOpen] = useState(false);
   const [midiOutEnabled, setMidiOutEnabled] = useState<boolean>(() =>
     midiOutputManager.isEnabled(),
@@ -341,12 +344,29 @@ function AppShell() {
     showNotice,
     requestConfirmation,
   });
-  const windowController = useWindowController({
-    isDirty:
-      history.isDirty ||
-      (ruleTestMode && ruleTestWorkspace.history.isDirty),
-    requestConfirmation,
-  });
+  const auditLeaveGuard = useRef<() => Promise<boolean>>(undefined);
+  const registerAuditLeaveGuard = useCallback((guard: () => Promise<boolean>) => {
+    auditLeaveGuard.current = guard;
+    return () => { auditLeaveGuard.current = undefined; };
+  }, []);
+  const leaveRuleTestMode = async () => {
+    if (
+      ruleTestWorkspace.history.isDirty &&
+      !(await requestConfirmation({
+        title: "返回普通工程？",
+        message: "规则用例有未保存修改。返回后用例会保留在测试工作区，但本次修改不会自动写入文件。",
+        confirmLabel: "返回",
+        cancelLabel: "留在工作台",
+      }))
+    )
+      return false;
+    ruleTestWorkspace.cancelRun();
+    ruleTestWorkspace.editor.setSelectedNoteIds(new Set());
+    ruleTestWorkspace.editor.setSelectedChordIds(new Set());
+    logger.recordBreadcrumb("editor", "退出规则测试工作台");
+    setRuleTestMode(false);
+    return true;
+  };
   const resetWorkspaceForProject = (nextProject: ProjectDocument) =>
     resetWorkspace(nextProject, setPlayheadTick);
   const {
@@ -408,6 +428,7 @@ function AppShell() {
     handleSave,
     pendingMidiImport,
     handleImportMidi,
+    handleImportSvp,
     handleConfirmMidiImport,
     handleCancelMidiImport,
     handleExportMidi,
@@ -416,8 +437,14 @@ function AppShell() {
     project,
     history,
     createProject: createProjectWithRuleProfileTemplate,
+    beforeExternalOpen: async () => {
+      if (ruleTestMode && !(await leaveRuleTestMode())) return false;
+      if (auditOpen && auditLeaveGuard.current && !(await auditLeaveGuard.current())) return false;
+      setAuditOpen(false);
+      return true;
+    },
     onWorkspaceReset: resetWorkspaceForProject,
-    onImportedAuxiliaryTracks: ([trackId]) => {
+    onImportedTracks: ([trackId]) => {
       if (!trackId) return;
       setActiveVoice(trackId);
       setEditorDomain("notes");
@@ -426,6 +453,23 @@ function AppShell() {
     },
     showNotice,
     requestConfirmation,
+  });
+  const windowController = useWindowController({
+    isDirty: history.isDirty || ((usesNativeMacWindow || ruleTestMode) && ruleTestWorkspace.history.isDirty),
+    filePath: ruleTestMode || auditOpen ? undefined : filePath,
+    beforeClose: auditOpen ? () => auditLeaveGuard.current?.() ?? Promise.resolve(true) : undefined,
+    requestConfirmation,
+  });
+  useMacApplicationMenu(() => {
+    if (!confirmation && !ruleTestMode && !auditOpen && !document.querySelector('dialog[open], [aria-modal="true"]')) {
+      changeSettingsOpen(true);
+    }
+  }, (command) => {
+    if (confirmation || ruleTestMode || auditOpen || document.querySelector('dialog[open], [aria-modal="true"]')) return;
+    if (command === "importMidi") void handleImportMidi();
+    if (command === "importSvp") void handleImportSvp();
+    if (command === "exportMidi") setExportOpen("midi");
+    if (command === "exportMusicXml") setExportOpen("musicxml");
   });
   const {
     externalRuleLibrary,
@@ -670,25 +714,6 @@ function AppShell() {
     logger.recordBreadcrumb("editor", "进入规则测试工作台");
     setRuleTestMode(true);
   };
-  const leaveRuleTestMode = async () => {
-    if (
-      ruleTestWorkspace.history.isDirty &&
-      !(await requestConfirmation({
-        title: "返回普通工程？",
-        message: "规则用例有未保存修改。返回后用例会保留在测试工作区，但本次修改不会自动写入文件。",
-        confirmLabel: "返回",
-        cancelLabel: "留在工作台",
-      }))
-    )
-      return false;
-    ruleTestWorkspace.cancelRun();
-    ruleTestWorkspace.editor.setSelectedNoteIds(new Set());
-    ruleTestWorkspace.editor.setSelectedChordIds(new Set());
-    logger.recordBreadcrumb("editor", "退出规则测试工作台");
-    setRuleTestMode(false);
-    return true;
-  };
-
   const openLogs = async (entryId?: string) => {
     if (ruleTestMode && !(await leaveRuleTestMode())) return;
     setChordInferenceOpen(false);
@@ -707,6 +732,7 @@ function AppShell() {
       startupPackage={auditOpen === "startup"}
       onBack={() => setAuditOpen(false)}
       requestConfirmation={requestConfirmation}
+      registerLeaveGuard={registerAuditLeaveGuard}
       windowController={windowController}
       confirmation={confirmation}
       answerConfirmation={answerConfirmation}
@@ -732,7 +758,7 @@ function AppShell() {
     <main className="app-shell">
       <header
         className="app-titlebar"
-        onDoubleClick={(event) => {
+        onDoubleClick={usesNativeMacWindow ? undefined : (event) => {
           if (
             event.target instanceof Element &&
             event.target.closest(".titlebar-controls")
@@ -757,7 +783,7 @@ function AppShell() {
             <List aria-hidden="true" /> 查看日志{unreadErrorCount > 0 ? ` (${unreadErrorCount})` : ""}
           </button>
         ) : null}
-        {window.desktop?.windowControls ? (
+        {!usesNativeMacWindow && window.desktop?.windowControls ? (
           <div className="titlebar-controls">
             <IconButton
               className="window-control"
@@ -807,16 +833,16 @@ function AppShell() {
           />
           <IconButton
             label="导出 MIDI"
-            title="导出 (MusicXML / MIDI)"
+            title="导出 MIDI 或 MusicXML"
             icon={<Download />}
             onClick={() => setExportOpen(true)}
           />
           <IconButton
             label="导入 MIDI"
-            title="导入 MIDI 到额外声部"
             icon={<Upload />}
             onClick={() => void handleImportMidi()}
           />
+          <IconButton label="导入 SVP" icon={<FileMusic />} onClick={() => void handleImportSvp()} />
           <div className="toolbar-divider" />
           <IconButton
             label="实时 MIDI 输出"
@@ -1131,6 +1157,10 @@ function AppShell() {
             cancelRequest={cancelEditorRequest}
             scaleGuideEnabled={scaleGuideEnabled}
             onSetPlayhead={setPlayheadTick}
+            onScrubPlayhead={(tick) => {
+              if (isPlaying) stopPlayback();
+              setPlayheadTick(tick);
+            }}
             onSetPixelsPerBeat={setPixelsPerBeat}
             onSetActiveVoice={setActiveVoice}
             onSetEditorDomain={setEditorDomain}
@@ -1396,6 +1426,7 @@ function AppShell() {
       ) : null}
       {exportOpen ? (
         <ExportDialog
+          initialFormat={exportOpen === true ? undefined : exportOpen}
           project={project}
           onClose={() => setExportOpen(false)}
           onExportMidi={(options) => {

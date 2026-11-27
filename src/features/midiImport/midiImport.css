@@ -148,7 +148,7 @@
 
 .midi-import-track-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 3px 8px;
   padding: 6px 8px;
@@ -200,5 +200,17 @@
 
   .midi-import-track-row {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
+.midi-import-destination {
+  min-width: 88px;
+  max-width: 125px;
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 440px) {
+  .midi-import-destination {
+    grid-column: 2;
   }
 }

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -504,8 +504,8 @@ describe("Written100 CLI", () => {
       const report = JSON.parse(output.stdout);
       expect(report.summary).toEqual({ total: 2, passed: 1, failed: 1, errors: 1, warnings: 0 });
       expect(report.cases).toEqual(expect.arrayContaining([
-        expect.objectContaining({ filePath: good, ok: true }),
-        expect.objectContaining({ filePath: join(nested, "bad.SATBT"), ok: false }),
+        expect.objectContaining({ filePath: realpathSync(good), ok: true }),
+        expect.objectContaining({ filePath: realpathSync(join(nested, "bad.SATBT")), ok: false }),
       ]));
     });
   }, 25_000);

@@ -8,12 +8,13 @@ import {
   type MidiExportOptions,
 } from "../../domain/midi";
 import {
-  importMidiToAuxiliaryTracks,
+  importNoteTracks,
   parseMidiForImport,
   type MidiImportApplyOptions,
   type MidiImportResult,
   type ParsedMidiFile,
 } from "../../domain/midiImport";
+import { parseSvpForImport } from "../../domain/svpImport";
 import {
   buildMusicXml,
   musicXmlFileName,
@@ -27,7 +28,7 @@ import {
   exportMidi,
   exportMusicXml,
   findRecovery,
-  openMidiFile,
+  openNoteFile,
   openProject,
   saveProject,
   subscribeExternalProjectOpen,
@@ -48,8 +49,9 @@ interface FileWorkflowOptions {
   project: ProjectDocument;
   history: ProjectHistoryFilePort;
   createProject(): ProjectDocument;
+  beforeExternalOpen?(): Promise<boolean>;
   onWorkspaceReset(project: ProjectDocument): void;
-  onImportedAuxiliaryTracks?(trackIds: string[]): void;
+  onImportedTracks?(trackIds: string[]): void;
   showNotice: ShowNotice;
   requestConfirmation(options: ConfirmationState): Promise<boolean>;
 }
@@ -58,8 +60,9 @@ export function useFileWorkflow({
   project,
   history,
   createProject,
+  beforeExternalOpen,
   onWorkspaceReset,
-  onImportedAuxiliaryTracks,
+  onImportedTracks,
   showNotice,
   requestConfirmation,
 }: FileWorkflowOptions) {
@@ -168,14 +171,14 @@ export function useFileWorkflow({
           confirmLabel: "继续打开",
           cancelLabel: "取消",
         }))) return;
-        loadOpenedProject(result);
+        if (!beforeExternalOpen || await beforeExternalOpen()) loadOpenedProject(result);
       } catch (error) {
         reportExternalOpenFailure(error, "second-instance");
       } finally {
         setWorkflowBusy(false);
       }
     })();
-  }, [history.isDirty, isBusy, loadOpenedProject, pendingExternalOpens, reportExternalOpenFailure, requestConfirmation, setWorkflowBusy]);
+  }, [beforeExternalOpen, history.isDirty, isBusy, loadOpenedProject, pendingExternalOpens, reportExternalOpenFailure, requestConfirmation, setWorkflowBusy]);
 
   useEffect(() => {
     if (!history.isDirty) return;
@@ -285,15 +288,18 @@ export function useFileWorkflow({
     [filePath, history, migrationBackupSourcePath, project, setWorkflowBusy, showNotice],
   );
 
-  const handleImportMidi = useCallback(async () => {
+  const handleImportNotes = useCallback(async (format: "midi" | "svp") => {
     if (isBusyRef.current || pendingMidiImport) return;
     setWorkflowBusy(true);
+    const label = format.toUpperCase();
     let logEntryId: string | undefined;
     try {
-      logger.recordBreadcrumb("file", "导入 MIDI");
-      const parsed = await logger.span("file", "读取 MIDI 文件", async () => {
-        const file = await openMidiFile();
-        return file ? parseMidiForImport(file.bytes, file.fileName) : undefined;
+      logger.recordBreadcrumb("file", `导入 ${label}`);
+      const parsed = await logger.span("file", `读取 ${label} 文件`, async () => {
+        const file = await openNoteFile(format);
+        if (!file) return undefined;
+        const parse = format === "svp" ? parseSvpForImport : parseMidiForImport;
+        return parse(file.bytes, file.fileName);
       }, undefined, {
         code: "FILE_READ_FAILED",
         level: "info",
@@ -304,7 +310,7 @@ export function useFileWorkflow({
       });
       if (parsed) setPendingMidiImport(parsed);
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "读取 MIDI 文件失败", { level: "error", logEntryId });
+      showNotice(error instanceof Error ? error.message : `读取 ${label} 文件失败`, { level: "error", logEntryId });
     } finally {
       setWorkflowBusy(false);
     }
@@ -315,8 +321,8 @@ export function useFileWorkflow({
     let logEntryId: string | undefined;
     let result: MidiImportResult;
     try {
-      result = logger.span("file", "应用 MIDI 导入", () => {
-        const imported = importMidiToAuxiliaryTracks(project, pendingMidiImport, options);
+      result = logger.span("file", pendingMidiImport.format === "svp" ? "应用 SVP 导入" : "应用 MIDI 导入", () => {
+        const imported = importNoteTracks(project, pendingMidiImport, options);
         if (imported.error) throw new AppError("PROJECT_INVALID", imported.error);
         return imported;
       }, undefined, {
@@ -332,14 +338,14 @@ export function useFileWorkflow({
         onFailure: (entry) => { logEntryId = entry.id; },
       });
     } catch (error) {
-      showNotice(error instanceof Error ? error.message : "MIDI 导入失败", { level: "error", logEntryId });
+      showNotice(error instanceof Error ? error.message : "音符导入失败", { level: "error", logEntryId });
       return;
     }
 
     audioEngine.stop();
     history.commit(result.project);
     setPendingMidiImport(undefined);
-    onImportedAuxiliaryTracks?.(result.importedTrackIds);
+    onImportedTracks?.(result.importedTrackIds);
 
     const details = [];
     if (result.deduplicatedNoteCount > 0) {
@@ -347,9 +353,10 @@ export function useFileWorkflow({
     }
     if (result.extendedLengthTicks !== undefined) details.push("已自动延长工程");
     if (result.warnings.length > pendingMidiImport.warnings.length) details.push("已跳过部分调号变更");
-    const summary = `已导入 ${result.importedTrackIds.length} 条额外声部、${result.importedNoteCount} 个音符`;
+    const label = result.importedTrackIds.some((id) => project.satbTracks.some((track) => track.id === id)) ? "声部" : "额外声部";
+    const summary = `已导入 ${result.importedTrackIds.length} 条${label}、${result.importedNoteCount} 个音符`;
     showNotice([summary, ...details].join("，"), { level: "success" });
-  }, [history, onImportedAuxiliaryTracks, pendingMidiImport, project, showNotice]);
+  }, [history, onImportedTracks, pendingMidiImport, project, showNotice]);
 
   const handleCancelMidiImport = useCallback(() => {
     setPendingMidiImport(undefined);
@@ -405,6 +412,9 @@ export function useFileWorkflow({
     [project, setWorkflowBusy, showNotice],
   );
 
+  const handleImportMidi = useCallback(() => handleImportNotes("midi"), [handleImportNotes]);
+  const handleImportSvp = useCallback(() => handleImportNotes("svp"), [handleImportNotes]);
+
   return {
     filePath,
     handleNew,
@@ -412,6 +422,7 @@ export function useFileWorkflow({
     handleSave,
     pendingMidiImport,
     handleImportMidi,
+    handleImportSvp,
     handleConfirmMidiImport,
     handleCancelMidiImport,
     handleExportMidi,

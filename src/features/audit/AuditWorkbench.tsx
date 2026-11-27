@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, CircleAlert, CircleHelp, ClipboardCheck, Download, FileMusic, FolderOpen, Info, Keyboard, Lightbulb, ListFilter, ListMusic, Maximize2, Minimize2, Minus, PanelLeftClose, PanelLeftOpen, Search, TriangleAlert, Upload, UserRound, X } from "lucide-react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { ConfirmationState } from "../../app/controllers/useConfirmationController";
+import { isMacOS, usesNativeMacWindow } from "../../shortcuts/keyboardPlatform";
+import { formatShortcutBinding } from "../../shortcuts/shortcutRegistry";
 import { AUDIT_CATEGORIES, AUDIT_SEVERITIES, parseAuditFeedback, restoreAuditFeedback, createAuditFeedback, updateAuditReview, type AuditCategory, type AuditFeedback, type AuditReviewPatch, type AuditSeverity, type BoundAuditPackage } from "../../domain/audit";
 import { downloadAuditFeedback, loadAuditFeedback, loadAuditSession, parseAuditJson, prepareAuditPackage, readAuditJson, saveAuditSession } from "../../services/audit";
 import { AuditEvidenceWorkspace, initialAuditView, type AuditView } from "./AuditEvidenceWorkspace";
@@ -14,6 +16,7 @@ interface Props {
   startupPackage?: boolean;
   onBack(): void;
   windowController: { isMaximized: boolean; toggleMaximize(): Promise<void>; close(): Promise<void> };
+  registerLeaveGuard(guard: () => Promise<boolean>): () => void;
   confirmation?: ConfirmationState;
   answerConfirmation(confirmed: boolean): void;
   requestConfirmation(options: ConfirmationState): Promise<boolean>;
@@ -22,7 +25,7 @@ function errorText(error: unknown) { return error instanceof Error ? error.messa
 const severityIcons = { error: CircleAlert, warning: TriangleAlert, suggestion: Lightbulb, info: Info };
 const decisionIcons = { answered: ClipboardCheck, accept: Check, reject: X, "needs-evidence": CircleHelp };
 
-export function AuditWorkbench({ startupPackage, onBack, windowController, confirmation, answerConfirmation, requestConfirmation }: Props) {
+export function AuditWorkbench({ startupPackage, onBack, windowController, registerLeaveGuard, confirmation, answerConfirmation, requestConfirmation }: Props) {
   const [session, setSession] = useState<Session>();
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
@@ -111,16 +114,17 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
       setNotice(`已恢复 ${result.restored} 条意见${result.stale ? `；${result.stale} 条因谱面或条目版本不符未采用，需重新审阅` : ""}`);
     } catch (error) { setNotice(errorText(error)); }
   };
-  const leave = async (action: () => void | Promise<void>) => {
+  const canLeave = useCallback(async () => {
     try {
       if (session) await saveAuditSession(session.bound.fingerprint, session.bound.data, session.feedback);
       else await pendingSave.current;
-      await action();
+      return true;
     } catch (error) {
       setNotice(`${errorText(error)}；可先导出意见文件`);
-      if (await requestConfirmation({ title: "审计意见未保存至本机", message: "本地保存失败。建议取消并导出意见文件；仍然离开可能丢失当前修改。", confirmLabel: "仍然离开", cancelLabel: "继续审计" })) await action();
+      return requestConfirmation({ title: "审计意见未保存至本机", message: "本地保存失败。建议取消并导出意见文件；仍然离开可能丢失当前修改。", confirmLabel: "仍然离开", cancelLabel: "继续审计" });
     }
-  };
+  }, [requestConfirmation, session]);
+  useEffect(() => registerLeaveGuard(canLeave), [canLeave, registerLeaveGuard]);
 
   const rows = useMemo(() => session?.bound.cases.flatMap((c) => c.items.map((i) => ({ c, i, key: `${c.data.id}/${i.item.id}`, review: session.feedback.cases.find((r) => r.id === c.data.id)!.items.find((r) => r.id === i.item.id)! }))) ?? [], [session]);
   const filtered = rows.filter(({ c, i, key, review }) => (!caseFilter || c.data.id === caseFilter) && (!severity || i.item.severity === severity) && (!category || i.item.category === category) && (!status || editingKey === key || (status === "reviewed" ? review.decision !== "pending" : review.decision === status)) && `${i.item.title} ${c.data.title} ${i.item.program?.ruleId ?? ""}`.toLowerCase().includes(search.toLowerCase()));
@@ -224,7 +228,7 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
   for (const row of rows) tally[row.review.decision]++;
   const share = (n: number) => `${rows.length ? (n / rows.length) * 100 : 0}%`;
   const saveTone = saveStatus.includes("失败") ? "error" : saveStatus.includes("正在") ? "busy" : session ? "ok" : "idle";
-  const hasWindowControls = Boolean(window.desktop?.windowControls);
+  const hasWindowControls = !usesNativeMacWindow && Boolean(window.desktop?.windowControls);
   const caseReviewMap = new Map((session?.feedback.cases ?? []).map(c => [c.id, c.source.decision]));
   const exportFeedback = () => {
     if (!session) return;
@@ -240,7 +244,7 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
 
   return <main className="audit-workbench">
     <header className={`app-titlebar audit-titlebar ${hasWindowControls ? "has-window-controls" : ""}`}>
-      <button className="audit-back" aria-label="返回工程" title="返回工程" onClick={() => void leave(onBack)}><ArrowLeft size={16} /></button>
+      <button className="audit-back" aria-label="返回工程" title="返回工程" onClick={async () => { if (await canLeave()) onBack(); }}><ArrowLeft size={16} /></button>
       <div className="audit-title-group">
         <span className="audit-title-mark" aria-hidden="true"><ClipboardCheck size={14} /></span>
         <strong>教材审计</strong>
@@ -256,11 +260,11 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
             {showShortcuts && <div className="audit-shortcut-popover" role="dialog" aria-label="审计快捷键">
               <strong>审阅快捷键</strong>
               <ul>
-                <li><kbd>Alt</kbd>+<kbd>↑/↓</kbd><span>上一条 / 下一条</span></li>
+                <li><kbd>{isMacOS ? "⌥↑/↓" : "Alt+↑/↓"}</kbd><span>上一条 / 下一条</span></li>
                 <li><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd><span>原谱 / 转写谱 / 卷帘</span></li>
                 <li><kbd>C</kbd><span>切换对照原谱</span></li>
                 <li><kbd>Space</kbd><span>试听 / 暂停当前谱</span></li>
-                <li><kbd>Ctrl</kbd>+<kbd>Enter</kbd><span>提交并下一条</span></li>
+                <li><kbd>{formatShortcutBinding("Ctrl+Enter")}</kbd><span>提交并下一条</span></li>
               </ul>
             </div>}
           </div>
@@ -273,7 +277,7 @@ export function AuditWorkbench({ startupPackage, onBack, windowController, confi
       {hasWindowControls && <div className="titlebar-controls">
         <button className="window-control" aria-label="最小化" onClick={() => void window.desktop?.windowControls.minimize()}><Minus size={16} /></button>
         <button className="window-control" aria-label="切换最大化" onClick={() => void windowController.toggleMaximize()}>{windowController.isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
-        <button className="window-control close" aria-label="关闭窗口" onClick={() => void leave(windowController.close)}><X size={17} /></button>
+        <button className="window-control close" aria-label="关闭窗口" onClick={() => void windowController.close()}><X size={17} /></button>
       </div>}
     </header>
     {notice && <div className="audit-notice" role="status"><Info size={14} /><span>{notice}</span><button aria-label="关闭审计提示" onClick={() => setNotice("")}><X size={14} /></button></div>}

@@ -26,6 +26,7 @@ import { useDeveloperMode } from "../../hooks/useDeveloperMode";
 import { useShortcutBindings } from "../../hooks/useShortcutBindings";
 import { usePlaybackController } from "../../app/controllers/usePlaybackController";
 import { useKeyboardController } from "../../app/controllers/useKeyboardController";
+import { usesNativeMacWindow } from "../../shortcuts/keyboardPlatform";
 
 interface RuleTestWorkbenchProps {
   controller: RuleTestWorkspaceController;
@@ -230,7 +231,7 @@ export function RuleTestWorkbench({
     <main className="app-shell rule-test-shell">
       <header
         className="app-titlebar"
-        onDoubleClick={(event) => {
+        onDoubleClick={usesNativeMacWindow ? undefined : (event) => {
           if (
             event.target instanceof Element &&
             event.target.closest(".titlebar-controls")
@@ -243,7 +244,7 @@ export function RuleTestWorkbench({
         <strong>SATB Master</strong>
         <span className="project-title">规则测试</span>
         <span className="file-path">{testCase.title}</span>
-        {window.desktop?.windowControls ? (
+        {!usesNativeMacWindow && window.desktop?.windowControls ? (
           <div className="titlebar-controls">
             <IconButton
               className="window-control"

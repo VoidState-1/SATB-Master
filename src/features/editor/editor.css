@@ -155,6 +155,7 @@
 .ruler-lane {
   top: 0;
   height: 46px;
+  touch-action: none;
   border-bottom: 1px solid var(--border-default);
 }
 
