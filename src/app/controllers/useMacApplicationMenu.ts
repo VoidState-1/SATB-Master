@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from "react";
-import { DESKTOP_TEXT_EDIT_COMMANDS, type DesktopMenuCommand, type DesktopTextEditCommand } from "../../../shared/desktop";
+import { DESKTOP_TEXT_EDIT_COMMANDS, MENU_FILE_TRANSFERS, type DesktopFileTransferCommand, type DesktopMenuCommand, type DesktopTextEditCommand } from "../../../shared/desktop";
 import { isTextInput, usesNativeMacWindow } from "../../shortcuts/keyboardPlatform";
 
 const TEXT_COMMANDS: Partial<Record<string, DesktopTextEditCommand>> = {
@@ -12,9 +12,10 @@ const TEXT_COMMANDS: Partial<Record<string, DesktopTextEditCommand>> = {
   "alt+shift+v": "pasteAndMatchStyle",
 };
 
-export function useMacApplicationMenu(openSettings: () => void) {
+export function useMacApplicationMenu(openSettings: () => void, runFileTransfer: (command: DesktopFileTransferCommand) => void) {
   const handleCommand = useEffectEvent((command: DesktopMenuCommand) => {
     if (command === "settings") openSettings();
+    else if (Object.hasOwn(MENU_FILE_TRANSFERS, command)) runFileTransfer(command as DesktopFileTransferCommand);
     else if (isTextInput(document.activeElement) && Object.hasOwn(DESKTOP_TEXT_EDIT_COMMANDS, command)) {
       void window.desktop?.menu.editText(command as DesktopTextEditCommand);
     }

@@ -9,6 +9,7 @@ import {
   Eraser,
   FlaskConical,
   FilePlus2,
+  FileMusic,
   FolderOpen,
   LocateFixed,
   List,
@@ -197,7 +198,7 @@ function AppShell() {
   );
   const [logsRequested, setLogsRequested] = useState(false);
   const [logFocus, setLogFocus] = useState<LogFocus>();
-  const [exportOpen, setExportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState<false | true | "midi" | "musicxml">(false);
   const [midiOutOpen, setMidiOutOpen] = useState(false);
   const [midiOutEnabled, setMidiOutEnabled] = useState<boolean>(() =>
     midiOutputManager.isEnabled(),
@@ -427,6 +428,7 @@ function AppShell() {
     handleSave,
     pendingMidiImport,
     handleImportMidi,
+    handleImportSvp,
     handleConfirmMidiImport,
     handleCancelMidiImport,
     handleExportMidi,
@@ -442,7 +444,7 @@ function AppShell() {
       return true;
     },
     onWorkspaceReset: resetWorkspaceForProject,
-    onImportedAuxiliaryTracks: ([trackId]) => {
+    onImportedTracks: ([trackId]) => {
       if (!trackId) return;
       setActiveVoice(trackId);
       setEditorDomain("notes");
@@ -462,6 +464,12 @@ function AppShell() {
     if (!confirmation && !ruleTestMode && !auditOpen && !document.querySelector('dialog[open], [aria-modal="true"]')) {
       changeSettingsOpen(true);
     }
+  }, (command) => {
+    if (confirmation || ruleTestMode || auditOpen || document.querySelector('dialog[open], [aria-modal="true"]')) return;
+    if (command === "importMidi") void handleImportMidi();
+    if (command === "importSvp") void handleImportSvp();
+    if (command === "exportMidi") setExportOpen("midi");
+    if (command === "exportMusicXml") setExportOpen("musicxml");
   });
   const {
     externalRuleLibrary,
@@ -825,16 +833,16 @@ function AppShell() {
           />
           <IconButton
             label="导出 MIDI"
-            title="导出 (MusicXML / MIDI)"
+            title="导出 MIDI 或 MusicXML"
             icon={<Download />}
             onClick={() => setExportOpen(true)}
           />
           <IconButton
             label="导入 MIDI"
-            title="导入 MIDI 到额外声部"
             icon={<Upload />}
             onClick={() => void handleImportMidi()}
           />
+          <IconButton label="导入 SVP" icon={<FileMusic />} onClick={() => void handleImportSvp()} />
           <div className="toolbar-divider" />
           <IconButton
             label="实时 MIDI 输出"
@@ -1149,6 +1157,10 @@ function AppShell() {
             cancelRequest={cancelEditorRequest}
             scaleGuideEnabled={scaleGuideEnabled}
             onSetPlayhead={setPlayheadTick}
+            onScrubPlayhead={(tick) => {
+              if (isPlaying) stopPlayback();
+              setPlayheadTick(tick);
+            }}
             onSetPixelsPerBeat={setPixelsPerBeat}
             onSetActiveVoice={setActiveVoice}
             onSetEditorDomain={setEditorDomain}
@@ -1414,6 +1426,7 @@ function AppShell() {
       ) : null}
       {exportOpen ? (
         <ExportDialog
+          initialFormat={exportOpen === true ? undefined : exportOpen}
           project={project}
           onClose={() => setExportOpen(false)}
           onExportMidi={(options) => {

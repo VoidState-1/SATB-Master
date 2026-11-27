@@ -142,7 +142,7 @@ describe("TrackSidebar 额外声部", () => {
     expect(onDeleteAuxiliaryTrack).toHaveBeenCalledWith(trackId);
     render(updateTrack(project, trackId!, { locked: true }).project, trackId);
     expect(deletion.disabled).toBe(true);
-    expect(deletion.title).toBe("请先解锁再删除");
+    expect(deletion.dataset.iconTooltip).toBe("请先解锁再删除");
     act(() => deletion.click());
     expect(onDeleteAuxiliaryTrack).toHaveBeenCalledTimes(1);
     act(() => button("解锁声部", card).click());

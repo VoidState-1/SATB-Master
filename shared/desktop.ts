@@ -4,6 +4,7 @@ import type { LogEntry } from "./logging.js";
 export const LOG_SESSION_ARGUMENT = "--satb-log-session=";
 export const MAX_RULE_TEST_CASE_BYTES = 20 * 1024 * 1024;
 export const MAX_AUDIT_FILE_BYTES = 32 * 1024 * 1024;
+export type NoteImportFormat = "midi" | "svp";
 export const MAX_MIDI_IMPORT_BYTES = 10 * 1024 * 1024;
 
 export const MAC_APP_SHORTCUTS = new Set([
@@ -21,7 +22,10 @@ export const DESKTOP_TEXT_EDIT_COMMANDS = {
   selectAll: "selectAll",
 } as const;
 export type DesktopTextEditCommand = keyof typeof DESKTOP_TEXT_EDIT_COMMANDS;
-export type DesktopMenuCommand = Exclude<DesktopTextEditCommand, "pasteAndMatchStyle"> | "settings"
+export const MENU_FILE_TRANSFERS = { importMidi: true, importSvp: true, exportMidi: true, exportMusicXml: true } as const;
+export type DesktopFileTransferCommand = keyof typeof MENU_FILE_TRANSFERS;
+
+export type DesktopMenuCommand = DesktopFileTransferCommand | Exclude<DesktopTextEditCommand, "pasteAndMatchStyle"> | "settings"
   | "newProject" | "openProject" | "saveProject" | "saveProjectAs"
   | "zoomIn" | "zoomOut";
 
@@ -158,7 +162,7 @@ export interface DesktopInvokeMap {
     response: { deleted: boolean };
   };
   "midi:import": {
-    request: void;
+    request: { format: NoteImportFormat };
     response:
       | { canceled: true }
       | { canceled: false; filePath: string; fileName: string; bytes: Uint8Array };
@@ -338,7 +342,7 @@ export interface DesktopApi {
     delete(request: DesktopInvokeMap["rule-test-case:delete"]["request"]): Promise<DesktopInvokeMap["rule-test-case:delete"]["response"]>;
   };
   midi: {
-    import(): Promise<DesktopInvokeMap["midi:import"]["response"]>;
+    import(format?: NoteImportFormat): Promise<DesktopInvokeMap["midi:import"]["response"]>;
     export(bytes: Uint8Array, defaultName: string): Promise<DesktopInvokeMap["midi:export"]["response"]>;
   };
   musicXml: {

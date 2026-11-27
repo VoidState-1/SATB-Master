@@ -267,22 +267,25 @@ export async function discardRecovery() {
   return { discarded: true };
 }
 
-export async function openMidiFile(): Promise<
+export async function openNoteFile(format: "midi" | "svp"): Promise<
   { fileName: string; filePath?: string; bytes: Uint8Array } | undefined
 > {
   if (window.desktop) {
-    const result = await window.desktop.midi.import();
+    const result = await window.desktop.midi.import(format);
     if (result.canceled) return undefined;
     const { fileName, filePath, bytes } = result;
     return { fileName, filePath, bytes };
   }
 
-  const file = await chooseBrowserFile(".mid,.midi");
+  const file = await chooseBrowserFile(format === "svp" ? ".svp" : ".mid,.midi");
+  const label = format.toUpperCase();
   if (!file) return undefined;
-  if (file.size < 1) throw new Error("MIDI 文件为空");
-  if (file.size > MAX_MIDI_IMPORT_BYTES) throw new Error("MIDI 文件超过 10 MB 限制");
+  if (file.size < 1) throw new Error(`${label} 文件为空`);
+  if (file.size > MAX_MIDI_IMPORT_BYTES) throw new Error(`${label} 文件超过 10 MB 限制`);
   return { fileName: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
 }
+
+export const openMidiFile = () => openNoteFile("midi");
 
 export async function exportMidi(bytes: Uint8Array, defaultName: string) {
   if (window.desktop) return window.desktop.midi.export(bytes, defaultName);

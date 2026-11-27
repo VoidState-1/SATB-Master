@@ -71,7 +71,7 @@ describe("MIDI 导入确认弹窗", () => {
   function input(label: string) {
     const element = [...dialog().querySelectorAll<HTMLLabelElement>("label")]
       .find((element) => element.textContent?.trim().startsWith(label));
-    return element!.querySelector<HTMLInputElement>("input")!;
+    return element!.control as HTMLInputElement;
   }
 
   function selection() {

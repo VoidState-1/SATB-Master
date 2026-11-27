@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { createPortal } from "react-dom";
 import type { MidiImportApplyOptions, ParsedMidiFile } from "../../domain/midiImport";
 import { formatPitchClass, formatSpelledPitch, spellMidi } from "../../domain/pitch";
-import { getAllPlayableTracks, type ProjectDocument } from "../../domain/project";
+import { getAllPlayableTracks, type ProjectDocument, type VoiceId } from "../../domain/project";
 import { formatPosition } from "../../domain/time";
 import "./midiImport.css";
 
@@ -23,6 +23,8 @@ export function MidiImportDialog({
   onConfirm,
 }: MidiImportDialogProps) {
   const { tracks } = parsed;
+  const label = parsed.format === "svp" ? "SVP" : "MIDI";
+  const [destinations, setDestinations] = useState<Partial<Record<string, VoiceId>>>({});
   const melodicTracks = tracks.filter(({ isPercussion }) => !isPercussion);
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(
     () => new Set((melodicTracks.length ? melodicTracks : tracks).map(({ key }) => key)),
@@ -36,6 +38,9 @@ export function MidiImportDialog({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   const selectedTracks = tracks.filter(({ key }) => selectedKeys.has(key));
+  const assigned = selectedTracks.flatMap(({ key }) => destinations[key] ? [[key, destinations[key]] as const] : []);
+  const assignedVoices = new Set(assigned.map(([, destination]) => destination));
+  const duplicateTarget = assignedVoices.size !== assigned.length;
   const selectedNoteCount = selectedTracks.reduce((count, track) => count + track.noteCount, 0);
   const totalNoteCount = tracks.reduce((count, track) => count + track.noteCount, 0);
   const tempo = parsed.tempoEvents.find(({ tick }) => tick === 0);
@@ -64,7 +69,7 @@ export function MidiImportDialog({
   function containTabFocus(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Tab") return;
     const controls = event.currentTarget.querySelectorAll<HTMLElement>(
-      "button:not(:disabled), input:not(:disabled), summary",
+      "button:not(:disabled), input:not(:disabled), select:not(:disabled), summary",
     );
     const first = controls[0];
     const last = controls[controls.length - 1];
@@ -88,9 +93,10 @@ export function MidiImportDialog({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (selectedTracks.length === 0) return;
+    if (selectedTracks.length === 0 || duplicateTarget) return;
     onConfirm({
       selectedTrackKeys: selectedTracks.map(({ key }) => key),
+      ...(assigned.length > 0 ? { satbDestinations: Object.fromEntries(assigned) } : {}),
       applyTimingEvents,
       showInScorePreview,
       startTickOffset: startAtPlayhead ? insertionTick : 0,
@@ -113,12 +119,13 @@ export function MidiImportDialog({
         onKeyDown={containTabFocus}
       >
         <header className="midi-import-header">
-          <h2 id="midi-import-title"><Upload aria-hidden="true" /> 导入 MIDI 到额外声部</h2>
+          <h2 id="midi-import-title"><Upload aria-hidden="true" /> 导入 {label}</h2>
           <button
             type="button"
             className="dialog-close-button"
             ref={closeButtonRef}
             aria-label="关闭"
+            title="关闭"
             onClick={onClose}
           >
             <X aria-hidden="true" />
@@ -127,7 +134,7 @@ export function MidiImportDialog({
 
         <form className="midi-import-form" onSubmit={handleSubmit}>
           <div className="midi-import-content">
-            <section className="midi-import-summary" aria-label="MIDI 文件摘要">
+            <section className="midi-import-summary" aria-label={`${label} 文件摘要`}>
               <strong title={parsed.fileName}>{parsed.fileName}</strong>
               <div className="midi-import-file-meta">
                 <span>{parsed.sourceTrackCount} 条源轨道</span>
@@ -144,7 +151,7 @@ export function MidiImportDialog({
 
             {parsed.warnings.length > 0 && (
               <details className="midi-import-warnings">
-                <summary>{parsed.warnings.length} 条 MIDI 解析提示</summary>
+                <summary>{parsed.warnings.length} 条 {label} 解析提示</summary>
                 <ul>{parsed.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
               </details>
             )}
@@ -185,13 +192,14 @@ export function MidiImportDialog({
               </div>
               <div className="midi-import-track-list">
                 {tracks.map((track) => (
-                  <label className="midi-import-track-row" key={track.key}>
+                  <div className="midi-import-track-row" key={track.key}>
                     <input
                       type="checkbox"
+                      id={`import-track-${track.key}`}
                       checked={selectedKeys.has(track.key)}
                       onChange={(event) => selectTrack(track.key, event.target.checked)}
                     />
-                    <span className="midi-import-track-name" title={track.name}>{track.name}</span>
+                    <label className="midi-import-track-name" htmlFor={`import-track-${track.key}`} title={track.name}>{track.name}</label>
                     <span className="midi-import-track-meta">
                       <span>{track.noteCount} 个音符</span>
                       <span>
@@ -201,8 +209,27 @@ export function MidiImportDialog({
                       </span>
                       {track.hasPolyphony && <span>复音</span>}
                     </span>
-                  </label>
+                    <select
+                      className="midi-import-destination"
+                      aria-label={`${track.name} 的导入目标`}
+                      value={destinations[track.key] ?? ""}
+                      disabled={!selectedKeys.has(track.key) || track.hasPolyphony || track.isPercussion}
+                      title={track.hasPolyphony || track.isPercussion ? "仅单音旋律轨可导入 SATB" : "选择导入目标"}
+                      onChange={(event) => {
+                        const value = event.target.value as VoiceId | "";
+                        setDestinations((previous) => ({ ...previous, [track.key]: value || undefined }));
+                      }}
+                    >
+                      <option value="">额外声部</option>
+                      {project.satbTracks.map((satb) => (
+                        <option key={satb.id} value={satb.id} disabled={satb.locked}>
+                          {satb.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 ))}
+                {duplicateTarget && <p className="midi-import-hint" role="alert">每个 SATB 声部只能分配一条源轨</p>}
               </div>
             </section>
 
@@ -215,9 +242,9 @@ export function MidiImportDialog({
                   onChange={(event) => setApplyTimingEvents(event.target.checked)}
                   aria-describedby="midi-import-timing-hint"
                 />
-                <span>应用 MIDI 的速度、拍号与调号</span>
+                <span>{label === "SVP" ? "应用 SVP 的速度与拍号" : "应用 MIDI 的速度、拍号与调号"}</span>
               </label>
-              <small className="midi-import-hint" id="midi-import-timing-hint">不会改动 SATB 声部音符</small>
+              <small className="midi-import-hint" id="midi-import-timing-hint">应用时间线时会采用文件中的对应时间事件。</small>
               <label className="midi-import-option">
                 <input
                   type="checkbox"
@@ -254,9 +281,9 @@ export function MidiImportDialog({
 
           <div className="confirmation-actions midi-import-actions">
             <button type="button" className="command-button" onClick={onClose}>取消</button>
-            <button type="submit" className="command-button primary" disabled={selectedTracks.length === 0}>
+            <button type="submit" className="command-button primary" disabled={selectedTracks.length === 0 || duplicateTarget}>
               <Upload aria-hidden="true" />
-              导入为额外声部（{selectedTracks.length} 轨）
+              {assigned.length > 0 ? `导入所选声部（${selectedTracks.length} 轨）` : `导入为额外声部（${selectedTracks.length} 轨）`}
             </button>
           </div>
         </form>

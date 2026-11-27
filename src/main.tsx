@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { IconTooltips } from "./components/IconTooltips";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { installGlobalErrorHandlers } from "./services/logging";
 import { usesNativeMacWindow } from "./shortcuts/keyboardPlatform";
@@ -23,6 +24,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AppErrorBoundary>
       <App />
+      <IconTooltips />
     </AppErrorBoundary>
   </StrictMode>,
 );

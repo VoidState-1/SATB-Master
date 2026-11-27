@@ -33,6 +33,11 @@ export function installMacApplicationMenu(dispatch: (command: DesktopMenuCommand
       item('保存', 'saveProject'),
       item('另存为…', 'saveProjectAs'),
       { type: 'separator' },
+      item('导入 MIDI…', 'importMidi'),
+      item('导入 Synthesizer V 工程（SVP）…', 'importSvp'),
+      item('导出 MIDI…', 'exportMidi'),
+      item('导出 MusicXML…', 'exportMusicXml'),
+      { type: 'separator' },
       { role: 'close', label: '关闭窗口' },
     ] },
     { label: '编辑', submenu: [

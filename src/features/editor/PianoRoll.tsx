@@ -86,6 +86,7 @@ export function PianoRoll({
   cancelRequest,
   scaleGuideEnabled,
   onSetPlayhead,
+  onScrubPlayhead,
   onSetPixelsPerBeat,
   onSetActiveVoice,
   onSetEditorDomain,
@@ -493,6 +494,7 @@ export function PianoRoll({
           activeTimingTick={timingMarkerEditor?.tick}
           onFocus={() => focusEditor()}
           onDoubleClick={(x) => onSetPlayhead(snapStartTick(x))}
+          onScrub={onScrubPlayhead && ((x) => onScrubPlayhead(snapStartTick(x)))}
           onClick={seekOnClick ? (x) => onSetPlayhead(snapStartTick(x)) : undefined}
           onContextMenu={handleRulerContextMenu}
           onTimingMarkerClick={onSetPlayhead}

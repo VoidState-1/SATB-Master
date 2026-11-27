@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { MAC_APP_SHORTCUTS, type DesktopMenuCommand } from "../../../shared/desktop";
+import { MAC_APP_SHORTCUTS, MENU_FILE_TRANSFERS, type DesktopMenuCommand } from "../../../shared/desktop";
 import { isMacOS, usesNativeMacWindow } from "../../shortcuts/keyboardPlatform";
 import {
   commandForKeyboardEvent,
@@ -189,7 +189,8 @@ export function useKeyboardController({
   const handleMenu = useEffectEvent((command: DesktopMenuCommand) => {
     if (command === "settings" || confirmation || settingsOpen || document.querySelector('dialog[open], [aria-modal="true"]')) return;
     const target = document.activeElement ?? document.body;
-    if (!target.closest(DIALOG)) runForTarget(command, target);
+    if (Object.hasOwn(MENU_FILE_TRANSFERS, command)) return;
+    if (!target.closest(DIALOG)) runForTarget(command as ShortcutCommandId, target);
   });
 
   useEffect(() => {

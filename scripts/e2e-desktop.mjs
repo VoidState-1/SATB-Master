@@ -513,7 +513,7 @@ async function verifyInitialGridSelection() {
     await evaluate(`(() => {
       const select = document.querySelector('select[aria-label="时值对齐"]');
       select.focus();
-      select.value = '240';
+      select.value = '320';
       select.dispatchEvent(new Event('change', { bubbles: true }));
     })()`)
   } else {
@@ -528,7 +528,7 @@ async function verifyInitialGridSelection() {
     await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
     await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
   }
-  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '240'`, '首次选择 1/16 网格')
+  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '320'`, '首次选择 1/8 三连音网格')
 
   await evaluate(`(() => {
     const select = document.querySelector('select[aria-label="时值对齐"]');
@@ -1082,10 +1082,28 @@ async function verifyShortcutSettings() {
   await waitFor(`document.querySelector('button[aria-label^="选择工具（1）"]') !== null`, '工具快捷键恢复默认')
 }
 
+async function verifySelectInsets(selector) {
+  const styles = await evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].map(select => {
+    const style = getComputedStyle(select);
+    return {
+      name: select.getAttribute("aria-label"),
+      inset: style.paddingInlineStart,
+      chevronPosition: style.backgroundPositionX,
+      hasChevron: style.backgroundImage !== "none",
+      appearance: style.appearance,
+    };
+  })`)
+  if (!styles.length || styles.some(({ inset, chevronPosition, hasChevron, appearance }) =>
+    !hasChevron || appearance !== 'none' || chevronPosition !== `calc(100% - ${inset})`)) {
+    throw new Error(`下拉框文字和箭头内边距不一致：${JSON.stringify(styles)}`)
+  }
+}
+
 async function configureHarmonyRuleSeverity() {
   await clickButton('设置')
   await clickButton('检查规则')
   await waitFor(`document.querySelectorAll('.rule-row').length === 70`, '列出全部检查规则')
+  await verifySelectInsets('.rule-settings-toolbar select')
   await selectRuleByKey('builtin:voice-leading.parallel-fifths')
   const layout = await evaluate(`(() => {
     const content = document.querySelector('.rule-settings-content');
@@ -1384,7 +1402,7 @@ async function verifyEditorShortcutGestures() {
 
   await evaluate(`document.querySelector('.piano-roll')?.focus()`)
   await dispatchShortcut('BracketRight')
-  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '240'`, '快捷键细化吸附网格')
+  await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '320'`, '快捷键细化吸附网格')
   await dispatchShortcut('BracketLeft')
   await waitFor(`document.querySelector('select[aria-label="时值对齐"]')?.value === '480'`, '快捷键加粗吸附网格')
 
@@ -1595,6 +1613,7 @@ try {
   await verifyPanelLayoutAfterRuleTestRoundTrip()
   await verifyRuleTestWorkbenchControls()
   await verifyInitialGridSelection()
+  await verifySelectInsets('.app-shell select')
   await verifyShortcutSettings()
   await configureHarmonyRuleSeverity()
   await verifyVoiceRangeSettings()

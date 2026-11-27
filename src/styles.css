@@ -9,3 +9,5 @@
 @import "./features/ruleTesting/ruleTesting.css";
 @import "./features/scorePreview/scorePreview.css";
 @import "./styles/dialogs.css";
+
+@import "./styles/select.css";

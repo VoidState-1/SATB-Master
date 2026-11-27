@@ -1,5 +1,5 @@
 import { parseMidi, type MidiData, type MidiEvent } from "midi-file";
-import type { EditResult } from "./editing";
+import { isSatbRangeLocked, overlaps, type EditResult } from "./editing";
 import { fromMidiString } from "./midi";
 import { keySignatureFifths, keyTonicOptions, spellMidi } from "./pitch";
 import {
@@ -18,6 +18,7 @@ import {
   type NoteEvent,
   type ProjectDocument,
   type TempoEvent,
+  type VoiceId,
 } from "./project";
 import { isInteger } from "./project/validation";
 import { eventAtTick, keyAtTick, orderedEvents, ticksPerBeat } from "./time";
@@ -56,7 +57,7 @@ type ParsedKeyEvent = Omit<KeyEvent, "id">;
 
 export interface ParsedMidiFile {
   fileName: string;
-  format: 0 | 1 | 2;
+  format: 0 | 1 | 2 | "svp";
   sourceTicksPerBeat: number;
   sourceTrackCount: number;
   tracks: readonly ParsedMidiTrack[];
@@ -70,7 +71,8 @@ export interface ParsedMidiFile {
 export interface MidiImportApplyOptions {
   /** 省略时选择旋律轨，纯打击乐文件则选择全部轨道。 */
   selectedTrackKeys?: readonly string[];
-  /** 应用 MIDI 时间线，缺少起始事件时沿用工程对应的起始事件。 */
+  satbDestinations?: Readonly<Record<string, VoiceId>>;
+  /** 应用导入的时间线，缺少起始事件时沿用工程对应的起始事件。 */
   applyTimingEvents?: boolean;
   showInScorePreview?: boolean;
   /** 音符与启用导入的时间事件使用同一个工程 tick 偏移。 */
@@ -152,7 +154,7 @@ function resampleEvents<T extends { tick: number }>(
   return [...byTick.values()];
 }
 
-function summarizeNotes(notes: ParsedMidiRawNote[]) {
+export function summarizeImportNotes(notes: ParsedMidiRawNote[]) {
   notes.sort((left, right) => left.sourceStartTick - right.sourceStartTick);
   let minMidi = 127;
   let maxMidi = 0;
@@ -293,7 +295,7 @@ function parseSourceTrack(
         name: notesByChannel.size > 1 || isPercussion ? name + channelLabel : name,
         program: clampProgram(programs.get(channel) ?? 0),
         isPercussion,
-        ...summarizeNotes(notes),
+        ...summarizeImportNotes(notes),
         notes,
       };
     });
@@ -380,12 +382,13 @@ function enclosingMeasureEnd(targetTick: number, meterEvents: readonly MeterEven
   return Math.min(boundary, nextMeter?.tick ?? boundary);
 }
 
-export function importMidiToAuxiliaryTracks(
+export function importNoteTracks(
   project: ProjectDocument,
   parsed: ParsedMidiFile,
   options: MidiImportApplyOptions = {},
 ): MidiImportResult {
   const warnings = [...parsed.warnings];
+  const source = parsed.format === "svp" ? "SVP" : "MIDI";
   function failure(error: string): MidiImportResult {
     return {
       project,
@@ -405,7 +408,7 @@ export function importMidiToAuxiliaryTracks(
   if (selectedTracks.length === 0) return failure("请至少选择一条要导入的轨道");
 
   const offset = options.startTickOffset ?? 0;
-  if (!isInteger(offset, 0)) return failure("MIDI 导入起点必须是非负整数 tick");
+  if (!isInteger(offset, 0)) return failure(`${source} 导入起点必须是非负整数 tick`);
   let maxImportedEndTick = 0;
   for (const track of selectedTracks) {
     for (const note of track.notes) {
@@ -415,7 +418,7 @@ export function importMidiToAuxiliaryTracks(
       );
     }
   }
-  if (!isInteger(maxImportedEndTick, 1)) return failure("MIDI 导入超出工程时间范围");
+  if (!isInteger(maxImportedEndTick, 1)) return failure(`${source} 导入超出工程时间范围`);
 
   const next = cloneProject(project);
   if (options.applyTimingEvents) {
@@ -433,7 +436,7 @@ export function importMidiToAuxiliaryTracks(
   if (maxImportedEndTick > next.lengthTicks) {
     extendedLengthTicks = enclosingMeasureEnd(maxImportedEndTick, next.meterEvents);
     if (!isInteger(extendedLengthTicks, maxImportedEndTick))
-      return failure("MIDI 导入超出工程时间范围");
+      return failure(`${source} 导入超出工程时间范围`);
     next.lengthTicks = extendedLengthTicks;
   }
   if (options.applyTimingEvents) {
@@ -446,7 +449,7 @@ export function importMidiToAuxiliaryTracks(
           event.tick < region.startTick + region.durationTicks,
       );
       if (crossesChord) {
-        warnings.push("已跳过位于既有和弦区域内的 MIDI 调号变更（tick " + event.tick + "）");
+        warnings.push("已跳过位于既有和弦区域内的导入调号变更（tick " + event.tick + "）");
       }
       return !crossesChord;
     });
@@ -463,24 +466,11 @@ export function importMidiToAuxiliaryTracks(
   const keyEvents = [...orderedEvents(next.keyEvents)];
   const importId = createId("midi-import");
   const importedTrackIds: string[] = [];
+  const usedSatbDestinations = new Set<VoiceId>();
   let importedNoteCount = 0;
   let deduplicatedNoteCount = 0;
 
   for (const track of selectedTracks) {
-    const index = next.auxiliaryTracks.length;
-    const baseName = track.name.trim();
-    let name = baseName;
-    for (let suffix = 2; usedNames.has(name); suffix += 1) {
-      name = baseName + " " + suffix;
-    }
-    usedNames.add(name);
-    const color = AUXILIARY_COLOR_PALETTE.find((candidate) => !usedColors.has(candidate)) ??
-      resolveAuxiliaryTrackColor({}, index);
-    usedColors.add(color);
-    let id = createId("aux");
-    while (usedIds.has(id)) id = createId("aux");
-    usedIds.add(id);
-
     const notes: NoteEvent[] = [];
     const seenNotes = new Set<string>();
     for (const rawNote of track.notes) {
@@ -500,20 +490,52 @@ export function importMidiToAuxiliaryTracks(
         velocity: rawNote.velocity,
         locked: false,
         spellingSource: "midi-inferred",
-        importOrigin: {
+        ...(source === "MIDI" && { importOrigin: {
           importId,
           sourceTrack: rawNote.sourceTrack,
           channel: rawNote.channel,
           sourceStartTick: rawNote.sourceStartTick,
           sourceDurationTicks: rawNote.sourceDurationTicks,
           sourceMidiNote: midiNote,
-        },
+        } }),
       });
     }
+    const destination = options.satbDestinations?.[track.key];
+    if (destination) {
+      const satb = next.satbTracks.find(({ id }) => id === destination);
+      if (!satb || usedSatbDestinations.has(destination))
+        return failure("每条选中的源轨须对应不同的 SATB 声部");
+      if (track.isPercussion || track.hasPolyphony)
+        return failure(`「${track.name}」须为单音旋律轨才能导入 SATB`);
+      if (satb.locked || notes.some((note) => isSatbRangeLocked(next, destination, note)))
+        return failure(`「${satb.name}」声部或目标时间范围已锁定`);
+      const combined = [...satb.notes, ...notes].sort((a, b) => a.startTick - b.startTick);
+      if (combined.some((note, index) => index > 0 && overlaps(combined[index - 1], note)))
+        return failure(`「${satb.name}」会出现重叠音符，可调整插入位置或选择额外声部`);
+      satb.notes = combined;
+      usedSatbDestinations.add(destination);
+      importedTrackIds.push(destination);
+      importedNoteCount += notes.length;
+      continue;
+    }
+    const index = next.auxiliaryTracks.length;
+    const baseName = track.name.trim();
+    let name = baseName;
+    for (let suffix = 2; usedNames.has(name); suffix += 1) {
+      name = baseName + " " + suffix;
+    }
+    usedNames.add(name);
+    const color = AUXILIARY_COLOR_PALETTE.find((candidate) => !usedColors.has(candidate)) ??
+      resolveAuxiliaryTrackColor({}, index);
+    usedColors.add(color);
+    let id = createId("aux");
+    while (usedIds.has(id)) id = createId("aux");
+    usedIds.add(id);
+
     next.auxiliaryTracks.push({
       id,
       kind: "auxiliary",
-      role: "midi-import",
+      role: source === "MIDI" ? "midi-import" : "other",
       participatesInHarmony: false,
       monophonic: false,
       name,
@@ -535,14 +557,14 @@ export function importMidiToAuxiliaryTracks(
 
   next.updatedAt = new Date().toISOString();
   const normalized = normalizeProject(next);
-  // 规范化会整理音符顺序，导入命令须保留原 SATB 轨的完整内容及顺序。
+  // 保留未参与导入的 SATB 轨原有音符顺序。
   normalized.satbTracks = next.satbTracks;
   if (!options.applyTimingEvents) {
     normalized.tempoEvents = next.tempoEvents;
     normalized.meterEvents = next.meterEvents;
     normalized.keyEvents = next.keyEvents;
   }
-  if (!validateProject(normalized)) return failure("MIDI 导入后的工程校验失败");
+  if (!validateProject(normalized)) return failure(`${source} 导入后的工程校验失败`);
   return {
     project: normalized,
     importedTrackIds,
@@ -552,3 +574,5 @@ export function importMidiToAuxiliaryTracks(
     warnings,
   };
 }
+
+export const importMidiToAuxiliaryTracks = importNoteTracks;
